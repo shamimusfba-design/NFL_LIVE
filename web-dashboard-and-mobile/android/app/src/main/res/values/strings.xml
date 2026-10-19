@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">NFL Production &amp; Quality</string>
+    <string name="title_activity_main">NFL Production &amp; Quality</string>
+    <string name="package_name">com.aistudio.nflproduction.kxmpzq</string>
+    <string name="custom_url_scheme">com.aistudio.nflproduction.kxmpzq</string>
+</resources>

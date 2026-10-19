@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>NFL Production, Quality & NPT Dashboard</title>
+    <!-- Tailwind CDN for rapid preview and standalone execution -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              nflNavy: '#0A2558',
+              nflBlue: '#0D47A1',
+              nflPrimary: '#1976D2',
+              nflCard: '#FFFFFF',
+              nflGreen: '#2E7D32',
+              nflAmber: '#F57F17',
+              nflRed: '#D32F2F',
+              nflCoral: '#FF7043'
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background-color: #F1F5F9;
+        -webkit-tap-highlight-color: transparent;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "name": "NFL LIVE",
+  "description": "NFL LIVE (Northern Fashions Ltd.) — Garment factory production, quality inspection, NPT tracking, line performance gauges, and Smart TV live dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
