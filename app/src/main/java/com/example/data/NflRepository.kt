@@ -2578,7 +2578,7 @@ class NflRepository(private val context: Context) {
     )
     _deviceApprovalRequests.value = listOf(req) + _deviceApprovalRequests.value
     sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
-    firebaseSync.pushRegistrationRequestAwait(req)
+    repoScope.launch { firebaseSync.pushRegistrationRequestAwait(req) }
     return req
   }
 
@@ -2682,7 +2682,7 @@ class NflRepository(private val context: Context) {
       if (it.requestId == requestId) approvedReq else it
     }
     sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
-    firebaseSync.pushRegistrationRequestAwait(approvedReq)
+    repoScope.launch { firebaseSync.pushRegistrationRequestAwait(approvedReq) }
     addAuditLog(
       type = "DEVICE_SECURITY",
       id = updatedUser.id,
