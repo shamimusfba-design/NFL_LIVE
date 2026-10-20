@@ -63,12 +63,9 @@ fun ProductionEntryScreen(
     it.canMonthlyTargetWrite && it.role == com.example.model.UserRole.IE
   } ?: false)
   val canNavigateMorningSetup = isAdminUser || (currentUser?.let {
-    it.canMorningTargetWrite && it.role !in setOf(
-      com.example.model.UserRole.MANAGEMENT_VIEW,
-      com.example.model.UserRole.PRODUCTION_MANAGER,
-      com.example.model.UserRole.QUALITY_MANAGER,
+    it.canMorningTargetWrite && it.role in setOf(
       com.example.model.UserRole.IE,
-      com.example.model.UserRole.QUALITY_REPORTER
+      com.example.model.UserRole.PRODUCTION_REPORTER
     )
   } ?: false)
 
