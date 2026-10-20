@@ -299,7 +299,7 @@ fun LoginScreen(
             border = BorderStroke(1.dp, LoginTeal),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = LoginTeal)
           ) {
-            Icon(Icons.Default.PersonAddAlt1, contentDescription = null, modifier = Modifier.size(18.dp))
+            Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text("Register new employee account")
           }
