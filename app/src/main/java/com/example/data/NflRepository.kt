@@ -361,7 +361,7 @@ class NflRepository(private val context: Context) {
         canOqlWrite = false,
         canNptWrite = false,
         canMorningTargetWrite = true, // Authorized Production Reporter: daily line target and manpower
-        canMonthlyTargetWrite = true, // Production Reporter can enter monthly achieved data
+        canMonthlyTargetWrite = false, // Monthly Data entry is reserved for IE/Admin
         canTargetRevisionWrite = false
       ),
       UserAccount(
@@ -634,10 +634,10 @@ class NflRepository(private val context: Context) {
       val mergedDefault = _users.value.map { defUser ->
         val saved = savedById[defUser.id.lowercase(Locale.US)]
         if (saved != null) {
-          // Keep stored account settings, but migrate the built-in IE and Production Reporter
-          // accounts to the required Monthly Data write permission.
+          // Migrate built-in account permissions without changing unrelated saved settings.
           when (defUser.id.lowercase(Locale.US)) {
-            "ie", "production" -> saved.copy(canMorningTargetWrite = true, canMonthlyTargetWrite = true)
+            "ie" -> saved.copy(canMorningTargetWrite = true, canMonthlyTargetWrite = true)
+            "production" -> saved.copy(canMorningTargetWrite = true, canMonthlyTargetWrite = false)
             else -> saved
           }
         } else {
@@ -968,23 +968,24 @@ class NflRepository(private val context: Context) {
   fun upsertRemoteMonthlyTargets(remoteList: List<MonthlyFactoryTarget>) {
     if (remoteList.isEmpty()) return
     val current = _monthlyTargets.value
-    val byFloor = LinkedHashMap<String, MonthlyFactoryTarget>()
-    current.forEach {
-      val normKey = it.floor.trim().replace("-", " ").replace("  ", " ").lowercase(Locale.US)
-      byFloor[normKey] = it
+    val byFloorAndLine = LinkedHashMap<String, MonthlyFactoryTarget>()
+    fun monthlyKey(item: MonthlyFactoryTarget): String {
+      val floorKey = item.floor.trim().replace("-", " ").replace("  ", " ").lowercase(Locale.US)
+      return "$floorKey|${item.lineId.trim().uppercase(Locale.US)}"
     }
+    current.forEach { byFloorAndLine[monthlyKey(it)] = it }
 
     var changed = false
     remoteList.forEach { remote ->
-      val key = remote.floor.trim().replace("-", " ").replace("  ", " ").lowercase(Locale.US)
-      val prev = byFloor[key]
+      val key = monthlyKey(remote)
+      val prev = byFloorAndLine[key]
       if (prev == null || prev != remote) {
-        byFloor[key] = remote
+        byFloorAndLine[key] = remote
         changed = true
       }
     }
     if (changed) {
-      _monthlyTargets.value = byFloor.values.toList()
+      _monthlyTargets.value = byFloorAndLine.values.toList()
       sheetsStorage.saveLocalMonthlyTargets(_monthlyTargets.value)
       touchDataUpdated()
     }
@@ -2856,29 +2857,39 @@ class NflRepository(private val context: Context) {
   fun getMonthlyTarget(floorName: String): MonthlyFactoryTarget {
     val norm = floorName.trim().replace("-", " ").replace("  ", " ")
     return _monthlyTargets.value.find { target ->
-      val targetNorm = target.floor.trim().replace("-", " ").replace("  ", " ")
-      targetNorm.equals(norm, ignoreCase = true) || target.floor.equals(floorName, ignoreCase = true)
+      target.lineId.isBlank() &&
+        (target.floor.trim().replace("-", " ").replace("  ", " ").equals(norm, ignoreCase = true) ||
+          target.floor.equals(floorName, ignoreCase = true))
     } ?: MonthlyFactoryTarget(floor = floorName)
+  }
+
+  fun getMonthlyLineTarget(floorName: String, lineId: String): MonthlyFactoryTarget? {
+    return _monthlyTargets.value.find {
+      it.lineId.equals(lineId, ignoreCase = true) &&
+        it.floor.trim().replace("-", " ").replace("  ", " ")
+          .equals(floorName.trim().replace("-", " ").replace("  ", " "), ignoreCase = true)
+    }
   }
 
   fun saveMonthlyTarget(target: MonthlyFactoryTarget) {
     val u = getAuthoritativeCurrentUser()
     if (u != null && !u.isAdmin) {
-      val rolePermitted = u.role == UserRole.IE || u.role == UserRole.PRODUCTION_REPORTER
+      val rolePermitted = u.role == UserRole.IE
       if (!rolePermitted || !u.canMonthlyTargetWrite) {
-        _syncStatusBanner.value = "⚠️ Access Denied: Only authorized IE or Production Reporter can edit Monthly Data"
+        _syncStatusBanner.value = "⚠️ Access Denied: Only authorized IE can edit Monthly Data"
         return
       }
     }
     val norm = target.floor.trim().replace("-", " ").replace("  ", " ")
     val filtered = _monthlyTargets.value.filter {
       val itNorm = it.floor.trim().replace("-", " ").replace("  ", " ")
-      !itNorm.equals(norm, ignoreCase = true) && !it.floor.equals(target.floor, ignoreCase = true)
+      val sameFloor = itNorm.equals(norm, ignoreCase = true) || it.floor.equals(target.floor, ignoreCase = true)
+      !(sameFloor && it.lineId.equals(target.lineId, ignoreCase = true))
     }
     _monthlyTargets.value = filtered + target
     sheetsStorage.saveLocalMonthlyTargets(_monthlyTargets.value)
     touchDataUpdated()
-    addAuditLog("MONTHLY_SETUP", target.floor, "SAVE_MONTHLY_TARGET", u?.name ?: target.lastUpdatedBy, "Target Eff: ${target.targetEfficiencyPct}%, OQL: ${target.targetOqlPct}% (Cloud Firestore & Google Sheet)")
+    addAuditLog("MONTHLY_SETUP", if (target.lineId.isBlank()) target.floor else "${target.floor}/${target.lineId}", "SAVE_MONTHLY_TARGET", u?.name ?: target.lastUpdatedBy, "Monthly Eff: ${target.updateEfficiencyPct}%, Target Pcs: ${target.monthlyTargetPcs}, Achieved Pcs: ${target.monthlyAchievementPcs}, OQL: ${target.targetOqlPct}%, DHU: ${target.targetDhuPct}% (Cloud Firestore & Google Sheet)")
     repoScope.launch {
       val fOk = firebaseSync.pushMonthlyTargetAwait(target)
       val sOk = sheetsStorage.pushMonthlyTargetRow(target)

@@ -576,6 +576,9 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         put("bsOqlPct", t.bsOqlPct)
         put("lastUpdatedBy", t.lastUpdatedBy)
         put("lastUpdatedMillis", t.lastUpdatedMillis)
+        put("lineId", t.lineId)
+        put("monthlyTargetPcs", t.monthlyTargetPcs)
+        put("monthlyAchievementPcs", t.monthlyAchievementPcs)
       })
     }
     prefs.edit().putString(KEY_SAVED_MONTHLY, arr.toString()).apply()
@@ -597,7 +600,10 @@ class GoogleSheetsStorageService(private val appContext: Context) {
           friPassRatePct = obj.optDouble("friPassRatePct", 100.0),
           bsOqlPct = obj.optDouble("bsOqlPct", 2.40),
           lastUpdatedBy = obj.optString("lastUpdatedBy", "Management / IE"),
-          lastUpdatedMillis = obj.optLong("lastUpdatedMillis", System.currentTimeMillis())
+          lastUpdatedMillis = obj.optLong("lastUpdatedMillis", System.currentTimeMillis()),
+          lineId = obj.optString("lineId", ""),
+          monthlyTargetPcs = obj.optDouble("monthlyTargetPcs", 0.0),
+          monthlyAchievementPcs = obj.optDouble("monthlyAchievementPcs", 0.0)
         )
       }
     } catch (_: Throwable) {
@@ -1219,11 +1225,15 @@ class GoogleSheetsStorageService(private val appContext: Context) {
       target.friPassRatePct,
       target.bsOqlPct,
       target.lastUpdatedBy,
-      isoTime(target.lastUpdatedMillis)
+      isoTime(target.lastUpdatedMillis),
+      target.lineId,
+      target.monthlyTargetPcs,
+      target.monthlyAchievementPcs
     )
     val headers = listOf(
       "floor", "month_year", "target_eff_pct", "update_eff_pct", "target_oql_pct",
-      "target_dhu_pct", "fri_pass_rate_pct", "bs_oql_pct", "last_updated_by", "updated_at"
+      "target_dhu_pct", "fri_pass_rate_pct", "bs_oql_pct", "last_updated_by", "updated_at",
+      "line_id", "monthly_target_pcs", "monthly_achievement_pcs"
     )
     postRowToGoogleSheet("Raw_MonthlyTarget", headers, row, actorId = target.lastUpdatedBy, actorRole = "IE")
   }
@@ -1734,7 +1744,10 @@ class GoogleSheetsStorageService(private val appContext: Context) {
           targetDhuPct = targetDhu,
           friPassRatePct = friPass,
           bsOqlPct = bsOql,
-          lastUpdatedBy = updatedBy
+          lastUpdatedBy = updatedBy,
+          lineId = cols.getOrNull(10)?.trim().orEmpty(),
+          monthlyTargetPcs = cols.getOrNull(11)?.trim()?.toDoubleOrNull() ?: 0.0,
+          monthlyAchievementPcs = cols.getOrNull(12)?.trim()?.toDoubleOrNull() ?: 0.0
         )
       )
     }

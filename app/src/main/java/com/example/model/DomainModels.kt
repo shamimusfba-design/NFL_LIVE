@@ -368,7 +368,11 @@ data class MonthlyFactoryTarget(
   val friPassRatePct: Double = 100.0,
   val bsOqlPct: Double = 2.40,
   val lastUpdatedBy: String = "Management / IE",
-  val lastUpdatedMillis: Long = System.currentTimeMillis()
+  val lastUpdatedMillis: Long = System.currentTimeMillis(),
+  // Blank lineId identifies the separately entered floor-level record.
+  val lineId: String = "",
+  val monthlyTargetPcs: Double = 0.0,
+  val monthlyAchievementPcs: Double = 0.0
 )
 
 data class HourlyProductionRow(
