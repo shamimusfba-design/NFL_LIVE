@@ -277,6 +277,11 @@ data class SupervisorLineSetup(
   val snapshotTimestamp: Long = System.currentTimeMillis(),
   val isDemo: Boolean = false
 ) {
+  /** Total people assigned to the line, independent of the efficiency calculation toggle. */
+  val totalManpower: Int
+    get() = operatorsCount + helpersCount + finishingStaffCount
+
+  /** People counted for available production minutes when calculating efficiency. */
   val includedManpower: Int
     get() = operatorsCount + (if (includeHelpersInEfficiency) helpersCount else 0)
 }
