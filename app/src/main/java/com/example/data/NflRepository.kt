@@ -361,7 +361,7 @@ class NflRepository(private val context: Context) {
         canOqlWrite = false,
         canNptWrite = false,
         canMorningTargetWrite = true, // Authorized Production Reporter: daily line target and manpower
-        canMonthlyTargetWrite = false,
+        canMonthlyTargetWrite = true, // Production Reporter can enter monthly achieved data
         canTargetRevisionWrite = false
       ),
       UserAccount(
@@ -634,7 +634,12 @@ class NflRepository(private val context: Context) {
       val mergedDefault = _users.value.map { defUser ->
         val saved = savedById[defUser.id.lowercase(Locale.US)]
         if (saved != null) {
-          saved
+          // Keep stored account settings, but migrate the built-in IE and Production Reporter
+          // accounts to the required Monthly Data write permission.
+          when (defUser.id.lowercase(Locale.US)) {
+            "ie", "production" -> saved.copy(canMorningTargetWrite = true, canMonthlyTargetWrite = true)
+            else -> saved
+          }
         } else {
           defUser
         }
@@ -2859,9 +2864,9 @@ class NflRepository(private val context: Context) {
   fun saveMonthlyTarget(target: MonthlyFactoryTarget) {
     val u = getAuthoritativeCurrentUser()
     if (u != null && !u.isAdmin) {
-      val rolePermitted = u.role == UserRole.IE || u.canMonthlyTargetWrite
-      if (!u.canMonthlyTargetWrite || !rolePermitted) {
-        _syncStatusBanner.value = "⚠️ Access Denied: You do not have permission for Monthly Target Setup"
+      val rolePermitted = u.role == UserRole.IE || u.role == UserRole.PRODUCTION_REPORTER
+      if (!rolePermitted || !u.canMonthlyTargetWrite) {
+        _syncStatusBanner.value = "⚠️ Access Denied: Only authorized IE or Production Reporter can edit Monthly Data"
         return
       }
     }
