@@ -486,7 +486,10 @@ class FirebaseSyncService(private val context: Context) {
         friPassRatePct = doc.getDouble("friPassRatePct") ?: 100.0,
         bsOqlPct = doc.getDouble("bsOqlPct") ?: 2.40,
         lastUpdatedBy = doc.getString("lastUpdatedBy") ?: "Management / IE",
-        lastUpdatedMillis = doc.getLong("lastUpdatedMillis") ?: System.currentTimeMillis()
+        lastUpdatedMillis = doc.getLong("lastUpdatedMillis") ?: System.currentTimeMillis(),
+        lineId = doc.getString("lineId") ?: "",
+        monthlyTargetPcs = doc.getDouble("monthlyTargetPcs") ?: 0.0,
+        monthlyAchievementPcs = doc.getDouble("monthlyAchievementPcs") ?: 0.0
       )
     } catch (e: Exception) {
       null
@@ -885,10 +888,14 @@ class FirebaseSyncService(private val context: Context) {
         "friPassRatePct" to target.friPassRatePct,
         "bsOqlPct" to target.bsOqlPct,
         "lastUpdatedBy" to target.lastUpdatedBy,
-        "lastUpdatedMillis" to target.lastUpdatedMillis
+        "lastUpdatedMillis" to target.lastUpdatedMillis,
+        "lineId" to target.lineId,
+        "monthlyTargetPcs" to target.monthlyTargetPcs,
+        "monthlyAchievementPcs" to target.monthlyAchievementPcs
       )
+      val documentId = if (target.lineId.isBlank()) target.floor else "${target.floor}_${target.lineId}"
       withTimeout(10000L) {
-        db.collection("monthly_targets").document(target.floor).set(map, SetOptions.merge()).await()
+        db.collection("monthly_targets").document(documentId).set(map, SetOptions.merge()).await()
       }
       hasPermissionError = false
       lastErrorMessage = null
