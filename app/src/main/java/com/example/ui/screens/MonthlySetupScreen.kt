@@ -194,7 +194,7 @@ fun MonthlySetupScreen(
             placeholder = { Text("e.g. 71.5") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            enabled = canMonthlyTargetWrite,
+            enabled = canMonthlyTargetWrite && !autoMonthlyMode,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
           )
 
@@ -206,7 +206,7 @@ fun MonthlySetupScreen(
               label = { Text("Floor Monthly Target (pcs)") },
               modifier = Modifier.weight(1f),
               singleLine = true,
-              enabled = canMonthlyTargetWrite,
+              enabled = canMonthlyTargetWrite && !autoMonthlyMode,
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
             )
             OutlinedTextField(
@@ -215,6 +215,7 @@ fun MonthlySetupScreen(
               label = { Text("Floor Monthly Achievement (pcs)") },
               modifier = Modifier.weight(1f),
               singleLine = true,
+              enabled = canMonthlyTargetWrite && !autoMonthlyMode,
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
             )
           }
@@ -401,7 +402,7 @@ fun MonthlySetupScreen(
             val lineTarget = if (autoMonthlyMode) calculateAutoMonthlyTarget(repository, selectedFloor, line.id, currentMonthKey, productionEntries, qualityEntries) else manualLineTarget
             LineMonthlyDataRow(
               lineId = line.id,
-              floorName = selectedFloor.apiValue,
+              floorName = selectedFloorName,
               target = lineTarget,
               canEdit = canEditLineMonthlyData && !autoMonthlyMode,
               userName = userName,
