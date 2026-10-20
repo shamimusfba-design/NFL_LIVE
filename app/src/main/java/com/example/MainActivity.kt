@@ -46,7 +46,8 @@ enum class AppScreen {
   TV_DASHBOARD,
   HISTORY_SYNC,
   SETTINGS,
-  MONTHLY_BREAKDOWN
+  MONTHLY_BREAKDOWN,
+  NOTIFICATION_CENTER
 }
 
 class MainActivity : ComponentActivity() {
@@ -63,6 +64,7 @@ class MainActivity : ComponentActivity() {
         val currentUser by repository.currentUser.collectAsState()
         val currentRole by repository.currentRole.collectAsState()
         val currentUserName by repository.currentUserName.collectAsState()
+        val incidents by repository.incidents.collectAsState()
 
         val isTelevisionDevice = remember {
           packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
@@ -299,6 +301,45 @@ class MainActivity : ComponentActivity() {
                     selected = currentScreen == AppScreen.HOME,
                     onClick = {
                       currentScreen = AppScreen.HOME
+                      scope.launch { drawerState.close() }
+                    },
+                    colors = NavigationDrawerItemDefaults.colors(
+                      unselectedContainerColor = Color.Transparent,
+                      selectedContainerColor = Color(0xFF1E293B),
+                      selectedTextColor = Color(0xFF38BDF8),
+                      unselectedTextColor = Color(0xFFE2E8F0)
+                    ),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                  )
+
+                  NavigationDrawerItem(
+                    label = {
+                      Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                      ) {
+                        Text("🔔 Smart Factory Alerts")
+                        val unreadCount = incidents.count { it.status != com.example.model.IncidentStatus.RESOLVED && it.status != com.example.model.IncidentStatus.VERIFIED }
+                        if (unreadCount > 0) {
+                          Surface(
+                            color = Color(0xFFEF4444),
+                            shape = CircleShape
+                          ) {
+                            Text(
+                              text = unreadCount.toString(),
+                              fontSize = 10.sp,
+                              fontWeight = FontWeight.Bold,
+                              color = Color.White,
+                              modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                          }
+                        }
+                      }
+                    },
+                    selected = currentScreen == AppScreen.NOTIFICATION_CENTER,
+                    onClick = {
+                      currentScreen = AppScreen.NOTIFICATION_CENTER
                       scope.launch { drawerState.close() }
                     },
                     colors = NavigationDrawerItemDefaults.colors(
@@ -684,6 +725,7 @@ class MainActivity : ComponentActivity() {
                       selectedMonthlyMetric = metric
                       currentScreen = AppScreen.MONTHLY_BREAKDOWN
                     },
+                    onNavigateToNotificationCenter = { currentScreen = AppScreen.NOTIFICATION_CENTER },
                     onNavigateToLogin = { currentScreen = AppScreen.LOGIN }
                   )
                   AppScreen.MONTHLY_BREAKDOWN -> MonthlyBreakdownScreen(
@@ -750,6 +792,10 @@ class MainActivity : ComponentActivity() {
                     repository = repository,
                     onNavigateBack = { currentScreen = AppScreen.HOME }
                   )
+                  AppScreen.NOTIFICATION_CENTER -> NotificationCenterScreen(
+                    repository = repository,
+                    onNavigateBack = { currentScreen = AppScreen.HOME }
+                  )
                 }
               }
             }
@@ -757,5 +803,12 @@ class MainActivity : ComponentActivity() {
         }
       }
     }
+  }
+
+  override fun onDestroy() {
+    if (::repository.isInitialized) {
+      repository.shutdown()
+    }
+    super.onDestroy()
   }
 }

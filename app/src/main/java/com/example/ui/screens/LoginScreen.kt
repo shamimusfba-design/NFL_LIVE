@@ -120,7 +120,7 @@ fun LoginScreen(
           verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
           Text("Welcome back", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = LoginText)
-          Text("Sign in with your authorized Company ID & Password", fontSize = 14.sp, color = LoginMuted)
+          Text("Sign in with your authorized Employee ID & Password", fontSize = 14.sp, color = LoginMuted)
           Spacer(Modifier.height(2.dp))
 
           OutlinedTextField(
@@ -130,8 +130,9 @@ fun LoginScreen(
               errorMessage = null
               infoMessage = null
             },
-            label = { Text("Company ID Card No. / Employee ID", color = LoginMuted) },
-            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = LoginCyan) },
+            label = { Text("Employee ID", color = LoginMuted) },
+            placeholder = { Text("e.g. admin, supervisor, or employee card #", color = LoginMuted.copy(alpha = 0.5f), fontSize = 13.sp) },
+            leadingIcon = { Icon(Icons.Default.Badge, contentDescription = null, tint = LoginCyan) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag("login_id_input"),
             shape = RoundedCornerShape(14.dp),
@@ -221,7 +222,7 @@ fun LoginScreen(
                   OutlinedButton(
                     onClick = {
                       if (usernameInput.isBlank()) {
-                        errorMessage = "Enter your Company ID first."
+                        errorMessage = "Enter your Employee ID first."
                         return@OutlinedButton
                       }
                       isSendingOtp = true
@@ -268,7 +269,7 @@ fun LoginScreen(
           Button(
             onClick = {
               if (usernameInput.isBlank() || passwordInput.isBlank()) {
-                errorMessage = "Please enter both Company ID and password."
+                errorMessage = "Please enter both Employee ID and password."
                 return@Button
               }
               val authResult = repository.authenticateUser(usernameInput, passwordInput)

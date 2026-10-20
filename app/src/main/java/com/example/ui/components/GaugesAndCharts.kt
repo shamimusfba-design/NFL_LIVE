@@ -2161,3 +2161,440 @@ fun LiveLinePerformanceTable(
     }
   }
 }
+
+/**
+ * Top 5 Lowest-Efficiency Lines Ranking Card (Identifies balancing & intervention needs)
+ */
+@Composable
+fun LowestEfficiencyRankingCard(
+  title: String = "Top 5 Lowest-Efficiency Lines (Intervention Alert)",
+  lines: List<LinePerformancePoint>,
+  modifier: Modifier = Modifier
+) {
+  val rankingLines = lines.take(5)
+  Card(
+    shape = RoundedCornerShape(12.dp),
+    colors = CardDefaults.cardColors(containerColor = Color.White),
+    elevation = CardDefaults.cardElevation(2.dp),
+    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
+    modifier = modifier.fillMaxWidth()
+  ) {
+    Column(
+      modifier = Modifier.padding(14.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+          Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
+          Text(text = "Lines requiring line balancing or supervisor support", fontSize = 9.5.sp, color = Color(0xFF64748B))
+        }
+        Surface(color = Color(0xFFFEF2F2), shape = RoundedCornerShape(4.dp)) {
+          Text("LOW EFFICIENCY", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFDC2626), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp))
+        }
+      }
+
+      if (rankingLines.isEmpty()) {
+        Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+          Text("No reported efficiency data for selected scope", fontSize = 11.sp, color = Color(0xFF64748B))
+        }
+      } else {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          rankingLines.forEachIndexed { rank, line ->
+            val eff = line.todayEfficiencyPct ?: 0.0
+            val ach = line.achievementPcs ?: 0
+            val tgt = line.targetPcs
+            val isSevere = eff < 60.0
+            Surface(
+              color = if (isSevere) Color(0xFFFFF1F2) else Color(0xFFF8FAFC),
+              shape = RoundedCornerShape(8.dp),
+              border = androidx.compose.foundation.BorderStroke(1.dp, if (isSevere) Color(0xFFFECDD3) else Color(0xFFE2E8F0))
+            ) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 10.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                  Surface(
+                    color = if (isSevere) Color(0xFFE11D48) else Color(0xFF64748B),
+                    shape = CircleShape,
+                    modifier = Modifier.size(22.dp)
+                  ) {
+                    Box(contentAlignment = Alignment.Center) {
+                      Text("#${rank + 1}", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Black)
+                    }
+                  }
+                  Column {
+                    Text("Line ${line.lineId} (${line.floor})", fontWeight = FontWeight.Black, fontSize = 12.sp, color = Color(0xFF0F172A))
+                    Text("Style: ${line.styleNumber.ifBlank { "Standard" }} • SMV: ${line.smv}", fontSize = 9.sp, color = Color(0xFF64748B))
+                  }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                  Column(horizontalAlignment = Alignment.End) {
+                    Text("$ach / $tgt pcs", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
+                    Text("Attain: ${line.achievementPct ?: 0.0}%", fontSize = 8.5.sp, color = Color(0xFF64748B))
+                  }
+                  Surface(
+                    color = if (isSevere) Color(0xFFBE123C) else Color(0xFFD97706),
+                    shape = RoundedCornerShape(6.dp)
+                  ) {
+                    Text(
+                      text = "${String.format(java.util.Locale.US, "%.1f", eff)}% EFF",
+                      color = Color.White,
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.Black,
+                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Line-wise Today's DHU Column Chart
+ */
+@Composable
+fun LineWiseDhuBarChart(
+  title: String = "Line-wise Today's DHU (Defect Rate %)",
+  lines: List<LinePerformancePoint>,
+  modifier: Modifier = Modifier
+) {
+  val linesWithDhu = lines.filter { it.dhu != null && (it.dhu ?: 0.0) > 0.0 }
+  val displayLines = if (linesWithDhu.isNotEmpty()) linesWithDhu.take(16) else lines.take(16)
+  val maxDhu = (displayLines.maxOfOrNull { it.dhu ?: 0.0 } ?: 3.0).coerceAtLeast(3.0).toFloat()
+
+  Card(
+    shape = RoundedCornerShape(12.dp),
+    colors = CardDefaults.cardColors(containerColor = Color.White),
+    elevation = CardDefaults.cardElevation(2.dp),
+    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
+    modifier = modifier.fillMaxWidth()
+  ) {
+    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+          Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
+          Text(text = "Defects per hundred units (Standard ≤ 2.00%)", fontSize = 9.5.sp, color = Color(0xFF64748B))
+        }
+        Surface(color = Color(0xFFFEF3C7), shape = RoundedCornerShape(4.dp)) {
+          Text("LINE-WISE DHU", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp))
+        }
+      }
+
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .height(160.dp)
+      ) {
+        Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+          Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("${String.format(java.util.Locale.US, "%.1f", maxDhu)}%", fontSize = 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(30.dp))
+            Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFF1F5F9)))
+          }
+          Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("2.0%", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444), modifier = Modifier.width(30.dp))
+            Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFFECACA)))
+          }
+          Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("0.0%", fontSize = 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(30.dp))
+            Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFE2E8F0)))
+          }
+        }
+
+        Row(
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(start = 32.dp, end = 4.dp, bottom = 4.dp),
+          horizontalArrangement = Arrangement.SpaceEvenly,
+          verticalAlignment = Alignment.Bottom
+        ) {
+          displayLines.forEach { line ->
+            val dhu = line.dhu ?: 0.0
+            val fraction = (dhu.toFloat() / maxDhu).coerceIn(0.08f, 1.0f)
+            val barH = (fraction * 110f).dp
+            val isOver = dhu > 2.0
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
+              Text(
+                text = String.format(java.util.Locale.US, "%.1f", dhu),
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isOver) Color(0xFFDC2626) else Color(0xFF16A34A)
+              )
+              Box(
+                modifier = Modifier
+                  .width(18.dp)
+                  .height(barH)
+                  .background(
+                    if (isOver) Color(0xFFEF4444) else Color(0xFF10B981),
+                    RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
+                  )
+              )
+              Text(text = line.lineId, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Line-wise Today's OQL Column Chart
+ */
+@Composable
+fun LineWiseOqlBarChart(
+  title: String = "Line-wise OQL % (Outgoing Quality Level)",
+  lines: List<LinePerformancePoint>,
+  modifier: Modifier = Modifier
+) {
+  val linesWithOql = lines.filter { it.todayOqlPct != null && (it.todayOqlPct ?: 0.0) > 0.0 }
+  val displayLines = if (linesWithOql.isNotEmpty()) linesWithOql.take(16) else lines.take(16)
+  val maxOql = (displayLines.maxOfOrNull { it.todayOqlPct ?: 0.0 } ?: 6.0).coerceAtLeast(6.0).toFloat()
+
+  Card(
+    shape = RoundedCornerShape(12.dp),
+    colors = CardDefaults.cardColors(containerColor = Color.White),
+    elevation = CardDefaults.cardElevation(2.dp),
+    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
+    modifier = modifier.fillMaxWidth()
+  ) {
+    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+          Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
+          Text(text = "Defective garment percentage (Standard ≤ 5.00%)", fontSize = 9.5.sp, color = Color(0xFF64748B))
+        }
+        Surface(color = Color(0xFFEFF6FF), shape = RoundedCornerShape(4.dp)) {
+          Text("LINE-WISE OQL", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp))
+        }
+      }
+
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .height(160.dp)
+      ) {
+        Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+          Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("${String.format(java.util.Locale.US, "%.1f", maxOql)}%", fontSize = 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(30.dp))
+            Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFF1F5F9)))
+          }
+          Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("5.0%", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444), modifier = Modifier.width(30.dp))
+            Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFFECACA)))
+          }
+          Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("0.0%", fontSize = 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(30.dp))
+            Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFE2E8F0)))
+          }
+        }
+
+        Row(
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(start = 32.dp, end = 4.dp, bottom = 4.dp),
+          horizontalArrangement = Arrangement.SpaceEvenly,
+          verticalAlignment = Alignment.Bottom
+        ) {
+          displayLines.forEach { line ->
+            val oql = line.todayOqlPct ?: 0.0
+            val fraction = (oql.toFloat() / maxOql).coerceIn(0.08f, 1.0f)
+            val barH = (fraction * 110f).dp
+            val isOver = oql > 5.0
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
+              Text(
+                text = String.format(java.util.Locale.US, "%.1f", oql),
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isOver) Color(0xFFDC2626) else Color(0xFF2563EB)
+              )
+              Box(
+                modifier = Modifier
+                  .width(18.dp)
+                  .height(barH)
+                  .background(
+                    if (isOver) Color(0xFFEF4444) else Color(0xFF3B82F6),
+                    RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
+                  )
+              )
+              Text(text = line.lineId, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Defect Pareto Chart (Dual-Axis: Defect Count Columns + Cumulative % Line on Secondary Axis)
+ */
+@Composable
+fun DefectParetoBarAndLineChart(
+  title: String = "Defect Pareto Analysis (80/20 Cumulative Distribution)",
+  paretoData: List<ParetoDefectPoint>,
+  modifier: Modifier = Modifier
+) {
+  val data = paretoData.take(8)
+  val maxCount = (data.maxOfOrNull { it.count } ?: 10).coerceAtLeast(10)
+
+  Card(
+    shape = RoundedCornerShape(12.dp),
+    colors = CardDefaults.cardColors(containerColor = Color.White),
+    elevation = CardDefaults.cardElevation(2.dp),
+    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
+    modifier = modifier.fillMaxWidth()
+  ) {
+    Column(
+      modifier = Modifier.padding(14.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+          Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
+          Text(text = "Columns: Defect Count • Red Line: Cumulative % (80% benchmark)", fontSize = 9.5.sp, color = Color(0xFF64748B))
+        }
+        Surface(color = Color(0xFFF3E8FF), shape = RoundedCornerShape(4.dp)) {
+          Text("PARETO DUAL AXIS", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7E22CE), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp))
+        }
+      }
+
+      if (data.isEmpty()) {
+        Box(modifier = Modifier.fillMaxWidth().height(140.dp), contentAlignment = Alignment.Center) {
+          Text("No defect entries recorded for this scope", fontSize = 11.sp, color = Color(0xFF64748B))
+        }
+      } else {
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(180.dp)
+        ) {
+          // Background guidelines & axis labels
+          Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+              Text("$maxCount", fontSize = 8.sp, color = Color(0xFF64748B), modifier = Modifier.width(24.dp))
+              Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFF1F5F9)))
+              Text("100%", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7C3AED), modifier = Modifier.width(28.dp), textAlign = TextAlign.End)
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+              Text("${(maxCount * 0.8).toInt()}", fontSize = 8.sp, color = Color(0xFF64748B), modifier = Modifier.width(24.dp))
+              Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFFDE047))) // 80% line
+              Text("80%", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD97706), modifier = Modifier.width(28.dp), textAlign = TextAlign.End)
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+              Text("0", fontSize = 8.sp, color = Color(0xFF64748B), modifier = Modifier.width(24.dp))
+              Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFE2E8F0)))
+              Text("0%", fontSize = 8.sp, color = Color(0xFF64748B), modifier = Modifier.width(28.dp), textAlign = TextAlign.End)
+            }
+          }
+
+          // Canvas for Cumulative Percentage Line on Secondary Axis
+          Canvas(
+            modifier = Modifier
+              .fillMaxSize()
+              .padding(start = 32.dp, end = 34.dp, bottom = 24.dp, top = 10.dp)
+          ) {
+            if (data.size >= 2) {
+              val w = size.width
+              val h = size.height
+              val step = w / data.size.toFloat()
+              val points = data.mapIndexed { idx, item ->
+                val x = (idx * step) + (step / 2f)
+                val y = h - ((item.cumulativePercentage.toFloat() / 100f) * h)
+                Offset(x, y)
+              }
+
+              for (i in 0 until points.size - 1) {
+                drawLine(
+                  color = Color(0xFFE11D48),
+                  start = points[i],
+                  end = points[i + 1],
+                  strokeWidth = 3.dp.toPx(),
+                  cap = StrokeCap.Round
+                )
+              }
+
+              points.forEach { pt ->
+                drawCircle(color = Color.White, radius = 5.dp.toPx(), center = pt)
+                drawCircle(color = Color(0xFFBE123C), radius = 3.5.dp.toPx(), center = pt)
+              }
+            }
+          }
+
+          // Columns for Individual Defect Count on Primary Axis
+          Row(
+            modifier = Modifier
+              .fillMaxSize()
+              .padding(start = 32.dp, end = 34.dp, bottom = 4.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.Bottom
+          ) {
+            data.forEach { item ->
+              val fraction = (item.count.toFloat() / maxCount.toFloat()).coerceIn(0.08f, 1.0f)
+              val barH = (fraction * 115f).dp
+              Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Bottom,
+                modifier = Modifier.padding(horizontal = 2.dp)
+              ) {
+                Text(
+                  text = "${item.count}",
+                  fontSize = 9.sp,
+                  fontWeight = FontWeight.Black,
+                  color = Color(0xFF1E293B)
+                )
+                Text(
+                  text = "${item.cumulativePercentage.toInt()}%",
+                  fontSize = 7.5.sp,
+                  fontWeight = FontWeight.ExtraBold,
+                  color = Color(0xFFBE123C),
+                  modifier = Modifier.padding(bottom = 2.dp)
+                )
+                Box(
+                  modifier = Modifier
+                    .width(22.dp)
+                    .height(barH)
+                    .background(Color(0xFF3B82F6), RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                )
+                Text(
+                  text = item.defectName.take(6),
+                  fontSize = 8.5.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = Color(0xFF475569),
+                  maxLines = 1,
+                  modifier = Modifier.padding(top = 2.dp)
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

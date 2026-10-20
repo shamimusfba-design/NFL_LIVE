@@ -959,7 +959,7 @@ class GoogleSheetsStorageService(private val appContext: Context) {
   ): Boolean = withContext(Dispatchers.IO) {
     val webAppUrl = getConfiguredWebAppUrl()
     val sheetId = getConfiguredSheetId()
-    if (!hasValidWebAppUrl(webAppUrl)) return@withContext true
+    if (!hasValidWebAppUrl(webAppUrl)) return@withContext false
     return@withContext try {
       val payload = JSONObject().apply {
         put("action", "manageDevice")
@@ -993,7 +993,7 @@ class GoogleSheetsStorageService(private val appContext: Context) {
   ): Boolean = withContext(Dispatchers.IO) {
     val webAppUrl = getConfiguredWebAppUrl()
     val sheetId = getConfiguredSheetId()
-    if (!hasValidWebAppUrl(webAppUrl)) return@withContext true
+    if (!hasValidWebAppUrl(webAppUrl)) return@withContext false
     return@withContext try {
       val payload = JSONObject().apply {
         put("action", if (isDelete) "adminDeleteRecord" else "adminCorrectRecord")
@@ -1241,8 +1241,8 @@ class GoogleSheetsStorageService(private val appContext: Context) {
     val webAppUrl = getConfiguredWebAppUrl()
     val sheetId = getConfiguredSheetId()
     if (!hasValidWebAppUrl(webAppUrl)) {
-      // Saved in local persistent Google Sheet ledger; ready to push when Web App URL is provided
-      return true
+      // No deployed Apps Script Web App URL configured; cannot write to Google Sheet
+      return false
     }
     return try {
       val rowArray = JSONArray()
@@ -1304,8 +1304,6 @@ class GoogleSheetsStorageService(private val appContext: Context) {
       pendingQuality.forEach {
         if (pushQualityRow(it)) pushedCount++
       }
-    } else {
-      pushedCount = pendingProduction.size + pendingQuality.size
     }
 
     val fetchedProds = mutableListOf<ProductionRecord>()

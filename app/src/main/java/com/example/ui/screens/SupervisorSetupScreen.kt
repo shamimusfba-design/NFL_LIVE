@@ -492,7 +492,7 @@ fun SupervisorSetupScreen(
               val setup = SupervisorLineSetup(
                 lineId = selectedLine,
                 floor = floorName,
-                date = "2026-10-09",
+                date = repository.getCurrentBangladeshDateIso(),
                 itemName = itemNameText.trim().ifEmpty { "Polo Shirt" },
                 smv = smvText.toDoubleOrNull() ?: 14.50,
                 targetDailyPcs = targetDailyPcsText.toIntOrNull() ?: 480,
@@ -509,7 +509,7 @@ fun SupervisorSetupScreen(
                 snapshotTimestamp = System.currentTimeMillis()
               )
               repository.saveLineSetup(setup)
-              saveSuccessMsg = "✓ Line $selectedLine Morning Target Saved: ${setup.itemName} (SMV: ${setup.smv}), Target: ${setup.targetDailyPcs} pcs @ ${setup.targetEfficiencyPct}% Eff!"
+              saveSuccessMsg = "✓ Line $selectedLine Morning Target Saved (${setup.date}): ${setup.itemName} (SMV: ${setup.smv}), Target: ${setup.targetDailyPcs} pcs @ ${setup.targetEfficiencyPct}% Eff!"
             },
             enabled = canMorningTargetWrite,
             modifier = Modifier

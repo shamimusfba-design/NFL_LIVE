@@ -207,4 +207,170 @@ class ExampleRobolectricTest {
     assertEquals(75, corrected?.outputQty)
     assertTrue(repo.auditLogs.value.any { it.action == "CORRECT_PRODUCTION" && it.reason.contains("Recounted bundle #4") })
   }
+
+  @Test
+  fun `test A B C multi device sync create update delete and reopen without duplicates`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val phoneA = NflRepository(context)
+    phoneA.authenticateUser("admin", "123")
+    val todayBd = phoneA.getCurrentBangladeshDateIso()
+
+    // Test A — Create on Phone A and sync to Phone B
+    val createdOnA = phoneA.submitProduction(
+      ProductionRecord(
+        lineId = "K1",
+        floor = "Sew 2",
+        date = todayBd,
+        hourSlot = "10:00 - 11:00",
+        styleNumber = "Sports Vest",
+        outputQty = 88
+      )
+    )
+
+    val phoneB = NflRepository(context)
+    phoneB.upsertRemoteProductionRecords(listOf(createdOnA))
+
+    val k1SlotRecordsOnB = phoneB.productionEntries.value.filter {
+      it.lineId.equals("K1", ignoreCase = true) &&
+          it.date == todayBd &&
+          it.hourSlot == "10:00 - 11:00"
+    }
+    // Must replace demo record for that slot and have exactly 1 record with outputQty = 88
+    assertEquals(1, k1SlotRecordsOnB.size)
+    assertEquals(88, k1SlotRecordsOnB.first().outputQty)
+    assertTrue(!k1SlotRecordsOnB.first().isDemo)
+
+    // Test B — Update on Phone A and verify Phone B updates in-place without duplicates
+    phoneA.adminCorrectProductionRecord(
+      submissionId = createdOnA.submissionId,
+      newOutputQty = 104,
+      newRemarks = "Updated count",
+      reason = "Supervisor recount verified"
+    )
+    val updatedOnA = phoneA.productionEntries.value.first { it.submissionId == createdOnA.submissionId }
+    phoneB.upsertRemoteProductionRecords(listOf(updatedOnA))
+
+    val afterUpdateOnB = phoneB.productionEntries.value.filter {
+      it.lineId.equals("K1", ignoreCase = true) &&
+          it.date == todayBd &&
+          it.hourSlot == "10:00 - 11:00"
+    }
+    assertEquals(1, afterUpdateOnB.size)
+    assertEquals(104, afterUpdateOnB.first().outputQty)
+
+    // Test C — Reopen app and confirm real record persists and is not overwritten by demo data seed
+    val reopenedPhoneB = NflRepository(context)
+    val persistedOnReopen = reopenedPhoneB.productionEntries.value.filter {
+      it.lineId.equals("K1", ignoreCase = true) &&
+          it.date == todayBd &&
+          it.hourSlot == "10:00 - 11:00"
+    }
+    assertEquals(1, persistedOnReopen.size)
+    assertEquals(104, persistedOnReopen.first().outputQty)
+    assertTrue(!persistedOnReopen.first().isDemo)
+
+    // Verify remote deletion removes the record on Phone B
+    val targetRecord = persistedOnReopen.first()
+    reopenedPhoneB.removeDeletedProductionRecords(setOf(targetRecord.submissionId))
+    assertTrue(
+      reopenedPhoneB.productionEntries.value.none {
+        it.submissionId == targetRecord.submissionId
+      }
+    )
+  }
+
+  @Test
+  fun `test D E quality npt setup pareto modules and honest pending sync status`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repo = NflRepository(context)
+    repo.authenticateUser("admin", "123")
+    val todayBd = repo.getCurrentBangladeshDateIso()
+
+    // 1. Save Morning Line Setup and verify getLineSetup & TV Dashboard use it
+    val customSetup = SupervisorLineSetup(
+      lineId = "L1",
+      floor = "Sew 2",
+      date = todayBd,
+      itemName = "Custom Hooded Jacket",
+      smv = 18.5,
+      targetDailyPcs = 640,
+      targetHourlyPcs = 80,
+      targetEfficiencyPct = 80.0,
+      operatorsCount = 25,
+      machinesCount = 25
+    )
+    repo.saveLineSetup(customSetup)
+    val loadedSetup = repo.getLineSetup("L1")
+    assertEquals("Custom Hooded Jacket", loadedSetup.itemName)
+    assertEquals(640, loadedSetup.targetDailyPcs)
+
+    // 2. Submit Quality record and verify Pareto, Hourly Quality, Hourly Defect Breakdown & TV Dashboard update
+    val qaRec = repo.submitQuality(
+      QualityRecord(
+        lineId = "L1",
+        floor = "Sew 2",
+        date = todayBd,
+        hourSlot = "10:00 - 11:00",
+        styleNumber = "Custom Hooded Jacket",
+        checkedGarments = 100,
+        defectiveGarments = 6,
+        defects = listOf(
+          DefectItem("Open Seam", 5),
+          DefectItem("Broken Stitch", 2)
+        ),
+        defectSent = 10,
+        defectReceived = 8,
+        defectBalance = 2,
+        spotSent = 4,
+        spotReceived = 3,
+        spotBalance = 1
+      )
+    )
+    // Test E: Before cloud confirmation in offline test environment, syncStatus starts as PENDING
+    assertEquals(SyncStatus.PENDING, qaRec.syncStatus)
+
+    val pareto = repo.getParetoDefects("L1")
+    assertTrue(pareto.isNotEmpty())
+    assertEquals("Open Seam", pareto.first().defectName)
+    assertEquals(5, pareto.first().count)
+
+    val hourlyQa = repo.getHourlyQualityData("L1", PeriodScope.TODAY)
+    val slot10Qa = hourlyQa.first { it.hourSlot == "10:00 - 11:00" }
+    assertEquals(7.0, slot10Qa.dhuPct, 0.01)
+    assertEquals(6.0, slot10Qa.oqlPct, 0.01)
+
+    val hourlyDefect = repo.getLineHourlyDefectBreakdown("L1", PeriodScope.TODAY)
+    val slot10Def = hourlyDefect.first { it.hourSlot == "10:00 - 11:00" }
+    assertEquals(10, slot10Def.sewingSent)
+    assertEquals(8, slot10Def.sewingReceived)
+    assertEquals(2, slot10Def.sewingBalance)
+
+    // 3. Report NPT Incident and verify Line NPT breakdown reflects it
+    repo.reportIncident(
+      IncidentItem(
+        lineId = "L1",
+        floor = "Sew 2",
+        category = IncidentCategory.MACHINE_BREAKDOWN,
+        nptType = "Overlock Motor Failure",
+        description = "Overlock machine stopped",
+        startTimeMillis = System.currentTimeMillis() - 40 * 60 * 1000L
+      )
+    )
+    val lineNpt = repo.getLineNptBreakdown("L1")
+    assertTrue(lineNpt.any { it.categoryName == "Machine Breakdown" && it.minutes >= 40 })
+
+    // 4. Save Monthly Target (BS OQL & FRI Pass Rate) and verify TV Dashboard KPIs reflect persisted values
+    repo.saveMonthlyTarget(
+      MonthlyFactoryTarget(
+        floor = "Sew 2",
+        targetEfficiencyPct = 78.0,
+        updateEfficiencyPct = 74.5,
+        bsOqlPct = 1.85,
+        friPassRatePct = 98.5
+      )
+    )
+    val tvData = repo.getTvDashboardData(FloorScope.SEW_2, PeriodScope.TODAY)
+    assertEquals(1.85, tvData.kpis.bsQaOql, 0.01)
+    assertEquals(98.5, tvData.kpis.friPassRate, 0.01)
+  }
 }

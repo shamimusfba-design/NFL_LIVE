@@ -64,6 +64,8 @@ fun QualityEntryScreen(
     )
   } ?: false)
   val entries by repository.qualityEntries.collectAsState()
+  val allTargets by repository.targets.collectAsState()
+  val syncStatusBanner by repository.syncStatusBanner.collectAsState()
 
   var selectedFloor by remember { mutableStateOf(if (repoFloor == FloorScope.ALL) FloorScope.SEW_2 else repoFloor) }
   val availableLines = remember(selectedFloor) {
@@ -88,7 +90,7 @@ fun QualityEntryScreen(
   var spotSentText by remember { mutableStateOf("8") }
   var spotReceivedText by remember { mutableStateOf("7") }
 
-  val lineSetup = remember(selectedLine) { repository.getLineSetup(selectedLine) }
+  val lineSetup = remember(selectedLine, allTargets) { repository.getLineSetup(selectedLine) }
 
   // Defects list state
   var defectRows by remember {
@@ -1041,9 +1043,16 @@ fun QualityEntryScreen(
           }
 
           if (submissionSuccessMsg != null) {
+            val activeMsg = (syncStatusBanner ?: "").ifBlank { submissionSuccessMsg ?: "" }
+            val isWarning = activeMsg.startsWith("⚠️") || activeMsg.startsWith("🔒")
+            val isSaving = activeMsg.startsWith("⏳") || activeMsg.startsWith("🔄")
             Surface(
               shape = RoundedCornerShape(6.dp),
-              color = NflGreenLight,
+              color = when {
+                isWarning -> Color(0xFFFEF3C7)
+                isSaving -> Color(0xFFE0F2FE)
+                else -> NflGreenLight
+              },
               modifier = Modifier.fillMaxWidth()
             ) {
               Row(
@@ -1051,8 +1060,26 @@ fun QualityEntryScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
               ) {
-                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = NflGreen, modifier = Modifier.size(16.dp))
-                Text(submissionSuccessMsg ?: "", color = NflGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Icon(
+                  imageVector = if (isWarning) Icons.Default.Warning else Icons.Default.CheckCircle,
+                  contentDescription = null,
+                  tint = when {
+                    isWarning -> Color(0xFFD97706)
+                    isSaving -> Color(0xFF0284C7)
+                    else -> NflGreen
+                  },
+                  modifier = Modifier.size(16.dp)
+                )
+                Text(
+                  text = activeMsg,
+                  color = when {
+                    isWarning -> Color(0xFF92400E)
+                    isSaving -> Color(0xFF0369A1)
+                    else -> NflGreen
+                  },
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.Bold
+                )
               }
             }
           }

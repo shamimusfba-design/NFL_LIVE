@@ -1,0 +1,20 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /production_entries/{docId} {
+      allow read, write: if true;
+    }
+    match /quality_entries/{docId} {
+      allow read, write: if true;
+    }
+    match /factory_alerts/{docId} {
+      allow read, write: if true;
+    }
+    match /daily_setups/{docId} {
+      allow read, write: if true;
+    }
+    match /monthly_targets/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

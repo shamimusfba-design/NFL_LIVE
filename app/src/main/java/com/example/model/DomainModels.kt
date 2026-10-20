@@ -9,11 +9,12 @@ enum class SyncStatus {
 }
 
 enum class FloorScope(val displayName: String, val apiValue: String) {
+  SWING_ACW("Swing ACW", "Swing ACW"),
   SEW_1("Sew-1", "Sew 1"),
   SEW_2("Sew-2", "Sew 2"),
   SEW_3("Sew-3", "Sew 3"),
   FINISHING("Finishing", "Finishing"),
-  ALL("All", "All")
+  ALL("All Floor", "All")
 }
 
 enum class PeriodScope(val displayName: String) {
@@ -292,10 +293,20 @@ enum class IncidentCategory(val displayName: String, val targetRole: UserRole) {
   OTHER("Custom / Other", UserRole.SUPERVISOR)
 }
 
-enum class IncidentStatus {
-  OPEN,
-  ACKNOWLEDGED,
-  RESOLVED
+enum class AlertSeverity(val displayName: String, val levelNumber: Int) {
+  CRITICAL("Critical", 1),
+  HIGH("High", 2),
+  MEDIUM("Medium", 3),
+  LOW_INFO("Low / Info", 4)
+}
+
+enum class IncidentStatus(val displayName: String) {
+  OPEN("Reported / Open"),
+  REPORTED("Reported / Open"),
+  ACKNOWLEDGED("Acknowledged"),
+  IN_PROGRESS("In Progress"),
+  RESOLVED("Resolved"),
+  VERIFIED("Verified")
 }
 
 data class IncidentItem(
@@ -310,9 +321,11 @@ data class IncidentItem(
   val processName: String = "",
   val machineType: String = "",
   val machineRef: String = "",
+  val machineId: String = "",
   val description: String,
   val reportedCause: String = "",
   val impactLevel: String = "HIGH",
+  val severity: AlertSeverity = AlertSeverity.HIGH,
   val affectedManpower: Int = 6,
   val startTimeMillis: Long = System.currentTimeMillis(),
   val acknowledgedTimeMillis: Long? = null,
@@ -320,12 +333,24 @@ data class IncidentItem(
   val mechanicStartTimeMillis: Long? = null,
   val mechanicName: String? = null,
   val isMaintenanceStarted: Boolean = false,
+  val inProgressTimeMillis: Long? = null,
   val endTimeMillis: Long? = null,
   val resolvedBy: String? = null,
   val resolutionNote: String = "",
+  val verifiedBy: String? = null,
+  val verifiedTimeMillis: Long? = null,
+  val correctiveAction: String = "",
   val status: IncidentStatus = IncidentStatus.OPEN,
   val isMutedOnCurrentDevice: Boolean = false,
+  val isSilencedOnDevice: Boolean = false,
   val reportedBy: String = "Supervisor",
+  val isEscalated: Boolean = false,
+  val escalationReason: String? = null,
+  val escalatedAtMillis: Long? = null,
+  val measuredQualityValue: Double? = null,
+  val qualityThresholdValue: Double? = null,
+  val defectDetails: String = "",
+  val isReadOnCurrentDevice: Boolean = false,
   val isDemo: Boolean = false
 )
 
@@ -373,7 +398,8 @@ data class LineHourlyDefectRecord(
 data class ParetoDefectPoint(
   val defectName: String,
   val count: Int,
-  val percentage: Double
+  val percentage: Double,
+  val cumulativePercentage: Double = 0.0
 )
 
 data class AuditLogEntry(
@@ -484,6 +510,8 @@ data class TvDashboardData(
   val linePerformance: List<LinePerformancePoint> = emptyList(),
   val topDefects: List<DefectSummary> = emptyList(),
   val highestDhuLines: List<LineDhuSummary> = emptyList(),
+  val lowestEfficiencyLines: List<LinePerformancePoint> = emptyList(),
+  val paretoDefects: List<ParetoDefectPoint> = emptyList(),
   val weeklyQaTrend: List<DailyQaTrend> = emptyList(),
   val nptBreakdown: List<NptCategorySlice> = emptyList(),
   val activeIncidents: List<IncidentItem> = emptyList(),

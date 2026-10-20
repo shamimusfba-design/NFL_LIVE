@@ -51,6 +51,7 @@ fun HomeScreen(
   onNavigateToMonthlySetup: () -> Unit = {},
   onNavigateToAdminUsers: () -> Unit = {},
   onNavigateToMonthlyBreakdown: (MonthlyMetricType) -> Unit = {},
+  onNavigateToNotificationCenter: () -> Unit = {},
   onNavigateToLogin: () -> Unit = {}
 ) {
   val currentFloor by repository.currentFloor.collectAsState()
@@ -220,6 +221,28 @@ fun HomeScreen(
                   tint = if (isSyncing) Color(0xFFFDE047) else Color(0xFF4ADE80),
                   modifier = Modifier.size(16.dp)
                 )
+              }
+
+              IconButton(
+                onClick = onNavigateToNotificationCenter,
+                modifier = Modifier.size(26.dp).testTag("home_notification_bell_btn")
+              ) {
+                BadgedBox(
+                  badge = {
+                    if (openIncidents.isNotEmpty()) {
+                      Badge(containerColor = Color(0xFFEF4444)) {
+                        Text(openIncidents.size.toString(), fontSize = 8.sp, color = Color.White)
+                      }
+                    }
+                  }
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.Notifications,
+                    contentDescription = "Notification Center",
+                    tint = if (openIncidents.isNotEmpty()) Color(0xFFFDE047) else Color.White,
+                    modifier = Modifier.size(16.dp)
+                  )
+                }
               }
 
               IconButton(

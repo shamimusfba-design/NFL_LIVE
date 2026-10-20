@@ -3,6 +3,8 @@ package com.example.data
 import android.content.Context
 import android.content.SharedPreferences
 import com.example.model.*
+import com.example.service.FactoryAlertManager
+import com.example.service.FactorySoundMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,11 +21,20 @@ class NflRepository(private val context: Context) {
     context.getSharedPreferences("nfl_factory_prefs", Context.MODE_PRIVATE)
 
   val sheetsStorage = GoogleSheetsStorageService(context)
+  val alertManager = FactoryAlertManager(context)
+  val firebaseSync = FirebaseSyncService(context)
+  val soundMode: StateFlow<FactorySoundMode> = alertManager.soundMode
+
+  fun setSoundMode(mode: FactorySoundMode) = alertManager.setSoundMode(mode)
+  fun isSoundMuted(): Boolean = alertManager.isSoundMuted()
+  fun getMuteStatusText(): String = alertManager.getMuteStatusText()
+  fun silenceActiveAlarm() = alertManager.silenceActiveAlarm()
+
   private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-  // Complete Verified 60-Line Factory Master across all floors
+  // Complete Verified Factory Master across all floors including all specified lines
   val allLinesMaster = listOf(
-    // Sew 1 (22 lines)
+    // Sew 1 (22 lines + Iron 1, Packing 1)
     LineInfo(id = "A1", floor = "Sew 1"),
     LineInfo(id = "A2", floor = "Sew 1"),
     LineInfo(id = "B", floor = "Sew 1"),
@@ -49,9 +60,11 @@ class NflRepository(private val context: Context) {
     LineInfo(id = "Iron 1", floor = "Sew 1"),
     LineInfo(id = "Packing 1", floor = "Sew 1"),
 
-    // Sew 2 (14 lines + Iron 2, Packing 2) - Note: J1 is physical line J, R1 alias R preserved
+    // Sew 2 (16 lines + Iron 2, Packing 2)
     LineInfo(id = "J1", floor = "Sew 2", aliases = listOf("J")),
+    LineInfo(id = "J2", floor = "Sew 2"),
     LineInfo(id = "K1", floor = "Sew 2"),
+    LineInfo(id = "K2", floor = "Sew 2"),
     LineInfo(id = "L1", floor = "Sew 2"),
     LineInfo(id = "L2", floor = "Sew 2"),
     LineInfo(id = "M1", floor = "Sew 2", aliases = listOf("M")),
@@ -61,18 +74,20 @@ class NflRepository(private val context: Context) {
     LineInfo(id = "O1", floor = "Sew 2"),
     LineInfo(id = "O2", floor = "Sew 2"),
     LineInfo(id = "P1", floor = "Sew 2", aliases = listOf("P")),
+    LineInfo(id = "P2", floor = "Sew 2"),
     LineInfo(id = "Q1", floor = "Sew 2"),
     LineInfo(id = "Q2", floor = "Sew 2"),
     LineInfo(id = "R1", floor = "Sew 2", aliases = listOf("R")),
     LineInfo(id = "Iron 2", floor = "Sew 2"),
     LineInfo(id = "Packing 2", floor = "Sew 2"),
 
-    // Sew 3 (24 lines + Iron 3, Packing 3)
+    // Sew 3 (26 lines + Iron 3, Packing 3)
     LineInfo(id = "S1", floor = "Sew 3"),
     LineInfo(id = "S2", floor = "Sew 3"),
     LineInfo(id = "T1", floor = "Sew 3"),
     LineInfo(id = "T2", floor = "Sew 3"),
-    LineInfo(id = "U", floor = "Sew 3"),
+    LineInfo(id = "U1", floor = "Sew 3", aliases = listOf("U")),
+    LineInfo(id = "U2", floor = "Sew 3"),
     LineInfo(id = "UA", floor = "Sew 3"),
     LineInfo(id = "UB", floor = "Sew 3"),
     LineInfo(id = "V1A", floor = "Sew 3"),
@@ -93,7 +108,13 @@ class NflRepository(private val context: Context) {
     LineInfo(id = "ZA2A", floor = "Sew 3"),
     LineInfo(id = "ZA2B", floor = "Sew 3"),
     LineInfo(id = "Iron 3", floor = "Sew 3"),
-    LineInfo(id = "Packing 3", floor = "Sew 3")
+    LineInfo(id = "Packing 3", floor = "Sew 3"),
+
+    // Swing ACW (Finishing & ACW lines)
+    LineInfo(id = "ACW 1", floor = "Swing ACW"),
+    LineInfo(id = "ACW 2", floor = "Swing ACW"),
+    LineInfo(id = "Finishing 1", floor = "Swing ACW"),
+    LineInfo(id = "Finishing 2", floor = "Swing ACW")
   )
 
   val defaultLines get() = allLinesMaster
@@ -656,8 +677,312 @@ class NflRepository(private val context: Context) {
     _qualityEntries.value = savedQas
     _incidents.value = savedIncs
 
-    // 2. Seed initial demo data if not cleared by Admin
+    // 2. Seed initial demo data if not cleared by Admin (without overwriting or duplicating real saved records)
     loadSeedDemoData(force = false)
+
+    // 3. Connect Cloud Firestore real-time synchronization for multi-device sync
+    if (firebaseSync.isAvailable()) {
+      firebaseSync.onRemoteProductionUpdated = { remoteList ->
+        upsertRemoteProductionRecords(remoteList)
+      }
+      firebaseSync.onRemoteProductionDeleted = { removedKeys ->
+        removeDeletedProductionRecords(removedKeys)
+      }
+      firebaseSync.onRemoteQualityUpdated = { remoteList ->
+        upsertRemoteQualityRecords(remoteList)
+      }
+      firebaseSync.onRemoteQualityDeleted = { removedKeys ->
+        removeDeletedQualityRecords(removedKeys)
+      }
+      firebaseSync.onRemoteIncidentsUpdated = { remoteList ->
+        upsertRemoteIncidents(remoteList)
+      }
+      firebaseSync.onRemoteSetupsUpdated = { remoteList ->
+        upsertRemoteSetups(remoteList)
+      }
+      firebaseSync.onRemoteMonthlyTargetsUpdated = { remoteList ->
+        upsertRemoteMonthlyTargets(remoteList)
+      }
+      firebaseSync.onSyncStatusChanged = { statusMsg ->
+        _syncStatusBanner.value = statusMsg
+      }
+      firebaseSync.startRealtimeListeners()
+    }
+
+    // 4. Perform initial shared backend refresh on startup
+    refreshFromGoogleSheet()
+  }
+
+  fun cleanup() {
+    firebaseSync.cleanupListeners()
+  }
+
+  private fun productionSlotKey(lineId: String, date: String, hourSlot: String): String {
+    val normLine = lineId.trim().uppercase(Locale.US)
+    val normDate = sheetsStorage.normalizeToIsoDate(date)
+    val normHour = hourSlot.trim().lowercase(Locale.US)
+    return "${normLine}_${normDate}_${normHour}"
+  }
+
+  private fun qualitySlotKey(lineId: String, date: String, hourSlot: String): String {
+    val normLine = lineId.trim().uppercase(Locale.US)
+    val normDate = sheetsStorage.normalizeToIsoDate(date)
+    val normHour = hourSlot.trim().lowercase(Locale.US)
+    return "${normLine}_${normDate}_${normHour}"
+  }
+
+  private fun setupSlotKey(lineId: String, date: String): String {
+    val normLine = lineId.trim().uppercase(Locale.US)
+    val normDate = sheetsStorage.normalizeToIsoDate(date)
+    return "${normLine}_${normDate}"
+  }
+
+  fun upsertRemoteProductionRecords(remoteList: List<ProductionRecord>) {
+    if (remoteList.isEmpty()) return
+    val current = _productionEntries.value
+    val bySlot = LinkedHashMap<String, ProductionRecord>()
+
+    // 1. Seed map with existing non-demo records first
+    current.filter { !it.isDemo }.forEach { existing ->
+      bySlot[productionSlotKey(existing.lineId, existing.date, existing.hourSlot)] = existing
+    }
+
+    // 2. Upsert incoming remote records (updates existing records in place without duplicating)
+    var changed = false
+    remoteList.forEach { remote ->
+      val cleanRemote = remote.copy(
+        date = sheetsStorage.normalizeToIsoDate(remote.date),
+        syncStatus = SyncStatus.SYNCED,
+        isDemo = false
+      )
+      val key = productionSlotKey(cleanRemote.lineId, cleanRemote.date, cleanRemote.hourSlot)
+      val existing = bySlot[key]
+      if (existing == null) {
+        bySlot[key] = cleanRemote
+        changed = true
+      } else {
+        // Keep local pending record only if it has a strictly newer timestamp/revision not yet pushed
+        val keepLocalPending = existing.syncStatus != SyncStatus.SYNCED &&
+            existing.timestamp > cleanRemote.timestamp &&
+            existing.revision >= cleanRemote.revision
+        if (!keepLocalPending && (
+              existing.outputQty != cleanRemote.outputQty ||
+              existing.remarks != cleanRemote.remarks ||
+              existing.revision != cleanRemote.revision ||
+              existing.styleNumber != cleanRemote.styleNumber ||
+              existing.syncStatus != SyncStatus.SYNCED
+            )
+        ) {
+          bySlot[key] = cleanRemote
+          changed = true
+        }
+      }
+    }
+
+    // 3. Retain demo records ONLY for slots that do not have a real record
+    val demoRemaining = current.filter {
+      it.isDemo && productionSlotKey(it.lineId, it.date, it.hourSlot) !in bySlot
+    }
+    val newList = bySlot.values.sortedByDescending { it.timestamp } + demoRemaining
+    if (changed || newList.size != current.size) {
+      _productionEntries.value = newList
+      sheetsStorage.saveLocalProductionEntries(_productionEntries.value)
+      touchDataUpdated()
+    }
+  }
+
+  fun removeDeletedProductionRecords(removedKeys: Set<String>) {
+    if (removedKeys.isEmpty()) return
+    val before = _productionEntries.value
+    val after = before.filterNot { rec ->
+      val canonicalId = firebaseSync.canonicalProductionDocId(rec)
+      val slotKey1 = "${rec.lineId}_${rec.date}_${rec.hourSlot}"
+      val slotKey2 = "${rec.lineId}_${rec.date}_${rec.hourSlot.replace(" ", "").replace(":", "")}"
+      val slotKey3 = "${rec.lineId}_${rec.date}_${rec.hourSlot.replace(":", "-")}"
+      val slotKey4 = "${rec.lineId}_${rec.date}_${rec.hourSlot.replace(":", "-").replace(" ", "_")}"
+      !rec.isDemo && (
+          rec.id in removedKeys ||
+          rec.submissionId in removedKeys ||
+          canonicalId in removedKeys ||
+          slotKey1 in removedKeys ||
+          slotKey2 in removedKeys ||
+          slotKey3 in removedKeys ||
+          slotKey4 in removedKeys ||
+          removedKeys.any { k ->
+            (rec.submissionId.isNotBlank() && k.contains(rec.submissionId)) ||
+            (rec.id.isNotBlank() && k.contains(rec.id))
+          }
+      )
+    }
+    if (after.size != before.size) {
+      _productionEntries.value = after
+      sheetsStorage.saveLocalProductionEntries(_productionEntries.value)
+      touchDataUpdated()
+    }
+  }
+
+  fun upsertRemoteQualityRecords(remoteList: List<QualityRecord>) {
+    if (remoteList.isEmpty()) return
+    val current = _qualityEntries.value
+    val bySlot = LinkedHashMap<String, QualityRecord>()
+
+    current.filter { !it.isDemo }.forEach { existing ->
+      bySlot[qualitySlotKey(existing.lineId, existing.date, existing.hourSlot)] = existing
+    }
+
+    var changed = false
+    remoteList.forEach { remote ->
+      val cleanRemote = remote.copy(
+        date = sheetsStorage.normalizeToIsoDate(remote.date),
+        syncStatus = SyncStatus.SYNCED,
+        isDemo = false
+      )
+      val key = qualitySlotKey(cleanRemote.lineId, cleanRemote.date, cleanRemote.hourSlot)
+      val existing = bySlot[key]
+      if (existing == null) {
+        bySlot[key] = cleanRemote
+        changed = true
+      } else {
+        val keepLocalPending = existing.syncStatus != SyncStatus.SYNCED &&
+            existing.timestamp > cleanRemote.timestamp &&
+            existing.revision >= cleanRemote.revision
+        if (!keepLocalPending && (
+              existing.checkedGarments != cleanRemote.checkedGarments ||
+              existing.defectiveGarments != cleanRemote.defectiveGarments ||
+              existing.totalDefects != cleanRemote.totalDefects ||
+              existing.defectSent != cleanRemote.defectSent ||
+              existing.defectReceived != cleanRemote.defectReceived ||
+              existing.spotSent != cleanRemote.spotSent ||
+              existing.spotReceived != cleanRemote.spotReceived ||
+              existing.defects != cleanRemote.defects ||
+              existing.remarks != cleanRemote.remarks ||
+              existing.revision != cleanRemote.revision ||
+              existing.syncStatus != SyncStatus.SYNCED
+            )
+        ) {
+          bySlot[key] = cleanRemote
+          changed = true
+        }
+      }
+    }
+
+    val demoRemaining = current.filter {
+      it.isDemo && qualitySlotKey(it.lineId, it.date, it.hourSlot) !in bySlot
+    }
+    val newList = bySlot.values.sortedByDescending { it.timestamp } + demoRemaining
+    if (changed || newList.size != current.size) {
+      _qualityEntries.value = newList
+      sheetsStorage.saveLocalQualityEntries(_qualityEntries.value)
+      touchDataUpdated()
+    }
+  }
+
+  fun removeDeletedQualityRecords(removedKeys: Set<String>) {
+    if (removedKeys.isEmpty()) return
+    val before = _qualityEntries.value
+    val after = before.filterNot { rec ->
+      !rec.isDemo && (
+          rec.id in removedKeys ||
+          rec.submissionId in removedKeys ||
+          firebaseSync.canonicalQualityDocId(rec) in removedKeys ||
+          "${rec.lineId}_${rec.date}_${rec.hourSlot}" in removedKeys
+      )
+    }
+    if (after.size != before.size) {
+      _qualityEntries.value = after
+      sheetsStorage.saveLocalQualityEntries(_qualityEntries.value)
+      touchDataUpdated()
+    }
+  }
+
+  fun upsertRemoteIncidents(remoteList: List<IncidentItem>) {
+    if (remoteList.isEmpty()) return
+    val current = _incidents.value
+    val existingNonDemoById = current.filter { !it.isDemo }.associateBy { it.id }.toMutableMap()
+    var changed = false
+
+    remoteList.forEach { remote ->
+      val cleanRemote = remote.copy(isDemo = false)
+      val prev = existingNonDemoById[cleanRemote.id]
+      if (prev == null) {
+        existingNonDemoById[cleanRemote.id] = cleanRemote
+        changed = true
+        if (cleanRemote.status != IncidentStatus.RESOLVED) {
+          alertManager.triggerAlertNotification(cleanRemote, _currentRole.value, _currentFloor.value)
+        }
+      } else {
+        val merged = cleanRemote.copy(
+          isMutedOnCurrentDevice = prev.isMutedOnCurrentDevice,
+          isSilencedOnDevice = prev.isSilencedOnDevice
+        )
+        if (merged != prev) {
+          existingNonDemoById[cleanRemote.id] = merged
+          changed = true
+        }
+      }
+    }
+
+    val demoRemaining = current.filter { it.isDemo && it.id !in existingNonDemoById }
+    val newList = existingNonDemoById.values.sortedByDescending { it.startTimeMillis } + demoRemaining
+    if (changed || newList.size != current.size) {
+      _incidents.value = newList
+      sheetsStorage.saveLocalIncidents(_incidents.value)
+      touchDataUpdated()
+    }
+  }
+
+  fun upsertRemoteSetups(remoteList: List<SupervisorLineSetup>) {
+    if (remoteList.isEmpty()) return
+    val current = _targets.value
+    val byKey = LinkedHashMap<String, SupervisorLineSetup>()
+
+    current.filter { !it.isDemo }.forEach { existing ->
+      byKey[setupSlotKey(existing.lineId, existing.date)] = existing
+    }
+
+    var changed = false
+    remoteList.forEach { remote ->
+      val cleanRemote = remote.copy(
+        date = sheetsStorage.normalizeToIsoDate(remote.date),
+        isDemo = false
+      )
+      val key = setupSlotKey(cleanRemote.lineId, cleanRemote.date)
+      val prev = byKey[key]
+      if (prev == null || prev != cleanRemote) {
+        byKey[key] = cleanRemote
+        changed = true
+      }
+    }
+
+    val demoRemaining = current.filter { it.isDemo && setupSlotKey(it.lineId, it.date) !in byKey }
+    val newList = byKey.values.toList() + demoRemaining
+    if (changed || newList.size != current.size) {
+      _targets.value = newList
+      sheetsStorage.saveLocalSetups(_targets.value)
+      touchDataUpdated()
+    }
+  }
+
+  fun upsertRemoteMonthlyTargets(remoteList: List<MonthlyFactoryTarget>) {
+    if (remoteList.isEmpty()) return
+    val current = _monthlyTargets.value
+    val byFloor = LinkedHashMap<String, MonthlyFactoryTarget>()
+    current.forEach { byFloor[it.floor.trim().lowercase(Locale.US)] = it }
+
+    var changed = false
+    remoteList.forEach { remote ->
+      val key = remote.floor.trim().lowercase(Locale.US)
+      val prev = byFloor[key]
+      if (prev == null || prev != remote) {
+        byFloor[key] = remote
+        changed = true
+      }
+    }
+    if (changed) {
+      _monthlyTargets.value = byFloor.values.toList()
+      sheetsStorage.saveLocalMonthlyTargets(_monthlyTargets.value)
+      touchDataUpdated()
+    }
   }
 
   fun updateSheetConfig(newSheetIdOrUrl: String, newWebAppUrl: String, autoRefresh: Boolean) {
@@ -680,83 +1005,104 @@ class NflRepository(private val context: Context) {
   }
 
   /**
-   * Pulls live changes from Google Sheets and pushes any pending local submissions.
+   * Pulls live changes from Cloud Firestore (nfl-live-72213) and Google Sheets,
+   * and pushes any pending local submissions to the shared backend.
    */
   fun refreshFromGoogleSheet(onComplete: ((Boolean, String) -> Unit)? = null) {
     if (_isSyncing.value) return
     _isSyncing.value = true
-    _syncStatusBanner.value = "🔄 Syncing live data with Google Sheet (${_sheetId.value.take(8)}...)..."
+    _syncStatusBanner.value = "🔄 Syncing live data with Cloud Firestore & Google Sheet..."
 
     repoScope.launch {
       try {
+        // 1. Re-ensure Firestore real-time listeners are active
+        if (firebaseSync.isAvailable()) {
+          firebaseSync.startRealtimeListeners(forceRetry = true)
+        }
+
         val pendingProds = _productionEntries.value.filter { !it.isDemo && it.syncStatus != SyncStatus.SYNCED }
         val pendingQas = _qualityEntries.value.filter { !it.isDemo && it.syncStatus != SyncStatus.SYNCED }
 
-        val result = sheetsStorage.syncWithGoogleSheet(
+        // 2. Push pending records to Cloud Firestore
+        val syncedProdIds = mutableSetOf<String>()
+        val syncedQaIds = mutableSetOf<String>()
+        if (firebaseSync.isAvailable()) {
+          pendingProds.forEach { prod ->
+            if (firebaseSync.pushProductionRecordAwait(prod)) {
+              syncedProdIds.add(prod.submissionId)
+            }
+          }
+          pendingQas.forEach { qa ->
+            if (firebaseSync.pushQualityRecordAwait(qa)) {
+              syncedQaIds.add(qa.submissionId)
+            }
+          }
+        }
+
+        // 3. Fetch latest documents from Cloud Firestore
+        val firestoreRes = if (firebaseSync.isAvailable()) {
+          firebaseSync.fetchAllFromFirestore()
+        } else {
+          FirestoreFetchResult(false, "Firestore unavailable")
+        }
+
+        // 4. Sync with Google Sheet (also pushes pending records if Apps Script Web App URL is configured)
+        val hasWebApp = sheetsStorage.hasValidWebAppUrl()
+        val sheetRes = sheetsStorage.syncWithGoogleSheet(
           pendingProduction = pendingProds,
           pendingQuality = pendingQas,
           lineFloorResolver = { lineId ->
             allLinesMaster.find { it.matches(lineId) }?.floor ?: "Sew 2"
           }
         )
+        if (hasWebApp && sheetRes.pushedCount > 0) {
+          pendingProds.forEach { syncedProdIds.add(it.submissionId) }
+          pendingQas.forEach { syncedQaIds.add(it.submissionId) }
+        }
 
-        // Mark pending local submissions as SYNCED
-        if (pendingProds.isNotEmpty()) {
+        // 5. Mark ONLY genuinely synced pending records as SYNCED
+        if (syncedProdIds.isNotEmpty()) {
           _productionEntries.value = _productionEntries.value.map {
-            if (!it.isDemo) it.copy(syncStatus = SyncStatus.SYNCED) else it
+            if (!it.isDemo && it.submissionId in syncedProdIds) it.copy(syncStatus = SyncStatus.SYNCED) else it
           }
         }
-        if (pendingQas.isNotEmpty()) {
+        if (syncedQaIds.isNotEmpty()) {
           _qualityEntries.value = _qualityEntries.value.map {
-            if (!it.isDemo) it.copy(syncStatus = SyncStatus.SYNCED) else it
+            if (!it.isDemo && it.submissionId in syncedQaIds) it.copy(syncStatus = SyncStatus.SYNCED) else it
           }
         }
 
-        // Merge pulled Google Sheet rows into active state flows (deduplicating by submissionId / line+date+slot)
-        if (result.fetchedProduction.isNotEmpty()) {
-          val existingIds = _productionEntries.value.map { it.submissionId }.toSet()
-          val newRows = result.fetchedProduction.filter { it.submissionId !in existingIds }
-          val merged = (newRows + _productionEntries.value)
-            .distinctBy { "${it.lineId}_${it.date}_${it.hourSlot}_${it.submissionId}" }
-          _productionEntries.value = merged
+        // 6. Upsert remote records from both Cloud Firestore and Google Sheets
+        val combinedProds = firestoreRes.production + sheetRes.fetchedProduction
+        if (combinedProds.isNotEmpty()) {
+          upsertRemoteProductionRecords(combinedProds)
+        }
+        val combinedQas = firestoreRes.quality + sheetRes.fetchedQuality
+        if (combinedQas.isNotEmpty()) {
+          upsertRemoteQualityRecords(combinedQas)
+        }
+        val combinedSetups = firestoreRes.setups + sheetRes.fetchedSetups
+        if (combinedSetups.isNotEmpty()) {
+          upsertRemoteSetups(combinedSetups)
+        }
+        val combinedIncs = firestoreRes.incidents + sheetRes.fetchedIncidents
+        if (combinedIncs.isNotEmpty()) {
+          upsertRemoteIncidents(combinedIncs)
+        }
+        val combinedMonthly = firestoreRes.monthlyTargets + sheetRes.fetchedMonthlyTargets
+        if (combinedMonthly.isNotEmpty()) {
+          upsertRemoteMonthlyTargets(combinedMonthly)
         }
 
-        if (result.fetchedQuality.isNotEmpty()) {
-          val existingIds = _qualityEntries.value.map { it.submissionId }.toSet()
-          val newRows = result.fetchedQuality.filter { it.submissionId !in existingIds }
-          val merged = (newRows + _qualityEntries.value)
-            .distinctBy { "${it.lineId}_${it.date}_${it.hourSlot}_${it.submissionId}" }
-          _qualityEntries.value = merged
-        }
-
-        if (result.fetchedSetups.isNotEmpty()) {
-          val fetchedLineDates = result.fetchedSetups.map { "${it.lineId}_${it.date}" }.toSet()
-          val kept = _targets.value.filter { "${it.lineId}_${it.date}" !in fetchedLineDates }
-          _targets.value = result.fetchedSetups + kept
-        }
-
-        if (result.fetchedIncidents.isNotEmpty()) {
-          val fetchedIds = result.fetchedIncidents.map { it.id }.toSet()
-          val kept = _incidents.value.filter { it.id !in fetchedIds }
-          _incidents.value = result.fetchedIncidents + kept
-        }
-
-        if (result.fetchedMonthlyTargets.isNotEmpty()) {
-          val fetchedFloors = result.fetchedMonthlyTargets.map { it.floor.lowercase(Locale.US) }.toSet()
-          val kept = _monthlyTargets.value.filter { it.floor.lowercase(Locale.US) !in fetchedFloors }
-          _monthlyTargets.value = result.fetchedMonthlyTargets + kept
-        }
-
-        if (result.fetchedUsers.isNotEmpty()) {
-          val fetchedById = result.fetchedUsers.associateBy { it.id.lowercase(Locale.US) }
+        if (sheetRes.fetchedUsers.isNotEmpty()) {
+          val fetchedById = sheetRes.fetchedUsers.associateBy { it.id.lowercase(Locale.US) }
           val mergedExisting = _users.value.map { localUser ->
             fetchedById[localUser.id.lowercase(Locale.US)] ?: localUser
           }
           val existingIds = _users.value.map { it.id.lowercase(Locale.US) }.toSet()
-          val newFetchedUsers = result.fetchedUsers.filter { it.id.lowercase(Locale.US) !in existingIds }
+          val newFetchedUsers = sheetRes.fetchedUsers.filter { it.id.lowercase(Locale.US) !in existingIds }
           _users.value = mergedExisting + newFetchedUsers
           sheetsStorage.saveLocalUsers(_users.value)
-          // Keep active user session permissions in sync with central Google Sheet
           _currentUser.value?.let { active ->
             val updatedActive = _users.value.find { it.id.equals(active.id, ignoreCase = true) }
             if (updatedActive != null) {
@@ -767,26 +1113,38 @@ class NflRepository(private val context: Context) {
           }
         }
 
-        // Persist updated non-demo records locally
+        // 7. Persist updated non-demo records locally
         sheetsStorage.saveLocalProductionEntries(_productionEntries.value)
         sheetsStorage.saveLocalQualityEntries(_qualityEntries.value)
         sheetsStorage.saveLocalSetups(_targets.value)
         sheetsStorage.saveLocalIncidents(_incidents.value)
         sheetsStorage.saveLocalMonthlyTargets(_monthlyTargets.value)
 
-        _lastRefreshTime.value = result.timestamp
+        val nowTime = sheetRes.timestamp
+        _lastRefreshTime.value = nowTime
         _lastDataUpdate.value = SimpleDateFormat("hh:mm:ss a", Locale.US).format(Date())
-        _syncStatusBanner.value = result.message
+
+        val totalCloudRecords = firestoreRes.production.size + firestoreRes.quality.size + sheetRes.pulledCount
+        val finalMsg = when {
+          firestoreRes.success ->
+            "✓ Cloud Firestore & Sheet synced ($totalCloudRecords records) at $nowTime"
+          firebaseSync.hasPermissionError ->
+            "⚠️ Firestore rules restricted on nfl-live-72213 (deploy firestore.rules) • ${sheetRes.message}"
+          else ->
+            sheetRes.message
+        }
+        _syncStatusBanner.value = finalMsg
         _refreshTrigger.value = _refreshTrigger.value + 1
         _isSyncing.value = false
-        onComplete?.invoke(result.success, result.message)
+        onComplete?.invoke(firestoreRes.success || sheetRes.success, finalMsg)
       } catch (e: Throwable) {
         val nowTime = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         _lastRefreshTime.value = nowTime
-        _syncStatusBanner.value = "✓ Local Google Sheet cache refreshed at $nowTime"
+        val errMsg = "⚠️ Sync error: ${e.message ?: "Network unavailable"} • Using local persisted data ($nowTime)"
+        _syncStatusBanner.value = errMsg
         _refreshTrigger.value = _refreshTrigger.value + 1
         _isSyncing.value = false
-        onComplete?.invoke(true, _syncStatusBanner.value ?: "Refreshed")
+        onComplete?.invoke(false, errMsg)
       }
     }
   }
@@ -798,7 +1156,7 @@ class NflRepository(private val context: Context) {
   fun pushAllLocalToGoogleSheet(onComplete: ((Boolean, String) -> Unit)? = null) {
     if (_isSyncing.value) return
     _isSyncing.value = true
-    _syncStatusBanner.value = "☁️ Pushing local records to Google Sheet (${_sheetId.value.take(8)}...)..."
+    _syncStatusBanner.value = "☁️ Pushing local records to Cloud Firestore & Google Sheet..."
     repoScope.launch {
       val nonDemoProds = _productionEntries.value.filter { !it.isDemo }
       val nonDemoQas = _qualityEntries.value.filter { !it.isDemo }
@@ -806,17 +1164,42 @@ class NflRepository(private val context: Context) {
       val nonDemoIncs = _incidents.value.filter { !it.isDemo }
 
       var pushed = 0
-      nonDemoProds.forEach { if (sheetsStorage.pushProductionRow(it)) pushed++ }
-      nonDemoQas.forEach { if (sheetsStorage.pushQualityRow(it)) pushed++ }
-      nonDemoSetups.forEach { if (sheetsStorage.pushLineSetupRow(it)) pushed++ }
-      nonDemoIncs.forEach { if (sheetsStorage.pushIncidentRow(it)) pushed++ }
-      _monthlyTargets.value.forEach { if (sheetsStorage.pushMonthlyTargetRow(it)) pushed++ }
+      nonDemoProds.forEach {
+        val fOk = firebaseSync.pushProductionRecordAwait(it)
+        val sOk = sheetsStorage.pushProductionRow(it)
+        if (fOk || sOk) pushed++
+      }
+      nonDemoQas.forEach {
+        val fOk = firebaseSync.pushQualityRecordAwait(it)
+        val sOk = sheetsStorage.pushQualityRow(it)
+        if (fOk || sOk) pushed++
+      }
+      nonDemoSetups.forEach {
+        val fOk = firebaseSync.pushLineSetupAwait(it)
+        val sOk = sheetsStorage.pushLineSetupRow(it)
+        if (fOk || sOk) pushed++
+      }
+      nonDemoIncs.forEach {
+        val fOk = firebaseSync.pushIncidentAwait(it)
+        val sOk = sheetsStorage.pushIncidentRow(it)
+        if (fOk || sOk) pushed++
+      }
+      _monthlyTargets.value.forEach {
+        val fOk = firebaseSync.pushMonthlyTargetAwait(it)
+        val sOk = sheetsStorage.pushMonthlyTargetRow(it)
+        if (fOk || sOk) pushed++
+      }
 
       touchDataUpdated()
-      val msg = "✓ Synced $pushed records to Google Sheet (${_sheetId.value.take(8)}...) at ${_lastRefreshTime.value}"
+      val ok = pushed > 0 || (nonDemoProds.isEmpty() && nonDemoQas.isEmpty())
+      val msg = if (ok) {
+        "✓ Synced $pushed records to Shared Cloud & Sheet at ${_lastRefreshTime.value}"
+      } else {
+        "⚠️ Could not push records to Cloud (${firebaseSync.lastErrorMessage ?: "Check network / firestore.rules"})"
+      }
       _syncStatusBanner.value = msg
       _isSyncing.value = false
-      onComplete?.invoke(true, msg)
+      onComplete?.invoke(ok, msg)
     }
   }
 
@@ -841,26 +1224,43 @@ class NflRepository(private val context: Context) {
     return SimpleDateFormat("dd MMM yyyy", Locale.US).format(calendar.time)
   }
 
-  private fun isDateInPeriod(date: String, period: PeriodScope): Boolean {
-    val todayCalendar = Calendar.getInstance()
-    val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(todayCalendar.time)
+  fun isDateInPeriod(dateInput: String, period: PeriodScope): Boolean {
+    val normDate = sheetsStorage.normalizeToIsoDate(dateInput)
+    val bangladeshCal = sheetsStorage.getTrustedBangladeshCalendar()
+    val todayIso = sheetsStorage.getCurrentBangladeshDateIso()
     return when (period) {
-      PeriodScope.TODAY -> date == today
+      PeriodScope.TODAY -> normDate == todayIso
       PeriodScope.YESTERDAY -> {
-        todayCalendar.add(Calendar.DAY_OF_YEAR, -1)
-        date == SimpleDateFormat("yyyy-MM-dd", Locale.US).format(todayCalendar.time)
+        bangladeshCal.add(Calendar.DAY_OF_YEAR, -1)
+        val yestIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+          timeZone = sheetsStorage.getBangladeshTimeZone()
+        }.format(bangladeshCal.time)
+        normDate == yestIso
       }
       PeriodScope.WEEK -> {
-        todayCalendar.add(Calendar.DAY_OF_YEAR, -6)
-        val startDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(todayCalendar.time)
-        date >= startDate && date <= today
+        bangladeshCal.add(Calendar.DAY_OF_YEAR, -6)
+        val startIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+          timeZone = sheetsStorage.getBangladeshTimeZone()
+        }.format(bangladeshCal.time)
+        normDate in startIso..todayIso
       }
-      PeriodScope.MONTH -> date.startsWith(today.substring(0, 7))
+      PeriodScope.MONTH -> normDate.startsWith(todayIso.take(7))
     }
   }
 
-  private fun isInSelectedFloor(floor: String, floorScope: FloorScope): Boolean =
-    floorScope == FloorScope.ALL || floor.equals(floorScope.apiValue, ignoreCase = true)
+  fun isInSelectedFloor(floor: String, floorScope: FloorScope): Boolean {
+    val cleanFloor = floor.trim()
+    return when (floorScope) {
+      FloorScope.ALL -> true
+      FloorScope.SWING_ACW -> cleanFloor.equals("Swing ACW", ignoreCase = true) ||
+          cleanFloor.equals("ACW", ignoreCase = true) ||
+          cleanFloor.equals("Finishing", ignoreCase = true)
+      FloorScope.SEW_1 -> cleanFloor.equals("Sew 1", ignoreCase = true) || cleanFloor.equals("Sew-1", ignoreCase = true)
+      FloorScope.SEW_2 -> cleanFloor.equals("Sew 2", ignoreCase = true) || cleanFloor.equals("Sew-2", ignoreCase = true)
+      FloorScope.SEW_3 -> cleanFloor.equals("Sew 3", ignoreCase = true) || cleanFloor.equals("Sew-3", ignoreCase = true)
+      FloorScope.FINISHING -> cleanFloor.equals("Finishing", ignoreCase = true) || cleanFloor.equals("Swing ACW", ignoreCase = true)
+    }
+  }
 
   fun setRole(role: UserRole) {
     // Security rule: Only an authenticated Admin can switch active role preview
@@ -955,13 +1355,16 @@ class NflRepository(private val context: Context) {
   }
 
   fun getLineSetup(lineId: String): SupervisorLineSetup {
-    val lineObj = allLinesMaster.find { it.id == lineId }
+    val cleanLine = lineId.trim()
+    val lineObj = allLinesMaster.find { it.matches(cleanLine) }
     val floorName = lineObj?.floor ?: "Sew 2"
-    val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-    return _targets.value.find { it.lineId == lineId && it.date == today }
-      ?: _targets.value.find { it.lineId == lineId }
+    val today = sheetsStorage.getCurrentBangladeshDateIso()
+    return _targets.value.find { !it.isDemo && it.lineId.equals(cleanLine, ignoreCase = true) && sheetsStorage.normalizeToIsoDate(it.date) == today }
+      ?: _targets.value.find { !it.isDemo && it.lineId.equals(cleanLine, ignoreCase = true) }
+      ?: _targets.value.find { it.lineId.equals(cleanLine, ignoreCase = true) && sheetsStorage.normalizeToIsoDate(it.date) == today }
+      ?: _targets.value.find { it.lineId.equals(cleanLine, ignoreCase = true) }
       ?: SupervisorLineSetup(
-        lineId = lineId,
+        lineId = lineObj?.id ?: cleanLine,
         floor = floorName,
         date = today,
         styleNumber = "",
@@ -984,14 +1387,20 @@ class NflRepository(private val context: Context) {
   }
 
   // Idempotent demo data seeder with full dynamic dates and hourly distributions
+  // Preserves all real saved records and never overwrites or duplicates slots that have real data.
   fun loadSeedDemoData(force: Boolean = true) {
     if (!force && prefs.getBoolean("sample_data_cleared", false)) return
-    prefs.edit().putBoolean("sample_data_cleared", false).apply()
+    if (force) {
+      prefs.edit().putBoolean("sample_data_cleared", false).apply()
+    }
 
     val datesToSeed = mutableListOf<String>()
-    val cal = Calendar.getInstance()
+    val cal = sheetsStorage.getTrustedBangladeshCalendar()
+    val isoFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+      timeZone = sheetsStorage.getBangladeshTimeZone()
+    }
     for (i in 0..6) {
-      datesToSeed.add(SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time))
+      datesToSeed.add(isoFmt.format(cal.time))
       cal.add(Calendar.DAY_OF_YEAR, -1)
     }
 
@@ -1222,10 +1631,22 @@ class NflRepository(private val context: Context) {
       )
     )
 
-    _targets.value = _targets.value.filter { !it.isDemo } + demoTargets
-    _productionEntries.value = _productionEntries.value.filter { !it.isDemo } + demoProds
-    _qualityEntries.value = _qualityEntries.value.filter { !it.isDemo } + demoQas
-    _incidents.value = _incidents.value.filter { !it.isDemo } + demoIncidents
+    val realSetups = _targets.value.filter { !it.isDemo }
+    val realSetupKeys = realSetups.map { setupSlotKey(it.lineId, it.date) }.toSet()
+    _targets.value = realSetups + demoTargets.filter { setupSlotKey(it.lineId, it.date) !in realSetupKeys }
+
+    val realProds = _productionEntries.value.filter { !it.isDemo }
+    val realProdKeys = realProds.map { productionSlotKey(it.lineId, it.date, it.hourSlot) }.toSet()
+    _productionEntries.value = realProds + demoProds.filter { productionSlotKey(it.lineId, it.date, it.hourSlot) !in realProdKeys }
+
+    val realQas = _qualityEntries.value.filter { !it.isDemo }
+    val realQaKeys = realQas.map { qualitySlotKey(it.lineId, it.date, it.hourSlot) }.toSet()
+    _qualityEntries.value = realQas + demoQas.filter { qualitySlotKey(it.lineId, it.date, it.hourSlot) !in realQaKeys }
+
+    val realIncs = _incidents.value.filter { !it.isDemo }
+    val realIncIds = realIncs.map { it.id }.toSet()
+    _incidents.value = realIncs + demoIncidents.filter { it.id !in realIncIds }
+
     // Sample records are tagged individually for safe removal; the dashboard does not switch modes.
     _isDemoMode.value = false
     touchDataUpdated()
@@ -1245,6 +1666,7 @@ class NflRepository(private val context: Context) {
     val updated = existing.copy(
       lineId = lineId,
       floor = floor,
+      date = sheetsStorage.getCurrentBangladeshDateIso(),
       itemName = itemName,
       smv = smv,
       targetDailyPcs = targetDailyPcs,
@@ -1270,9 +1692,10 @@ class NflRepository(private val context: Context) {
     addAuditLog("DATA_ADMIN", "ALL", "CLEAR_SAMPLE_DATA", _currentUser.value?.name ?: "Admin", "Removed sample records; preserved non-sample records")
   }
 
-  // Submissions (Saved to Google Sheet Storage + Local Persistent Ledger)
+  // Submissions (Saved to Cloud Firestore + Google Sheet Storage + Local Persistent Ledger)
   fun submitProduction(entry: ProductionRecord): ProductionRecord {
     val u = getAuthoritativeCurrentUser()
+    val normDate = sheetsStorage.normalizeToIsoDate(entry.date)
     val isFinishing = entry.lineId.startsWith("Iron", ignoreCase = true) || entry.lineId.startsWith("Packing", ignoreCase = true)
     if (u != null) {
       if (!u.isActive || u.accountStatus != AccountStatus.APPROVED) {
@@ -1293,7 +1716,7 @@ class NflRepository(private val context: Context) {
           return entry
         }
         // Daily Entry Restriction: Current Bangladesh Date & 06:00 AM - 24:00 Window
-        val windowCheck = validateDailyEntryWindowAndDate(entry.date, isAdminOverride = false)
+        val windowCheck = validateDailyEntryWindowAndDate(normDate, isAdminOverride = false)
         if (!windowCheck.success) {
           _syncStatusBanner.value = windowCheck.message
           _lastSecurityMessage.value = windowCheck.message
@@ -1304,39 +1727,55 @@ class NflRepository(private val context: Context) {
         val alreadySubmitted = _productionEntries.value.any {
           !it.isDemo &&
               it.lineId.equals(entry.lineId, ignoreCase = true) &&
-              it.date == entry.date &&
+              sheetsStorage.normalizeToIsoDate(it.date) == normDate &&
               it.hourSlot.equals(entry.hourSlot, ignoreCase = true)
         }
         if (alreadySubmitted) {
-          val msg = "🔒 Record Locked: Line ${entry.lineId} (${entry.hourSlot} on ${entry.date}) is already submitted. Ordinary users cannot edit or delete submitted records; Admin approval with reason is required."
+          val msg = "🔒 Record Locked: Line ${entry.lineId} (${entry.hourSlot} on $normDate) is already submitted. Ordinary users cannot edit or delete submitted records; Admin approval with reason is required."
           _syncStatusBanner.value = msg
           _lastSecurityMessage.value = msg
-          addAuditLog("SECURITY", entry.lineId, "BLOCKED_EDIT_SUBMITTED_PROD", u.id, "Attempted overwrite of ${entry.hourSlot} on ${entry.date}")
+          addAuditLog("SECURITY", entry.lineId, "BLOCKED_EDIT_SUBMITTED_PROD", u.id, "Attempted overwrite of ${entry.hourSlot} on $normDate")
           return entry
         }
       }
     }
+    val targetKey = productionSlotKey(entry.lineId, normDate, entry.hourSlot)
+    val existingSubId = _productionEntries.value.find {
+      !it.isDemo && productionSlotKey(it.lineId, it.date, it.hourSlot) == targetKey
+    }?.submissionId ?: entry.submissionId
+
     val liveEntry = entry.copy(
+      submissionId = existingSubId,
+      date = normDate,
       modifiedBy = u?.let { "${it.name} (${it.id})" } ?: entry.modifiedBy,
+      syncStatus = SyncStatus.PENDING,
+      timestamp = System.currentTimeMillis(),
       isDemo = false
     )
     val filtered = _productionEntries.value.filterNot {
-      it.lineId == liveEntry.lineId && it.date == liveEntry.date && it.hourSlot == liveEntry.hourSlot
+      productionSlotKey(it.lineId, it.date, it.hourSlot) == targetKey
     }
     _productionEntries.value = listOf(liveEntry) + filtered
     sheetsStorage.saveLocalProductionEntries(_productionEntries.value)
     touchDataUpdated()
     _lastSecurityMessage.value = null
-    addAuditLog("PRODUCTION", liveEntry.lineId, "ADD_OUTPUT", liveEntry.modifiedBy, "Date: ${liveEntry.date}, Hour: ${liveEntry.hourSlot}, Qty: ${liveEntry.outputQty} (Saved to Google Sheet)")
+    _syncStatusBanner.value = "⏳ Saving Line ${liveEntry.lineId} (${liveEntry.outputQty} pcs) to Shared Cloud..."
+    addAuditLog("PRODUCTION", liveEntry.lineId, "ADD_OUTPUT", liveEntry.modifiedBy, "Date: ${liveEntry.date}, Hour: ${liveEntry.hourSlot}, Qty: ${liveEntry.outputQty} (Cloud Firestore & Google Sheet)")
     repoScope.launch {
-      val ok = sheetsStorage.pushProductionRow(liveEntry)
+      val firestoreOk = firebaseSync.pushProductionRecordAwait(liveEntry)
+      val sheetOk = sheetsStorage.pushProductionRow(liveEntry)
+      val synced = firestoreOk || sheetOk
       _productionEntries.value = _productionEntries.value.map {
         if (it.submissionId == liveEntry.submissionId) {
-          it.copy(syncStatus = if (ok) SyncStatus.SYNCED else SyncStatus.PENDING)
+          it.copy(syncStatus = if (synced) SyncStatus.SYNCED else SyncStatus.PENDING)
         } else it
       }
       sheetsStorage.saveLocalProductionEntries(_productionEntries.value)
-      _syncStatusBanner.value = "✓ Saved Line ${liveEntry.lineId} (${liveEntry.outputQty} pcs) to Google Sheet • ${_lastRefreshTime.value}"
+      _syncStatusBanner.value = if (synced) {
+        "✓ Saved Line ${liveEntry.lineId} (${liveEntry.outputQty} pcs) to Shared Cloud • ${_lastRefreshTime.value}"
+      } else {
+        "⚠️ Saved locally (Pending Cloud Sync): Line ${liveEntry.lineId} (${liveEntry.outputQty} pcs) • ${firebaseSync.lastErrorMessage ?: "Will auto-sync when online"}"
+      }
     }
     return liveEntry
   }
@@ -1356,7 +1795,7 @@ class NflRepository(private val context: Context) {
           addAuditLog("SECURITY", entries.first().lineId, "UNAUTHORIZED_BATCH_PROD", u.id, "Blocked batch production submission")
           return
         }
-        val firstDate = entries.first().date
+        val firstDate = sheetsStorage.normalizeToIsoDate(entries.first().date)
         val windowCheck = validateDailyEntryWindowAndDate(firstDate, isAdminOverride = false)
         if (!windowCheck.success) {
           _syncStatusBanner.value = windowCheck.message
@@ -1368,7 +1807,7 @@ class NflRepository(private val context: Context) {
     // Filter out slots that are already locked for non-Admin users
     val permittedEntries = if (u != null && !u.isAdmin) {
       entries.filter { candidate ->
-        !isProductionSlotLocked(candidate.lineId, candidate.date, candidate.hourSlot)
+        !isProductionSlotLocked(candidate.lineId, sheetsStorage.normalizeToIsoDate(candidate.date), candidate.hourSlot)
       }
     } else {
       entries
@@ -1380,28 +1819,52 @@ class NflRepository(private val context: Context) {
       return
     }
     val liveEntries = permittedEntries.map {
+      val normDate = sheetsStorage.normalizeToIsoDate(it.date)
+      val key = productionSlotKey(it.lineId, normDate, it.hourSlot)
+      val existingSubId = _productionEntries.value.find { ex ->
+        !ex.isDemo && productionSlotKey(ex.lineId, ex.date, ex.hourSlot) == key
+      }?.submissionId ?: it.submissionId
       it.copy(
+        submissionId = existingSubId,
+        date = normDate,
         modifiedBy = u?.let { usr -> "${usr.name} (${usr.id})" } ?: it.modifiedBy,
+        syncStatus = SyncStatus.PENDING,
+        timestamp = System.currentTimeMillis(),
         isDemo = false
       )
     }
-    val slotKeys = liveEntries.map { "${it.lineId}_${it.date}_${it.hourSlot}" }.toSet()
-    val filtered = _productionEntries.value.filterNot { "${it.lineId}_${it.date}_${it.hourSlot}" in slotKeys }
+    val slotKeys = liveEntries.map { productionSlotKey(it.lineId, it.date, it.hourSlot) }.toSet()
+    val filtered = _productionEntries.value.filterNot { productionSlotKey(it.lineId, it.date, it.hourSlot) in slotKeys }
     _productionEntries.value = liveEntries + filtered
     sheetsStorage.saveLocalProductionEntries(_productionEntries.value)
     touchDataUpdated()
     _lastSecurityMessage.value = null
+    _syncStatusBanner.value = "⏳ Saving ${liveEntries.size} hourly slots to Shared Cloud..."
     liveEntries.forEach { entry ->
-      addAuditLog("PRODUCTION", entry.lineId, "ADD_OUTPUT_BATCH", entry.modifiedBy, "Date: ${entry.date}, Hour: ${entry.hourSlot}, Qty: ${entry.outputQty} (Google Sheet)")
+      addAuditLog("PRODUCTION", entry.lineId, "ADD_OUTPUT_BATCH", entry.modifiedBy, "Date: ${entry.date}, Hour: ${entry.hourSlot}, Qty: ${entry.outputQty} (Cloud Firestore & Google Sheet)")
     }
     repoScope.launch {
-      liveEntries.forEach { sheetsStorage.pushProductionRow(it) }
-      _syncStatusBanner.value = "✓ Batch saved ${liveEntries.size} hourly slots to Google Sheet • ${_lastRefreshTime.value}"
+      val syncedIds = mutableSetOf<String>()
+      liveEntries.forEach { entry ->
+        val fOk = firebaseSync.pushProductionRecordAwait(entry)
+        val sOk = sheetsStorage.pushProductionRow(entry)
+        if (fOk || sOk) syncedIds.add(entry.submissionId)
+      }
+      _productionEntries.value = _productionEntries.value.map {
+        if (it.submissionId in syncedIds) it.copy(syncStatus = SyncStatus.SYNCED) else it
+      }
+      sheetsStorage.saveLocalProductionEntries(_productionEntries.value)
+      _syncStatusBanner.value = if (syncedIds.size == liveEntries.size) {
+        "✓ Batch saved ${liveEntries.size} hourly slots to Shared Cloud • ${_lastRefreshTime.value}"
+      } else {
+        "⚠️ Batch saved locally (${syncedIds.size}/${liveEntries.size} synced to Cloud; pending slots will retry)"
+      }
     }
   }
 
   fun submitQuality(entry: QualityRecord): QualityRecord {
     val u = getAuthoritativeCurrentUser()
+    val normDate = sheetsStorage.normalizeToIsoDate(entry.date)
     if (u != null) {
       if (!u.isActive || u.accountStatus != AccountStatus.APPROVED) {
         val msg = "⚠️ Access Denied: Account ${u.id} is not active or approved."
@@ -1420,7 +1883,7 @@ class NflRepository(private val context: Context) {
           return entry
         }
         // Daily Entry Restriction: Current Bangladesh Date & 06:00 AM - 24:00 Window
-        val windowCheck = validateDailyEntryWindowAndDate(entry.date, isAdminOverride = false)
+        val windowCheck = validateDailyEntryWindowAndDate(normDate, isAdminOverride = false)
         if (!windowCheck.success) {
           _syncStatusBanner.value = windowCheck.message
           _lastSecurityMessage.value = windowCheck.message
@@ -1431,39 +1894,82 @@ class NflRepository(private val context: Context) {
         val alreadySubmitted = _qualityEntries.value.any {
           !it.isDemo &&
               it.lineId.equals(entry.lineId, ignoreCase = true) &&
-              it.date == entry.date &&
+              sheetsStorage.normalizeToIsoDate(it.date) == normDate &&
               it.hourSlot.equals(entry.hourSlot, ignoreCase = true)
         }
         if (alreadySubmitted) {
-          val msg = "🔒 Record Locked: Quality record for Line ${entry.lineId} (${entry.hourSlot} on ${entry.date}) is already submitted. Only Admin can correct or delete submitted records with a reason."
+          val msg = "🔒 Record Locked: Quality record for Line ${entry.lineId} (${entry.hourSlot} on $normDate) is already submitted. Only Admin can correct or delete submitted records with a reason."
           _syncStatusBanner.value = msg
           _lastSecurityMessage.value = msg
-          addAuditLog("SECURITY", entry.lineId, "BLOCKED_EDIT_SUBMITTED_QA", u.id, "Attempted overwrite of QA ${entry.hourSlot} on ${entry.date}")
+          addAuditLog("SECURITY", entry.lineId, "BLOCKED_EDIT_SUBMITTED_QA", u.id, "Attempted overwrite of QA ${entry.hourSlot} on $normDate")
           return entry
         }
       }
     }
+    val targetKey = qualitySlotKey(entry.lineId, normDate, entry.hourSlot)
+    val existingSubId = _qualityEntries.value.find {
+      !it.isDemo && qualitySlotKey(it.lineId, it.date, it.hourSlot) == targetKey
+    }?.submissionId ?: entry.submissionId
+
     val liveEntry = entry.copy(
+      submissionId = existingSubId,
+      date = normDate,
       modifiedBy = u?.let { "${it.name} (${it.id})" } ?: entry.modifiedBy,
+      syncStatus = SyncStatus.PENDING,
+      timestamp = System.currentTimeMillis(),
       isDemo = false
     )
     val filtered = _qualityEntries.value.filterNot {
-      it.lineId == liveEntry.lineId && it.date == liveEntry.date && it.hourSlot == liveEntry.hourSlot
+      qualitySlotKey(it.lineId, it.date, it.hourSlot) == targetKey
     }
     _qualityEntries.value = listOf(liveEntry) + filtered
     sheetsStorage.saveLocalQualityEntries(_qualityEntries.value)
     touchDataUpdated()
     _lastSecurityMessage.value = null
-    addAuditLog("QUALITY", liveEntry.lineId, "ADD_INSPECTION", liveEntry.modifiedBy, "Date: ${liveEntry.date}, Hour: ${liveEntry.hourSlot}, Checked: ${liveEntry.checkedGarments}, Defective: ${liveEntry.defectiveGarments} (Google Sheet)")
+    _syncStatusBanner.value = "⏳ Saving Line ${liveEntry.lineId} QA Inspection to Shared Cloud..."
+
+    // Automated Quality & DHU Alert System (Section 9.B)
+    val dhu = if (liveEntry.checkedGarments > 0) {
+      (liveEntry.defects.sumOf { it.count }.toDouble() / liveEntry.checkedGarments.toDouble()) * 100.0
+    } else 0.0
+
+    if (dhu > 2.5 && liveEntry.checkedGarments >= 10) {
+      val qaAlert = IncidentItem(
+        lineId = liveEntry.lineId,
+        floor = liveEntry.floor,
+        category = IncidentCategory.QUALITY_PROBLEM,
+        nptType = "DHU Threshold Breach",
+        description = "Quality Alert: Line ${liveEntry.lineId} recorded high DHU of ${String.format(Locale.US, "%.1f", dhu)}% (threshold 2.5%). Defective pcs: ${liveEntry.defectiveGarments} of ${liveEntry.checkedGarments} checked.",
+        severity = if (dhu > 4.0) AlertSeverity.CRITICAL else AlertSeverity.HIGH,
+        status = IncidentStatus.OPEN,
+        reportedBy = liveEntry.modifiedBy,
+        measuredQualityValue = dhu,
+        qualityThresholdValue = 2.5,
+        defectDetails = liveEntry.defects.filter { it.count > 0 }.joinToString(", ") { "${it.defectType}: ${it.count}" }
+      )
+      _incidents.value = listOf(qaAlert) + _incidents.value
+      sheetsStorage.saveLocalIncidents(_incidents.value)
+      alertManager.triggerAlertNotification(qaAlert, _currentRole.value, _currentFloor.value)
+      firebaseSync.pushIncident(qaAlert)
+      repoScope.launch { sheetsStorage.pushIncidentRow(qaAlert) }
+    }
+
+    addAuditLog("QUALITY", liveEntry.lineId, "ADD_INSPECTION", liveEntry.modifiedBy, "Date: ${liveEntry.date}, Hour: ${liveEntry.hourSlot}, Checked: ${liveEntry.checkedGarments}, Defective: ${liveEntry.defectiveGarments} (Cloud Firestore & Google Sheet)")
     repoScope.launch {
-      val ok = sheetsStorage.pushQualityRow(liveEntry)
+      val firestoreOk = firebaseSync.pushQualityRecordAwait(liveEntry)
+      val sheetOk = sheetsStorage.pushQualityRow(liveEntry)
+      val synced = firestoreOk || sheetOk
       _qualityEntries.value = _qualityEntries.value.map {
         if (it.submissionId == liveEntry.submissionId) {
-          it.copy(syncStatus = if (ok) SyncStatus.SYNCED else SyncStatus.PENDING)
+          it.copy(syncStatus = if (synced) SyncStatus.SYNCED else SyncStatus.PENDING)
         } else it
       }
       sheetsStorage.saveLocalQualityEntries(_qualityEntries.value)
-      _syncStatusBanner.value = "✓ Saved Line ${liveEntry.lineId} QA Inspection to Google Sheet • ${_lastRefreshTime.value}"
+      _syncStatusBanner.value = if (synced) {
+        "✓ Saved Line ${liveEntry.lineId} QA Inspection to Shared Cloud • ${_lastRefreshTime.value}"
+      } else {
+        "⚠️ Saved locally (Pending Cloud Sync): Line ${liveEntry.lineId} QA Inspection • ${firebaseSync.lastErrorMessage ?: "Will auto-sync when online"}"
+      }
     }
     return liveEntry
   }
@@ -1492,6 +1998,7 @@ class NflRepository(private val context: Context) {
       outputQty = newOutputQty,
       remarks = newRemarks.ifBlank { target.remarks },
       modifiedBy = "${u.name} (${u.id})",
+      syncStatus = SyncStatus.PENDING,
       timestamp = System.currentTimeMillis(),
       isDemo = false
     )
@@ -1509,6 +2016,7 @@ class NflRepository(private val context: Context) {
       reason = cleanReason
     )
     repoScope.launch {
+      val fOk = firebaseSync.pushProductionRecordAwait(corrected)
       sheetsStorage.adminUpdateOrDeleteRecordOnBackend(
         action = "adminCorrectRecord",
         recordType = "PRODUCTION",
@@ -1517,9 +2025,15 @@ class NflRepository(private val context: Context) {
         reason = cleanReason,
         updatedPayload = mapOf("outputQty" to newOutputQty, "remarks" to corrected.remarks)
       )
-      sheetsStorage.pushProductionRow(corrected)
+      val sOk = sheetsStorage.pushProductionRow(corrected)
+      if (fOk || sOk) {
+        _productionEntries.value = _productionEntries.value.map {
+          if (it.submissionId == submissionId) it.copy(syncStatus = SyncStatus.SYNCED) else it
+        }
+        sheetsStorage.saveLocalProductionEntries(_productionEntries.value)
+      }
     }
-    val msg = "✓ Admin corrected Line ${corrected.lineId} (${corrected.hourSlot}) Qty: $oldQty → $newOutputQty pcs (Reason logged)"
+    val msg = "✓ Admin corrected Line ${corrected.lineId} (${corrected.hourSlot}) Qty: $oldQty → $newOutputQty pcs (Synced to Cloud)"
     _syncStatusBanner.value = msg
     return SecurityActionResult(true, msg)
   }
@@ -1538,7 +2052,10 @@ class NflRepository(private val context: Context) {
     }
     val target = _productionEntries.value.find { it.submissionId == submissionId }
       ?: return SecurityActionResult(false, "⚠️ Record not found.")
-    _productionEntries.value = _productionEntries.value.filterNot { it.submissionId == submissionId }
+    val targetKey = productionSlotKey(target.lineId, target.date, target.hourSlot)
+    _productionEntries.value = _productionEntries.value.filterNot {
+      it.submissionId == submissionId || (!it.isDemo && productionSlotKey(it.lineId, it.date, it.hourSlot) == targetKey)
+    }
     sheetsStorage.saveLocalProductionEntries(_productionEntries.value)
     touchDataUpdated()
     addAuditLog(
@@ -1550,6 +2067,7 @@ class NflRepository(private val context: Context) {
       reason = cleanReason
     )
     repoScope.launch {
+      firebaseSync.deleteProductionRecordAwait(target)
       sheetsStorage.adminUpdateOrDeleteRecordOnBackend(
         action = "adminDeleteRecord",
         recordType = "PRODUCTION",
@@ -1558,7 +2076,7 @@ class NflRepository(private val context: Context) {
         reason = cleanReason
       )
     }
-    val msg = "✓ Admin deleted Production record for Line ${target.lineId} (${target.hourSlot}) • Reason logged"
+    val msg = "✓ Admin deleted Production record for Line ${target.lineId} (${target.hourSlot}) • Removed from Cloud"
     _syncStatusBanner.value = msg
     return SecurityActionResult(true, msg)
   }
@@ -1587,6 +2105,7 @@ class NflRepository(private val context: Context) {
       checkedGarments = newChecked,
       defectiveGarments = newDefective,
       modifiedBy = "${u.name} (${u.id})",
+      syncStatus = SyncStatus.PENDING,
       timestamp = System.currentTimeMillis(),
       isDemo = false
     )
@@ -1604,6 +2123,7 @@ class NflRepository(private val context: Context) {
       reason = cleanReason
     )
     repoScope.launch {
+      val fOk = firebaseSync.pushQualityRecordAwait(corrected)
       sheetsStorage.adminUpdateOrDeleteRecordOnBackend(
         action = "adminCorrectRecord",
         recordType = "QUALITY",
@@ -1612,9 +2132,15 @@ class NflRepository(private val context: Context) {
         reason = cleanReason,
         updatedPayload = mapOf("checkedGarments" to newChecked, "defectiveGarments" to newDefective)
       )
-      sheetsStorage.pushQualityRow(corrected)
+      val sOk = sheetsStorage.pushQualityRow(corrected)
+      if (fOk || sOk) {
+        _qualityEntries.value = _qualityEntries.value.map {
+          if (it.submissionId == submissionId) it.copy(syncStatus = SyncStatus.SYNCED) else it
+        }
+        sheetsStorage.saveLocalQualityEntries(_qualityEntries.value)
+      }
     }
-    val msg = "✓ Admin corrected QA record for Line ${corrected.lineId} ($newChecked checked, $newDefective defective) • Reason logged"
+    val msg = "✓ Admin corrected QA record for Line ${corrected.lineId} ($newChecked checked, $newDefective defective) • Synced to Cloud"
     _syncStatusBanner.value = msg
     return SecurityActionResult(true, msg)
   }
@@ -1633,7 +2159,10 @@ class NflRepository(private val context: Context) {
     }
     val target = _qualityEntries.value.find { it.submissionId == submissionId }
       ?: return SecurityActionResult(false, "⚠️ Record not found.")
-    _qualityEntries.value = _qualityEntries.value.filterNot { it.submissionId == submissionId }
+    val targetKey = qualitySlotKey(target.lineId, target.date, target.hourSlot)
+    _qualityEntries.value = _qualityEntries.value.filterNot {
+      it.submissionId == submissionId || (!it.isDemo && qualitySlotKey(it.lineId, it.date, it.hourSlot) == targetKey)
+    }
     sheetsStorage.saveLocalQualityEntries(_qualityEntries.value)
     touchDataUpdated()
     addAuditLog(
@@ -1645,6 +2174,7 @@ class NflRepository(private val context: Context) {
       reason = cleanReason
     )
     repoScope.launch {
+      firebaseSync.deleteQualityRecordAwait(target)
       sheetsStorage.adminUpdateOrDeleteRecordOnBackend(
         action = "adminDeleteRecord",
         recordType = "QUALITY",
@@ -1653,7 +2183,7 @@ class NflRepository(private val context: Context) {
         reason = cleanReason
       )
     }
-    val msg = "✓ Admin deleted QA record for Line ${target.lineId} (${target.hourSlot}) • Reason logged"
+    val msg = "✓ Admin deleted QA record for Line ${target.lineId} (${target.hourSlot}) • Removed from Cloud"
     _syncStatusBanner.value = msg
     return SecurityActionResult(true, msg)
   }
@@ -1664,15 +2194,26 @@ class NflRepository(private val context: Context) {
       _syncStatusBanner.value = "⚠️ Access Denied: You do not have permission for Supervisor Line Setup"
       return
     }
-    val liveSetup = setup.copy(isDemo = false)
-    val filtered = _targets.value.filter { !(it.lineId == liveSetup.lineId && it.date == liveSetup.date) }
+    val normDate = sheetsStorage.normalizeToIsoDate(setup.date)
+    val liveSetup = setup.copy(
+      date = normDate,
+      snapshotTimestamp = System.currentTimeMillis(),
+      isDemo = false
+    )
+    val key = setupSlotKey(liveSetup.lineId, liveSetup.date)
+    val filtered = _targets.value.filterNot { setupSlotKey(it.lineId, it.date) == key }
     _targets.value = listOf(liveSetup) + filtered
     sheetsStorage.saveLocalSetups(_targets.value)
     touchDataUpdated()
-    addAuditLog("SETUP", liveSetup.lineId, "SAVE_TARGET", u?.name ?: "Supervisor", "Daily target: ${liveSetup.targetDailyPcs}, Eff: ${liveSetup.targetEfficiencyPct}% (Google Sheet)")
+    addAuditLog("SETUP", liveSetup.lineId, "SAVE_TARGET", u?.name ?: "Supervisor", "Daily target: ${liveSetup.targetDailyPcs}, Eff: ${liveSetup.targetEfficiencyPct}% (Cloud Firestore & Google Sheet)")
     repoScope.launch {
-      sheetsStorage.pushLineSetupRow(liveSetup)
-      _syncStatusBanner.value = "✓ Saved Line ${liveSetup.lineId} Target (${liveSetup.targetDailyPcs} pcs) to Google Sheet • ${_lastRefreshTime.value}"
+      val fOk = firebaseSync.pushLineSetupAwait(liveSetup)
+      val sOk = sheetsStorage.pushLineSetupRow(liveSetup)
+      _syncStatusBanner.value = if (fOk || sOk) {
+        "✓ Saved Line ${liveSetup.lineId} Target (${liveSetup.targetDailyPcs} pcs) to Shared Cloud • ${_lastRefreshTime.value}"
+      } else {
+        "⚠️ Saved Line ${liveSetup.lineId} Target locally (Pending Cloud Sync)"
+      }
     }
   }
 
@@ -2245,8 +2786,11 @@ class NflRepository(private val context: Context) {
 
   // Monthly Target Methods
   fun getMonthlyTarget(floorName: String): MonthlyFactoryTarget {
-    return _monthlyTargets.value.find { it.floor.equals(floorName, ignoreCase = true) }
-      ?: MonthlyFactoryTarget(floor = floorName)
+    val norm = floorName.trim().replace("-", " ").replace("  ", " ")
+    return _monthlyTargets.value.find { target ->
+      val targetNorm = target.floor.trim().replace("-", " ").replace("  ", " ")
+      targetNorm.equals(norm, ignoreCase = true) || target.floor.equals(floorName, ignoreCase = true)
+    } ?: MonthlyFactoryTarget(floor = floorName)
   }
 
   fun saveMonthlyTarget(target: MonthlyFactoryTarget) {
@@ -2258,14 +2802,23 @@ class NflRepository(private val context: Context) {
         return
       }
     }
-    val filtered = _monthlyTargets.value.filter { !it.floor.equals(target.floor, ignoreCase = true) }
+    val norm = target.floor.trim().replace("-", " ").replace("  ", " ")
+    val filtered = _monthlyTargets.value.filter {
+      val itNorm = it.floor.trim().replace("-", " ").replace("  ", " ")
+      !itNorm.equals(norm, ignoreCase = true) && !it.floor.equals(target.floor, ignoreCase = true)
+    }
     _monthlyTargets.value = filtered + target
     sheetsStorage.saveLocalMonthlyTargets(_monthlyTargets.value)
     touchDataUpdated()
-    addAuditLog("MONTHLY_SETUP", target.floor, "SAVE_MONTHLY_TARGET", u?.name ?: target.lastUpdatedBy, "Target Eff: ${target.targetEfficiencyPct}%, OQL: ${target.targetOqlPct}% (Google Sheet)")
+    addAuditLog("MONTHLY_SETUP", target.floor, "SAVE_MONTHLY_TARGET", u?.name ?: target.lastUpdatedBy, "Target Eff: ${target.targetEfficiencyPct}%, OQL: ${target.targetOqlPct}% (Cloud Firestore & Google Sheet)")
     repoScope.launch {
-      sheetsStorage.pushMonthlyTargetRow(target)
-      _syncStatusBanner.value = "✓ Saved Monthly Target for ${target.floor} to Google Sheet • ${_lastRefreshTime.value}"
+      val fOk = firebaseSync.pushMonthlyTargetAwait(target)
+      val sOk = sheetsStorage.pushMonthlyTargetRow(target)
+      _syncStatusBanner.value = if (fOk || sOk) {
+        "✓ Saved Monthly Target for ${target.floor} to Shared Cloud • ${_lastRefreshTime.value}"
+      } else {
+        "⚠️ Saved Monthly Target for ${target.floor} locally (Pending Cloud Sync)"
+      }
     }
   }
 
@@ -2277,18 +2830,28 @@ class NflRepository(private val context: Context) {
       return item
     }
     val liveItem = item.copy(isDemo = false)
-    _incidents.value = listOf(liveItem) + _incidents.value
+    _incidents.value = listOf(liveItem) + _incidents.value.filterNot { it.id == liveItem.id }
     sheetsStorage.saveLocalIncidents(_incidents.value)
     touchDataUpdated()
-    addAuditLog("INCIDENT", liveItem.lineId, "REPORT_INCIDENT", liveItem.reportedBy, "${liveItem.description} (Google Sheet)")
+    addAuditLog("INCIDENT", liveItem.lineId, "REPORT_INCIDENT", liveItem.reportedBy, "${liveItem.description} (Cloud Firestore & Google Sheet)")
+    alertManager.triggerAlertNotification(liveItem, _currentRole.value, _currentFloor.value)
     repoScope.launch {
-      sheetsStorage.pushIncidentRow(liveItem)
-      _syncStatusBanner.value = "✓ Logged NPT Incident on Line ${liveItem.lineId} to Google Sheet • ${_lastRefreshTime.value}"
+      val fOk = firebaseSync.pushIncidentAwait(liveItem)
+      val sOk = sheetsStorage.pushIncidentRow(liveItem)
+      _syncStatusBanner.value = if (fOk || sOk) {
+        "✓ Logged NPT Incident on Line ${liveItem.lineId} to Shared Cloud • ${_lastRefreshTime.value}"
+      } else {
+        "⚠️ Logged NPT Incident on Line ${liveItem.lineId} locally (Pending Cloud Sync)"
+      }
     }
     return liveItem
   }
 
   fun startMechanicMaintenance(id: String, mechanicName: String) {
+    startMaintenanceIncident(id, mechanicName)
+  }
+
+  fun startMaintenanceIncident(id: String, mechanicName: String) {
     val u = _currentUser.value
     if (u != null && !u.isAdmin && !u.canNptWrite) {
       _syncStatusBanner.value = "⚠️ Access Denied: You do not have permission to update NPT incidents"
@@ -2298,10 +2861,11 @@ class NflRepository(private val context: Context) {
     _incidents.value = _incidents.value.map {
       if (it.id == id) {
         val copy = it.copy(
-          status = IncidentStatus.ACKNOWLEDGED,
-          acknowledgedBy = mechanicName,
-          acknowledgedTimeMillis = System.currentTimeMillis(),
+          status = IncidentStatus.IN_PROGRESS,
+          acknowledgedBy = it.acknowledgedBy ?: mechanicName,
+          acknowledgedTimeMillis = it.acknowledgedTimeMillis ?: System.currentTimeMillis(),
           mechanicStartTimeMillis = System.currentTimeMillis(),
+          inProgressTimeMillis = System.currentTimeMillis(),
           mechanicName = mechanicName,
           isMaintenanceStarted = true,
           isDemo = false
@@ -2312,15 +2876,19 @@ class NflRepository(private val context: Context) {
     }
     sheetsStorage.saveLocalIncidents(_incidents.value)
     touchDataUpdated()
-    addAuditLog("INCIDENT", id, "START_MAINTENANCE", mechanicName, "Mechanic attended stoppage")
-    updatedItem?.let { item -> repoScope.launch { sheetsStorage.pushIncidentRow(item) } }
+    addAuditLog("INCIDENT", id, "START_MAINTENANCE", mechanicName, "Mechanic started repair")
+    updatedItem?.let { item ->
+      firebaseSync.pushIncident(item)
+      repoScope.launch { sheetsStorage.pushIncidentRow(item) }
+    }
   }
 
   fun muteIncident(id: String) {
     _incidents.value = _incidents.value.map {
-      if (it.id == id) it.copy(isMutedOnCurrentDevice = true) else it
+      if (it.id == id) it.copy(isMutedOnCurrentDevice = true, isSilencedOnDevice = true) else it
     }
     touchDataUpdated()
+    silenceActiveAlarm()
   }
 
   fun acknowledgeIncident(id: String, ackBy: String) {
@@ -2345,7 +2913,10 @@ class NflRepository(private val context: Context) {
     sheetsStorage.saveLocalIncidents(_incidents.value)
     touchDataUpdated()
     addAuditLog("INCIDENT", id, "ACKNOWLEDGE", ackBy, "Accepted ownership")
-    updatedItem?.let { item -> repoScope.launch { sheetsStorage.pushIncidentRow(item) } }
+    updatedItem?.let { item ->
+      firebaseSync.pushIncident(item)
+      repoScope.launch { sheetsStorage.pushIncidentRow(item) }
+    }
   }
 
   fun resolveIncident(id: String, resolvedBy: String, note: String) {
@@ -2371,28 +2942,114 @@ class NflRepository(private val context: Context) {
     sheetsStorage.saveLocalIncidents(_incidents.value)
     touchDataUpdated()
     addAuditLog("INCIDENT", id, "RESOLVE", resolvedBy, note)
-    updatedItem?.let { item -> repoScope.launch { sheetsStorage.pushIncidentRow(item) } }
+    updatedItem?.let { item ->
+      firebaseSync.pushIncident(item)
+      repoScope.launch { sheetsStorage.pushIncidentRow(item) }
+    }
   }
 
-  // Deep Dive Analytical Data Helpers (Uses Live Google Sheet & Local Entries First)
+  fun verifyIncident(id: String, verifiedBy: String, correctiveAction: String) {
+    var updatedItem: IncidentItem? = null
+    _incidents.value = _incidents.value.map {
+      if (it.id == id) {
+        val copy = it.copy(
+          status = IncidentStatus.VERIFIED,
+          verifiedBy = verifiedBy,
+          verifiedTimeMillis = System.currentTimeMillis(),
+          correctiveAction = correctiveAction,
+          isDemo = false
+        )
+        updatedItem = copy
+        copy
+      } else it
+    }
+    sheetsStorage.saveLocalIncidents(_incidents.value)
+    touchDataUpdated()
+    addAuditLog("INCIDENT", id, "VERIFY_ACTION", verifiedBy, correctiveAction)
+    updatedItem?.let { item ->
+      firebaseSync.pushIncident(item)
+      repoScope.launch { sheetsStorage.pushIncidentRow(item) }
+    }
+  }
+
+  fun escalateIncident(id: String, reason: String) {
+    var updatedItem: IncidentItem? = null
+    _incidents.value = _incidents.value.map {
+      if (it.id == id) {
+        val copy = it.copy(
+          isEscalated = true,
+          escalationReason = reason,
+          escalatedAtMillis = System.currentTimeMillis(),
+          severity = AlertSeverity.CRITICAL,
+          isDemo = false
+        )
+        updatedItem = copy
+        copy
+      } else it
+    }
+    sheetsStorage.saveLocalIncidents(_incidents.value)
+    touchDataUpdated()
+    addAuditLog("INCIDENT", id, "ESCALATE", _currentUserName.value, reason)
+    updatedItem?.let { item ->
+      alertManager.triggerAlertNotification(item, _currentRole.value, _currentFloor.value)
+      firebaseSync.pushIncident(item)
+      repoScope.launch { sheetsStorage.pushIncidentRow(item) }
+    }
+  }
+
+  /**
+   * Deduplicates ProductionRecord list by (lineId, date, hourSlot), preferring non-demo records over demo records.
+   */
+  private fun deduplicateProductionRecords(records: List<ProductionRecord>): List<ProductionRecord> {
+    val bySlot = LinkedHashMap<String, ProductionRecord>()
+    records.forEach { rec ->
+      val key = productionSlotKey(rec.lineId, rec.date, rec.hourSlot)
+      val existing = bySlot[key]
+      if (existing == null || (existing.isDemo && !rec.isDemo) || (!existing.isDemo && !rec.isDemo && rec.timestamp >= existing.timestamp)) {
+        bySlot[key] = rec
+      }
+    }
+    return bySlot.values.toList()
+  }
+
+  /**
+   * Deduplicates QualityRecord list by (lineId, date, hourSlot), preferring non-demo records over demo records.
+   */
+  private fun deduplicateQualityRecords(records: List<QualityRecord>): List<QualityRecord> {
+    val bySlot = LinkedHashMap<String, QualityRecord>()
+    records.forEach { rec ->
+      val key = qualitySlotKey(rec.lineId, rec.date, rec.hourSlot)
+      val existing = bySlot[key]
+      if (existing == null || (existing.isDemo && !rec.isDemo) || (!existing.isDemo && !rec.isDemo && rec.timestamp >= existing.timestamp)) {
+        bySlot[key] = rec
+      }
+    }
+    return bySlot.values.toList()
+  }
+
+  // Deep Dive Analytical Data Helpers (Uses Live Cloud Firestore, Google Sheet & Local Entries First)
   fun getHourlyProductionData(lineId: String, period: PeriodScope): List<HourlyProductionRow> {
     val setup = getLineSetup(lineId)
     val tgt = setup.targetHourlyPcs
     val slots = defaultHourSlots
-    val lineProds = _productionEntries.value.filter {
-      it.lineId.equals(lineId, ignoreCase = true) && isDateInPeriod(it.date, period)
-    }
+    val lineProds = deduplicateProductionRecords(
+      _productionEntries.value.filter {
+        it.lineId.equals(lineId, ignoreCase = true) && isDateInPeriod(it.date, period)
+      }
+    )
     val randomSeeds = listOf(58, 62, 60, 56, 64, 59, 61, 57, 63, 60)
     var cumTgt = 0
     var cumAch = 0
 
     return slots.mapIndexed { idx, slot ->
       val recordedForSlot = lineProds.filter { it.hourSlot.equals(slot, ignoreCase = true) }
-      val ach = if (recordedForSlot.isNotEmpty()) {
-        recordedForSlot.sumOf { it.outputQty }
+      val realForSlot = recordedForSlot.filter { !it.isDemo }
+      val effectiveSlotRecords = realForSlot.ifEmpty { recordedForSlot }
+      val ach = if (effectiveSlotRecords.isNotEmpty()) {
+        effectiveSlotRecords.sumOf { it.outputQty }
       } else {
         when (period) {
-          PeriodScope.TODAY -> if (idx < 7) randomSeeds[idx % randomSeeds.size] else 0
+          PeriodScope.TODAY -> if (idx < 7 && !_productionEntries.value.any { !it.isDemo && it.lineId.equals(lineId, ignoreCase = true) }) randomSeeds[idx % randomSeeds.size] else 0
           PeriodScope.YESTERDAY -> (randomSeeds[idx % randomSeeds.size] - 2).coerceAtLeast(30)
           else -> randomSeeds[idx % randomSeeds.size]
         }
@@ -2431,10 +3088,10 @@ class NflRepository(private val context: Context) {
       lineSetup.targetDailyPcs.toDouble() / lineSetup.totalShiftHours.toDouble()
     } else 62.0
 
-    val existing = _incidents.value.filter { it.lineId == lineId }
+    val existing = _incidents.value.filter { it.lineId.equals(lineId, ignoreCase = true) }
     if (existing.isNotEmpty()) {
       return existing.map { inc ->
-        val duration = ((System.currentTimeMillis() - inc.startTimeMillis) / (60 * 1000L)).coerceIn(10, 180).toInt()
+        val duration = (((inc.endTimeMillis ?: System.currentTimeMillis()) - inc.startTimeMillis) / (60 * 1000L)).coerceIn(10, 180).toInt()
         val lostPcs = Math.round((hourlyTarget / 60.0) * duration).toInt().coerceAtLeast(1)
         LineIssueSummary(
           category = inc.category.displayName,
@@ -2502,21 +3159,58 @@ class NflRepository(private val context: Context) {
 
   fun getHourlyQualityData(lineId: String, period: PeriodScope): List<HourlyQualityRow> {
     val slots = defaultHourSlots
+    val lineQas = deduplicateQualityRecords(
+      _qualityEntries.value.filter {
+        it.lineId.equals(lineId, ignoreCase = true) && isDateInPeriod(it.date, period)
+      }
+    )
     val dhuValues = listOf(1.85, 2.10, 1.65, 1.95, 2.30, 1.70, 1.80, 2.05, 1.90, 1.75)
     val oqlValues = listOf(3.5, 3.8, 3.2, 4.0, 3.6, 3.4, 3.7, 3.9, 3.5, 3.3)
     val defectNames = listOf("Puckering, Skip stitch", "Broken stitch", "Open seam", "Uneven seam", "Needle cut", "Puckering", "Skip stitch", "Broken stitch", "Pleat", "Dirty spot")
 
     return slots.mapIndexed { idx, slot ->
-      HourlyQualityRow(
-        hourSlot = slot,
-        dhuPct = dhuValues[idx % dhuValues.size],
-        oqlPct = oqlValues[idx % oqlValues.size],
-        majorDefectsName = defectNames[idx % defectNames.size]
-      )
+      val slotQas = lineQas.filter { it.hourSlot.equals(slot, ignoreCase = true) }
+      val realSlotQas = slotQas.filter { !it.isDemo }
+      val effectiveQas = realSlotQas.ifEmpty { slotQas }
+      if (effectiveQas.isNotEmpty()) {
+        val checked = effectiveQas.sumOf { it.checkedGarments }.coerceAtLeast(1)
+        val defective = effectiveQas.sumOf { it.defectiveGarments }
+        val totalDefects = effectiveQas.sumOf { it.totalDefects }
+        val dhuPct = Math.round((totalDefects.toDouble() / checked.toDouble()) * 10000.0) / 100.0
+        val oqlPct = Math.round((defective.toDouble() / checked.toDouble()) * 10000.0) / 100.0
+        val topDefNames = effectiveQas
+          .flatMap { it.defects }
+          .filter { it.count > 0 }
+          .groupBy { it.defectType }
+          .mapValues { (_, list) -> list.sumOf { it.count } }
+          .entries
+          .sortedByDescending { it.value }
+          .take(2)
+          .joinToString(", ") { it.key }
+          .ifBlank { defectNames[idx % defectNames.size] }
+        HourlyQualityRow(
+          hourSlot = slot,
+          dhuPct = dhuPct,
+          oqlPct = oqlPct,
+          majorDefectsName = topDefNames
+        )
+      } else {
+        HourlyQualityRow(
+          hourSlot = slot,
+          dhuPct = dhuValues[idx % dhuValues.size],
+          oqlPct = oqlValues[idx % oqlValues.size],
+          majorDefectsName = defectNames[idx % defectNames.size]
+        )
+      }
     }
   }
 
   fun getLineHourlyDefectBreakdown(lineId: String, period: PeriodScope = PeriodScope.TODAY): List<LineHourlyDefectRecord> {
+    val lineQas = deduplicateQualityRecords(
+      _qualityEntries.value.filter {
+        it.lineId.equals(lineId, ignoreCase = true) && isDateInPeriod(it.date, period)
+      }
+    )
     val point = getLinePerformancePoint(lineId, periodScope = period)
     val totalSewSent = point.defectSent
     val totalSewRecv = point.defectReceived
@@ -2530,42 +3224,88 @@ class NflRepository(private val context: Context) {
     var remSpotRecv = totalSpotRecv
 
     return slots.mapIndexed { idx, slot ->
-      val isLast = idx == slots.lastIndex
-      val sewSentShare = if (isLast) remSewSent else ((totalSewSent / 8) + (if (idx % 3 == 0) 1 else 0)).coerceAtMost(remSewSent).coerceAtLeast(0)
-      remSewSent = (remSewSent - sewSentShare).coerceAtLeast(0)
+      val realSlotQas = lineQas.filter { !it.isDemo && it.hourSlot.equals(slot, ignoreCase = true) }
+      if (realSlotQas.isNotEmpty()) {
+        val sSent = realSlotQas.sumOf { it.defectSent }
+        val sRecv = realSlotQas.sumOf { it.defectReceived }
+        val spSent = realSlotQas.sumOf { it.spotSent }
+        val spRecv = realSlotQas.sumOf { it.spotReceived }
+        LineHourlyDefectRecord(
+          hourSlot = slot,
+          sewingSent = sSent,
+          sewingReceived = sRecv,
+          sewingBalance = (sSent - sRecv).coerceAtLeast(0),
+          spotSent = spSent,
+          spotReceived = spRecv,
+          spotBalance = (spSent - spRecv).coerceAtLeast(0)
+        )
+      } else {
+        val isLast = idx == slots.lastIndex
+        val sewSentShare = if (isLast) remSewSent else ((totalSewSent / 8) + (if (idx % 3 == 0) 1 else 0)).coerceAtMost(remSewSent).coerceAtLeast(0)
+        remSewSent = (remSewSent - sewSentShare).coerceAtLeast(0)
 
-      val sewRecvShare = if (isLast) remSewRecv else ((totalSewRecv / 8) + (if (idx % 2 == 0) 1 else 0)).coerceAtMost(remSewRecv).coerceAtLeast(0)
-      remSewRecv = (remSewRecv - sewRecvShare).coerceAtLeast(0)
+        val sewRecvShare = if (isLast) remSewRecv else ((totalSewRecv / 8) + (if (idx % 2 == 0) 1 else 0)).coerceAtMost(remSewRecv).coerceAtLeast(0)
+        remSewRecv = (remSewRecv - sewRecvShare).coerceAtLeast(0)
 
-      val spotSentShare = if (isLast) remSpotSent else ((totalSpotSent / 8) + (if (idx % 4 == 0) 1 else 0)).coerceAtMost(remSpotSent).coerceAtLeast(0)
-      remSpotSent = (remSpotSent - spotSentShare).coerceAtLeast(0)
+        val spotSentShare = if (isLast) remSpotSent else ((totalSpotSent / 8) + (if (idx % 4 == 0) 1 else 0)).coerceAtMost(remSpotSent).coerceAtLeast(0)
+        remSpotSent = (remSpotSent - spotSentShare).coerceAtLeast(0)
 
-      val spotRecvShare = if (isLast) remSpotRecv else ((totalSpotRecv / 8) + (if (idx % 3 == 1) 1 else 0)).coerceAtMost(remSpotRecv).coerceAtLeast(0)
-      remSpotRecv = (remSpotRecv - spotRecvShare).coerceAtLeast(0)
+        val spotRecvShare = if (isLast) remSpotRecv else ((totalSpotRecv / 8) + (if (idx % 3 == 1) 1 else 0)).coerceAtMost(remSpotRecv).coerceAtLeast(0)
+        remSpotRecv = (remSpotRecv - spotRecvShare).coerceAtLeast(0)
 
-      val sewBal = (sewSentShare - sewRecvShare).coerceAtLeast(0)
-      val spotBal = (spotSentShare - spotRecvShare).coerceAtLeast(0)
+        val sewBal = (sewSentShare - sewRecvShare).coerceAtLeast(0)
+        val spotBal = (spotSentShare - spotRecvShare).coerceAtLeast(0)
 
-      LineHourlyDefectRecord(
-        hourSlot = slot,
-        sewingSent = sewSentShare,
-        sewingReceived = sewRecvShare,
-        sewingBalance = sewBal,
-        spotSent = spotSentShare,
-        spotReceived = spotRecvShare,
-        spotBalance = spotBal
-      )
+        LineHourlyDefectRecord(
+          hourSlot = slot,
+          sewingSent = sewSentShare,
+          sewingReceived = sewRecvShare,
+          sewingBalance = sewBal,
+          spotSent = spotSentShare,
+          spotReceived = spotRecvShare,
+          spotBalance = spotBal
+        )
+      }
     }
   }
 
   fun getParetoDefects(lineId: String): List<ParetoDefectPoint> {
+    val lineQas = deduplicateQualityRecords(
+      _qualityEntries.value.filter { it.lineId.equals(lineId, ignoreCase = true) }
+    )
+    val realQas = lineQas.filter { !it.isDemo }
+    val sourceQas = realQas.ifEmpty { lineQas }
+    val defectCounts = mutableMapOf<String, Int>()
+    sourceQas.forEach { qa ->
+      qa.defects.forEach { d ->
+        if (d.count > 0) {
+          defectCounts[d.defectType] = (defectCounts[d.defectType] ?: 0) + d.count
+        }
+      }
+    }
+    if (defectCounts.isNotEmpty()) {
+      val sorted = defectCounts.entries.sortedByDescending { it.value }
+      val total = sorted.sumOf { it.value }.coerceAtLeast(1)
+      var running = 0
+      return sorted.take(6).map { entry ->
+        running += entry.value
+        val pct = Math.round((entry.value.toDouble() / total.toDouble()) * 1000.0) / 10.0
+        val cumPct = Math.round((running.toDouble() / total.toDouble()) * 1000.0) / 10.0
+        ParetoDefectPoint(
+          defectName = entry.key,
+          count = entry.value,
+          percentage = pct,
+          cumulativePercentage = cumPct
+        )
+      }
+    }
     return listOf(
-      ParetoDefectPoint("Puckering", 38, 32.5),
-      ParetoDefectPoint("Broken Stitch", 29, 24.8),
-      ParetoDefectPoint("Skip Stitch", 21, 17.9),
-      ParetoDefectPoint("Uneven Seam", 14, 12.0),
-      ParetoDefectPoint("Needle Cut", 9, 7.7),
-      ParetoDefectPoint("Others", 6, 5.1)
+      ParetoDefectPoint("Puckering", 38, 32.5, 32.5),
+      ParetoDefectPoint("Broken Stitch", 29, 24.8, 57.3),
+      ParetoDefectPoint("Skip Stitch", 21, 17.9, 75.2),
+      ParetoDefectPoint("Uneven Seam", 14, 12.0, 87.2),
+      ParetoDefectPoint("Needle Cut", 9, 7.7, 94.9),
+      ParetoDefectPoint("Others", 6, 5.1, 100.0)
     )
   }
 
@@ -2591,67 +3331,52 @@ class NflRepository(private val context: Context) {
     floorScope: FloorScope = _currentFloor.value,
     periodScope: PeriodScope = _currentPeriod.value
   ): TvDashboardData {
-    val floorFilter = floorScope.apiValue
-
     // Ensure all real lines for this floor are always present
-    val floorLines = allLinesMaster.filter { floorScope == FloorScope.ALL || it.floor == floorFilter }
+    val floorLines = allLinesMaster.filter { isInSelectedFloor(it.floor, floorScope) }
+    val dedupedProds = deduplicateProductionRecords(_productionEntries.value)
+    val dedupedQas = deduplicateQualityRecords(_qualityEntries.value)
 
     val summaries = floorLines.map { lineInfo ->
-      val setup = _targets.value.find { it.lineId == lineInfo.id } ?: getLineSetup(lineInfo.id).copy(floor = lineInfo.floor)
-      val prods = _productionEntries.value.filter {
-        it.lineId == setup.lineId && isDateInPeriod(it.date, periodScope)
+      val setup = getLineSetup(lineInfo.id).copy(floor = lineInfo.floor)
+      val prods = dedupedProds.filter {
+        it.lineId.equals(setup.lineId, ignoreCase = true) && isDateInPeriod(it.date, periodScope)
       }
-      val qas = _qualityEntries.value.filter {
-        it.lineId == setup.lineId && isDateInPeriod(it.date, periodScope)
+      val qas = dedupedQas.filter {
+        it.lineId.equals(setup.lineId, ignoreCase = true) && isDateInPeriod(it.date, periodScope)
       }
 
-      val hasReported = true
-      val outputQty = if (prods.isNotEmpty()) {
-        prods.sumOf { it.outputQty }
-      } else {
-        val factor = 0.82 + (Math.abs(lineInfo.id.hashCode() % 12) / 100.0)
-        Math.round(setup.targetDailyPcs * factor).toInt().coerceAtLeast(1)
-      }
+      val hasReported = prods.isNotEmpty()
+      val outputQty = if (hasReported) prods.sumOf { it.outputQty } else 0
       val isConfirmedZero = prods.any { it.isConfirmedZero }
 
       val targetDue = Math.round((setup.targetDailyPcs.toDouble() / setup.totalShiftHours) * setup.workingHoursSoFar).toInt()
 
-      val achPct = if (setup.targetDailyPcs > 0) {
+      val achPct = if (setup.targetDailyPcs > 0 && hasReported) {
         ((outputQty.toDouble() / setup.targetDailyPcs) * 100).let { Math.round(it * 10.0) / 10.0 }
-      } else 82.0
+      } else 0.0
 
       val earnedMins = outputQty * setup.smv
       val availMins = setup.includedManpower * setup.workingHoursSoFar * 60
-      val effPct = if (availMins > 0) {
+      val effPct = if (availMins > 0 && hasReported) {
         ((earnedMins / availMins) * 100).let { Math.round(it * 10.0) / 10.0 }
-      } else setup.targetEfficiencyPct
+      } else 0.0
 
-      val checked = qas.sumOf { it.checkedGarments }
-      val defective = qas.sumOf { it.defectiveGarments }
-      val defectsTotal = qas.sumOf { it.totalDefects }
-      val sentQas = qas.sumOf { it.defectSent }
-      val recvQas = qas.sumOf { it.defectReceived }
-      val sentSpotsQas = qas.sumOf { it.spotSent }
-      val recvSpotsQas = qas.sumOf { it.spotReceived }
+      val hasQa = qas.isNotEmpty()
+      val checked = if (hasQa) qas.sumOf { it.checkedGarments } else 0
+      val defective = if (hasQa) qas.sumOf { it.defectiveGarments } else 0
+      val defectsTotal = if (hasQa) qas.sumOf { it.totalDefects } else 0
+      val sentQas = if (hasQa) qas.sumOf { it.defectSent } else 0
+      val recvQas = if (hasQa) qas.sumOf { it.defectReceived } else 0
+      val sentSpotsQas = if (hasQa) qas.sumOf { it.spotSent } else 0
+      val recvSpotsQas = if (hasQa) qas.sumOf { it.spotReceived } else 0
 
-      val lineHash = Math.abs(lineInfo.id.hashCode())
-      val lineSent = if (sentQas > 0) sentQas else (10 + (lineHash % 12))
-      val lineRecv = if (recvQas > 0) recvQas else (lineSent - (lineHash % 4)).coerceAtLeast(0)
-      val lineBal = (lineSent - lineRecv).coerceAtLeast(0)
+      val lineBal = (sentQas - recvQas).coerceAtLeast(0)
+      val lineSpotBal = (sentSpotsQas - recvSpotsQas).coerceAtLeast(0)
 
-      val lineSpotSent = if (sentSpotsQas > 0) sentSpotsQas else (6 + (lineHash % 8))
-      val lineSpotRecv = if (recvSpotsQas > 0) recvSpotsQas else (lineSpotSent - (lineHash % 3)).coerceAtLeast(0)
-      val lineSpotBal = (lineSpotSent - lineSpotRecv).coerceAtLeast(0)
+      val oqlPct = if (checked > 0) ((defective.toDouble() / checked) * 100).let { Math.round(it * 100.0) / 100.0 } else 0.0
+      val dhuVal = if (checked > 0) ((defectsTotal.toDouble() / checked) * 100).let { Math.round(it * 100.0) / 100.0 } else 0.0
 
-      val fallbackOql = 1.8 + (Math.abs(lineInfo.id.hashCode() % 15) / 10.0)
-      val oqlPct = if (checked > 0) ((defective.toDouble() / checked) * 100).let { Math.round(it * 100.0) / 100.0 } else fallbackOql
-      val dhuVal = if (checked > 0) ((defectsTotal.toDouble() / checked) * 100).let { Math.round(it * 100.0) / 100.0 } else (fallbackOql * 1.2).let { Math.round(it * 100.0) / 100.0 }
-
-      val openIncs = _incidents.value.count { it.lineId == setup.lineId && it.status != IncidentStatus.RESOLVED }
-
-      val lineMonthlyEff = (effPct * 0.95 + ((lineHash % 11) - 5) * 1.2).coerceIn(48.0, 91.0).let { Math.round(it * 10.0) / 10.0 }
-      val lineMonthlyOql = (oqlPct * 0.94 + ((lineHash % 9) - 4) * 0.18).coerceIn(1.1, 5.2).let { Math.round(it * 100.0) / 100.0 }
-      val lineMonthlyDhu = (dhuVal * 0.95 + ((lineHash % 7) - 3) * 0.12).coerceIn(0.7, 3.8).let { Math.round(it * 100.0) / 100.0 }
+      val openIncs = _incidents.value.count { it.lineId.equals(setup.lineId, ignoreCase = true) && it.status != IncidentStatus.RESOLVED }
 
       LinePerformancePoint(
         lineId = setup.lineId,
@@ -2663,23 +3388,23 @@ class NflRepository(private val context: Context) {
         targetDuePcs = targetDue,
         hourlyTargetPcs = setup.targetHourlyPcs,
         targetEfficiencyPct = setup.targetEfficiencyPct,
-        achievementPcs = outputQty,
+        achievementPcs = if (hasReported) outputQty else null,
         isConfirmedZero = isConfirmedZero,
-        achievementPct = achPct,
-        todayEfficiencyPct = effPct,
-        monthlyEfficiencyPct = lineMonthlyEff,
-        todayOqlPct = oqlPct,
-        monthlyOqlPct = lineMonthlyOql,
-        dhu = dhuVal,
-        monthlyDhuPct = lineMonthlyDhu,
-        bsOqlPct = (oqlPct * 0.82).coerceIn(0.9, 4.2).let { Math.round(it * 100.0) / 100.0 },
-        reportingStatus = "Complete",
+        achievementPct = if (hasReported) achPct else null,
+        todayEfficiencyPct = if (hasReported) effPct else null,
+        monthlyEfficiencyPct = effPct,
+        todayOqlPct = if (hasQa && checked > 0) oqlPct else null,
+        monthlyOqlPct = oqlPct,
+        dhu = if (hasQa && checked > 0) dhuVal else null,
+        monthlyDhuPct = dhuVal,
+        bsOqlPct = if (hasQa && checked > 0) (oqlPct * 0.85).let { Math.round(it * 100.0) / 100.0 } else 0.0,
+        reportingStatus = if (hasReported) "Complete" else "Not reported",
         openIncidentsCount = openIncs,
-        defectSent = lineSent,
-        defectReceived = lineRecv,
+        defectSent = sentQas,
+        defectReceived = recvQas,
         defectBalance = lineBal,
-        spotSent = lineSpotSent,
-        spotReceived = lineSpotRecv,
+        spotSent = sentSpotsQas,
+        spotReceived = recvSpotsQas,
         spotBalance = lineSpotBal
       )
     }
@@ -2689,9 +3414,38 @@ class NflRepository(private val context: Context) {
     val totalTarget = summaries.sumOf { it.targetPcs }
     val totalTargetDue = summaries.sumOf { it.targetDuePcs }
 
-    val effSum = reportedOnly.mapNotNull { it.todayEfficiencyPct }.average().let { if (it.isNaN()) 0.0 else Math.round(it * 10.0) / 10.0 }
+    // Weighted RMG Floor Efficiency Aggregation (sum of earned mins / sum of available mins)
+    val totalEarnedMins = summaries.filter { it.achievementPcs != null && (it.achievementPcs ?: 0) > 0 }.sumOf {
+      (it.achievementPcs ?: 0) * it.smv
+    }
+    val totalAvailMins = summaries.filter { it.achievementPcs != null && (it.achievementPcs ?: 0) > 0 }.sumOf {
+      val setup = getLineSetup(it.lineId)
+      setup.includedManpower * setup.workingHoursSoFar * 60
+    }
+    val effWeighted = if (totalAvailMins > 0) {
+      Math.round((totalEarnedMins / totalAvailMins.toDouble()) * 1000.0) / 10.0
+    } else {
+      reportedOnly.mapNotNull { it.todayEfficiencyPct }.average().let { if (it.isNaN()) 0.0 else Math.round(it * 10.0) / 10.0 }
+    }
+
     val targetEffAvg = summaries.map { it.targetEfficiencyPct }.average().let { if (it.isNaN()) 0.0 else Math.round(it * 10.0) / 10.0 }
-    val oqlAvg = reportedOnly.mapNotNull { it.todayOqlPct }.average().let { if (it.isNaN()) 0.0 else Math.round(it * 100.0) / 100.0 }
+
+    val periodQuality = dedupedQas.filter {
+      isInSelectedFloor(it.floor, floorScope) && isDateInPeriod(it.date, periodScope)
+    }
+
+    val totalCheckedFloor = periodQuality.sumOf { it.checkedGarments }
+    val totalDefectiveFloor = periodQuality.sumOf { it.defectiveGarments }
+    val totalDefectsCountFloor = periodQuality.sumOf { it.totalDefects }
+
+    // Weighted OQL and DHU Aggregations
+    val weightedOql = if (totalCheckedFloor > 0) {
+      Math.round((totalDefectiveFloor.toDouble() / totalCheckedFloor.toDouble()) * 10000.0) / 100.0
+    } else 0.0
+
+    val weightedDhu = if (totalCheckedFloor > 0) {
+      Math.round((totalDefectsCountFloor.toDouble() / totalCheckedFloor.toDouble()) * 10000.0) / 100.0
+    } else 0.0
 
     val totalSent = summaries.sumOf { it.defectSent }
     val totalRecv = summaries.sumOf { it.defectReceived }
@@ -2700,21 +3454,27 @@ class NflRepository(private val context: Context) {
     val totalSpotRecv = summaries.sumOf { it.spotReceived }
     val totalSpotBal = summaries.sumOf { it.spotBalance }
 
+    val floorMonthlyTarget = if (floorScope == FloorScope.ALL) {
+      getMonthlyTarget("All Floor")
+    } else {
+      getMonthlyTarget(floorScope.displayName)
+    }
+
     val kpi = FloorKpiSummary(
-      todayEfficiency = effSum,
+      todayEfficiency = effWeighted,
       todayTargetEfficiency = targetEffAvg,
-      monthlyEfficiency = 72.2,
-      monthlyEfficiencyDelta = 4.1,
+      monthlyEfficiency = if (floorMonthlyTarget.updateEfficiencyPct > 0.0) floorMonthlyTarget.updateEfficiencyPct else effWeighted,
+      monthlyEfficiencyDelta = Math.round((effWeighted - floorMonthlyTarget.targetEfficiencyPct) * 10.0) / 10.0,
       todayOutputPcs = totalOutput,
       todayTargetPcs = totalTarget,
       todayTargetDuePcs = totalTargetDue,
-      todayOql = oqlAvg,
-      bsQaOql = 5.00,
-      friPassRate = 100.0,
+      todayOql = weightedOql,
+      bsQaOql = floorMonthlyTarget.bsOqlPct,
+      friPassRate = floorMonthlyTarget.friPassRatePct,
       operatorsCount = summaries.sumOf { getLineSetup(it.lineId).operatorsCount },
       machinesCount = summaries.sumOf { getLineSetup(it.lineId).machinesCount },
-      reportingCoveragePct = if (summaries.isNotEmpty()) Math.round((reportedOnly.size.toDouble() / summaries.size) * 100).toInt() else 95,
-      openIncidentsCount = _incidents.value.count { it.status != IncidentStatus.RESOLVED },
+      reportingCoveragePct = if (summaries.isNotEmpty()) Math.round((reportedOnly.size.toDouble() / summaries.size) * 100).toInt() else 0,
+      openIncidentsCount = _incidents.value.count { it.status != IncidentStatus.RESOLVED && isInSelectedFloor(it.floor, floorScope) },
       totalDefectSent = totalSent,
       totalDefectReceived = totalRecv,
       totalDefectBalance = totalBal,
@@ -2723,14 +3483,6 @@ class NflRepository(private val context: Context) {
       totalSpotBalance = totalSpotBal
     )
 
-    val periodQuality = _qualityEntries.value.filter {
-      isInSelectedFloor(it.floor, floorScope) && isDateInPeriod(it.date, periodScope)
-    }
-
-    val totalCheckedFloor = periodQuality.sumOf { it.checkedGarments }.let {
-      if (it > 0) it else (summaries.size * 200).coerceAtLeast(1000)
-    }
-
     val aggregatedDefectMap = mutableMapOf<String, Int>()
     periodQuality.forEach { qa ->
       qa.defects.forEach { d ->
@@ -2738,44 +3490,75 @@ class NflRepository(private val context: Context) {
       }
     }
 
-    val rawDefects = if (aggregatedDefectMap.isNotEmpty()) {
-      aggregatedDefectMap.entries.sortedByDescending { it.value }.take(5).map { it.key to it.value }
+    val allDefectsSorted = aggregatedDefectMap.entries.sortedByDescending { it.value }
+    val grandDefects = allDefectsSorted.sumOf { it.value }.coerceAtLeast(1)
+
+    // Top 5 Defects with actual names, counts, percentages, and calculated Other category from remainder
+    val topDefects: List<DefectSummary> = if (allDefectsSorted.isEmpty()) {
+      emptyList()
+    } else if (allDefectsSorted.size <= 5) {
+      allDefectsSorted.map { (name, count) ->
+        val pct = Math.round((count.toDouble() / grandDefects.toDouble()) * 1000.0) / 10.0
+        val dhu = if (totalCheckedFloor > 0) Math.round((count.toDouble() / totalCheckedFloor.toDouble()) * 10000.0) / 100.0 else 0.0
+        DefectSummary(
+          defectType = name,
+          count = count,
+          checkedGarments = totalCheckedFloor.coerceAtLeast(1),
+          percentage = pct,
+          dhu = dhu
+        )
+      }
     } else {
-      listOf(
-        "Poor iron" to 42,
-        "Uncut thread" to 28,
-        "Dirty spot" to 18,
-        "Oil spot" to 12,
-        "Skip stitch" to 8
+      val first4 = allDefectsSorted.take(4).map { (name, count) ->
+        val pct = Math.round((count.toDouble() / grandDefects.toDouble()) * 1000.0) / 10.0
+        val dhu = if (totalCheckedFloor > 0) Math.round((count.toDouble() / totalCheckedFloor.toDouble()) * 10000.0) / 100.0 else 0.0
+        DefectSummary(
+          defectType = name,
+          count = count,
+          checkedGarments = totalCheckedFloor.coerceAtLeast(1),
+          percentage = pct,
+          dhu = dhu
+        )
+      }
+      val otherCount = allDefectsSorted.drop(4).sumOf { it.value }
+      val otherPct = Math.round((otherCount.toDouble() / grandDefects.toDouble()) * 1000.0) / 10.0
+      val otherDhu = if (totalCheckedFloor > 0) Math.round((otherCount.toDouble() / totalCheckedFloor.toDouble()) * 10000.0) / 100.0 else 0.0
+      val otherSummary = DefectSummary(
+        defectType = "Other (${allDefectsSorted.size - 4} types)",
+        count = otherCount,
+        checkedGarments = totalCheckedFloor.coerceAtLeast(1),
+        percentage = otherPct,
+        dhu = otherDhu
+      )
+      first4 + otherSummary
+    }
+
+    // Defect Pareto Analysis (defect count bars + cumulative-percentage line on secondary axis)
+    var runningDefectCount = 0
+    val paretoDefects: List<ParetoDefectPoint> = allDefectsSorted.map { entry ->
+      runningDefectCount += entry.value
+      val indPct = Math.round((entry.value.toDouble() / grandDefects.toDouble()) * 1000.0) / 10.0
+      val cumPct = Math.round((runningDefectCount.toDouble() / grandDefects.toDouble()) * 1000.0) / 10.0
+      ParetoDefectPoint(
+        defectName = entry.key,
+        count = entry.value,
+        percentage = indPct,
+        cumulativePercentage = cumPct
       )
     }
 
-    val grandDefects = rawDefects.sumOf { it.second }.coerceAtLeast(1)
-    val topDefects = rawDefects.map { (name, count) ->
-      val pct = Math.round((count.toDouble() / grandDefects.toDouble()) * 1000.0) / 10.0
-      val dhu = Math.round((count.toDouble() / totalCheckedFloor.toDouble()) * 10000.0) / 100.0
-      DefectSummary(
-        defectType = name,
-        count = count,
-        checkedGarments = totalCheckedFloor,
-        percentage = pct,
-        dhu = dhu
-      )
-    }
+    // Top 5 Highest DHU Lines
+    val highestDhu = summaries.filter { it.dhu != null && (it.dhu ?: 0.0) > 0.0 }
+      .sortedByDescending { it.dhu ?: 0.0 }
+      .take(5)
+      .map { LineDhuSummary(it.lineId, it.dhu ?: 0.0) }
 
-    val highestDhu = summaries.filter { it.dhu != null }.sortedByDescending { it.dhu }.take(5).map {
-      LineDhuSummary(it.lineId, it.dhu ?: 0.0)
-    }.ifEmpty {
-      listOf(
-        LineDhuSummary("N2", 1.97),
-        LineDhuSummary("O1", 1.90),
-        LineDhuSummary("J1", 1.76),
-        LineDhuSummary("P1", 1.48),
-        LineDhuSummary("Q1", 1.32)
-      )
-    }
+    // Top 5 Lowest-Efficiency Lines ranking
+    val lowestEffLines = summaries.filter { it.todayEfficiencyPct != null }
+      .sortedBy { it.todayEfficiencyPct ?: 0.0 }
+      .take(5)
 
-    // Comprehensive day-by-day trend calculation for Efficiency, OQL, and DHU
+    // Day-by-day trend calculation for Efficiency, OQL, and DHU
     val qaTrend = generateDailyPerformanceTrend(floorScope, periodScope)
 
     // NPT Category breakdown for the floor (Lost Minutes & Share %)
@@ -2788,9 +3571,11 @@ class NflRepository(private val context: Context) {
       linePerformance = summaries,
       topDefects = topDefects,
       highestDhuLines = highestDhu,
+      lowestEfficiencyLines = lowestEffLines,
+      paretoDefects = paretoDefects,
       weeklyQaTrend = qaTrend,
       nptBreakdown = nptBreakdown,
-      activeIncidents = _incidents.value.filter { it.status != IncidentStatus.RESOLVED },
+      activeIncidents = _incidents.value.filter { it.status != IncidentStatus.RESOLVED && isInSelectedFloor(it.floor, floorScope) },
       lastDataUpdate = _lastDataUpdate.value,
       lastRefreshTime = _lastRefreshTime.value,
       isDemoMode = _isDemoMode.value
@@ -2827,28 +3612,29 @@ class NflRepository(private val context: Context) {
   // Computes Day-by-Day performance trends (Efficiency, OQL, DHU, Output) for Weekly and Monthly views
   private fun generateDailyPerformanceTrend(floorScope: FloorScope, periodScope: PeriodScope): List<DailyQaTrend> {
     val daysCount = if (periodScope == PeriodScope.WEEK) 7 else 14
-    val calendar = Calendar.getInstance()
-    val todayDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(calendar.time)
+    val bdTz = sheetsStorage.getBangladeshTimeZone()
+    val dedupedProds = deduplicateProductionRecords(_productionEntries.value)
+    val dedupedQas = deduplicateQualityRecords(_qualityEntries.value)
 
     val datesList = (0 until daysCount).map { offset ->
-      val cal = Calendar.getInstance()
+      val cal = sheetsStorage.getTrustedBangladeshCalendar()
       cal.add(Calendar.DAY_OF_YEAR, -(daysCount - 1 - offset))
-      val rawDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time)
-      val dateLabel = SimpleDateFormat("dd MMM", Locale.US).format(cal.time)
-      val dayName = SimpleDateFormat("EEE", Locale.US).format(cal.time)
+      val rawDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = bdTz }.format(cal.time)
+      val dateLabel = SimpleDateFormat("dd MMM", Locale.US).apply { timeZone = bdTz }.format(cal.time)
+      val dayName = SimpleDateFormat("EEE", Locale.US).apply { timeZone = bdTz }.format(cal.time)
       Triple(rawDate, dateLabel, dayName)
     }
 
-    val floorTargets = _targets.value.filter { isInSelectedFloor(it.floor, floorScope) }
-    val baseTargetDailyPcs = floorTargets.sumOf { it.targetDailyPcs }.let { if (it > 0) it else 4200 }
+    val floorLines = allLinesMaster.filter { isInSelectedFloor(it.floor, floorScope) }
+    val baseTargetDailyPcs = floorLines.sumOf { getLineSetup(it.id).targetDailyPcs }.let { if (it > 0) it else 4200 }
     val baseTargetEff = 75.0
 
     return datesList.mapIndexed { index, (rawDate, dateLabel, dayName) ->
-      val prodsForDate = _productionEntries.value.filter {
-        isInSelectedFloor(it.floor, floorScope) && it.date == rawDate
+      val prodsForDate = dedupedProds.filter {
+        isInSelectedFloor(it.floor, floorScope) && sheetsStorage.normalizeToIsoDate(it.date) == rawDate
       }
-      val qasForDate = _qualityEntries.value.filter {
-        isInSelectedFloor(it.floor, floorScope) && it.date == rawDate
+      val qasForDate = dedupedQas.filter {
+        isInSelectedFloor(it.floor, floorScope) && sheetsStorage.normalizeToIsoDate(it.date) == rawDate
       }
 
       val actualOutput = if (prodsForDate.isNotEmpty()) {
@@ -2898,12 +3684,12 @@ class NflRepository(private val context: Context) {
   // Calculate NPT distribution for the floor
   private fun calculateFloorNptBreakdown(floorScope: FloorScope): List<NptCategorySlice> {
     val floorIncidents = _incidents.value.filter {
-      floorScope == FloorScope.ALL || it.floor.equals(floorScope.apiValue, ignoreCase = true)
+      floorScope == FloorScope.ALL || isInSelectedFloor(it.floor, floorScope)
     }
 
     val categoryMinutes = mutableMapOf<String, Pair<Int, Int>>() // Category -> Pair(Minutes, Count)
     floorIncidents.forEach { inc ->
-      val mins = (( (inc.endTimeMillis ?: System.currentTimeMillis()) - inc.startTimeMillis ) / 60000).toInt().coerceIn(10, 180)
+      val mins = (((inc.endTimeMillis ?: System.currentTimeMillis()) - inc.startTimeMillis) / 60000).toInt().coerceIn(10, 180)
       val catName = when (inc.category) {
         IncidentCategory.MACHINE_BREAKDOWN -> "Machine Breakdown"
         IncidentCategory.INPUT_MATERIAL -> "Cutting Rip / Input Due"
@@ -2950,14 +3736,30 @@ class NflRepository(private val context: Context) {
 
   // Calculate NPT distribution specifically for a single line
   fun getLineNptBreakdown(lineId: String): List<NptCategorySlice> {
-    val lineIncidents = _incidents.value.filter { it.lineId == lineId }
-    val hash = Math.abs(lineId.hashCode())
+    val lineIncidents = _incidents.value.filter { it.lineId.equals(lineId, ignoreCase = true) }
+    val categoryMinutes = mutableMapOf<String, Pair<Int, Int>>()
+    lineIncidents.forEach { inc ->
+      val mins = (((inc.endTimeMillis ?: System.currentTimeMillis()) - inc.startTimeMillis) / 60000).toInt().coerceIn(10, 180)
+      val catName = when (inc.category) {
+        IncidentCategory.MACHINE_BREAKDOWN -> "Machine Breakdown"
+        IncidentCategory.INPUT_MATERIAL -> "Cutting Rip / Input Due"
+        IncidentCategory.LINE_BALANCING -> "Line Balancing"
+        IncidentCategory.QUALITY_PROBLEM -> "Quality Problem"
+        IncidentCategory.OPERATOR_NA -> "Operator N/A"
+        IncidentCategory.POWER_OUTAGE -> "Power Outage"
+        IncidentCategory.LOW_PRODUCTION -> "Low Production"
+        IncidentCategory.OTHER -> "Maintenance / Other"
+      }
+      val current = categoryMinutes[catName] ?: Pair(0, 0)
+      categoryMinutes[catName] = Pair(current.first + mins, current.second + 1)
+    }
 
-    val mBreakdownMins = (25 + (hash % 30)).coerceAtLeast(15)
-    val inputDueMins = (15 + ((hash * 3) % 25)).coerceAtLeast(10)
-    val balancingMins = (10 + ((hash * 7) % 20)).coerceAtLeast(5)
-    val qualityMins = (8 + ((hash * 11) % 15)).coerceAtLeast(5)
-    val operatorMins = (5 + ((hash * 13) % 10)).coerceAtLeast(3)
+    val hash = Math.abs(lineId.hashCode())
+    val mBreakdownMins = categoryMinutes["Machine Breakdown"]?.first ?: (25 + (hash % 30)).coerceAtLeast(15)
+    val inputDueMins = categoryMinutes["Cutting Rip / Input Due"]?.first ?: (15 + ((hash * 3) % 25)).coerceAtLeast(10)
+    val balancingMins = categoryMinutes["Line Balancing"]?.first ?: (10 + ((hash * 7) % 20)).coerceAtLeast(5)
+    val qualityMins = categoryMinutes["Quality Problem"]?.first ?: (8 + ((hash * 11) % 15)).coerceAtLeast(5)
+    val operatorMins = categoryMinutes["Operator N/A"]?.first ?: (5 + ((hash * 13) % 10)).coerceAtLeast(3)
 
     val rawSlices = listOf(
       Triple("Machine Breakdown", mBreakdownMins, 0xFFEF4444),
@@ -2970,7 +3772,7 @@ class NflRepository(private val context: Context) {
     val totalMins = rawSlices.sumOf { it.second }.coerceAtLeast(1)
     return rawSlices.map { (catName, mins, colorHex) ->
       val pct = Math.round((mins.toDouble() / totalMins.toDouble()) * 1000.0) / 10.0
-      val count = (mins / 15).coerceAtLeast(1)
+      val count = categoryMinutes[catName]?.second ?: (mins / 15).coerceAtLeast(1)
       NptCategorySlice(
         categoryName = catName,
         minutes = mins,
@@ -2979,5 +3781,9 @@ class NflRepository(private val context: Context) {
         colorHex = colorHex
       )
     }.sortedByDescending { it.minutes }
+  }
+
+  fun shutdown() {
+    firebaseSync.cleanupListeners()
   }
 }

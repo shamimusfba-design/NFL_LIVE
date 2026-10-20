@@ -45,6 +45,8 @@ fun ProductionEntryScreen(
   val repoAssignedLine by repository.assignedLine.collectAsState()
   val isOnline by repository.isOnline.collectAsState()
   val entries by repository.productionEntries.collectAsState()
+  val allTargets by repository.targets.collectAsState()
+  val syncStatusBanner by repository.syncStatusBanner.collectAsState()
   val currentUser by repository.currentUser.collectAsState()
   val isAdminUser = currentUser?.isAdmin == true && currentUser?.role == com.example.model.UserRole.ADMIN
   val isWithinTimeWindow = isAdminUser || repository.isWithinDailyEntryWindow()
@@ -84,13 +86,23 @@ fun ProductionEntryScreen(
   var isBatchMode by remember { mutableStateOf(true) }
 
   // Map to hold batch outputs for each line: lineId -> pieces text
-  val batchOutputs = remember(selectedFloor, selectedHour) {
+  val batchOutputs = remember(selectedFloor, selectedDate, selectedHour) {
     mutableStateMapOf<String, String>().apply {
       availableLines.forEach { line ->
-        val existing = entries.find { it.lineId == line.id && it.date == selectedDate && it.hourSlot == selectedHour }
+        val existingReal = entries.find { !it.isDemo && it.lineId.equals(line.id, ignoreCase = true) && it.date == selectedDate && it.hourSlot == selectedHour }
+        val existing = existingReal ?: entries.find { it.lineId.equals(line.id, ignoreCase = true) && it.date == selectedDate && it.hourSlot == selectedHour }
         if (existing != null && existing.outputQty > 0) {
           this[line.id] = existing.outputQty.toString()
         }
+      }
+    }
+  }
+
+  LaunchedEffect(entries, selectedFloor, selectedDate, selectedHour) {
+    availableLines.forEach { line ->
+      val existingReal = entries.find { !it.isDemo && it.lineId.equals(line.id, ignoreCase = true) && it.date == selectedDate && it.hourSlot == selectedHour }
+      if (existingReal != null) {
+        batchOutputs[line.id] = existingReal.outputQty.toString()
       }
     }
   }
@@ -109,7 +121,7 @@ fun ProductionEntryScreen(
   var submissionSuccessMsg by remember { mutableStateOf<String?>(null) }
   var validationError by remember { mutableStateOf<String?>(null) }
 
-  val singleLineSetup = remember(selectedSingleLine) { repository.getLineSetup(selectedSingleLine) }
+  val singleLineSetup = remember(selectedSingleLine, allTargets) { repository.getLineSetup(selectedSingleLine) }
 
   Scaffold(
     topBar = {
@@ -446,17 +458,49 @@ fun ProductionEntryScreen(
         }
       }
 
-      // Success / Error Feedback Banner
+      // Success / Sync Status Feedback Banner
       AnimatedVisibility(visible = submissionSuccessMsg != null) {
+        val activeMsg = (syncStatusBanner ?: "").ifBlank { submissionSuccessMsg ?: "" }
+        val isWarning = activeMsg.startsWith("⚠️") || activeMsg.startsWith("🔒")
+        val isSaving = activeMsg.startsWith("⏳") || activeMsg.startsWith("🔄")
         Surface(
           shape = RoundedCornerShape(8.dp),
-          color = Color(0xFFDCFCE7),
-          border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF86EFAC)),
+          color = when {
+            isWarning -> Color(0xFFFEF3C7)
+            isSaving -> Color(0xFFE0F2FE)
+            else -> Color(0xFFDCFCE7)
+          },
+          border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            when {
+              isWarning -> Color(0xFFF59E0B)
+              isSaving -> Color(0xFF38BDF8)
+              else -> Color(0xFF86EFAC)
+            }
+          ),
           modifier = Modifier.fillMaxWidth()
         ) {
           Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF16A34A), modifier = Modifier.size(18.dp))
-            Text(submissionSuccessMsg ?: "", color = Color(0xFF166534), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Icon(
+              imageVector = if (isWarning) Icons.Default.Warning else Icons.Default.CheckCircle,
+              contentDescription = null,
+              tint = when {
+                isWarning -> Color(0xFFD97706)
+                isSaving -> Color(0xFF0284C7)
+                else -> Color(0xFF16A34A)
+              },
+              modifier = Modifier.size(18.dp)
+            )
+            Text(
+              text = activeMsg,
+              color = when {
+                isWarning -> Color(0xFF92400E)
+                isSaving -> Color(0xFF0369A1)
+                else -> Color(0xFF166534)
+              },
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold
+            )
           }
         }
       }
