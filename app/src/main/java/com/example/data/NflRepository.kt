@@ -336,7 +336,7 @@ class NflRepository(private val context: Context) {
         canQualityWrite = false, // Cannot enter Quality data
         canOqlWrite = false,
         canNptWrite = true, // Can log line stoppages & call mechanics
-        canMorningTargetWrite = true, // Daily line manpower & target setup
+        canMorningTargetWrite = false, // Supervisors cannot edit daily line targets or manpower
         canMonthlyTargetWrite = false,
         canTargetRevisionWrite = false
       ),
@@ -360,7 +360,7 @@ class NflRepository(private val context: Context) {
         canQualityWrite = false,
         canOqlWrite = false,
         canNptWrite = false,
-        canMorningTargetWrite = false,
+        canMorningTargetWrite = true, // Authorized Production Reporter: daily line target and manpower
         canMonthlyTargetWrite = false,
         canTargetRevisionWrite = false
       ),
@@ -506,7 +506,7 @@ class NflRepository(private val context: Context) {
         canQualityWrite = false,
         canOqlWrite = false,
         canNptWrite = false,
-        canMorningTargetWrite = false,
+        canMorningTargetWrite = true, // IE may edit daily line target and manpower
         canMonthlyTargetWrite = true, // Access only to explicitly authorized Monthly Data operations
         canTargetRevisionWrite = false
       ),
@@ -2235,8 +2235,9 @@ class NflRepository(private val context: Context) {
 
   fun saveLineSetup(setup: SupervisorLineSetup) {
     val u = getAuthoritativeCurrentUser()
-    if (u != null && !u.isAdmin && !u.canMorningTargetWrite && !u.canTargetRevisionWrite) {
-      _syncStatusBanner.value = "⚠️ Access Denied: You do not have permission for Supervisor Line Setup"
+    val allowedRole = u?.role in setOf(UserRole.IE, UserRole.PRODUCTION_REPORTER)
+    if (u != null && !u.isAdmin && (!allowedRole || !u.canMorningTargetWrite)) {
+      _syncStatusBanner.value = "⚠️ Access Denied: Daily line targets and manpower can only be edited by authorized IE or Production Reporter accounts."
       return
     }
     val normDate = sheetsStorage.normalizeToIsoDate(setup.date)
