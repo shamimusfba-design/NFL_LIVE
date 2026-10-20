@@ -361,7 +361,7 @@ fun MonthlySetupScreen(
             TableHeaderCell("Monthly OQL %", 105.dp)
             TableHeaderCell("Action", 90.dp)
           }
-          HorizontalDivider(color = Color(0xFFE2E8F0))
+          Divider(color = Color(0xFFE2E8F0))
           floorLines.forEach { line ->
             val lineTarget = monthlyTargets.find {
               it.lineId.equals(line.id, ignoreCase = true) &&
@@ -375,7 +375,7 @@ fun MonthlySetupScreen(
               userName = userName,
               repository = repository
             )
-            HorizontalDivider(color = Color(0xFFF1F5F9))
+            Divider(color = Color(0xFFF1F5F9))
           }
           if (!canEditLineMonthlyData) {
             Text(
@@ -417,13 +417,13 @@ private fun LineMonthlyDataRow(
   repository: NflRepository
 ) {
   var efficiency by remember(lineId, target?.lastUpdatedMillis) {
-    mutableStateOf(target?.updateEfficiencyPct?.takeIf { target != null }?.toString() ?: "")
+    mutableStateOf(target?.updateEfficiencyPct?.toString() ?: "")
   }
   var monthlyTarget by remember(lineId, target?.lastUpdatedMillis) {
-    mutableStateOf(target?.monthlyTargetPcs?.takeIf { it > 0.0 }?.toString() ?: "")
+    mutableStateOf(target?.monthlyTargetPcs?.toString() ?: "")
   }
   var achievement by remember(lineId, target?.lastUpdatedMillis) {
-    mutableStateOf(target?.monthlyAchievementPcs?.takeIf { it > 0.0 }?.toString() ?: "")
+    mutableStateOf(target?.monthlyAchievementPcs?.toString() ?: "")
   }
   var dhu by remember(lineId, target?.lastUpdatedMillis) {
     mutableStateOf(target?.targetDhuPct?.toString() ?: "")
