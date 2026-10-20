@@ -9,6 +9,7 @@ Desktop-first web control panel plus initial Android registration/device-approva
 - **The current repository's Firestore rules are open (`allow read, write: if true`). Do not deploy this panel to real users or rely on UI checks until secure rules and the Android authentication migration are completed.**
 - Current Android code uses its own Employee ID/password records, including a legacy plaintext `password` field. The Admin Panel intentionally does not display or edit password fields. A safe migration must move credentials to Firebase Authentication and remove plaintext passwords without locking out existing users.
 - Android now creates `registration_requests` documents for new registrations and unapproved-device logins. Admin approval updates the matching `users/{employeeId}` record and binds one approved device. Test this on two phones before rollout.
+- **Registration and approval are not yet end-to-end usable under the current Firestore rules.** The existing Android app is not Firebase-Authenticated, and `registration_requests` currently has no rule permitting its writes. The registration flow intentionally reports a cloud failure rather than claiming success. Complete the coordinated Firebase Auth migration and rules before enabling it.
 - Edits currently write directly to Firestore. Before production use, enforce admin-only authorization in Firestore rules or a trusted backend, and implement atomic approval, single-device session invalidation, and immutable audit records.
 
 ## Configure Firebase Hosting
