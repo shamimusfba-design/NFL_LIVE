@@ -44,7 +44,9 @@ fun SupervisorSetupScreen(
   val assignedLine by repository.assignedLine.collectAsState()
   val allTargets by repository.targets.collectAsState()
   val currentUser by repository.currentUser.collectAsState()
-  val canMorningTargetWrite = currentUser?.let { it.isAdmin || it.canMorningTargetWrite } ?: false
+  val canMorningTargetWrite = currentUser?.let { user ->
+    user.isAdmin || (user.canMorningTargetWrite && user.role in setOf(com.example.model.UserRole.IE, com.example.model.UserRole.PRODUCTION_REPORTER))
+  } ?: false
 
   var selectedFloor by remember { mutableStateOf(FloorScope.SEW_2) }
   var selectedLine by remember { mutableStateOf(assignedLine) }
@@ -197,7 +199,7 @@ fun SupervisorSetupScreen(
             Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(18.dp))
             Column {
               Text("View-Only Mode (টার্গেট সেটআপ লক করা)", color = Color(0xFF92400E), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-              Text("You have read-only access. Only floor supervisors & IE can adjust line targets and SMV. (Management has view-only access).", color = Color(0xFFB45309), fontSize = 10.sp)
+              Text("Read-only access. Only authorized IE and Production Reporter accounts can edit daily line targets and manpower.", color = Color(0xFFB45309), fontSize = 10.sp)
             }
           }
         }
@@ -347,31 +349,39 @@ fun SupervisorSetupScreen(
             )
           }
 
-          // Row 3: Manpower & Machines (Operators, Running Machines, Helpers)
+          // Row 3: Three manpower categories that make up total manpower.
           Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
               value = operatorsText,
               onValueChange = { operatorsText = it },
-              label = { Text("Operators (অপারেটর)") },
+              label = { Text("Operators") },
               modifier = Modifier.weight(1f),
               singleLine = true,
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
-
-            OutlinedTextField(
-              value = machinesText,
-              onValueChange = { machinesText = it },
-              label = { Text("Machines (মেশিন)") },
-              modifier = Modifier.weight(1f),
-              singleLine = true,
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-            )
-
             OutlinedTextField(
               value = helpersText,
               onValueChange = { helpersText = it },
-              label = { Text("Helpers (হেলপার)") },
+              label = { Text("Helpers") },
               modifier = Modifier.weight(1f),
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+            OutlinedTextField(
+              value = finishingText,
+              onValueChange = { finishingText = it },
+              label = { Text("Finishing") },
+              modifier = Modifier.weight(1f),
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+            )
+          }
+          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+              value = machinesText,
+              onValueChange = { machinesText = it },
+              label = { Text("Running Machines") },
+              modifier = Modifier.fillMaxWidth(),
               singleLine = true,
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
@@ -385,7 +395,7 @@ fun SupervisorSetupScreen(
           ) {
             Column(modifier = Modifier.weight(1f)) {
               Text("Include Helpers in Available Minutes", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-              Text("Off: Manpower = Operators | On: Manpower = Ops + Helpers", fontSize = 9.sp, color = Color(0xFF64748B))
+              Text("This switch only controls whether helpers count toward available production minutes. Total manpower always includes Operators + Helpers + Finishing.", fontSize = 9.sp, color = Color(0xFF64748B))
             }
             Switch(checked = includeHelpers, onCheckedChange = { includeHelpers = it })
           }
@@ -394,11 +404,31 @@ fun SupervisorSetupScreen(
           val smvVal = smvText.toDoubleOrNull() ?: 14.50
           val targetVal = targetDailyPcsText.toIntOrNull() ?: 480
           val opsVal = operatorsText.toIntOrNull() ?: 20
-          val theoreticalEff = if (opsVal > 0 && smvVal > 0) {
+          val helpersVal = helpersText.toIntOrNull() ?: 2
+          val finishingVal = finishingText.toIntOrNull() ?: 4
+          val totalManpower = opsVal + helpersVal + finishingVal
+          val efficiencyManpower = opsVal + (if (includeHelpers) helpersVal else 0)
+          val theoreticalEff = if (efficiencyManpower > 0 && smvVal > 0) {
             val earned = targetVal * smvVal
-            val avail = opsVal * 8 * 60
+            val avail = efficiencyManpower * 8 * 60
             ((earned / avail) * 100).let { Math.round(it * 10.0) / 10.0 }
           } else 0.0
+
+          Surface(
+            color = Color(0xFFEFF6FF),
+            shape = RoundedCornerShape(8.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE)),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text("TOTAL MANPOWER", color = Color(0xFF1D4ED8), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              Text("$totalManpower persons", color = Color(0xFF1E3A8A), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+            }
+          }
 
           // BS OQL (Buyer Standard OQL - IE Entry Benchmark)
           val floorMonthlyTarget = repository.getMonthlyTarget(selectedFloor.apiValue)
