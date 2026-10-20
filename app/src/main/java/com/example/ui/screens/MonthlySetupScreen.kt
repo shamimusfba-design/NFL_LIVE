@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -36,7 +37,14 @@ fun MonthlySetupScreen(
   val monthlyTargets by repository.monthlyTargets.collectAsState()
   val userName by repository.currentUserName.collectAsState()
   val currentUser by repository.currentUser.collectAsState()
-  val canMonthlyTargetWrite = currentUser?.let { it.isAdmin || it.canMonthlyTargetWrite } ?: false
+  val canMonthlyTargetWrite = currentUser?.let { it.isAdmin || (it.role == com.example.model.UserRole.IE && it.canMonthlyTargetWrite) } ?: false
+  val canEditLineMonthlyData = currentUser?.let { it.isAdmin || (it.role == com.example.model.UserRole.IE && it.canMonthlyTargetWrite) } ?: false
+  val floorLines = remember(selectedFloor) {
+    repository.allLinesMaster.filter { line ->
+      line.floor.replace("-", " ").equals(selectedFloor.apiValue.replace("-", " "), ignoreCase = true) ||
+        (selectedFloor == FloorScope.FINISHING && line.floor.contains("Finish", ignoreCase = true))
+    }
+  }
 
   var selectedFloor by remember { mutableStateOf(FloorScope.SEW_2) }
   val currentTarget = remember(selectedFloor, monthlyTargets) {
@@ -118,6 +126,13 @@ fun MonthlySetupScreen(
           }
         }
       }
+
+      Text(
+        text = "Floor-wise Monthly Data",
+        fontSize = 17.sp,
+        fontWeight = FontWeight.ExtraBold,
+        color = Color(0xFF0F172A)
+      )
 
       // 2. Achieved Data Fields Card
       Card(
@@ -285,6 +300,187 @@ fun MonthlySetupScreen(
           }
         }
       }
+
+      // Line-wise monthly data table: separate records for every line, not derived from floor totals.
+      Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(2.dp),
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(12.dp),
+          verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+          Text(
+            text = "${selectedFloor.displayName} — Line-wise Monthly Data",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = Color(0xFF0F172A)
+          )
+          Text(
+            text = "Enter each line's monthly figures separately. Floor-wise figures above remain independent.",
+            fontSize = 11.sp,
+            color = Color(0xFF64748B)
+          )
+          Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            TableHeaderCell("Line", 78.dp)
+            TableHeaderCell("Monthly Efficiency %", 120.dp)
+            TableHeaderCell("Monthly Target", 110.dp)
+            TableHeaderCell("Monthly Achievement", 130.dp)
+            TableHeaderCell("Monthly DHU %", 105.dp)
+            TableHeaderCell("Monthly OQL %", 105.dp)
+            TableHeaderCell("Action", 90.dp)
+          }
+          HorizontalDivider(color = Color(0xFFE2E8F0))
+          floorLines.forEach { line ->
+            val lineTarget = monthlyTargets.find {
+              it.lineId.equals(line.id, ignoreCase = true) &&
+                it.floor.replace("-", " ").equals(selectedFloor.apiValue.replace("-", " "), ignoreCase = true)
+            }
+            LineMonthlyDataRow(
+              lineId = line.id,
+              floorName = selectedFloor.apiValue,
+              target = lineTarget,
+              canEdit = canEditLineMonthlyData,
+              userName = userName,
+              repository = repository
+            )
+            HorizontalDivider(color = Color(0xFFF1F5F9))
+          }
+          if (!canEditLineMonthlyData) {
+            Text(
+              text = "View only — only IE or Admin can enter or update line-wise monthly data.",
+              color = Color(0xFF92400E),
+              fontSize = 11.sp
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun TableHeaderCell(label: String, width: androidx.compose.ui.unit.Dp) {
+  Surface(
+    color = Color(0xFF0F172A),
+    shape = RoundedCornerShape(5.dp),
+    modifier = Modifier.width(width)
+  ) {
+    Text(
+      text = label,
+      color = Color.White,
+      fontSize = 10.sp,
+      fontWeight = FontWeight.Bold,
+      modifier = Modifier.padding(horizontal = 7.dp, vertical = 9.dp)
+    )
+  }
+}
+
+@Composable
+private fun LineMonthlyDataRow(
+  lineId: String,
+  floorName: String,
+  target: MonthlyFactoryTarget?,
+  canEdit: Boolean,
+  userName: String,
+  repository: NflRepository
+) {
+  var efficiency by remember(lineId, target?.lastUpdatedMillis) {
+    mutableStateOf(target?.updateEfficiencyPct?.takeIf { target != null }?.toString() ?: "")
+  }
+  var monthlyTarget by remember(lineId, target?.lastUpdatedMillis) {
+    mutableStateOf(target?.monthlyTargetPcs?.takeIf { it > 0.0 }?.toString() ?: "")
+  }
+  var achievement by remember(lineId, target?.lastUpdatedMillis) {
+    mutableStateOf(target?.monthlyAchievementPcs?.takeIf { it > 0.0 }?.toString() ?: "")
+  }
+  var dhu by remember(lineId, target?.lastUpdatedMillis) {
+    mutableStateOf(target?.targetDhuPct?.toString() ?: "")
+  }
+  var oql by remember(lineId, target?.lastUpdatedMillis) {
+    mutableStateOf(target?.targetOqlPct?.toString() ?: "")
+  }
+  var savedMessage by remember(lineId) { mutableStateOf(false) }
+
+  Row(
+    modifier = Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 4.dp),
+    horizontalArrangement = Arrangement.spacedBy(6.dp),
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    Surface(
+      color = Color(0xFFEFF6FF),
+      shape = RoundedCornerShape(6.dp),
+      modifier = Modifier.width(78.dp)
+    ) {
+      Text(lineId, fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8), fontSize = 12.sp,
+        modifier = Modifier.padding(8.dp))
+    }
+    OutlinedTextField(
+      value = efficiency, onValueChange = { efficiency = it; savedMessage = false },
+      label = { Text("Efficiency %", fontSize = 9.sp) }, singleLine = true, enabled = canEdit,
+      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+      modifier = Modifier.width(120.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+    )
+    OutlinedTextField(
+      value = monthlyTarget, onValueChange = { monthlyTarget = it; savedMessage = false },
+      label = { Text("Target pcs", fontSize = 9.sp) }, singleLine = true, enabled = canEdit,
+      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+      modifier = Modifier.width(110.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+    )
+    OutlinedTextField(
+      value = achievement, onValueChange = { achievement = it; savedMessage = false },
+      label = { Text("Achieved pcs", fontSize = 9.sp) }, singleLine = true, enabled = canEdit,
+      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+      modifier = Modifier.width(130.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+    )
+    OutlinedTextField(
+      value = dhu, onValueChange = { dhu = it; savedMessage = false },
+      label = { Text("DHU %", fontSize = 9.sp) }, singleLine = true, enabled = canEdit,
+      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+      modifier = Modifier.width(105.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+    )
+    OutlinedTextField(
+      value = oql, onValueChange = { oql = it; savedMessage = false },
+      label = { Text("OQL %", fontSize = 9.sp) }, singleLine = true, enabled = canEdit,
+      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+      modifier = Modifier.width(105.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+    )
+    Column(modifier = Modifier.width(90.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+      Button(
+        onClick = {
+          val eff = efficiency.toDoubleOrNull()
+          val targetPcs = monthlyTarget.toDoubleOrNull()
+          val achievedPcs = achievement.toDoubleOrNull()
+          val dhuPct = dhu.toDoubleOrNull()
+          val oqlPct = oql.toDoubleOrNull()
+          if (eff != null && targetPcs != null && achievedPcs != null && dhuPct != null && oqlPct != null) {
+            repository.saveMonthlyTarget(
+              MonthlyFactoryTarget(
+                floor = floorName,
+                lineId = lineId,
+                updateEfficiencyPct = eff,
+                targetEfficiencyPct = eff,
+                monthlyTargetPcs = targetPcs,
+                monthlyAchievementPcs = achievedPcs,
+                targetDhuPct = dhuPct,
+                targetOqlPct = oqlPct,
+                lastUpdatedBy = userName
+              )
+            )
+            savedMessage = true
+          }
+        },
+        enabled = canEdit,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 5.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF15803D))
+      ) { Text("Save", fontSize = 10.sp) }
+      if (savedMessage) Text("Saved", color = Color(0xFF15803D), fontSize = 9.sp)
     }
   }
 }
