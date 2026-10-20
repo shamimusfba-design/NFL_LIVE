@@ -53,13 +53,14 @@ fun LineDeepDiveScreen(
   val productionEntries by repository.productionEntries.collectAsState()
   val qualityEntries by repository.qualityEntries.collectAsState()
   val targets by repository.targets.collectAsState()
+  val monthlyTargets by repository.monthlyTargets.collectAsState()
   val incidents by repository.incidents.collectAsState()
 
   val lineSetup = remember(selectedLineId, targets, refreshTrigger) { repository.getLineSetup(selectedLineId) }
   val lineObj = remember(selectedLineId) { repository.allLinesMaster.find { it.id == selectedLineId } }
   val floorName = lineObj?.floor ?: lineSetup.floor
 
-  val monthlyTarget = remember(floorName, refreshTrigger) { repository.getMonthlyTarget(floorName) }
+  val monthlyTarget = remember(floorName, monthlyTargets, refreshTrigger) { repository.getMonthlyTarget(floorName) }
 
   val hourlyProd = remember(selectedLineId, selectedPeriod, productionEntries, targets, refreshTrigger) {
     repository.getHourlyProductionData(selectedLineId, selectedPeriod)

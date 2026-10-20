@@ -9,7 +9,6 @@ enum class SyncStatus {
 }
 
 enum class FloorScope(val displayName: String, val apiValue: String) {
-  SWING_ACW("Swing ACW", "Swing ACW"),
   SEW_1("Sew-1", "Sew 1"),
   SEW_2("Sew-2", "Sew 2"),
   SEW_3("Sew-3", "Sew 3"),

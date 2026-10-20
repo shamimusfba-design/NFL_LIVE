@@ -91,9 +91,7 @@ fun TvDashboardScreen(
 
   val activeIncidents = tvData.activeIncidents
 
-  // Exact 5 floor buttons requested in Section 5
   val tvFloorOptions = listOf(
-    FloorScope.SWING_ACW,
     FloorScope.SEW_1,
     FloorScope.SEW_2,
     FloorScope.SEW_3,
@@ -281,7 +279,7 @@ fun TvDashboardScreen(
       }
     }
 
-    // 2. Exact Floor Selector Ribbon (Swing ACW, Sew-1, Sew-2, Sew-3, All Floor) — No Auto-Rotation!
+    // 2. Floor Selector Ribbon (Sew-1, Sew-2, Sew-3, All Floor) — No Auto-Rotation!
     Surface(
       color = Color.White,
       shape = RoundedCornerShape(8.dp),

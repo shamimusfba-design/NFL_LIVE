@@ -90,9 +90,8 @@ fun ProductionEntryScreen(
     mutableStateMapOf<String, String>().apply {
       availableLines.forEach { line ->
         val existingReal = entries.find { !it.isDemo && it.lineId.equals(line.id, ignoreCase = true) && it.date == selectedDate && it.hourSlot == selectedHour }
-        val existing = existingReal ?: entries.find { it.lineId.equals(line.id, ignoreCase = true) && it.date == selectedDate && it.hourSlot == selectedHour }
-        if (existing != null && existing.outputQty > 0) {
-          this[line.id] = existing.outputQty.toString()
+        if (existingReal != null && (existingReal.outputQty > 0 || existingReal.isConfirmedZero)) {
+          this[line.id] = existingReal.outputQty.toString()
         }
       }
     }
@@ -117,6 +116,22 @@ fun ProductionEntryScreen(
   var showLineDropdown by remember { mutableStateOf(false) }
   var singleOutputQtyText by remember { mutableStateOf("85") }
   var singleRemarksText by remember { mutableStateOf("") }
+
+  val existingSingleReal = remember(entries, selectedSingleLine, selectedDate, selectedHour) {
+    entries.find {
+      !it.isDemo &&
+      it.lineId.equals(selectedSingleLine, ignoreCase = true) &&
+      it.date == selectedDate &&
+      it.hourSlot == selectedHour
+    }
+  }
+
+  LaunchedEffect(selectedSingleLine, selectedDate, selectedHour, existingSingleReal?.timestamp, existingSingleReal?.revision) {
+    if (existingSingleReal != null) {
+      singleOutputQtyText = existingSingleReal.outputQty.toString()
+      singleRemarksText = existingSingleReal.remarks
+    }
+  }
 
   var submissionSuccessMsg by remember { mutableStateOf<String?>(null) }
   var validationError by remember { mutableStateOf<String?>(null) }

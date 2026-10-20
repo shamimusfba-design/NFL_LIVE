@@ -1,5 +1,21 @@
 {
-  "firestore": {
-    "rules": "firestore.rules"
+  "firestore": [
+    {
+      "database": "ai-studio-android-nfllivea-664f462a-fb9e-483d-9567-6ac2c98cf7a4",
+      "rules": "firestore.rules"
+    }
+  ],
+  "emulators": {
+    "firestore": {
+      "host": "127.0.0.1",
+      "port": 8085
+    },
+    "auth": {
+      "host": "127.0.0.1",
+      "port": 9099
+    },
+    "ui": {
+      "enabled": false
+    }
   }
 }

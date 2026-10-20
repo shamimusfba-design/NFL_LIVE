@@ -108,13 +108,7 @@ class NflRepository(private val context: Context) {
     LineInfo(id = "ZA2A", floor = "Sew 3"),
     LineInfo(id = "ZA2B", floor = "Sew 3"),
     LineInfo(id = "Iron 3", floor = "Sew 3"),
-    LineInfo(id = "Packing 3", floor = "Sew 3"),
-
-    // Swing ACW (Finishing & ACW lines)
-    LineInfo(id = "ACW 1", floor = "Swing ACW"),
-    LineInfo(id = "ACW 2", floor = "Swing ACW"),
-    LineInfo(id = "Finishing 1", floor = "Swing ACW"),
-    LineInfo(id = "Finishing 2", floor = "Swing ACW")
+    LineInfo(id = "Packing 3", floor = "Sew 3")
   )
 
   val defaultLines get() = allLinesMaster
@@ -703,6 +697,9 @@ class NflRepository(private val context: Context) {
       firebaseSync.onRemoteMonthlyTargetsUpdated = { remoteList ->
         upsertRemoteMonthlyTargets(remoteList)
       }
+      firebaseSync.onRemoteUsersUpdated = { remoteList ->
+        upsertRemoteUsers(remoteList)
+      }
       firebaseSync.onSyncStatusChanged = { statusMsg ->
         _syncStatusBanner.value = statusMsg
       }
@@ -967,11 +964,14 @@ class NflRepository(private val context: Context) {
     if (remoteList.isEmpty()) return
     val current = _monthlyTargets.value
     val byFloor = LinkedHashMap<String, MonthlyFactoryTarget>()
-    current.forEach { byFloor[it.floor.trim().lowercase(Locale.US)] = it }
+    current.forEach {
+      val normKey = it.floor.trim().replace("-", " ").replace("  ", " ").lowercase(Locale.US)
+      byFloor[normKey] = it
+    }
 
     var changed = false
     remoteList.forEach { remote ->
-      val key = remote.floor.trim().lowercase(Locale.US)
+      val key = remote.floor.trim().replace("-", " ").replace("  ", " ").lowercase(Locale.US)
       val prev = byFloor[key]
       if (prev == null || prev != remote) {
         byFloor[key] = remote
@@ -981,6 +981,41 @@ class NflRepository(private val context: Context) {
     if (changed) {
       _monthlyTargets.value = byFloor.values.toList()
       sheetsStorage.saveLocalMonthlyTargets(_monthlyTargets.value)
+      touchDataUpdated()
+    }
+  }
+
+  fun upsertRemoteUsers(remoteList: List<UserAccount>) {
+    if (remoteList.isEmpty()) return
+    val current = _users.value
+    val byId = LinkedHashMap<String, UserAccount>()
+    current.forEach { byId[it.id.trim().lowercase(Locale.US)] = it }
+
+    var changed = false
+    remoteList.forEach { remote ->
+      val key = remote.id.trim().lowercase(Locale.US)
+      val prev = byId[key]
+      if (prev == null || prev != remote) {
+        val merged = if (prev != null && remote.approvedDevices.isEmpty() && prev.approvedDevices.isNotEmpty()) {
+          remote.copy(approvedDevices = prev.approvedDevices)
+        } else {
+          remote
+        }
+        byId[key] = merged
+        changed = true
+      }
+    }
+    if (changed) {
+      _users.value = byId.values.toList()
+      sheetsStorage.saveLocalUsers(_users.value)
+      _currentUser.value?.let { active ->
+        val updatedActive = _users.value.find { it.id.equals(active.id, ignoreCase = true) }
+        if (updatedActive != null) {
+          _currentUser.value = updatedActive
+          _currentRole.value = updatedActive.role
+          _currentUserName.value = updatedActive.name
+        }
+      }
       touchDataUpdated()
     }
   }
@@ -1015,8 +1050,8 @@ class NflRepository(private val context: Context) {
 
     repoScope.launch {
       try {
-        // 1. Re-ensure Firestore real-time listeners are active
-        if (firebaseSync.isAvailable()) {
+        // 1. Re-ensure Firestore real-time listeners are active if not already running
+        if (firebaseSync.isAvailable() && (!firebaseSync.hasActiveListeners() || firebaseSync.hasPermissionError)) {
           firebaseSync.startRealtimeListeners(forceRetry = true)
         }
 
@@ -1093,24 +1128,9 @@ class NflRepository(private val context: Context) {
         if (combinedMonthly.isNotEmpty()) {
           upsertRemoteMonthlyTargets(combinedMonthly)
         }
-
-        if (sheetRes.fetchedUsers.isNotEmpty()) {
-          val fetchedById = sheetRes.fetchedUsers.associateBy { it.id.lowercase(Locale.US) }
-          val mergedExisting = _users.value.map { localUser ->
-            fetchedById[localUser.id.lowercase(Locale.US)] ?: localUser
-          }
-          val existingIds = _users.value.map { it.id.lowercase(Locale.US) }.toSet()
-          val newFetchedUsers = sheetRes.fetchedUsers.filter { it.id.lowercase(Locale.US) !in existingIds }
-          _users.value = mergedExisting + newFetchedUsers
-          sheetsStorage.saveLocalUsers(_users.value)
-          _currentUser.value?.let { active ->
-            val updatedActive = _users.value.find { it.id.equals(active.id, ignoreCase = true) }
-            if (updatedActive != null) {
-              _currentUser.value = updatedActive
-              _currentRole.value = updatedActive.role
-              _currentUserName.value = updatedActive.name
-            }
-          }
+        val combinedUsers = firestoreRes.users + sheetRes.fetchedUsers
+        if (combinedUsers.isNotEmpty()) {
+          upsertRemoteUsers(combinedUsers)
         }
 
         // 7. Persist updated non-demo records locally
@@ -1224,27 +1244,39 @@ class NflRepository(private val context: Context) {
     return SimpleDateFormat("dd MMM yyyy", Locale.US).format(calendar.time)
   }
 
+  // Cached date period bounds to avoid allocating Calendar/SimpleDateFormat thousands of times per frame
+  @Volatile private var cachedBoundsMillis: Long = 0L
+  @Volatile private var cachedTodayIso: String = ""
+  @Volatile private var cachedYestIso: String = ""
+  @Volatile private var cachedWeekStartIso: String = ""
+  @Volatile private var cachedMonthPrefix: String = ""
+
+  private fun ensureDateBoundsFresh() {
+    val now = System.currentTimeMillis()
+    if (now - cachedBoundsMillis < 5000L && cachedTodayIso.isNotEmpty()) return
+    val tz = sheetsStorage.getBangladeshTimeZone()
+    val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = tz }
+    val cal = sheetsStorage.getTrustedBangladeshCalendar()
+    val today = fmt.format(cal.time)
+    cal.add(Calendar.DAY_OF_YEAR, -1)
+    val yest = fmt.format(cal.time)
+    cal.add(Calendar.DAY_OF_YEAR, -5)
+    val weekStart = fmt.format(cal.time)
+    cachedTodayIso = today
+    cachedYestIso = yest
+    cachedWeekStartIso = weekStart
+    cachedMonthPrefix = today.take(7)
+    cachedBoundsMillis = now
+  }
+
   fun isDateInPeriod(dateInput: String, period: PeriodScope): Boolean {
+    ensureDateBoundsFresh()
     val normDate = sheetsStorage.normalizeToIsoDate(dateInput)
-    val bangladeshCal = sheetsStorage.getTrustedBangladeshCalendar()
-    val todayIso = sheetsStorage.getCurrentBangladeshDateIso()
     return when (period) {
-      PeriodScope.TODAY -> normDate == todayIso
-      PeriodScope.YESTERDAY -> {
-        bangladeshCal.add(Calendar.DAY_OF_YEAR, -1)
-        val yestIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
-          timeZone = sheetsStorage.getBangladeshTimeZone()
-        }.format(bangladeshCal.time)
-        normDate == yestIso
-      }
-      PeriodScope.WEEK -> {
-        bangladeshCal.add(Calendar.DAY_OF_YEAR, -6)
-        val startIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
-          timeZone = sheetsStorage.getBangladeshTimeZone()
-        }.format(bangladeshCal.time)
-        normDate in startIso..todayIso
-      }
-      PeriodScope.MONTH -> normDate.startsWith(todayIso.take(7))
+      PeriodScope.TODAY -> normDate == cachedTodayIso
+      PeriodScope.YESTERDAY -> normDate == cachedYestIso
+      PeriodScope.WEEK -> normDate in cachedWeekStartIso..cachedTodayIso
+      PeriodScope.MONTH -> normDate.startsWith(cachedMonthPrefix)
     }
   }
 
@@ -1252,13 +1284,10 @@ class NflRepository(private val context: Context) {
     val cleanFloor = floor.trim()
     return when (floorScope) {
       FloorScope.ALL -> true
-      FloorScope.SWING_ACW -> cleanFloor.equals("Swing ACW", ignoreCase = true) ||
-          cleanFloor.equals("ACW", ignoreCase = true) ||
-          cleanFloor.equals("Finishing", ignoreCase = true)
       FloorScope.SEW_1 -> cleanFloor.equals("Sew 1", ignoreCase = true) || cleanFloor.equals("Sew-1", ignoreCase = true)
       FloorScope.SEW_2 -> cleanFloor.equals("Sew 2", ignoreCase = true) || cleanFloor.equals("Sew-2", ignoreCase = true)
       FloorScope.SEW_3 -> cleanFloor.equals("Sew 3", ignoreCase = true) || cleanFloor.equals("Sew-3", ignoreCase = true)
-      FloorScope.FINISHING -> cleanFloor.equals("Finishing", ignoreCase = true) || cleanFloor.equals("Swing ACW", ignoreCase = true)
+      FloorScope.FINISHING -> cleanFloor.equals("Finishing", ignoreCase = true)
     }
   }
 
@@ -1418,7 +1447,11 @@ class NflRepository(private val context: Context) {
     )
 
     fun populateFloorWithSeeds(floorName: String, seeds: List<LineSeedData>) {
-      datesToSeed.forEach { curDate ->
+      val hourSlots = listOf(
+        "08:00 - 09:00", "09:00 - 10:00", "10:00 - 11:00", "11:00 - 12:00",
+        "13:00 - 14:00", "14:00 - 15:00", "15:00 - 16:00", "16:00 - 17:00"
+      )
+      datesToSeed.forEachIndexed { dayIdx, curDate ->
         seeds.forEach { seed ->
           demoTargets.add(
             SupervisorLineSetup(
@@ -1441,23 +1474,35 @@ class NflRepository(private val context: Context) {
 
           val actualOutput = seed.outputPcs ?: ((seed.targetPcs * 0.82).toInt())
 
-          val hourSlots = listOf(
-            "08:00 - 09:00", "09:00 - 10:00", "10:00 - 11:00", "11:00 - 12:00",
-            "13:00 - 14:00", "14:00 - 15:00", "15:00 - 16:00", "16:00 - 17:00"
-          )
-          val perSlotQty = (actualOutput / hourSlots.size).coerceAtLeast(1)
-          val remainder = actualOutput % hourSlots.size
-
-          hourSlots.forEachIndexed { idx, slot ->
-            val slotQty = perSlotQty + if (idx == hourSlots.lastIndex) remainder else 0
+          if (dayIdx == 0) {
+            val perSlotQty = (actualOutput / hourSlots.size).coerceAtLeast(1)
+            val remainder = actualOutput % hourSlots.size
+            hourSlots.forEachIndexed { idx, slot ->
+              val slotQty = perSlotQty + if (idx == hourSlots.lastIndex) remainder else 0
+              demoProds.add(
+                ProductionRecord(
+                  lineId = seed.lineId,
+                  floor = floorName,
+                  date = curDate,
+                  hourSlot = slot,
+                  styleNumber = "",
+                  outputQty = slotQty,
+                  isConfirmedZero = false,
+                  modifiedBy = "Md. Rafiqul",
+                  isDemo = true
+                )
+              )
+            }
+          } else {
+            // Lightweight single daily summary record for past days (reduces startup memory & scan load by 75%)
             demoProds.add(
               ProductionRecord(
                 lineId = seed.lineId,
                 floor = floorName,
                 date = curDate,
-                hourSlot = slot,
+                hourSlot = "16:00 - 17:00",
                 styleNumber = "",
-                outputQty = slotQty,
+                outputQty = actualOutput,
                 isConfirmedZero = false,
                 modifiedBy = "Md. Rafiqul",
                 isDemo = true
@@ -2619,7 +2664,9 @@ class NflRepository(private val context: Context) {
       _currentRole.value = user.role
       _currentUserName.value = user.name
     }
+    touchDataUpdated()
     repoScope.launch {
+      firebaseSync.pushUserAccountAwait(user)
       sheetsStorage.pushUserAccountToSheet(user)
     }
   }
@@ -2647,7 +2694,10 @@ class NflRepository(private val context: Context) {
     _currentUser.value = admin
     _currentRole.value = UserRole.ADMIN
     _currentUserName.value = admin.name
-    repoScope.launch { sheetsStorage.pushUserAccountToSheet(admin) }
+    repoScope.launch {
+      firebaseSync.pushUserAccountAwait(admin)
+      sheetsStorage.pushUserAccountToSheet(admin)
+    }
     addAuditLog("AUTH", admin.id, "ADMIN_INIT", admin.name, "Initial admin credentials configured")
     return admin
   }
@@ -2735,8 +2785,12 @@ class NflRepository(private val context: Context) {
       } else u
     }
     sheetsStorage.saveLocalUsers(_users.value)
+    touchDataUpdated()
     repoScope.launch {
-      updatedForSheet.forEach { sheetsStorage.pushUserAccountToSheet(it) }
+      updatedForSheet.forEach {
+        firebaseSync.pushUserAccountAwait(it)
+        sheetsStorage.pushUserAccountToSheet(it)
+      }
     }
     addAuditLog("RBAC_POLICY", role.name, "UPDATE_ROLE_POLICY", "Admin", "Updated all permissions for role ${role.displayName}")
   }
@@ -2772,8 +2826,12 @@ class NflRepository(private val context: Context) {
       } else u
     }
     sheetsStorage.saveLocalUsers(_users.value)
+    touchDataUpdated()
     repoScope.launch {
-      updatedForSheet.forEach { sheetsStorage.pushUserAccountToSheet(it) }
+      updatedForSheet.forEach {
+        firebaseSync.pushUserAccountAwait(it)
+        sheetsStorage.pushUserAccountToSheet(it)
+      }
     }
     addAuditLog("RBAC_POLICY", "MANAGEMENT", "STRICT_VIEW_ONLY", "Admin", "Enforced view-only mode on all Management accounts")
   }
@@ -2781,6 +2839,10 @@ class NflRepository(private val context: Context) {
   fun deleteUser(userId: String) {
     _users.value = _users.value.filterNot { it.id.equals(userId, ignoreCase = true) }
     sheetsStorage.saveLocalUsers(_users.value)
+    touchDataUpdated()
+    repoScope.launch {
+      firebaseSync.deleteUserAccountAwait(userId)
+    }
     addAuditLog("USER_MGMT", userId, "DELETE_USER", "Admin", "Removed account")
   }
 
@@ -3326,24 +3388,56 @@ class NflRepository(private val context: Context) {
     }
   }
 
-  // Computes dashboard data ensuring ALL real lines of the floor are always present
+  // Computes dashboard data ensuring ALL real lines of the floor are always present (O(N) pre-indexed for zero UI lag)
   fun getTvDashboardData(
     floorScope: FloorScope = _currentFloor.value,
     periodScope: PeriodScope = _currentPeriod.value
   ): TvDashboardData {
-    // Ensure all real lines for this floor are always present
+    ensureDateBoundsFresh()
     val floorLines = allLinesMaster.filter { isInSelectedFloor(it.floor, floorScope) }
     val dedupedProds = deduplicateProductionRecords(_productionEntries.value)
     val dedupedQas = deduplicateQualityRecords(_qualityEntries.value)
 
+    val prodsInPeriodByLine = HashMap<String, MutableList<ProductionRecord>>(floorLines.size * 2)
+    dedupedProds.forEach { rec ->
+      if (isDateInPeriod(rec.date, periodScope)) {
+        val key = rec.lineId.trim().uppercase(Locale.US)
+        prodsInPeriodByLine.getOrPut(key) { mutableListOf() }.add(rec)
+      }
+    }
+
+    val qasInPeriodByLine = HashMap<String, MutableList<QualityRecord>>(floorLines.size * 2)
+    val periodQuality = ArrayList<QualityRecord>()
+    dedupedQas.forEach { rec ->
+      if (isDateInPeriod(rec.date, periodScope)) {
+        val key = rec.lineId.trim().uppercase(Locale.US)
+        qasInPeriodByLine.getOrPut(key) { mutableListOf() }.add(rec)
+        if (isInSelectedFloor(rec.floor, floorScope)) {
+          periodQuality.add(rec)
+        }
+      }
+    }
+
+    val openIncidentsByLine = HashMap<String, Int>()
+    val activeFloorIncidents = ArrayList<IncidentItem>()
+    _incidents.value.forEach { inc ->
+      if (inc.status != IncidentStatus.RESOLVED) {
+        val key = inc.lineId.trim().uppercase(Locale.US)
+        openIncidentsByLine[key] = (openIncidentsByLine[key] ?: 0) + 1
+        if (isInSelectedFloor(inc.floor, floorScope)) {
+          activeFloorIncidents.add(inc)
+        }
+      }
+    }
+
+    val setupsByLine = HashMap<String, SupervisorLineSetup>(floorLines.size * 2)
     val summaries = floorLines.map { lineInfo ->
       val setup = getLineSetup(lineInfo.id).copy(floor = lineInfo.floor)
-      val prods = dedupedProds.filter {
-        it.lineId.equals(setup.lineId, ignoreCase = true) && isDateInPeriod(it.date, periodScope)
-      }
-      val qas = dedupedQas.filter {
-        it.lineId.equals(setup.lineId, ignoreCase = true) && isDateInPeriod(it.date, periodScope)
-      }
+      val lineKey = setup.lineId.trim().uppercase(Locale.US)
+      setupsByLine[lineKey] = setup
+
+      val prods = prodsInPeriodByLine[lineKey] ?: emptyList()
+      val qas = qasInPeriodByLine[lineKey] ?: emptyList()
 
       val hasReported = prods.isNotEmpty()
       val outputQty = if (hasReported) prods.sumOf { it.outputQty } else 0
@@ -3376,7 +3470,7 @@ class NflRepository(private val context: Context) {
       val oqlPct = if (checked > 0) ((defective.toDouble() / checked) * 100).let { Math.round(it * 100.0) / 100.0 } else 0.0
       val dhuVal = if (checked > 0) ((defectsTotal.toDouble() / checked) * 100).let { Math.round(it * 100.0) / 100.0 } else 0.0
 
-      val openIncs = _incidents.value.count { it.lineId.equals(setup.lineId, ignoreCase = true) && it.status != IncidentStatus.RESOLVED }
+      val openIncs = openIncidentsByLine[lineKey] ?: 0
 
       LinePerformancePoint(
         lineId = setup.lineId,
@@ -3419,7 +3513,7 @@ class NflRepository(private val context: Context) {
       (it.achievementPcs ?: 0) * it.smv
     }
     val totalAvailMins = summaries.filter { it.achievementPcs != null && (it.achievementPcs ?: 0) > 0 }.sumOf {
-      val setup = getLineSetup(it.lineId)
+      val setup = setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)
       setup.includedManpower * setup.workingHoursSoFar * 60
     }
     val effWeighted = if (totalAvailMins > 0) {
@@ -3429,10 +3523,6 @@ class NflRepository(private val context: Context) {
     }
 
     val targetEffAvg = summaries.map { it.targetEfficiencyPct }.average().let { if (it.isNaN()) 0.0 else Math.round(it * 10.0) / 10.0 }
-
-    val periodQuality = dedupedQas.filter {
-      isInSelectedFloor(it.floor, floorScope) && isDateInPeriod(it.date, periodScope)
-    }
 
     val totalCheckedFloor = periodQuality.sumOf { it.checkedGarments }
     val totalDefectiveFloor = periodQuality.sumOf { it.defectiveGarments }
@@ -3471,10 +3561,10 @@ class NflRepository(private val context: Context) {
       todayOql = weightedOql,
       bsQaOql = floorMonthlyTarget.bsOqlPct,
       friPassRate = floorMonthlyTarget.friPassRatePct,
-      operatorsCount = summaries.sumOf { getLineSetup(it.lineId).operatorsCount },
-      machinesCount = summaries.sumOf { getLineSetup(it.lineId).machinesCount },
+      operatorsCount = summaries.sumOf { (setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)).operatorsCount },
+      machinesCount = summaries.sumOf { (setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)).machinesCount },
       reportingCoveragePct = if (summaries.isNotEmpty()) Math.round((reportedOnly.size.toDouble() / summaries.size) * 100).toInt() else 0,
-      openIncidentsCount = _incidents.value.count { it.status != IncidentStatus.RESOLVED && isInSelectedFloor(it.floor, floorScope) },
+      openIncidentsCount = activeFloorIncidents.size,
       totalDefectSent = totalSent,
       totalDefectReceived = totalRecv,
       totalDefectBalance = totalBal,
@@ -3558,8 +3648,8 @@ class NflRepository(private val context: Context) {
       .sortedBy { it.todayEfficiencyPct ?: 0.0 }
       .take(5)
 
-    // Day-by-day trend calculation for Efficiency, OQL, and DHU
-    val qaTrend = generateDailyPerformanceTrend(floorScope, periodScope)
+    // Day-by-day trend calculation for Efficiency, OQL, and DHU (reusing deduped lists & setups)
+    val qaTrend = generateDailyPerformanceTrend(floorScope, periodScope, dedupedProds, dedupedQas, totalTarget)
 
     // NPT Category breakdown for the floor (Lost Minutes & Share %)
     val nptBreakdown = calculateFloorNptBreakdown(floorScope)
@@ -3575,7 +3665,7 @@ class NflRepository(private val context: Context) {
       paretoDefects = paretoDefects,
       weeklyQaTrend = qaTrend,
       nptBreakdown = nptBreakdown,
-      activeIncidents = _incidents.value.filter { it.status != IncidentStatus.RESOLVED && isInSelectedFloor(it.floor, floorScope) },
+      activeIncidents = activeFloorIncidents,
       lastDataUpdate = _lastDataUpdate.value,
       lastRefreshTime = _lastRefreshTime.value,
       isDemoMode = _isDemoMode.value
@@ -3609,43 +3699,59 @@ class NflRepository(private val context: Context) {
       }
   }
 
-  // Computes Day-by-Day performance trends (Efficiency, OQL, DHU, Output) for Weekly and Monthly views
-  private fun generateDailyPerformanceTrend(floorScope: FloorScope, periodScope: PeriodScope): List<DailyQaTrend> {
+  // Computes Day-by-Day performance trends (Efficiency, OQL, DHU, Output) for Weekly and Monthly views in O(N)
+  private fun generateDailyPerformanceTrend(
+    floorScope: FloorScope,
+    periodScope: PeriodScope,
+    dedupedProds: List<ProductionRecord>,
+    dedupedQas: List<QualityRecord>,
+    floorTargetDailyPcs: Int
+  ): List<DailyQaTrend> {
     val daysCount = if (periodScope == PeriodScope.WEEK) 7 else 14
     val bdTz = sheetsStorage.getBangladeshTimeZone()
-    val dedupedProds = deduplicateProductionRecords(_productionEntries.value)
-    val dedupedQas = deduplicateQualityRecords(_qualityEntries.value)
+    val isoFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = bdTz }
+    val labelFmt = SimpleDateFormat("dd MMM", Locale.US).apply { timeZone = bdTz }
+    val dayFmt = SimpleDateFormat("EEE", Locale.US).apply { timeZone = bdTz }
 
     val datesList = (0 until daysCount).map { offset ->
       val cal = sheetsStorage.getTrustedBangladeshCalendar()
       cal.add(Calendar.DAY_OF_YEAR, -(daysCount - 1 - offset))
-      val rawDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = bdTz }.format(cal.time)
-      val dateLabel = SimpleDateFormat("dd MMM", Locale.US).apply { timeZone = bdTz }.format(cal.time)
-      val dayName = SimpleDateFormat("EEE", Locale.US).apply { timeZone = bdTz }.format(cal.time)
-      Triple(rawDate, dateLabel, dayName)
+      val t = cal.time
+      Triple(isoFmt.format(t), labelFmt.format(t), dayFmt.format(t))
     }
 
-    val floorLines = allLinesMaster.filter { isInSelectedFloor(it.floor, floorScope) }
-    val baseTargetDailyPcs = floorLines.sumOf { getLineSetup(it.id).targetDailyPcs }.let { if (it > 0) it else 4200 }
+    val prodsByDate = HashMap<String, Int>(daysCount * 2)
+    dedupedProds.forEach { rec ->
+      if (isInSelectedFloor(rec.floor, floorScope)) {
+        val d = sheetsStorage.normalizeToIsoDate(rec.date)
+        prodsByDate[d] = (prodsByDate[d] ?: 0) + rec.outputQty
+      }
+    }
+
+    val qasByDate = HashMap<String, Triple<Int, Int, Int>>(daysCount * 2)
+    dedupedQas.forEach { rec ->
+      if (isInSelectedFloor(rec.floor, floorScope)) {
+        val d = sheetsStorage.normalizeToIsoDate(rec.date)
+        val prev = qasByDate[d]
+        qasByDate[d] = if (prev == null) {
+          Triple(rec.checkedGarments, rec.defectiveGarments, rec.totalDefects)
+        } else {
+          Triple(prev.first + rec.checkedGarments, prev.second + rec.defectiveGarments, prev.third + rec.totalDefects)
+        }
+      }
+    }
+
+    val baseTargetDailyPcs = if (floorTargetDailyPcs > 0) floorTargetDailyPcs else 4200
     val baseTargetEff = 75.0
 
     return datesList.mapIndexed { index, (rawDate, dateLabel, dayName) ->
-      val prodsForDate = dedupedProds.filter {
-        isInSelectedFloor(it.floor, floorScope) && sheetsStorage.normalizeToIsoDate(it.date) == rawDate
-      }
-      val qasForDate = dedupedQas.filter {
-        isInSelectedFloor(it.floor, floorScope) && sheetsStorage.normalizeToIsoDate(it.date) == rawDate
-      }
-
-      val actualOutput = if (prodsForDate.isNotEmpty()) {
-        prodsForDate.sumOf { it.outputQty }
-      } else {
-        // Realistic variation pattern across days
+      val recordedOutput = prodsByDate[rawDate]
+      val actualOutput = recordedOutput ?: run {
         val variance = (index % 5 - 2) * 90 + ((index * 37) % 110)
         (baseTargetDailyPcs * 0.88).toInt() + variance
       }
 
-      val actualEff = if (prodsForDate.isNotEmpty() && baseTargetDailyPcs > 0) {
+      val actualEff = if (recordedOutput != null && baseTargetDailyPcs > 0) {
         val earnedRatio = actualOutput.toDouble() / baseTargetDailyPcs.toDouble()
         Math.round((baseTargetEff * earnedRatio).coerceIn(45.0, 95.0) * 10.0) / 10.0
       } else {
@@ -3653,10 +3759,11 @@ class NflRepository(private val context: Context) {
         effCurve[index % effCurve.size]
       }
 
-      val (actualOql, actualDhu) = if (qasForDate.isNotEmpty()) {
-        val checked = qasForDate.sumOf { it.checkedGarments }.coerceAtLeast(1)
-        val defective = qasForDate.sumOf { it.defectiveGarments }
-        val defects = qasForDate.sumOf { it.totalDefects }
+      val qaAgg = qasByDate[rawDate]
+      val (actualOql, actualDhu) = if (qaAgg != null) {
+        val checked = qaAgg.first.coerceAtLeast(1)
+        val defective = qaAgg.second
+        val defects = qaAgg.third
         val oql = Math.round((defective.toDouble() / checked.toDouble()) * 10000.0) / 100.0
         val dhu = Math.round((defects.toDouble() / checked.toDouble()) * 10000.0) / 100.0
         Pair(oql, dhu)

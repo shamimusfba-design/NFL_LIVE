@@ -108,6 +108,33 @@ fun QualityEntryScreen(
   var submissionSuccessMsg by remember { mutableStateOf<String?>(null) }
   var validationError by remember { mutableStateOf<String?>(null) }
 
+  val existingSlotRecord = remember(entries, selectedLine, selectedDate, selectedHour) {
+    entries.find {
+      !it.isDemo &&
+      it.lineId.equals(selectedLine, ignoreCase = true) &&
+      it.date == selectedDate &&
+      it.hourSlot == selectedHour
+    }
+  }
+
+  LaunchedEffect(selectedLine, selectedDate, selectedHour, existingSlotRecord?.timestamp, existingSlotRecord?.revision) {
+    if (existingSlotRecord != null) {
+      if (existingSlotRecord.styleNumber.isNotBlank()) {
+        selectedStyle = existingSlotRecord.styleNumber
+      }
+      checkedGarmentsText = existingSlotRecord.checkedGarments.toString()
+      defectiveGarmentsText = existingSlotRecord.defectiveGarments.toString()
+      defectSentText = existingSlotRecord.defectSent.toString()
+      defectReceivedText = existingSlotRecord.defectReceived.toString()
+      spotSentText = existingSlotRecord.spotSent.toString()
+      spotReceivedText = existingSlotRecord.spotReceived.toString()
+      if (existingSlotRecord.defects.isNotEmpty()) {
+        defectRows = existingSlotRecord.defects
+      }
+      remarksText = existingSlotRecord.remarks
+    }
+  }
+
   val totalDefects = defectRows.sumOf { it.count }
 
   Scaffold(

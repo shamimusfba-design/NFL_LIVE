@@ -538,7 +538,7 @@ fun HomeScreen(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
       ) {
-        val monthlyObjFloor = repository.getMonthlyTarget(currentFloor.apiValue)
+        val monthlyObjFloor = remember(currentFloor, monthlyTargets) { repository.getMonthlyTarget(currentFloor.apiValue) }
         val bsOqlValFloor = monthlyObjFloor.bsOqlPct
         val canEditBsOql = canWriteMonthlySetup || (currentUser?.canOqlWrite == true)
 

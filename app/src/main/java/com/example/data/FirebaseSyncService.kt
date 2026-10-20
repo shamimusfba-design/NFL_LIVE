@@ -24,13 +24,23 @@ data class FirestoreFetchResult(
   val quality: List<QualityRecord> = emptyList(),
   val incidents: List<IncidentItem> = emptyList(),
   val setups: List<SupervisorLineSetup> = emptyList(),
-  val monthlyTargets: List<MonthlyFactoryTarget> = emptyList()
+  val monthlyTargets: List<MonthlyFactoryTarget> = emptyList(),
+  val users: List<UserAccount> = emptyList()
 )
 
 class FirebaseSyncService(private val context: Context) {
 
   private val firestore: FirebaseFirestore? = try {
-    FirebaseFirestore.getInstance()
+    val dbId = try {
+      context.applicationContext.getString(com.example.R.string.firestore_database_id)
+    } catch (_: Exception) {
+      "ai-studio-android-nfllivea-664f462a-fb9e-483d-9567-6ac2c98cf7a4"
+    }
+    if (dbId.isNotBlank() && dbId != "(default)") {
+      FirebaseFirestore.getInstance(dbId)
+    } else {
+      FirebaseFirestore.getInstance()
+    }
   } catch (e: Exception) {
     Log.w("FirebaseSync", "FirebaseFirestore unavailable: ${e.message}")
     null
@@ -54,6 +64,7 @@ class FirebaseSyncService(private val context: Context) {
   var onRemoteIncidentsUpdated: ((List<IncidentItem>) -> Unit)? = null
   var onRemoteSetupsUpdated: ((List<SupervisorLineSetup>) -> Unit)? = null
   var onRemoteMonthlyTargetsUpdated: ((List<MonthlyFactoryTarget>) -> Unit)? = null
+  var onRemoteUsersUpdated: ((List<UserAccount>) -> Unit)? = null
   var onSyncStatusChanged: ((String) -> Unit)? = null
 
   fun isAvailable(): Boolean = firestore != null
@@ -99,7 +110,12 @@ class FirebaseSyncService(private val context: Context) {
     }
   }
 
+  fun hasActiveListeners(): Boolean = listeners.isNotEmpty() && !hasPermissionError
+
   fun startRealtimeListeners(forceRetry: Boolean = false) {
+    if (listeners.isNotEmpty() && !hasPermissionError) {
+      return
+    }
     if (hasPermissionError && !forceRetry) {
       onSyncStatusChanged?.invoke(
         "⚠️ Firestore rules restricted on nfl-live-72213 • Tap Refresh after updating firestore.rules"
@@ -116,7 +132,7 @@ class FirebaseSyncService(private val context: Context) {
     try {
       // 1. Production entries listener
       val prodReg = db.collection("production_entries")
-        .limit(1000)
+        .limit(500)
         .addSnapshotListener { snapshot, error ->
           if (error != null) {
             handleListenerError("Production", error)
@@ -240,6 +256,23 @@ class FirebaseSyncService(private val context: Context) {
           }
         }
       listeners.add(monthlyReg)
+
+      // 6. User accounts listener
+      val usersReg = db.collection("users")
+        .addSnapshotListener { snapshot, error ->
+          if (error != null) {
+            handleListenerError("Users", error)
+            return@addSnapshotListener
+          }
+          if (snapshot != null) {
+            hasPermissionError = false
+            val list = snapshot.documents.mapNotNull { doc -> parseUserDoc(doc) }
+            if (list.isNotEmpty()) {
+              onRemoteUsersUpdated?.invoke(list)
+            }
+          }
+        }
+      listeners.add(usersReg)
 
     } catch (e: Exception) {
       Log.w("FirebaseSync", "Notice setting up Firestore listeners: ${e.message}")
@@ -460,15 +493,90 @@ class FirebaseSyncService(private val context: Context) {
     }
   }
 
+  private fun parseUserDoc(doc: DocumentSnapshot): UserAccount? {
+    return try {
+      if (doc.getBoolean("isDeleted") == true) return null
+      val id = doc.getString("id")?.trim().orEmpty().ifEmpty { doc.id }
+      if (id.isEmpty()) return null
+      val roleStr = doc.getString("role") ?: UserRole.PRODUCTION_REPORTER.name
+      val role = try { UserRole.valueOf(roleStr) } catch (_: Exception) { UserRole.PRODUCTION_REPORTER }
+      val floorStr = doc.getString("floor") ?: FloorScope.SEW_2.name
+      val floor = FloorScope.entries.find {
+        it.name.equals(floorStr, ignoreCase = true) ||
+            it.apiValue.equals(floorStr, ignoreCase = true) ||
+            it.displayName.equals(floorStr, ignoreCase = true)
+      } ?: FloorScope.SEW_2
+      val statusStr = doc.getString("accountStatus") ?: AccountStatus.APPROVED.name
+      val accStatus = try { AccountStatus.valueOf(statusStr) } catch (_: Exception) { AccountStatus.APPROVED }
+
+      UserAccount(
+        id = id,
+        employeeId = doc.getString("employeeId") ?: id,
+        name = doc.getString("name") ?: id,
+        password = doc.getString("password") ?: "123",
+        passwordHash = doc.getString("passwordHash") ?: "",
+        role = role,
+        floor = floor,
+        assignedLine = doc.getString("assignedLine") ?: "K1",
+        isActive = doc.getBoolean("isActive") ?: true,
+        accountStatus = accStatus,
+        isAdmin = doc.getBoolean("isAdmin") ?: (role == UserRole.ADMIN),
+        canViewDashboard = doc.getBoolean("canViewDashboard") ?: true,
+        canViewTvDashboard = doc.getBoolean("canViewTvDashboard") ?: false,
+        canViewMonthlyEfficiency = doc.getBoolean("canViewMonthlyEfficiency") ?: false,
+        canViewMonthlyDhu = doc.getBoolean("canViewMonthlyDhu") ?: false,
+        canViewMonthlyOql = doc.getBoolean("canViewMonthlyOql") ?: false,
+        canViewLineDeepDive = doc.getBoolean("canViewLineDeepDive") ?: true,
+        canViewAuditLogs = doc.getBoolean("canViewAuditLogs") ?: false,
+        canExportReports = doc.getBoolean("canExportReports") ?: false,
+        canProductionWrite = doc.getBoolean("canProductionWrite") ?: false,
+        canFinishingWrite = doc.getBoolean("canFinishingWrite") ?: false,
+        canQualityWrite = doc.getBoolean("canQualityWrite") ?: false,
+        canOqlWrite = doc.getBoolean("canOqlWrite") ?: false,
+        canNptWrite = doc.getBoolean("canNptWrite") ?: false,
+        canMorningTargetWrite = doc.getBoolean("canMorningTargetWrite") ?: false,
+        canMonthlyTargetWrite = doc.getBoolean("canMonthlyTargetWrite") ?: false,
+        canTargetRevisionWrite = doc.getBoolean("canTargetRevisionWrite") ?: false
+      )
+    } catch (e: Exception) {
+      null
+    }
+  }
+
   suspend fun fetchAllFromFirestore(): FirestoreFetchResult = withContext(Dispatchers.IO) {
     val db = firestore ?: return@withContext FirestoreFetchResult(false, "FirebaseFirestore not initialized")
     try {
       withTimeout(12000L) {
-        val prodSnap = db.collection("production_entries").limit(1000).get(Source.SERVER).await()
-        val qaSnap = db.collection("quality_entries").limit(1000).get(Source.SERVER).await()
-        val incSnap = db.collection("factory_alerts").limit(500).get(Source.SERVER).await()
-        val setupSnap = db.collection("daily_setups").limit(500).get(Source.SERVER).await()
-        val monthlySnap = db.collection("monthly_targets").get(Source.SERVER).await()
+        val prodSnap = try {
+          db.collection("production_entries").limit(1000).get(Source.SERVER).await()
+        } catch (_: Exception) {
+          db.collection("production_entries").limit(1000).get().await()
+        }
+        val qaSnap = try {
+          db.collection("quality_entries").limit(1000).get(Source.SERVER).await()
+        } catch (_: Exception) {
+          db.collection("quality_entries").limit(1000).get().await()
+        }
+        val incSnap = try {
+          db.collection("factory_alerts").limit(500).get(Source.SERVER).await()
+        } catch (_: Exception) {
+          db.collection("factory_alerts").limit(500).get().await()
+        }
+        val setupSnap = try {
+          db.collection("daily_setups").limit(500).get(Source.SERVER).await()
+        } catch (_: Exception) {
+          db.collection("daily_setups").limit(500).get().await()
+        }
+        val monthlySnap = try {
+          db.collection("monthly_targets").get(Source.SERVER).await()
+        } catch (_: Exception) {
+          db.collection("monthly_targets").get().await()
+        }
+        val usersSnap = try {
+          db.collection("users").get(Source.SERVER).await()
+        } catch (_: Exception) {
+          db.collection("users").get().await()
+        }
 
         hasPermissionError = false
         lastErrorMessage = null
@@ -479,7 +587,8 @@ class FirebaseSyncService(private val context: Context) {
           quality = qaSnap.documents.mapNotNull { parseQualityDoc(it) },
           incidents = incSnap.documents.mapNotNull { parseIncidentDoc(it) },
           setups = setupSnap.documents.mapNotNull { parseSetupDoc(it) },
-          monthlyTargets = monthlySnap.documents.mapNotNull { parseMonthlyTargetDoc(it) }
+          monthlyTargets = monthlySnap.documents.mapNotNull { parseMonthlyTargetDoc(it) },
+          users = usersSnap.documents.mapNotNull { parseUserDoc(it) }
         )
       }
     } catch (e: Exception) {
@@ -798,6 +907,74 @@ class FirebaseSyncService(private val context: Context) {
     serviceScope.launch {
       val ok = pushMonthlyTargetAwait(target)
       onResult?.invoke(ok, lastErrorMessage)
+    }
+  }
+
+  suspend fun pushUserAccountAwait(user: UserAccount): Boolean = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext false
+    try {
+      val docId = user.id.trim().replace("/", "_")
+      val map = hashMapOf(
+        "id" to user.id,
+        "employeeId" to user.employeeId,
+        "name" to user.name,
+        "password" to user.password,
+        "passwordHash" to user.passwordHash,
+        "role" to user.role.name,
+        "floor" to user.floor.name,
+        "assignedLine" to user.assignedLine,
+        "isActive" to user.isActive,
+        "accountStatus" to user.accountStatus.name,
+        "isAdmin" to user.isAdmin,
+        "canViewDashboard" to user.canViewDashboard,
+        "canViewTvDashboard" to user.canViewTvDashboard,
+        "canViewMonthlyEfficiency" to user.canViewMonthlyEfficiency,
+        "canViewMonthlyDhu" to user.canViewMonthlyDhu,
+        "canViewMonthlyOql" to user.canViewMonthlyOql,
+        "canViewLineDeepDive" to user.canViewLineDeepDive,
+        "canViewAuditLogs" to user.canViewAuditLogs,
+        "canExportReports" to user.canExportReports,
+        "canProductionWrite" to user.canProductionWrite,
+        "canFinishingWrite" to user.canFinishingWrite,
+        "canQualityWrite" to user.canQualityWrite,
+        "canOqlWrite" to user.canOqlWrite,
+        "canNptWrite" to user.canNptWrite,
+        "canMorningTargetWrite" to user.canMorningTargetWrite,
+        "canMonthlyTargetWrite" to user.canMonthlyTargetWrite,
+        "canTargetRevisionWrite" to user.canTargetRevisionWrite,
+        "isDeleted" to false
+      )
+      withTimeout(10000L) {
+        db.collection("users").document(docId).set(map, SetOptions.merge()).await()
+      }
+      hasPermissionError = false
+      lastErrorMessage = null
+      true
+    } catch (e: Exception) {
+      lastErrorMessage = e.message
+      Log.w("FirebaseSync", "Firestore user push failed: ${e.message}")
+      false
+    }
+  }
+
+  fun pushUserAccount(user: UserAccount, onResult: ((Boolean, String?) -> Unit)? = null) {
+    serviceScope.launch {
+      val ok = pushUserAccountAwait(user)
+      onResult?.invoke(ok, lastErrorMessage)
+    }
+  }
+
+  suspend fun deleteUserAccountAwait(userId: String): Boolean = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext false
+    try {
+      val docId = userId.trim().replace("/", "_")
+      withTimeout(10000L) {
+        db.collection("users").document(docId).delete().await()
+      }
+      true
+    } catch (e: Exception) {
+      lastErrorMessage = e.message
+      false
     }
   }
 

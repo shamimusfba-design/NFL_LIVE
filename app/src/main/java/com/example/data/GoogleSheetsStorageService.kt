@@ -154,7 +154,7 @@ class GoogleSheetsStorageService(private val appContext: Context) {
 
   fun getTrustedBangladeshTimeMillis(): Long = System.currentTimeMillis() + serverTimeOffsetMillis
 
-  fun getBangladeshTimeZone(): TimeZone = TimeZone.getTimeZone(BANGLADESH_TIMEZONE_ID)
+  fun getBangladeshTimeZone(): TimeZone = bangladeshTz
 
   fun getTrustedBangladeshCalendar(customMillis: Long? = null): Calendar {
     val cal = Calendar.getInstance(getBangladeshTimeZone(), Locale.US)
@@ -197,47 +197,49 @@ class GoogleSheetsStorageService(private val appContext: Context) {
   fun isWithinDailyEntryWindow(customMillis: Long? = null): Boolean =
     isWithinBangladeshEntryWindow(customMillis)
 
+  private val normalizedDateCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+  private val bangladeshTz: TimeZone = TimeZone.getTimeZone(BANGLADESH_TIMEZONE_ID)
+
   /**
    * Normalizes a date string ("yyyy-MM-dd" or "dd MMM yyyy") into standard ISO "yyyy-MM-dd".
+   * Uses a fast-path check and memoization cache to avoid Regex/SimpleDateFormat allocations inside UI loops.
    */
   fun normalizeToIsoDate(dateInput: String): String {
     val trimmed = dateInput.trim()
-    if (Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(trimmed)) {
+    if (trimmed.length == 10 && trimmed[4] == '-' && trimmed[7] == '-' &&
+      trimmed[0].isDigit() && trimmed[1].isDigit() && trimmed[2].isDigit() && trimmed[3].isDigit()
+    ) {
       return trimmed
     }
+    normalizedDateCache[trimmed]?.let { return it }
     val formats = listOf("dd MMM yyyy", "d MMM yyyy", "yyyy/MM/dd", "dd-MM-yyyy")
     for (pattern in formats) {
       try {
         val parser = SimpleDateFormat(pattern, Locale.US).apply {
-          timeZone = getBangladeshTimeZone()
+          timeZone = bangladeshTz
           isLenient = false
         }
         val parsed = parser.parse(trimmed)
         if (parsed != null) {
           val outFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
-            timeZone = getBangladeshTimeZone()
+            timeZone = bangladeshTz
           }
-          return outFmt.format(parsed)
+          val formatted = outFmt.format(parsed)
+          normalizedDateCache[trimmed] = formatted
+          return formatted
         }
       } catch (_: Throwable) {
       }
     }
-    return trimmed.take(10)
+    val fallback = trimmed.take(10)
+    normalizedDateCache[trimmed] = fallback
+    return fallback
   }
 
   fun getConfiguredSheetId(): String {
     val saved = prefs.getString(KEY_SHEET_ID, null)
     if (!saved.isNullOrBlank()) return extractSheetId(saved)
-    val buildCfg = try {
-      BuildConfig.GOOGLE_SHEET_ID
-    } catch (_: Throwable) {
-      DEFAULT_SHEET_ID
-    }
-    return if (buildCfg.isNotBlank() && buildCfg != "default_sheet_id") {
-      extractSheetId(buildCfg)
-    } else {
-      DEFAULT_SHEET_ID
-    }
+    return DEFAULT_SHEET_ID
   }
 
   fun setConfiguredSheetId(rawInput: String): String {
@@ -248,13 +250,8 @@ class GoogleSheetsStorageService(private val appContext: Context) {
 
   fun getConfiguredWebAppUrl(): String {
     val saved = prefs.getString(KEY_WEB_APP_URL, null)
-    if (saved != null) return saved.trim()
-    val buildCfg = try {
-      BuildConfig.GOOGLE_SHEETS_WEB_APP_URL
-    } catch (_: Throwable) {
-      ""
-    }
-    return if (buildCfg.isNotBlank() && !buildCfg.contains("/default/exec")) buildCfg.trim() else ""
+    if (!saved.isNullOrBlank() && !saved.contains("/default/exec")) return saved.trim()
+    return ""
   }
 
   fun setConfiguredWebAppUrl(url: String) {
@@ -653,7 +650,7 @@ class GoogleSheetsStorageService(private val appContext: Context) {
       })
     }
     saveServerDeviceMap(serverDevicesMap)
-    prefs.edit().putString(KEY_SAVED_USERS, arr.toString()).commit()
+    prefs.edit().putString(KEY_SAVED_USERS, arr.toString()).apply()
   }
 
   fun loadLocalUsers(): List<UserAccount> {
@@ -760,7 +757,7 @@ class GoogleSheetsStorageService(private val appContext: Context) {
       }
       root.put(empId.lowercase(Locale.US), arr)
     }
-    prefs.edit().putString(KEY_SERVER_DEVICE_LEDGER, root.toString()).commit()
+    prefs.edit().putString(KEY_SERVER_DEVICE_LEDGER, root.toString()).apply()
   }
 
   fun saveLocalDeviceRequests(requests: List<DeviceApprovalRequest>) {

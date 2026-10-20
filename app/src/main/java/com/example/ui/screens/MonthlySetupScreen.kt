@@ -43,11 +43,11 @@ fun MonthlySetupScreen(
     repository.getMonthlyTarget(selectedFloor.apiValue)
   }
 
-  var updateEffText by remember(selectedFloor) { mutableStateOf(currentTarget.updateEfficiencyPct.toString()) }
-  var updateOqlText by remember(selectedFloor) { mutableStateOf(currentTarget.targetOqlPct.toString()) }
-  var updateDhuText by remember(selectedFloor) { mutableStateOf(currentTarget.targetDhuPct.toString()) }
-  var friPassText by remember(selectedFloor) { mutableStateOf(currentTarget.friPassRatePct.toString()) }
-  var bsOqlText by remember(selectedFloor) { mutableStateOf(currentTarget.bsOqlPct.toString()) }
+  var updateEffText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.updateEfficiencyPct.toString()) }
+  var updateOqlText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.targetOqlPct.toString()) }
+  var updateDhuText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.targetDhuPct.toString()) }
+  var friPassText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.friPassRatePct.toString()) }
+  var bsOqlText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.bsOqlPct.toString()) }
 
   var saveSuccessMsg by remember { mutableStateOf<String?>(null) }
 

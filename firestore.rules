@@ -16,5 +16,8 @@ service cloud.firestore {
     match /monthly_targets/{docId} {
       allow read, write: if true;
     }
+    match /users/{docId} {
+      allow read, write: if true;
+    }
   }
 }
