@@ -73,6 +73,23 @@ fun MonthlySetupScreen(
   var bsOqlText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.bsOqlPct.toString()) }
 
   var saveSuccessMsg by remember { mutableStateOf<String?>(null) }
+  var lineDrafts by remember(selectedFloor, autoMonthlyMode, monthlyTargets) {
+    mutableStateOf(
+      floorLines.associate { line ->
+        val target = monthlyTargets.find {
+          it.lineId.equals(line.id, true) &&
+            it.floor.replace("-", " ").equals((if (selectedFloor == FloorScope.ALL) line.floor else selectedFloorName).replace("-", " "), true)
+        }
+        line.id to LineMonthlyDraft(
+          efficiency = target?.updateEfficiencyPct?.toString() ?: "",
+          monthlyTarget = target?.monthlyTargetPcs?.toString() ?: "",
+          achievement = target?.monthlyAchievementPcs?.toString() ?: "",
+          dhu = target?.targetDhuPct?.toString() ?: "",
+          oql = target?.targetOqlPct?.toString() ?: ""
+        )
+      }
+    )
+  }
 
   Scaffold(
     topBar = {
@@ -395,25 +412,69 @@ fun MonthlySetupScreen(
             TableHeaderCell("Monthly Achievement", 130.dp)
             TableHeaderCell("Monthly DHU %", 105.dp)
             TableHeaderCell("Monthly OQL %", 105.dp)
-            TableHeaderCell("Action", 90.dp)
           }
           Divider(color = Color(0xFFE2E8F0))
           floorLines.forEach { line ->
             val manualLineTarget = monthlyTargets.find {
               it.lineId.equals(line.id, ignoreCase = true) &&
-                it.floor.replace("-", " ").equals(selectedFloorName.replace("-", " "), ignoreCase = true)
+                it.floor.replace("-", " ").equals((if (selectedFloor == FloorScope.ALL) line.floor else selectedFloorName).replace("-", " "), ignoreCase = true)
             }
             val lineTarget = if (autoMonthlyMode) calculateAutoMonthlyTarget(repository, selectedFloor, line.id, currentMonthKey, productionEntries, qualityEntries) else manualLineTarget
+            val draft = lineDrafts[line.id] ?: LineMonthlyDraft()
             LineMonthlyDataRow(
               lineId = line.id,
-              floorName = selectedFloorName,
-              target = lineTarget,
+              draft = if (autoMonthlyMode) LineMonthlyDraft(
+                efficiency = lineTarget?.updateEfficiencyPct?.toString() ?: "",
+                monthlyTarget = lineTarget?.monthlyTargetPcs?.toString() ?: "",
+                achievement = lineTarget?.monthlyAchievementPcs?.toString() ?: "",
+                dhu = lineTarget?.targetDhuPct?.toString() ?: "",
+                oql = lineTarget?.targetOqlPct?.toString() ?: ""
+              ) else draft,
               canEdit = canEditLineMonthlyData && !autoMonthlyMode,
-              userName = userName,
-              repository = repository
+              onDraftChange = { updated -> lineDrafts = lineDrafts + (line.id to updated) }
             )
             Divider(color = Color(0xFFF1F5F9))
           }
+          Button(
+            onClick = {
+              var savedCount = 0
+              floorLines.forEach { line ->
+                val draft = lineDrafts[line.id] ?: LineMonthlyDraft()
+                val eff = draft.efficiency.toDoubleOrNull()
+                val targetPcs = draft.monthlyTarget.toDoubleOrNull()
+                val achievedPcs = draft.achievement.toDoubleOrNull()
+                val dhuPct = draft.dhu.toDoubleOrNull()
+                val oqlPct = draft.oql.toDoubleOrNull()
+                if (eff != null && targetPcs != null && achievedPcs != null && dhuPct != null && oqlPct != null) {
+                  repository.saveMonthlyTarget(
+                    MonthlyFactoryTarget(
+                      floor = if (selectedFloor == FloorScope.ALL) line.floor else selectedFloorName,
+                      lineId = line.id,
+                      monthYear = currentMonthKey,
+                      updateEfficiencyPct = eff,
+                      targetEfficiencyPct = eff,
+                      monthlyTargetPcs = targetPcs,
+                      monthlyAchievementPcs = achievedPcs,
+                      targetDhuPct = dhuPct,
+                      targetOqlPct = oqlPct,
+                      lastUpdatedBy = userName
+                    )
+                  )
+                  savedCount++
+                }
+              }
+              saveSuccessMsg = if (savedCount == floorLines.size) "Saved all $savedCount line records." else "Saved $savedCount of ${floorLines.size}. Complete all five fields per line and retry."
+            },
+            enabled = canEditLineMonthlyData && !autoMonthlyMode && floorLines.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth().height(46.dp),
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF15803D))
+          ) {
+            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Save All Line-wise Monthly Data", fontWeight = FontWeight.Bold)
+          }
+          saveSuccessMsg?.let { Text(it, color = Color(0xFF166534), fontSize = 11.sp, fontWeight = FontWeight.Bold) }
           if (!canEditLineMonthlyData) {
             Text(
               text = "View only — only IE or Admin can enter or update line-wise monthly data.",
@@ -444,7 +505,6 @@ private fun TableHeaderCell(label: String, width: androidx.compose.ui.unit.Dp) {
   }
 }
 
-@Composable
 private fun calculateAutoMonthlyTarget(
   repository: NflRepository, floorScope: FloorScope, lineId: String?, monthKey: String,
   productionEntries: List<ProductionRecord>, qualityEntries: List<QualityRecord>
@@ -477,32 +537,21 @@ private fun calculateAutoMonthlyTarget(
   )
 }
 
+private data class LineMonthlyDraft(
+  val efficiency: String = "",
+  val monthlyTarget: String = "",
+  val achievement: String = "",
+  val dhu: String = "",
+  val oql: String = ""
+)
+
 @Composable
 private fun LineMonthlyDataRow(
   lineId: String,
-  floorName: String,
-  target: MonthlyFactoryTarget?,
+  draft: LineMonthlyDraft,
   canEdit: Boolean,
-  userName: String,
-  repository: NflRepository
+  onDraftChange: (LineMonthlyDraft) -> Unit
 ) {
-  var efficiency by remember(lineId, target?.lastUpdatedMillis, target?.updateEfficiencyPct) {
-    mutableStateOf(target?.updateEfficiencyPct?.toString() ?: "")
-  }
-  var monthlyTarget by remember(lineId, target?.lastUpdatedMillis, target?.monthlyTargetPcs) {
-    mutableStateOf(target?.monthlyTargetPcs?.toString() ?: "")
-  }
-  var achievement by remember(lineId, target?.lastUpdatedMillis, target?.monthlyAchievementPcs) {
-    mutableStateOf(target?.monthlyAchievementPcs?.toString() ?: "")
-  }
-  var dhu by remember(lineId, target?.lastUpdatedMillis, target?.targetDhuPct) {
-    mutableStateOf(target?.targetDhuPct?.toString() ?: "")
-  }
-  var oql by remember(lineId, target?.lastUpdatedMillis, target?.targetOqlPct) {
-    mutableStateOf(target?.targetOqlPct?.toString() ?: "")
-  }
-  var savedMessage by remember(lineId) { mutableStateOf(false) }
-
   Row(
     modifier = Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 2.dp),
     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -513,69 +562,41 @@ private fun LineMonthlyDataRow(
       shape = RoundedCornerShape(6.dp),
       modifier = Modifier.width(78.dp)
     ) {
-      Text(when { lineId.startsWith("Iron", true) -> "Iron"; lineId.startsWith("Packing", true) -> "Packing"; else -> lineId }, fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8), fontSize = 12.sp,
-        modifier = Modifier.padding(8.dp))
+      Text(
+        when { lineId.startsWith("Iron", true) -> "Iron"; lineId.startsWith("Packing", true) -> "Packing"; else -> lineId },
+        fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8), fontSize = 12.sp,
+        modifier = Modifier.padding(8.dp)
+      )
     }
     OutlinedTextField(
-      value = efficiency, onValueChange = { efficiency = it; savedMessage = false },
+      value = draft.efficiency, onValueChange = { onDraftChange(draft.copy(efficiency = it)) },
       label = { Text("Efficiency %", fontSize = 9.sp) }, singleLine = true, enabled = canEdit,
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
       modifier = Modifier.width(120.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
     )
     OutlinedTextField(
-      value = monthlyTarget, onValueChange = { monthlyTarget = it; savedMessage = false },
+      value = draft.monthlyTarget, onValueChange = { onDraftChange(draft.copy(monthlyTarget = it)) },
       label = { Text("Target pcs", fontSize = 9.sp) }, singleLine = true, enabled = canEdit,
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
       modifier = Modifier.width(110.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
     )
     OutlinedTextField(
-      value = achievement, onValueChange = { achievement = it; savedMessage = false },
+      value = draft.achievement, onValueChange = { onDraftChange(draft.copy(achievement = it)) },
       label = { Text("Achieved pcs", fontSize = 9.sp) }, singleLine = true, enabled = canEdit,
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
       modifier = Modifier.width(130.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
     )
     OutlinedTextField(
-      value = dhu, onValueChange = { dhu = it; savedMessage = false },
+      value = draft.dhu, onValueChange = { onDraftChange(draft.copy(dhu = it)) },
       label = { Text("DHU %", fontSize = 9.sp) }, singleLine = true, enabled = canEdit,
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
       modifier = Modifier.width(105.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
     )
     OutlinedTextField(
-      value = oql, onValueChange = { oql = it; savedMessage = false },
+      value = draft.oql, onValueChange = { onDraftChange(draft.copy(oql = it)) },
       label = { Text("OQL %", fontSize = 9.sp) }, singleLine = true, enabled = canEdit,
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
       modifier = Modifier.width(105.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
     )
-    Column(modifier = Modifier.width(90.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-      Button(
-        onClick = {
-          val eff = efficiency.toDoubleOrNull()
-          val targetPcs = monthlyTarget.toDoubleOrNull()
-          val achievedPcs = achievement.toDoubleOrNull()
-          val dhuPct = dhu.toDoubleOrNull()
-          val oqlPct = oql.toDoubleOrNull()
-          if (eff != null && targetPcs != null && achievedPcs != null && dhuPct != null && oqlPct != null) {
-            repository.saveMonthlyTarget(
-              MonthlyFactoryTarget(
-                floor = floorName,
-                lineId = lineId,
-                updateEfficiencyPct = eff,
-                targetEfficiencyPct = eff,
-                monthlyTargetPcs = targetPcs,
-                monthlyAchievementPcs = achievedPcs,
-                targetDhuPct = dhuPct,
-                targetOqlPct = oqlPct,
-                lastUpdatedBy = userName
-              )
-            )
-            savedMessage = true
-          }
-        },
-        enabled = canEdit,
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 5.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF15803D))
-      ) { Text("Save", fontSize = 10.sp) }
-      if (savedMessage) Text("Saved", color = Color(0xFF15803D), fontSize = 9.sp)
-    }
   }
 }
