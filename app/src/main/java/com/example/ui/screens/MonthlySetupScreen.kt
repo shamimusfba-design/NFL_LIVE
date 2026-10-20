@@ -39,14 +39,13 @@ fun MonthlySetupScreen(
   val currentUser by repository.currentUser.collectAsState()
   val canMonthlyTargetWrite = currentUser?.let { it.isAdmin || (it.role == com.example.model.UserRole.IE && it.canMonthlyTargetWrite) } ?: false
   val canEditLineMonthlyData = currentUser?.let { it.isAdmin || (it.role == com.example.model.UserRole.IE && it.canMonthlyTargetWrite) } ?: false
+  var selectedFloor by remember { mutableStateOf(FloorScope.SEW_2) }
   val floorLines = remember(selectedFloor) {
     repository.allLinesMaster.filter { line ->
       line.floor.replace("-", " ").equals(selectedFloor.apiValue.replace("-", " "), ignoreCase = true) ||
         (selectedFloor == FloorScope.FINISHING && line.floor.contains("Finish", ignoreCase = true))
     }
   }
-
-  var selectedFloor by remember { mutableStateOf(FloorScope.SEW_2) }
   val currentTarget = remember(selectedFloor, monthlyTargets) {
     repository.getMonthlyTarget(selectedFloor.apiValue)
   }
@@ -180,6 +179,7 @@ fun MonthlySetupScreen(
             placeholder = { Text("e.g. 71.5") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+            enabled = canMonthlyTargetWrite,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
           )
 
@@ -191,6 +191,7 @@ fun MonthlySetupScreen(
               label = { Text("Floor Monthly Target (pcs)") },
               modifier = Modifier.weight(1f),
               singleLine = true,
+              enabled = canMonthlyTargetWrite,
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
             )
             OutlinedTextField(
