@@ -72,6 +72,7 @@ import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, serv
 
 // Fill these values from Firebase Console > Project settings > Your apps > Web app.
 // Never put a service-account private key or Admin SDK secret in browser code.
+const FIRESTORE_DATABASE_ID = "ai-studio-android-nfllivea-664f462a-fb9e-483d-9567-6ac2c98cf7a4";
 const firebaseConfig = {
   apiKey: "REPLACE_WITH_FIREBASE_WEB_API_KEY",
   authDomain: "REPLACE_WITH_PROJECT_ID.firebaseapp.com",
@@ -205,7 +206,7 @@ onAuthStateChanged(auth,async user=>{
  }catch(e){await signOut(auth);showLogin("Admin authorization could not be verified. Access denied.");}
 });
 try{
- app=initializeApp(firebaseConfig);auth=getAuth(app);db=getFirestore(app);
+ app=initializeApp(firebaseConfig);auth=getAuth(app);db=getFirestore(app, FIRESTORE_DATABASE_ID);
 }catch(e){showLogin("Firebase config is incomplete. Set it in admin-web/index.html.");}
 </script>
 </body></html>
