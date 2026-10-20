@@ -229,6 +229,7 @@ fun MonthlySetupScreen(
               placeholder = { Text("e.g. 3.20") },
               modifier = Modifier.weight(1f),
               singleLine = true,
+              enabled = canMonthlyTargetWrite && !autoMonthlyMode,
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
             )
 
@@ -239,6 +240,7 @@ fun MonthlySetupScreen(
               placeholder = { Text("e.g. 1.75") },
               modifier = Modifier.weight(1f),
               singleLine = true,
+              enabled = canMonthlyTargetWrite && !autoMonthlyMode,
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
             )
           }
@@ -255,6 +257,7 @@ fun MonthlySetupScreen(
               placeholder = { Text("e.g. 100.0") },
               modifier = Modifier.weight(1f),
               singleLine = true,
+              enabled = canMonthlyTargetWrite && !autoMonthlyMode,
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
             )
 
@@ -265,6 +268,7 @@ fun MonthlySetupScreen(
               placeholder = { Text("e.g. 2.40") },
               modifier = Modifier.weight(1f),
               singleLine = true,
+              enabled = canMonthlyTargetWrite && !autoMonthlyMode,
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
             )
           }
