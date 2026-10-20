@@ -19,6 +19,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
+import com.example.model.ProductionRecord
+import com.example.model.QualityRecord
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -35,26 +41,34 @@ fun MonthlySetupScreen(
   onNavigateBack: () -> Unit
 ) {
   val monthlyTargets by repository.monthlyTargets.collectAsState()
+  val productionEntries by repository.productionEntries.collectAsState()
+  val qualityEntries by repository.qualityEntries.collectAsState()
+  val context = LocalContext.current
+  val currentMonthKey = remember { SimpleDateFormat("yyyy-MM", Locale.US).format(Date()) }
+  val monthlyPrefs = remember(context) { context.getSharedPreferences("nfl_monthly_data_settings", android.content.Context.MODE_PRIVATE) }
+  var autoMonthlyMode by remember(currentMonthKey) { mutableStateOf(monthlyPrefs.getBoolean("auto_$currentMonthKey", currentMonthKey > "2026-10")) }
   val userName by repository.currentUserName.collectAsState()
   val currentUser by repository.currentUser.collectAsState()
   val canMonthlyTargetWrite = currentUser?.let { it.isAdmin || (it.role == com.example.model.UserRole.IE && it.canMonthlyTargetWrite) } ?: false
   val canEditLineMonthlyData = currentUser?.let { it.isAdmin || (it.role == com.example.model.UserRole.IE && it.canMonthlyTargetWrite) } ?: false
   var selectedFloor by remember { mutableStateOf(FloorScope.SEW_2) }
+  val selectedFloorName = if (selectedFloor == FloorScope.ALL) "All Floor" else selectedFloor.apiValue
+  val autoFloorTarget = remember(selectedFloor, productionEntries, qualityEntries, currentMonthKey) {
+    calculateAutoMonthlyTarget(repository, selectedFloor, null, currentMonthKey, productionEntries, qualityEntries)
+  }
   val floorLines = remember(selectedFloor) {
-    repository.allLinesMaster.filter { line ->
-      line.floor.replace("-", " ").equals(selectedFloor.apiValue.replace("-", " "), ignoreCase = true) ||
-        (selectedFloor == FloorScope.FINISHING && line.floor.contains("Finish", ignoreCase = true))
-    }
+    repository.allLinesMaster.filter { line -> selectedFloor == FloorScope.ALL || repository.isInSelectedFloor(line.floor, selectedFloor) }
   }
   val currentTarget = remember(selectedFloor, monthlyTargets) {
-    repository.getMonthlyTarget(selectedFloor.apiValue)
+    repository.getMonthlyTarget(selectedFloorName)
   }
 
-  var updateEffText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.updateEfficiencyPct.toString()) }
-  var floorTargetPcsText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.monthlyTargetPcs.toString()) }
-  var floorAchievementPcsText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.monthlyAchievementPcs.toString()) }
-  var updateOqlText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.targetOqlPct.toString()) }
-  var updateDhuText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.targetDhuPct.toString()) }
+  val effectiveFloorTarget = if (autoMonthlyMode) autoFloorTarget else currentTarget
+  var updateEffText by remember(selectedFloor, autoMonthlyMode, effectiveFloorTarget.updateEfficiencyPct, effectiveFloorTarget.lastUpdatedMillis) { mutableStateOf(effectiveFloorTarget.updateEfficiencyPct.toString()) }
+  var floorTargetPcsText by remember(selectedFloor, autoMonthlyMode, effectiveFloorTarget.monthlyTargetPcs, effectiveFloorTarget.lastUpdatedMillis) { mutableStateOf(effectiveFloorTarget.monthlyTargetPcs.toString()) }
+  var floorAchievementPcsText by remember(selectedFloor, autoMonthlyMode, effectiveFloorTarget.monthlyAchievementPcs, effectiveFloorTarget.lastUpdatedMillis) { mutableStateOf(effectiveFloorTarget.monthlyAchievementPcs.toString()) }
+  var updateOqlText by remember(selectedFloor, autoMonthlyMode, effectiveFloorTarget.targetOqlPct, effectiveFloorTarget.lastUpdatedMillis) { mutableStateOf(effectiveFloorTarget.targetOqlPct.toString()) }
+  var updateDhuText by remember(selectedFloor, autoMonthlyMode, effectiveFloorTarget.targetDhuPct, effectiveFloorTarget.lastUpdatedMillis) { mutableStateOf(effectiveFloorTarget.targetDhuPct.toString()) }
   var friPassText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.friPassRatePct.toString()) }
   var bsOqlText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.bsOqlPct.toString()) }
 
@@ -85,7 +99,7 @@ fun MonthlySetupScreen(
         .padding(paddingValues)
         .verticalScroll(rememberScrollState())
         .padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(16.dp)
+      verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
       // 1. Floor Selector Chips
       Card(
@@ -99,7 +113,7 @@ fun MonthlySetupScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
           ) {
-            listOf(FloorScope.SEW_1, FloorScope.SEW_2, FloorScope.SEW_3, FloorScope.FINISHING).forEach { floor ->
+            listOf(FloorScope.ALL, FloorScope.SEW_1, FloorScope.SEW_2, FloorScope.SEW_3, FloorScope.FINISHING).forEach { floor ->
               val isSelected = selectedFloor == floor
               Surface(
                 onClick = { selectedFloor = floor },
@@ -110,6 +124,7 @@ fun MonthlySetupScreen(
               ) {
                 Text(
                   text = when (floor) {
+                    FloorScope.ALL -> "All Floors"
                     FloorScope.SEW_1 -> "Sew 1"
                     FloorScope.SEW_2 -> "Sew 2"
                     FloorScope.SEW_3 -> "Sew 3"
@@ -129,7 +144,7 @@ fun MonthlySetupScreen(
       }
 
       Text(
-        text = "Floor-wise Monthly Data",
+        text = if (selectedFloor == FloorScope.ALL) "All Floors — Monthly Data" else "Floor-wise Monthly Data",
         fontSize = 17.sp,
         fontWeight = FontWeight.ExtraBold,
         color = Color(0xFF0F172A)
@@ -146,12 +161,12 @@ fun MonthlySetupScreen(
           modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp),
-          verticalArrangement = Arrangement.spacedBy(14.dp)
+          verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
           Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(Icons.Default.DateRange, contentDescription = null, tint = Color(0xFF0284C7))
             Text(
-              text = "${selectedFloor.displayName} — Monthly Up-to-Date Achieved (October 2026)",
+              text = "${if (selectedFloor == FloorScope.ALL) "All Floors" else selectedFloor.displayName} — Monthly Data (${currentMonthKey})",
               fontSize = 13.5.sp,
               fontWeight = FontWeight.ExtraBold,
               color = Color(0xFF0F172A)
@@ -164,7 +179,7 @@ fun MonthlySetupScreen(
             modifier = Modifier.fillMaxWidth()
           ) {
             Text(
-              text = "Enter the selected floor's monthly figures here. Line-wise data below is entered and saved independently.",
+              text = if (autoMonthlyMode) "AUTO ON — calculated from actual daily production and quality entries." else "MANUAL MODE — enter monthly figures separately. Line-wise data is independent.",
               fontSize = 10.sp,
               color = Color(0xFF166534),
               modifier = Modifier.padding(8.dp)
@@ -296,7 +311,7 @@ fun MonthlySetupScreen(
           Button(
             onClick = {
               val target = MonthlyFactoryTarget(
-                floor = selectedFloor.apiValue,
+                floor = selectedFloorName,
                 targetEfficiencyPct = updateEffText.toDoubleOrNull() ?: 71.5,
                 updateEfficiencyPct = updateEffText.toDoubleOrNull() ?: 71.5,
                 targetOqlPct = updateOqlText.toDoubleOrNull() ?: 3.20,
@@ -310,7 +325,7 @@ fun MonthlySetupScreen(
               repository.saveMonthlyTarget(target)
               saveSuccessMsg = "✓ Saved Monthly Targets & BS OQL for ${selectedFloor.displayName} (Eff: ${target.updateEfficiencyPct}%, OQL: ${target.targetOqlPct}%, DHU: ${target.targetDhuPct}%, BS OQL: ${target.bsOqlPct}%)"
             },
-            enabled = canMonthlyTargetWrite,
+            enabled = canMonthlyTargetWrite && !autoMonthlyMode,
             modifier = Modifier
               .fillMaxWidth()
               .height(48.dp),
@@ -321,7 +336,23 @@ fun MonthlySetupScreen(
           ) {
             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(6.dp))
-            Text(if (canMonthlyTargetWrite) "Save Monthly Achieved Data" else "🔒 Entry Locked (View Only)", fontWeight = FontWeight.Bold)
+            Text(when { !canMonthlyTargetWrite -> "Entry Locked (View Only)"; autoMonthlyMode -> "AUTO MODE — Daily Data Linked"; else -> "Save Monthly Achieved Data" }, fontWeight = FontWeight.Bold)
+          }
+        }
+      }
+
+      Card(shape = RoundedCornerShape(10.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp)) {
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+          Column(modifier = Modifier.weight(1f)) {
+            Text("Monthly Data Mode", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF0F172A))
+            Text(if (autoMonthlyMode) "Auto: actual daily entries" else "Manual: IE/Admin entry", fontSize = 10.sp, color = Color(0xFF64748B))
+          }
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (autoMonthlyMode) "AUTO" else "MANUAL", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (autoMonthlyMode) Color(0xFF15803D) else Color(0xFF1D4ED8))
+            Switch(checked = autoMonthlyMode, onCheckedChange = { enabled ->
+              autoMonthlyMode = enabled
+              monthlyPrefs.edit().putBoolean("auto_$currentMonthKey", enabled).apply()
+            }, enabled = canMonthlyTargetWrite)
           }
         }
       }
@@ -338,13 +369,13 @@ fun MonthlySetupScreen(
           verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
           Text(
-            text = "${selectedFloor.displayName} — Line-wise Monthly Data",
+            text = "${if (selectedFloor == FloorScope.ALL) "All Floors" else selectedFloor.displayName} — Line-wise Monthly Data",
             fontSize = 15.sp,
             fontWeight = FontWeight.ExtraBold,
             color = Color(0xFF0F172A)
           )
           Text(
-            text = "Enter each line's monthly figures separately. Floor-wise figures above remain independent.",
+            text = if (autoMonthlyMode) "Line-wise values are calculated from real daily entries; switch Auto off to enter manually." else "Enter each line separately. Floor-wise figures above remain independent.",
             fontSize = 11.sp,
             color = Color(0xFF64748B)
           )
@@ -363,15 +394,16 @@ fun MonthlySetupScreen(
           }
           Divider(color = Color(0xFFE2E8F0))
           floorLines.forEach { line ->
-            val lineTarget = monthlyTargets.find {
+            val manualLineTarget = monthlyTargets.find {
               it.lineId.equals(line.id, ignoreCase = true) &&
-                it.floor.replace("-", " ").equals(selectedFloor.apiValue.replace("-", " "), ignoreCase = true)
+                it.floor.replace("-", " ").equals(selectedFloorName.replace("-", " "), ignoreCase = true)
             }
+            val lineTarget = if (autoMonthlyMode) calculateAutoMonthlyTarget(repository, selectedFloor, line.id, currentMonthKey, productionEntries, qualityEntries) else manualLineTarget
             LineMonthlyDataRow(
               lineId = line.id,
               floorName = selectedFloor.apiValue,
               target = lineTarget,
-              canEdit = canEditLineMonthlyData,
+              canEdit = canEditLineMonthlyData && !autoMonthlyMode,
               userName = userName,
               repository = repository
             )
@@ -408,6 +440,39 @@ private fun TableHeaderCell(label: String, width: androidx.compose.ui.unit.Dp) {
 }
 
 @Composable
+private fun calculateAutoMonthlyTarget(
+  repository: NflRepository, floorScope: FloorScope, lineId: String?, monthKey: String,
+  productionEntries: List<ProductionRecord>, qualityEntries: List<QualityRecord>
+): MonthlyFactoryTarget {
+  val productions = productionEntries.filter { !it.isDemo && it.date.replace("/", "-").startsWith(monthKey) &&
+    (lineId == null || it.lineId.equals(lineId, true)) &&
+    (floorScope == FloorScope.ALL || repository.isInSelectedFloor(it.floor, floorScope)) }
+  val qualities = qualityEntries.filter { !it.isDemo && it.date.replace("/", "-").startsWith(monthKey) &&
+    (lineId == null || it.lineId.equals(lineId, true)) &&
+    (floorScope == FloorScope.ALL || repository.isInSelectedFloor(it.floor, floorScope)) }
+  val output = productions.sumOf { it.outputQty }
+  val checked = qualities.sumOf { it.checkedGarments }
+  val defective = qualities.sumOf { it.defectiveGarments }
+  val defects = qualities.sumOf { it.totalDefects }
+  val daysByLine = productions.groupBy { it.lineId }.mapValues { (_, rows) -> rows.map { it.date }.distinct().size }
+  val target = daysByLine.entries.sumOf { (id, days) -> repository.getLineSetup(id).targetDailyPcs.toDouble() * days }
+  val earned = productions.sumOf { it.outputQty * repository.getLineSetup(it.lineId).smv }
+  val available = daysByLine.entries.sumOf { (id, days) ->
+    val setup = repository.getLineSetup(id); setup.includedManpower.toDouble() * setup.totalShiftHours * 60.0 * days
+  }
+  return MonthlyFactoryTarget(
+    floor = if (floorScope == FloorScope.ALL) "All Floor" else floorScope.apiValue,
+    monthYear = monthKey, lineId = lineId ?: "", targetEfficiencyPct = 75.0,
+    updateEfficiencyPct = if (available > 0) Math.round(earned / available * 1000.0) / 10.0 else 0.0,
+    monthlyTargetPcs = target, monthlyAchievementPcs = output.toDouble(),
+    targetOqlPct = if (checked > 0) Math.round(defective.toDouble() / checked * 10000.0) / 100.0 else 0.0,
+    targetDhuPct = if (checked > 0) Math.round(defects.toDouble() / checked * 10000.0) / 100.0 else 0.0,
+    friPassRatePct = 0.0, bsOqlPct = 0.0, lastUpdatedBy = "AUTO",
+    lastUpdatedMillis = productions.maxOfOrNull { it.timestamp } ?: qualities.maxOfOrNull { it.timestamp } ?: 0L
+  )
+}
+
+@Composable
 private fun LineMonthlyDataRow(
   lineId: String,
   floorName: String,
@@ -416,25 +481,25 @@ private fun LineMonthlyDataRow(
   userName: String,
   repository: NflRepository
 ) {
-  var efficiency by remember(lineId, target?.lastUpdatedMillis) {
+  var efficiency by remember(lineId, target?.lastUpdatedMillis, target?.updateEfficiencyPct) {
     mutableStateOf(target?.updateEfficiencyPct?.toString() ?: "")
   }
-  var monthlyTarget by remember(lineId, target?.lastUpdatedMillis) {
+  var monthlyTarget by remember(lineId, target?.lastUpdatedMillis, target?.monthlyTargetPcs) {
     mutableStateOf(target?.monthlyTargetPcs?.toString() ?: "")
   }
-  var achievement by remember(lineId, target?.lastUpdatedMillis) {
+  var achievement by remember(lineId, target?.lastUpdatedMillis, target?.monthlyAchievementPcs) {
     mutableStateOf(target?.monthlyAchievementPcs?.toString() ?: "")
   }
-  var dhu by remember(lineId, target?.lastUpdatedMillis) {
+  var dhu by remember(lineId, target?.lastUpdatedMillis, target?.targetDhuPct) {
     mutableStateOf(target?.targetDhuPct?.toString() ?: "")
   }
-  var oql by remember(lineId, target?.lastUpdatedMillis) {
+  var oql by remember(lineId, target?.lastUpdatedMillis, target?.targetOqlPct) {
     mutableStateOf(target?.targetOqlPct?.toString() ?: "")
   }
   var savedMessage by remember(lineId) { mutableStateOf(false) }
 
   Row(
-    modifier = Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 4.dp),
+    modifier = Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 2.dp),
     horizontalArrangement = Arrangement.spacedBy(6.dp),
     verticalAlignment = Alignment.CenterVertically
   ) {
@@ -443,7 +508,7 @@ private fun LineMonthlyDataRow(
       shape = RoundedCornerShape(6.dp),
       modifier = Modifier.width(78.dp)
     ) {
-      Text(lineId, fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8), fontSize = 12.sp,
+      Text(when { lineId.startsWith("Iron", true) -> "Iron"; lineId.startsWith("Packing", true) -> "Packing"; else -> lineId }, fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8), fontSize = 12.sp,
         modifier = Modifier.padding(8.dp))
     }
     OutlinedTextField(
