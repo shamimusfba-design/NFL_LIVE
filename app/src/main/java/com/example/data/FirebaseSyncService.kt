@@ -1025,6 +1025,20 @@ class FirebaseSyncService(private val context: Context) {
     }
   }
 
+  suspend fun deleteRegistrationRequestAwait(requestId: String): Boolean = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext false
+    try {
+      withTimeout(10000L) {
+        db.collection("registration_requests").document(requestId).delete().await()
+      }
+      true
+    } catch (e: Exception) {
+      lastErrorMessage = e.message
+      Log.w("FirebaseSync", "Registration request rollback failed: ${e.message}")
+      false
+    }
+  }
+
   fun pushUserAccount(user: UserAccount, onResult: ((Boolean, String?) -> Unit)? = null) {
     serviceScope.launch {
       val ok = pushUserAccountAwait(user)
