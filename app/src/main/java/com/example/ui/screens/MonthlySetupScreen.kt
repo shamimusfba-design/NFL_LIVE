@@ -52,6 +52,8 @@ fun MonthlySetupScreen(
   }
 
   var updateEffText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.updateEfficiencyPct.toString()) }
+  var floorTargetPcsText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.monthlyTargetPcs.toString()) }
+  var floorAchievementPcsText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.monthlyAchievementPcs.toString()) }
   var updateOqlText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.targetOqlPct.toString()) }
   var updateDhuText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.targetDhuPct.toString()) }
   var friPassText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.friPassRatePct.toString()) }
@@ -163,7 +165,7 @@ fun MonthlySetupScreen(
             modifier = Modifier.fillMaxWidth()
           ) {
             Text(
-              text = "📌 নির্দেশিকা: এখানে মাসিক টার্গেট দেওয়ার প্রয়োজন নেই। পুরো মাসের আপটুডেট এচিভ কত হয়েছে (Achieved Efficiency, Achieved OQL, Achieved DHU) এগুলো সরাসরি এন্ট্রি দিন। সিস্টেম স্বয়ংক্রিয়ভাবে এগুলো ড্যাশবোর্ডে শো করবে।",
+              text = "Enter the selected floor's monthly figures here. Line-wise data below is entered and saved independently.",
               fontSize = 10.sp,
               color = Color(0xFF166534),
               modifier = Modifier.padding(8.dp)
@@ -180,6 +182,26 @@ fun MonthlySetupScreen(
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
           )
+
+          // Floor-level Monthly Target and Achievement (entered separately from line data)
+          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedTextField(
+              value = floorTargetPcsText,
+              onValueChange = { floorTargetPcsText = it },
+              label = { Text("Floor Monthly Target (pcs)") },
+              modifier = Modifier.weight(1f),
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+            )
+            OutlinedTextField(
+              value = floorAchievementPcsText,
+              onValueChange = { floorAchievementPcsText = it },
+              label = { Text("Floor Monthly Achievement (pcs)") },
+              modifier = Modifier.weight(1f),
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+            )
+          }
 
           // Row 2: Monthly Achieved OQL (%) & Monthly Achieved DHU
           Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -278,6 +300,8 @@ fun MonthlySetupScreen(
                 updateEfficiencyPct = updateEffText.toDoubleOrNull() ?: 71.5,
                 targetOqlPct = updateOqlText.toDoubleOrNull() ?: 3.20,
                 targetDhuPct = updateDhuText.toDoubleOrNull() ?: 1.75,
+                monthlyTargetPcs = floorTargetPcsText.toDoubleOrNull() ?: 0.0,
+                monthlyAchievementPcs = floorAchievementPcsText.toDoubleOrNull() ?: 0.0,
                 friPassRatePct = friPassText.toDoubleOrNull() ?: 100.0,
                 bsOqlPct = bsOqlText.toDoubleOrNull() ?: 2.40,
                 lastUpdatedBy = userName
