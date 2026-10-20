@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101b31">
+<title>NFL LIVE | Admin Panel</title>
+<style>
+:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:#eaf1ff;background:#0b1220;font-synthesis:none}*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit}button{cursor:pointer;border:0;border-radius:10px;padding:10px 14px;font-weight:650;background:#4f8cff;color:white}button:disabled{opacity:.45;cursor:not-allowed}.secondary{background:#1b2a42;color:#dce8ff;border:1px solid #2a3b56}.danger{background:#8f3346}.muted{color:#8ea2bf}.small{font-size:12px}.hidden{display:none!important}.wrap{min-height:100vh;display:grid;place-items:center;padding:22px}.login{width:min(440px,100%);padding:30px;border:1px solid #263751;border-radius:22px;background:#111d30;box-shadow:0 20px 70px #0005}.logo{width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#4f8cff,#39d6b0);display:grid;place-items:center;font-weight:900;color:#07111f;font-size:18px}.login h1{margin:18px 0 4px;font-size:26px}.field{display:grid;gap:7px;margin:14px 0}.field label{font-size:13px;color:#9db0cb}.field input,.field select,.field textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #30415c;background:#0b1423;color:#eef4ff;outline:none}.field input:focus,.field textarea:focus{border-color:#4f8cff}.app{display:grid;grid-template-columns:245px minmax(0,1fr);min-height:100vh}.side{background:#0d1829;border-right:1px solid #22324b;padding:22px 14px;display:flex;flex-direction:column;gap:20px}.brand{display:flex;align-items:center;gap:11px;padding:4px 8px 16px}.brand .logo{width:40px;height:40px}.brand strong{display:block;letter-spacing:1px}.brand span{font-size:11px;color:#8ea2bf}.nav{display:grid;gap:6px}.nav button{text-align:left;background:transparent;color:#a9bad3;font-weight:550;border:1px solid transparent}.nav button.active,.nav button:hover{background:#172844;color:#fff;border-color:#2a4264}.sidefoot{margin-top:auto;border-top:1px solid #26364e;padding:16px 8px;font-size:12px;color:#8ea2bf}.main{min-width:0}.top{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 28px;border-bottom:1px solid #22324b;background:#0d1727;position:sticky;top:0;z-index:2}.top h2{margin:0;font-size:19px}.top p{margin:4px 0 0;font-size:12px;color:#8ea2bf}.topright{display:flex;gap:10px;align-items:center}.content{padding:26px;max-width:1600px;margin:auto}.notice{padding:12px 14px;border:1px solid #315078;background:#102541;border-radius:12px;color:#b9d8ff;font-size:13px;margin-bottom:18px}.notice.warn{border-color:#8a6631;background:#2b2112;color:#ffdc9b}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:18px 0}.stat,.panel{border:1px solid #243650;background:#111d30;border-radius:15px;padding:18px;min-width:0}.stat .label{font-size:12px;color:#8ea2bf}.stat .num{font-size:28px;font-weight:800;margin-top:10px}.stat .sub{font-size:11px;color:#8298b7;margin-top:5px}.panelhead{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}.panelhead h3{margin:0;font-size:16px}.tools{display:flex;gap:9px;flex-wrap:wrap}.tools input,.tools select{background:#0b1423;color:#eaf1ff;border:1px solid #30415c;border-radius:9px;padding:9px 11px;min-width:130px}.tablewrap{overflow:auto;border:1px solid #263751;border-radius:11px}table{border-collapse:collapse;width:100%;min-width:780px;font-size:12px}th,td{text-align:left;padding:12px;border-bottom:1px solid #23334b;vertical-align:top;max-width:320px;overflow-wrap:anywhere}th{background:#17263c;color:#a8bdd9;font-size:11px;text-transform:uppercase;letter-spacing:.4px;position:sticky;top:0}tr:hover td{background:#142239}.pill{display:inline-flex;border-radius:30px;padding:4px 8px;background:#183b33;color:#8ff0ce;font-size:11px}.pill.pending{background:#473619;color:#ffd68a}.pill.off{background:#45232f;color:#ffb2c1}.rowbtn{padding:6px 9px;font-size:11px;margin:2px}.empty{padding:34px;text-align:center;color:#91a5c0}.status{font-size:12px;color:#9cb0cc}.footer{margin-top:24px;color:#7186a3;font-size:11px;text-align:center}.modalback{position:fixed;inset:0;background:#030813cc;z-index:5;display:grid;place-items:center;padding:20px}.modal{width:min(800px,100%);max-height:90vh;overflow:auto;background:#111d30;border:1px solid #334760;border-radius:18px;padding:22px}.modal textarea{min-height:260px;font:12px ui-monospace,monospace}.modalfoot{display:flex;justify-content:flex-end;gap:9px;margin-top:14px}.hamb{display:none}
+@media(max-width:1000px){.app{grid-template-columns:200px minmax(0,1fr)}.content{padding:18px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:680px){.app{grid-template-columns:1fr}.side{display:none}.side.open{display:flex;position:fixed;z-index:4;inset:0 auto 0 0;width:260px;box-shadow:0 0 0 999px #0008}.hamb{display:inline-block}.top{padding:15px}.topright .useremail{display:none}.content{padding:14px}.grid{gap:9px}.stat{padding:13px}.stat .num{font-size:23px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<div id="loginView" class="wrap">
+ <section class="login">
+  <div class="logo">NFL</div><h1>NFL LIVE Admin</h1><div class="muted">Desktop control panel · Northern Fashions Ltd.</div>
+  <div class="notice warn" style="margin-top:20px">Admin access only. Use the dedicated Firebase Authentication account approved for the Admin Panel.</div>
+  <form id="loginForm">
+   <div class="field"><label for="email">Admin email</label><input id="email" type="email" autocomplete="username" required placeholder="Admin email"></div>
+   <div class="field"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required placeholder="Password"></div>
+   <button style="width:100%;margin-top:6px">Sign in securely</button>
+  </form>
+  <p id="loginError" class="small" style="color:#ffabb9"></p>
+  <p class="muted small">Do not create an Admin account from this page. An owner must provision and approve the Admin identity first.</p>
+ </section>
+</div>
+<div id="appView" class="app hidden">
+ <aside id="sidebar" class="side">
+  <div class="brand"><div class="logo">NFL</div><div><strong>NFL LIVE</strong><span>ADMIN CONTROL</span></div></div>
+  <nav class="nav" id="nav">
+   <button class="active" data-page="overview">◫ &nbsp; Overview</button>
+   <button data-page="users">♙ &nbsp; Employees & access</button>
+   <button data-page="production_entries">▥ &nbsp; Production data</button>
+   <button data-page="quality_entries">✓ &nbsp; Quality data</button>
+   <button data-page="factory_alerts">⚑ &nbsp; Incidents & alerts</button>
+   <button data-page="daily_setups">⚙ &nbsp; Daily line setup</button>
+   <button data-page="monthly_targets">▦ &nbsp; Monthly targets</button>
+   <button data-page="registration_requests">＋ &nbsp; Registration requests</button>
+   <button data-page="audit_logs">☷ &nbsp; Audit history</button>
+  </nav>
+  <div class="sidefoot">Admin actions should be audited.<br>Never share your Admin login.</div>
+ </aside>
+ <main class="main">
+  <header class="top"><div style="display:flex;align-items:center;gap:12px"><button id="hamb" class="secondary hamb" aria-label="Open menu">☰</button><div><h2 id="pageTitle">Overview</h2><p id="pageSub">Live factory data and system access</p></div></div><div class="topright"><span class="useremail muted small" id="adminEmail"></span><button class="secondary" id="refreshBtn">↻ Refresh</button><button id="logoutBtn" class="danger">Sign out</button></div></header>
+  <section class="content">
+   <div class="notice">Connected data is live only after Firebase config and secure Firestore rules are installed. This panel blocks access unless the signed-in UID is listed in the protected <code>admin_users</code> collection.</div>
+   <div id="status" class="status" aria-live="polite">Connecting…</div>
+   <div id="overview">
+    <div class="grid">
+     <div class="stat"><div class="label">Employees</div><div id="statUsers" class="num">—</div><div class="sub">User account records</div></div>
+     <div class="stat"><div class="label">Production records</div><div id="statProduction" class="num">—</div><div class="sub">Cloud Firestore</div></div>
+     <div class="stat"><div class="label">Quality records</div><div id="statQuality" class="num">—</div><div class="sub">Cloud Firestore</div></div>
+     <div class="stat"><div class="label">Pending registrations</div><div id="statPending" class="num">—</div><div class="sub">Awaiting Admin action</div></div>
+    </div>
+    <div class="panel"><div class="panelhead"><h3>Quick actions</h3></div><div class="tools"><button data-goto="users">Manage employees</button><button class="secondary" data-goto="production_entries">Edit production data</button><button class="secondary" data-goto="quality_entries">Edit quality data</button><button class="secondary" data-goto="registration_requests">Review registrations</button></div></div>
+    <div class="panel" style="margin-top:14px"><div class="panelhead"><h3>Security checklist</h3></div><ul class="muted small" style="line-height:2"><li>Admin account uses Firebase Authentication.</li><li>Admin UID is manually provisioned in protected <code>admin_users</code>.</li><li>Firestore rules must enforce permissions server-side.</li><li>Passwords must never be stored or displayed in plain text.</li><li>Critical edits should create an audit log and a backup before deletion.</li></ul></div>
+   </div>
+   <div id="dataPage" class="panel hidden">
+    <div class="panelhead"><h3 id="tableTitle">Records</h3><div class="tools"><input id="searchInput" placeholder="Search loaded records…"><button id="addBtn">＋ Add record</button><button class="secondary" id="exportBtn">Export JSON</button></div></div>
+    <div class="tools" style="margin-bottom:12px"><select id="pageSize"><option value="50">Show 50</option><option value="100">Show 100</option><option value="250">Show 250</option></select><span class="muted small" id="rowCount"></span></div>
+    <div class="tablewrap"><table><thead id="tableHead"></thead><tbody id="tableBody"></tbody></table></div>
+    <p class="muted small">Edits write directly to Firestore after server permission checks. Deletions require confirmation. Every action should be logged by the backend/rules-supported workflow.</p>
+   </div>
+   <div class="footer">Developed by Shamim, IPE &amp; Planning</div>
+  </section>
+ </main>
+</div>
+<div id="editModal" class="modalback hidden"><section class="modal"><h3 id="modalTitle">Edit record</h3><p class="muted small">Edit the document fields as JSON. Do not change document IDs unless you know the data migration impact.</p><div class="field"><label for="jsonEditor">Document JSON</label><textarea id="jsonEditor" spellcheck="false"></textarea></div><p id="modalError" class="small" style="color:#ffabb9"></p><div class="modalfoot"><button id="cancelEdit" class="secondary">Cancel</button><button id="saveEdit">Save changes</button></div></section></div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, serverTimestamp, limit } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+// Fill these values from Firebase Console > Project settings > Your apps > Web app.
+// Never put a service-account private key or Admin SDK secret in browser code.
+const firebaseConfig = {
+  apiKey: "REPLACE_WITH_FIREBASE_WEB_API_KEY",
+  authDomain: "REPLACE_WITH_PROJECT_ID.firebaseapp.com",
+  projectId: "REPLACE_WITH_PROJECT_ID",
+  appId: "REPLACE_WITH_FIREBASE_WEB_APP_ID"
+};
+const collections = {
+ users: "users",
+ production_entries: "production_entries",
+ quality_entries: "quality_entries",
+ factory_alerts: "factory_alerts",
+ daily_setups: "daily_setups",
+ monthly_targets: "monthly_targets",
+ registration_requests: "registration_requests",
+ audit_logs: "audit_logs"
+};
+const labels = {
+ overview:"Overview", users:"Employees & access", production_entries:"Production data",
+ quality_entries:"Quality data", factory_alerts:"Incidents & alerts", daily_setups:"Daily line setup",
+ monthly_targets:"Monthly targets", registration_requests:"Registration requests", audit_logs:"Audit history"
+};
+let app, auth, db, activePage="overview", records=[], editingId=null, editingIsNew=false;
+const $ = id => document.getElementById(id);
+const status = (msg, error=false) => { $("status").textContent=msg; $("status").style.color=error?"#ffabb9":"#9cb0cc"; };
+const esc = value => String(value ?? "").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function showApp(){ $("loginView").classList.add("hidden"); $("appView").classList.remove("hidden"); }
+function showLogin(message=""){ $("appView").classList.add("hidden"); $("loginView").classList.remove("hidden"); $("loginError").textContent=message; }
+function navigate(page){
+ activePage=page; $("sidebar").classList.remove("open");
+ document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("active",b.dataset.page===page));
+ $("pageTitle").textContent=labels[page]||page; $("pageSub").textContent=page==="overview"?"Live factory data and system access":"Admin-only management · Changes are applied to cloud records";
+ $("overview").classList.toggle("hidden",page!=="overview"); $("dataPage").classList.toggle("hidden",page==="overview");
+ if(page!=="overview") loadCollection(page);
+}
+document.querySelectorAll("#nav button").forEach(b=>b.addEventListener("click",()=>navigate(b.dataset.page)));
+document.querySelectorAll("[data-goto]").forEach(b=>b.addEventListener("click",()=>navigate(b.dataset.goto)));
+$("hamb").addEventListener("click",()=>$("sidebar").classList.toggle("open"));
+$("refreshBtn").addEventListener("click",()=>activePage==="overview"?loadOverview():loadCollection(activePage));
+$("loginForm").addEventListener("submit",async e=>{
+ e.preventDefault(); $("loginError").textContent="";
+ if(firebaseConfig.apiKey.startsWith("REPLACE_")) { showLogin("Firebase Web App config is not set yet. Follow admin-web/README.md first."); return; }
+ try { await signInWithEmailAndPassword(auth,$("email").value.trim(),$("password").value); }
+ catch(err){ showLogin("Sign-in failed. Check your credentials and Firebase Authentication setup."); }
+});
+$("logoutBtn").addEventListener("click",async()=>{if(auth)await signOut(auth);showLogin();});
+$("searchInput").addEventListener("input",renderTable);
+$("pageSize").addEventListener("change",renderTable);
+$("exportBtn").addEventListener("click",()=>{
+ const blob=new Blob([JSON.stringify(records,null,2)],{type:"application/json"});
+ const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=activePage+"-export.json";a.click();URL.revokeObjectURL(url);
+});
+$("addBtn").addEventListener("click",()=>openEditor(null));
+$("cancelEdit").addEventListener("click",()=> $("editModal").classList.add("hidden"));
+$("saveEdit").addEventListener("click",saveEditor);
+async function verifyAdmin(user){
+ const snap=await getDoc(doc(db,"admin_users",user.uid));
+ return snap.exists() && snap.data().isAdmin===true && snap.data().active!==false;
+}
+async function loadOverview(){
+ try{
+  const counts=await Promise.all(["users","production_entries","quality_entries","registration_requests"].map(async c=>(await getDocs(queryLimit(c))).size));
+  ["statUsers","statProduction","statQuality","statPending"].forEach((id,i)=>$(id).textContent=counts[i]);
+  status("Connected · refreshed "+new Date().toLocaleTimeString());
+ }catch(e){status("Could not read overview. Check Firestore rules and project setup.",true);}
+}
+async function queryLimit(name){return getDocs(limit(collection(db,name),250));}
+async function loadCollection(name){
+ try{
+  status("Loading "+(labels[name]||name)+"…");
+  const snap=await queryLimit(name);
+  records=snap.docs.map(d=>({__docId:d.id,...d.data()}));
+  $("tableTitle").textContent=labels[name]||name;
+  $("addBtn").classList.toggle("hidden",["audit_logs","registration_requests"].includes(name));
+  renderTable();status(records.length+" records loaded (maximum 250 per view).");
+ }catch(e){records=[];renderTable();status("Read failed. Firestore rules may not yet authorize this Admin UID.",true);}
+}
+function renderTable(){
+ const term=$("searchInput").value.trim().toLowerCase();
+ const filtered=records.filter(r=>JSON.stringify(r).toLowerCase().includes(term));
+ const shown=filtered.slice(0,Number($("pageSize").value));
+ const keys=[...new Set(shown.flatMap(r=>Object.keys(r)))].filter(k=>!["password","passwordHash","otpHash","verificationCodeHash"].includes(k)).slice(0,8);
+ $("tableHead").innerHTML="<tr>"+keys.map(k=>"<th>"+esc(k)+"</th>").join("")+"<th>Actions</th></tr>";
+ $("tableBody").innerHTML=shown.map(r=>"<tr>"+keys.map(k=>"<td>"+esc(typeof r[k]==="object"?JSON.stringify(r[k]):r[k])+"</td>").join("")+"<td><button class='rowbtn secondary' data-edit='"+esc(r.__docId)+"'>Edit</button>"+(activePage==="registration_requests"&&r.status==="PENDING"?"<button class='rowbtn' data-approve='"+esc(r.__docId)+"'>Accept</button><button class='rowbtn danger' data-reject='"+esc(r.__docId)+"'>Reject</button>":"")+"<button class='rowbtn danger' data-delete='"+esc(r.__docId)+"'>Delete</button></td></tr>").join("")||"<tr><td class='empty' colspan='9'>No records found.</td></tr>";
+ $("rowCount").textContent=filtered.length+" matching records · "+shown.length+" shown";
+ $("tableBody").querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>openEditor(b.dataset.edit)));
+ $("tableBody").querySelectorAll("[data-delete]").forEach(b=>b.addEventListener("click",()=>removeRecord(b.dataset.delete)));
+ $("tableBody").querySelectorAll("[data-approve]").forEach(b=>b.addEventListener("click",()=>reviewRegistration(b.dataset.approve,true)));
+ $("tableBody").querySelectorAll("[data-reject]").forEach(b=>b.addEventListener("click",()=>reviewRegistration(b.dataset.reject,false)));
+}
+function openEditor(id){
+ editingId=id;editingIsNew=!id;
+ const r=id?records.find(x=>x.__docId===id):{};
+ $("modalTitle").textContent=id?"Edit "+(labels[activePage]||activePage):"Add "+(labels[activePage]||activePage);
+ const value={...(r||{})};delete value.__docId;
+ $("jsonEditor").value=JSON.stringify(value,null,2);$("modalError").textContent="";$("editModal").classList.remove("hidden");
+}
+async function saveEditor(){
+ try{
+  const data=JSON.parse($("jsonEditor").value);
+  if(!data||Array.isArray(data)||typeof data!=="object")throw new Error("Enter a JSON object.");
+  ["password","passwordHash","otpHash","verificationCodeHash"].forEach(k=>{if(k in data)throw new Error("Password/secret fields cannot be edited here.");});
+  const id=editingId||crypto.randomUUID();
+  delete data.__docId;data.adminEditedAt=serverTimestamp();data.adminEditedBy=auth.currentUser.uid;
+  await setDoc(doc(db,activePage,id),data,{merge:!editingIsNew});
+  $("editModal").classList.add("hidden");await loadCollection(activePage);
+ }catch(e){$("modalError").textContent=e instanceof SyntaxError?"Invalid JSON. Please check the format.":(e.message||"Save failed.");}
+}
+async function removeRecord(id){
+ if(!confirm("Delete this record permanently? Export/backup it first if needed."))return;
+ try{await deleteDoc(doc(db,activePage,id));await loadCollection(activePage);}
+ catch(e){status("Delete blocked by Firestore rules or failed.",true);}
+}
+async function reviewRegistration(id,approved){
+ if(!confirm((approved?"Accept":"Reject")+" this registration request?"))return;
+ try{
+  const reqRef=doc(db,"registration_requests",id), snap=await getDoc(reqRef);
+  if(!snap.exists())throw new Error("Request not found.");
+  const req=snap.data();
+  await setDoc(reqRef,{status:approved?"APPROVED":"REJECTED",reviewedAt:serverTimestamp(),reviewedBy:auth.currentUser.uid},{merge:true});
+  if(approved && req.employeeId){
+   await setDoc(doc(db,"users",String(req.employeeId)),{id:String(req.employeeId),employeeId:String(req.employeeId),name:req.name||"",role:req.role||"SUPERVISOR",accountStatus:"APPROVED",isActive:true,approvedDevices:req.deviceId?[{deviceId:req.deviceId,deviceName:req.deviceName||"Android device",approvedAtMillis:Date.now(),approvedBy:auth.currentUser.uid}]:[]},{merge:true});
+  }
+  await loadCollection(activePage);
+ }catch(e){status("Could not review request. Ensure server rules/backend implement atomic approval.",true);}
+}
+onAuthStateChanged(auth,async user=>{
+ if(!user){showLogin();return;}
+ try{
+  if(!(await verifyAdmin(user))){await signOut(auth);showLogin("This account is not approved for Admin Panel access.");return;}
+  showApp();$("adminEmail").textContent=user.email||user.uid;await loadOverview();
+ }catch(e){await signOut(auth);showLogin("Admin authorization could not be verified. Access denied.");}
+});
+try{
+ app=initializeApp(firebaseConfig);auth=getAuth(app);db=getFirestore(app);
+}catch(e){showLogin("Firebase config is incomplete. Set it in admin-web/index.html.");}
+</script>
+</body></html>
