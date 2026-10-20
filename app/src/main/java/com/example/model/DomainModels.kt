@@ -57,7 +57,7 @@ data class AppFeaturePermission(
 )
 
 const val PRIMARY_ADMIN_GMAIL = "shamim.sustipe15@gmail.com"
-const val MAX_APPROVED_DEVICES_PER_USER = 2
+const val MAX_APPROVED_DEVICES_PER_USER = 1
 
 enum class AccountStatus {
   APPROVED,
