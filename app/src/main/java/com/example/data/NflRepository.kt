@@ -1017,6 +1017,16 @@ class NflRepository(private val context: Context) {
           _currentUser.value = updatedActive
           _currentRole.value = updatedActive.role
           _currentUserName.value = updatedActive.name
+          if (!updatedActive.isAdmin && (
+              !updatedActive.isActive ||
+              updatedActive.accountStatus != AccountStatus.APPROVED ||
+              updatedActive.approvedDevices.none { it.deviceId == sheetsStorage.getDeviceId() }
+            )) {
+            addAuditLog("AUTH", updatedActive.id, "SESSION_INVALIDATED_DEVICE_REVOKED", updatedActive.name, "Remote account update revoked this device")
+            _currentUser.value = null
+            _currentRole.value = null
+            _currentUserName.value = ""
+          }
         }
       }
       touchDataUpdated()
