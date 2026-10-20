@@ -2350,11 +2350,16 @@ class NflRepository(private val context: Context) {
       _deviceApprovalRequests.value = listOf(request) + _deviceApprovalRequests.value
       sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
       val requestSaved = firebaseSync.pushRegistrationRequestAwait(request)
+      if (!saved || !requestSaved) {
+        _users.value = _users.value.filterNot { it.id.equals(employeeId, ignoreCase = true) }
+        _deviceApprovalRequests.value = _deviceApprovalRequests.value.filterNot { it.requestId == request.requestId }
+        sheetsStorage.saveLocalUsers(_users.value)
+        sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
+        onResult(SecurityActionResult(false, "Cloud sync failed. No registration was confirmed. Check the connection and try again."))
+        return@launch
+      }
       addAuditLog("AUTH", employeeId, "REGISTRATION_REQUESTED", employeeName, "New employee registration submitted")
-      onResult(
-        if (saved && requestSaved) SecurityActionResult(true, "Registration submitted. Wait for Admin approval before logging in.")
-        else SecurityActionResult(false, "Registration is pending locally, but cloud sync failed. Do not retry with another ID; ask Admin to check the connection.")
-      )
+      onResult(SecurityActionResult(true, "Registration submitted. Wait for Admin approval before logging in."))
     }
   }
 
