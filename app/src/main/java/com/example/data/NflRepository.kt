@@ -361,7 +361,7 @@ class NflRepository(private val context: Context) {
         canOqlWrite = false,
         canNptWrite = false,
         canMorningTargetWrite = true, // Authorized Production Reporter: daily line target and manpower
-        canMonthlyTargetWrite = true, // Production Reporter can enter monthly achieved data
+        canMonthlyTargetWrite = false, // Monthly Data entry is reserved for IE/Admin
         canTargetRevisionWrite = false
       ),
       UserAccount(
@@ -634,10 +634,10 @@ class NflRepository(private val context: Context) {
       val mergedDefault = _users.value.map { defUser ->
         val saved = savedById[defUser.id.lowercase(Locale.US)]
         if (saved != null) {
-          // Keep stored account settings, but migrate the built-in IE and Production Reporter
-          // accounts to the required Monthly Data write permission.
+          // Migrate built-in account permissions without changing unrelated saved settings.
           when (defUser.id.lowercase(Locale.US)) {
-            "ie", "production" -> saved.copy(canMorningTargetWrite = true, canMonthlyTargetWrite = true)
+            "ie" -> saved.copy(canMorningTargetWrite = true, canMonthlyTargetWrite = true)
+            "production" -> saved.copy(canMorningTargetWrite = true, canMonthlyTargetWrite = false)
             else -> saved
           }
         } else {
