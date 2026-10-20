@@ -6,6 +6,7 @@ import com.example.model.*
 import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
@@ -516,7 +517,7 @@ class FirebaseSyncService(private val context: Context) {
         id = id,
         employeeId = doc.getString("employeeId") ?: id,
         name = doc.getString("name") ?: id,
-        password = doc.getString("password") ?: "123",
+        password = doc.getString("password") ?: "",
         passwordHash = doc.getString("passwordHash") ?: "",
         role = role,
         floor = floor,
@@ -928,6 +929,11 @@ class FirebaseSyncService(private val context: Context) {
     }
   }
 
+  private fun sha256Hex(value: String): String {
+    val digest = java.security.MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+    return digest.joinToString("") { "%02x".format(it) }
+  }
+
   suspend fun pushUserAccountAwait(user: UserAccount): Boolean = withContext(Dispatchers.IO) {
     val db = firestore ?: return@withContext false
     try {
@@ -936,8 +942,8 @@ class FirebaseSyncService(private val context: Context) {
         "id" to user.id,
         "employeeId" to user.employeeId,
         "name" to user.name,
-        "password" to user.password,
-        "passwordHash" to user.passwordHash,
+        "password" to FieldValue.delete(),
+        "passwordHash" to user.passwordHash.ifBlank { sha256Hex(user.password) },
         "role" to user.role.name,
         "floor" to user.floor.name,
         "assignedLine" to user.assignedLine,
