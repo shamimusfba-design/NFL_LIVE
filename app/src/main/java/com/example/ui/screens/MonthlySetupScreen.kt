@@ -78,7 +78,7 @@ fun MonthlySetupScreen(
       floorLines.associate { line ->
         val target = monthlyTargets.find {
           it.lineId.equals(line.id, true) &&
-            it.floor.replace("-", " ").equals(selectedFloorName.replace("-", " "), true)
+            it.floor.replace("-", " ").equals((if (selectedFloor == FloorScope.ALL) line.floor else selectedFloorName).replace("-", " "), true)
         }
         line.id to LineMonthlyDraft(
           efficiency = target?.updateEfficiencyPct?.toString() ?: "",
@@ -417,7 +417,7 @@ fun MonthlySetupScreen(
           floorLines.forEach { line ->
             val manualLineTarget = monthlyTargets.find {
               it.lineId.equals(line.id, ignoreCase = true) &&
-                it.floor.replace("-", " ").equals(selectedFloorName.replace("-", " "), ignoreCase = true)
+                it.floor.replace("-", " ").equals((if (selectedFloor == FloorScope.ALL) line.floor else selectedFloorName).replace("-", " "), ignoreCase = true)
             }
             val lineTarget = if (autoMonthlyMode) calculateAutoMonthlyTarget(repository, selectedFloor, line.id, currentMonthKey, productionEntries, qualityEntries) else manualLineTarget
             val draft = lineDrafts[line.id] ?: LineMonthlyDraft()
@@ -448,7 +448,7 @@ fun MonthlySetupScreen(
                 if (eff != null && targetPcs != null && achievedPcs != null && dhuPct != null && oqlPct != null) {
                   repository.saveMonthlyTarget(
                     MonthlyFactoryTarget(
-                      floor = selectedFloorName,
+                      floor = if (selectedFloor == FloorScope.ALL) line.floor else selectedFloorName,
                       lineId = line.id,
                       monthYear = currentMonthKey,
                       updateEfficiencyPct = eff,
