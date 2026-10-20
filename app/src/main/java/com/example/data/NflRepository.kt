@@ -2857,9 +2857,18 @@ class NflRepository(private val context: Context) {
   fun getMonthlyTarget(floorName: String): MonthlyFactoryTarget {
     val norm = floorName.trim().replace("-", " ").replace("  ", " ")
     return _monthlyTargets.value.find { target ->
-      val targetNorm = target.floor.trim().replace("-", " ").replace("  ", " ")
-      targetNorm.equals(norm, ignoreCase = true) || target.floor.equals(floorName, ignoreCase = true)
+      target.lineId.isBlank() &&
+        (target.floor.trim().replace("-", " ").replace("  ", " ").equals(norm, ignoreCase = true) ||
+          target.floor.equals(floorName, ignoreCase = true))
     } ?: MonthlyFactoryTarget(floor = floorName)
+  }
+
+  fun getMonthlyLineTarget(floorName: String, lineId: String): MonthlyFactoryTarget? {
+    return _monthlyTargets.value.find {
+      it.lineId.equals(lineId, ignoreCase = true) &&
+        it.floor.trim().replace("-", " ").replace("  ", " ")
+          .equals(floorName.trim().replace("-", " ").replace("  ", " "), ignoreCase = true)
+    }
   }
 
   fun saveMonthlyTarget(target: MonthlyFactoryTarget) {
