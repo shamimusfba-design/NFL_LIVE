@@ -137,7 +137,7 @@ async function loadOverview(){
   status("Connected · refreshed "+new Date().toLocaleTimeString());
  }catch(e){status("Could not read overview. Check Firestore rules and project setup.",true);}
 }
-async function queryLimit(name){return getDocs(limit(collection(db,name),250));}
+async function queryLimit(name){return getDocs(query(collection(db,name),limit(250)));}
 async function loadCollection(name){
  try{
   status("Loading "+(labels[name]||name)+"…");
