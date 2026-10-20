@@ -2375,7 +2375,7 @@ class NflRepository(private val context: Context) {
       )
     }
 
-    val matchedUser = _users.value.find { user ->
+    var matchedUser = _users.value.find { user ->
       val uid = user.id.lowercase(Locale.US)
       val empId = user.employeeId.lowercase(Locale.US)
       uid == cleanIdLower || empId == cleanIdLower
@@ -2395,6 +2395,14 @@ class NflRepository(private val context: Context) {
         status = AuthStatus.INVALID_CREDENTIALS,
         message = "❌ ভুল পাসওয়ার্ড! সঠিক পাসওয়ার্ড প্রদান করুন।"
       )
+    }
+
+    // Migrate legacy plaintext credentials out of local state on successful authentication.
+    // The sync service writes only the hash and deletes the Firestore plaintext field.
+    if (matchedUser.password.isNotBlank()) {
+      val migratedHash = matchedUser.passwordHash.ifBlank { inputHash }
+      matchedUser = matchedUser.copy(password = "", passwordHash = migratedHash)
+      updateUserInternal(matchedUser)
     }
 
     if (!matchedUser.isActive || matchedUser.accountStatus == AccountStatus.SUSPENDED) {
