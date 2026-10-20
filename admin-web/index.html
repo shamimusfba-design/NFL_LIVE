@@ -193,7 +193,7 @@ async function reviewRegistration(id,approved){
   const req=snap.data();
   await setDoc(reqRef,{status:approved?"APPROVED":"REJECTED",reviewedAt:serverTimestamp(),reviewedBy:auth.currentUser.uid},{merge:true});
   if(approved && req.employeeId){
-   await setDoc(doc(db,"users",String(req.employeeId)),{id:String(req.employeeId),employeeId:String(req.employeeId),name:req.name||"",role:req.role||"SUPERVISOR",accountStatus:"APPROVED",isActive:true,approvedDevices:req.deviceId?[{deviceId:req.deviceId,deviceName:req.deviceName||"Android device",approvedAtMillis:Date.now(),approvedBy:auth.currentUser.uid}]:[]},{merge:true});
+   await setDoc(doc(db,"users",String(req.employeeId)),{id:String(req.employeeId),employeeId:String(req.employeeId),name:req.employeeName||req.userName||req.name||"",role:req.role||"SUPERVISOR",accountStatus:"APPROVED",isActive:true,approvedDevices:req.deviceId?[{deviceId:req.deviceId,deviceName:req.deviceName||"Android device",approvedAtMillis:Date.now(),approvedBy:auth.currentUser.uid}]:[]},{merge:true});
   }
   await loadCollection(activePage);
  }catch(e){status("Could not review request. Ensure server rules/backend implement atomic approval.",true);}
