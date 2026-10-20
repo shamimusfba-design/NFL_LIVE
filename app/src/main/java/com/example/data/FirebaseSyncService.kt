@@ -523,6 +523,17 @@ class FirebaseSyncService(private val context: Context) {
         assignedLine = doc.getString("assignedLine") ?: "K1",
         isActive = doc.getBoolean("isActive") ?: true,
         accountStatus = accStatus,
+        approvedDevices = (doc.get("approvedDevices") as? List<*>)?.mapNotNull { raw ->
+          val device = raw as? Map<*, *> ?: return@mapNotNull null
+          val deviceId = device["deviceId"] as? String ?: return@mapNotNull null
+          ApprovedDevice(
+            deviceId = deviceId,
+            deviceName = device["deviceName"] as? String ?: "Android device",
+            approvedAtMillis = (device["approvedAtMillis"] as? Number)?.toLong() ?: 0L,
+            approvedBy = device["approvedBy"] as? String ?: "Admin",
+            lastActiveMillis = (device["lastActiveMillis"] as? Number)?.toLong() ?: 0L
+          )
+        } ?: emptyList(),
         isAdmin = doc.getBoolean("isAdmin") ?: (role == UserRole.ADMIN),
         canViewDashboard = doc.getBoolean("canViewDashboard") ?: true,
         canViewTvDashboard = doc.getBoolean("canViewTvDashboard") ?: false,
@@ -932,6 +943,16 @@ class FirebaseSyncService(private val context: Context) {
         "assignedLine" to user.assignedLine,
         "isActive" to user.isActive,
         "accountStatus" to user.accountStatus.name,
+        "approvedDevices" to user.approvedDevices.map { device ->
+          mapOf(
+            "deviceId" to device.deviceId,
+            "deviceName" to device.deviceName,
+            "approvedAtMillis" to device.approvedAtMillis,
+            "approvedBy" to device.approvedBy,
+            "lastActiveMillis" to device.lastActiveMillis
+          )
+        },
+        "maxDevices" to 1,
         "isAdmin" to user.isAdmin,
         "canViewDashboard" to user.canViewDashboard,
         "canViewTvDashboard" to user.canViewTvDashboard,
@@ -960,6 +981,40 @@ class FirebaseSyncService(private val context: Context) {
     } catch (e: Exception) {
       lastErrorMessage = e.message
       Log.w("FirebaseSync", "Firestore user push failed: ${e.message}")
+      false
+    }
+  }
+
+  /**
+   * Mirrors Admin approval / registration requests to Firestore for the desktop Admin Panel.
+   * This collection must be protected by server-side Firestore rules before production deployment.
+   */
+  suspend fun pushRegistrationRequestAwait(request: DeviceApprovalRequest): Boolean = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext false
+    try {
+      val map = hashMapOf<String, Any?>(
+        "requestId" to request.requestId,
+        "userId" to request.userId,
+        "userName" to request.userName,
+        "employeeId" to request.employeeId,
+        "employeeName" to request.employeeName,
+        "role" to request.role.name,
+        "deviceId" to request.deviceId,
+        "deviceName" to request.deviceName,
+        "requestType" to request.requestType,
+        "requestedAtMillis" to request.requestedAtMillis,
+        "status" to request.status,
+        "reason" to request.reason,
+        "reviewedAtMillis" to null
+      )
+      withTimeout(10000L) {
+        db.collection("registration_requests").document(request.requestId)
+          .set(map, SetOptions.merge()).await()
+      }
+      true
+    } catch (e: Exception) {
+      lastErrorMessage = e.message
+      Log.w("FirebaseSync", "Registration request push failed: ${e.message}")
       false
     }
   }
