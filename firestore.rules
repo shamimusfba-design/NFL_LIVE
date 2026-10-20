@@ -19,5 +19,12 @@ service cloud.firestore {
     match /users/{docId} {
       allow read, write: if true;
     }
+
+    // Admin marker can only be read by its owner UID; client-side promotion is forbidden.
+    // Core data rules above are still public and must be replaced before production deployment.
+    match /admin_users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
   }
 }
