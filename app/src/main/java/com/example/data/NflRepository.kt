@@ -2351,6 +2351,8 @@ class NflRepository(private val context: Context) {
       sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
       val requestSaved = firebaseSync.pushRegistrationRequestAwait(request)
       if (!saved || !requestSaved) {
+        if (saved) firebaseSync.deleteUserAccountAwait(employeeId)
+        if (requestSaved) firebaseSync.deleteRegistrationRequestAwait(request.requestId)
         _users.value = _users.value.filterNot { it.id.equals(employeeId, ignoreCase = true) }
         _deviceApprovalRequests.value = _deviceApprovalRequests.value.filterNot { it.requestId == request.requestId }
         sheetsStorage.saveLocalUsers(_users.value)
