@@ -120,7 +120,7 @@ $("logoutBtn").addEventListener("click",async()=>{if(auth)await signOut(auth);sh
 $("searchInput").addEventListener("input",renderTable);
 $("pageSize").addEventListener("change",renderTable);
 $("exportBtn").addEventListener("click",()=>{
- const blob=new Blob([JSON.stringify(records,null,2)],{type:"application/json"});
+ const safeRecords=records.map(r=>Object.fromEntries(Object.entries(r).filter(([k])=>!["password","passwordHash","otpHash","verificationCodeHash"].includes(k)))); const blob=new Blob([JSON.stringify(safeRecords,null,2)],{type:"application/json"});
  const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=activePage+"-export.json";a.click();URL.revokeObjectURL(url);
 });
 $("addBtn").addEventListener("click",()=>openEditor(null));
@@ -165,7 +165,7 @@ function openEditor(id){
  editingId=id;editingIsNew=!id;
  const r=id?records.find(x=>x.__docId===id):{};
  $("modalTitle").textContent=id?"Edit "+(labels[activePage]||activePage):"Add "+(labels[activePage]||activePage);
- const value={...(r||{})};delete value.__docId;
+ const value={...(r||{})};delete value.__docId;["password","passwordHash","otpHash","verificationCodeHash"].forEach(k=>delete value[k]);
  $("jsonEditor").value=JSON.stringify(value,null,2);$("modalError").textContent="";$("editModal").classList.remove("hidden");
 }
 async function saveEditor(){
