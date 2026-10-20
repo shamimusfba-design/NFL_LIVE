@@ -1002,12 +1002,9 @@ class NflRepository(private val context: Context) {
       val key = remote.id.trim().lowercase(Locale.US)
       val prev = byId[key]
       if (prev == null || prev != remote) {
-        val merged = if (prev != null && remote.approvedDevices.isEmpty() && prev.approvedDevices.isNotEmpty()) {
-          remote.copy(approvedDevices = prev.approvedDevices)
-        } else {
-          remote
-        }
-        byId[key] = merged
+        // Server state is authoritative for device authorization. Never preserve stale local devices
+        // after Admin revokes or replaces a device.
+        byId[key] = remote
         changed = true
       }
     }
@@ -1338,6 +1335,20 @@ class NflRepository(private val context: Context) {
     if (fresh != cur) {
       _currentUser.value = fresh
       _currentRole.value = fresh.role
+      _currentUserName.value = fresh.name
+    }
+    if (!fresh.isAdmin) {
+      val deviceId = sheetsStorage.getDeviceId()
+      val isAuthorized = fresh.isActive &&
+          fresh.accountStatus == AccountStatus.APPROVED &&
+          fresh.approvedDevices.any { it.deviceId == deviceId }
+      if (!isAuthorized) {
+        addAuditLog("AUTH", fresh.id, "SESSION_INVALIDATED_DEVICE_REVOKED", fresh.name, "Session invalidated because this device is no longer approved")
+        _currentUser.value = null
+        _currentRole.value = null
+        _currentUserName.value = ""
+        return null
+      }
     }
     return fresh
   }
