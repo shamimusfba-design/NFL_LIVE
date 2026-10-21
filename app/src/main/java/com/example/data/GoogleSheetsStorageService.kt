@@ -628,11 +628,15 @@ class GoogleSheetsStorageService(private val appContext: Context) {
       serverDevicesMap[u.id.lowercase(Locale.US)] = u.approvedDevices
       arr.put(JSONObject().apply {
         put("id", u.id)
+        put("employeeId", u.employeeId)
         put("name", u.name)
         put("password", u.password)
         put("role", u.role.name)
         put("floor", u.floor.name)
         put("assignedLine", u.assignedLine)
+        put("assignedLines", JSONArray().apply { u.assignedLines.forEach { put(it) } })
+        put("department", u.department.name)
+        put("designation", u.designation)
         put("isAdmin", u.isAdmin)
         put("canViewDashboard", u.canViewDashboard)
         put("canViewTvDashboard", u.canViewTvDashboard)
@@ -670,6 +674,25 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         val floor = runCatching { FloorScope.valueOf(obj.optString("floor", "SEW_2")) }.getOrDefault(FloorScope.SEW_2)
         val isAdmin = obj.optBoolean("isAdmin", role == UserRole.ADMIN)
         val status = runCatching { AccountStatus.valueOf(obj.optString("accountStatus", "APPROVED")) }.getOrDefault(AccountStatus.APPROVED)
+        val department = runCatching {
+          EmployeeDepartment.valueOf(obj.optString("department", ""))
+        }.getOrElse {
+          when (role) {
+            UserRole.QUALITY_REPORTER, UserRole.QUALITY_MANAGER, UserRole.AUDITOR -> EmployeeDepartment.QUALITY
+            UserRole.IE -> EmployeeDepartment.IE
+            UserRole.MANAGEMENT_VIEW -> EmployeeDepartment.MANAGEMENT
+            else -> EmployeeDepartment.PRODUCTION
+          }
+        }
+        val assignedLine = obj.optString("assignedLine", "K1")
+        val assignedLinesJson = obj.optJSONArray("assignedLines")
+        val assignedLines = if (assignedLinesJson != null) {
+          (0 until assignedLinesJson.length()).mapNotNull { idx ->
+            assignedLinesJson.optString(idx).takeIf { it.isNotBlank() }
+          }
+        } else {
+          listOfNotNull(assignedLine.takeIf { it.isNotBlank() && !it.equals("All", true) })
+        }
         val userId = obj.optString("id", "")
         val devArr = obj.optJSONArray("approvedDevices")
         val parsedDevices = if (devArr != null) {
@@ -688,11 +711,15 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         }
         UserAccount(
           id = userId,
+          employeeId = obj.optString("employeeId", userId),
           name = obj.optString("name", ""),
           password = obj.optString("password", "123"),
           role = role,
           floor = floor,
-          assignedLine = obj.optString("assignedLine", "K1"),
+          assignedLine = assignedLine,
+          department = department,
+          designation = obj.optString("designation", role.displayName),
+          assignedLines = assignedLines,
           isAdmin = isAdmin,
           canViewDashboard = obj.optBoolean("canViewDashboard", true),
           canViewTvDashboard = obj.optBoolean("canViewTvDashboard", true),
@@ -795,6 +822,10 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         put("isCodeUsed", r.isCodeUsed || r.otpUsed)
         put("emailDeliveryStatus", r.emailDeliveryStatus)
         put("reason", r.reason)
+        put("department", r.department)
+        put("designation", r.designation)
+        put("floor", r.floor)
+        put("assignedLine", r.assignedLine)
       })
     }
     prefs.edit().putString(KEY_SAVED_DEVICE_REQUESTS, arr.toString()).commit()
@@ -840,7 +871,11 @@ class GoogleSheetsStorageService(private val appContext: Context) {
           otpUsed = used,
           isCodeUsed = used,
           emailDeliveryStatus = obj.optString("emailDeliveryStatus", "PENDING"),
-          reason = obj.optString("reason", "Device / Account Authorization")
+          reason = obj.optString("reason", "Device / Account Authorization"),
+          department = obj.optString("department", ""),
+          designation = obj.optString("designation", ""),
+          floor = obj.optString("floor", ""),
+          assignedLine = obj.optString("assignedLine", "")
         )
       }
     } catch (_: Throwable) {
