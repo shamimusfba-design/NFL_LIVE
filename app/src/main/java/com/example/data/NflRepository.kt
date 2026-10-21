@@ -910,7 +910,15 @@ class NflRepository(private val context: Context) {
         existingNonDemoById[cleanRemote.id] = cleanRemote
         changed = true
         if (cleanRemote.status != IncidentStatus.RESOLVED) {
-          alertManager.triggerAlertNotification(cleanRemote, _currentRole.value, _currentFloor.value)
+          alertManager.triggerAlertNotification(
+            cleanRemote,
+            _currentRole.value,
+            _currentFloor.value,
+            _currentUser.value?.department ?: EmployeeDepartment.PRODUCTION,
+            _currentUser.value?.designation ?: _currentRole.value.displayName,
+            _currentUser.value?.assignedLines ?: emptyList(),
+            _currentUser.value?.assignedLine ?: "All"
+          )
         }
       } else {
         val merged = cleanRemote.copy(
