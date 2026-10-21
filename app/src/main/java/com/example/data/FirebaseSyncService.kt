@@ -512,6 +512,16 @@ class FirebaseSyncService(private val context: Context) {
       } ?: FloorScope.SEW_2
       val statusStr = doc.getString("accountStatus") ?: AccountStatus.APPROVED.name
       val accStatus = try { AccountStatus.valueOf(statusStr) } catch (_: Exception) { AccountStatus.APPROVED }
+      val departmentStr = doc.getString("department")
+      val department = EmployeeDepartment.entries.find {
+        it.name.equals(departmentStr, ignoreCase = true) ||
+            it.displayName.equals(departmentStr, ignoreCase = true)
+      } ?: when (role) {
+        UserRole.QUALITY_REPORTER, UserRole.QUALITY_MANAGER, UserRole.AUDITOR -> EmployeeDepartment.QUALITY
+        UserRole.IE -> EmployeeDepartment.IE
+        UserRole.MANAGEMENT_VIEW -> EmployeeDepartment.MANAGEMENT
+        else -> EmployeeDepartment.PRODUCTION
+      }
 
       UserAccount(
         id = id,
@@ -522,6 +532,10 @@ class FirebaseSyncService(private val context: Context) {
         role = role,
         floor = floor,
         assignedLine = doc.getString("assignedLine") ?: "K1",
+        department = department,
+        designation = doc.getString("designation") ?: role.displayName,
+        assignedLines = (doc.get("assignedLines") as? List<*>)?.mapNotNull { it as? String }
+          ?: listOfNotNull(doc.getString("assignedLine")?.takeIf { it.isNotBlank() && !it.equals("All", true) }),
         isActive = doc.getBoolean("isActive") ?: true,
         accountStatus = accStatus,
         approvedDevices = (doc.get("approvedDevices") as? List<*>)?.mapNotNull { raw ->
@@ -947,6 +961,9 @@ class FirebaseSyncService(private val context: Context) {
         "role" to user.role.name,
         "floor" to user.floor.name,
         "assignedLine" to user.assignedLine,
+        "assignedLines" to user.assignedLines,
+        "department" to user.department.name,
+        "designation" to user.designation,
         "isActive" to user.isActive,
         "accountStatus" to user.accountStatus.name,
         "approvedDevices" to user.approvedDevices.map { device ->
@@ -1005,6 +1022,10 @@ class FirebaseSyncService(private val context: Context) {
         "employeeId" to request.employeeId,
         "employeeName" to request.employeeName,
         "role" to request.role.name,
+        "department" to request.department,
+        "designation" to request.designation,
+        "floor" to request.floor,
+        "assignedLine" to request.assignedLine,
         "deviceId" to request.deviceId,
         "deviceName" to request.deviceName,
         "requestType" to request.requestType,
