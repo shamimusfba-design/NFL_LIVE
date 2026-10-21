@@ -217,56 +217,93 @@ class FactoryAlertManager(private val context: Context) {
     _activeAlarmSilenced.value = true
   }
 
-  fun isUserEligibleForAlert(role: UserRole, userFloor: FloorScope, incident: IncidentItem): Boolean {
-    // 1. Admin and Management receive all high-priority or escalated alerts
+  private fun normalizeScope(value: String): String =
+    value.trim().lowercase().replace("-", "").replace(" ", "").replace("_", "")
+
+  private fun sameFloor(userFloor: FloorScope, incidentFloor: String): Boolean {
+    if (userFloor == FloorScope.ALL) return false
+    return normalizeScope(userFloor.apiValue) == normalizeScope(incidentFloor) ||
+        normalizeScope(userFloor.displayName) == normalizeScope(incidentFloor)
+  }
+
+  fun isUserEligibleForAlert(
+    role: UserRole,
+    userFloor: FloorScope,
+    incident: IncidentItem,
+    department: EmployeeDepartment = when (role) {
+      UserRole.QUALITY_REPORTER, UserRole.QUALITY_MANAGER, UserRole.AUDITOR -> EmployeeDepartment.QUALITY
+      UserRole.IE -> EmployeeDepartment.IE
+      UserRole.MANAGEMENT_VIEW -> EmployeeDepartment.MANAGEMENT
+      else -> EmployeeDepartment.PRODUCTION
+    },
+    designation: String = role.displayName,
+    assignedLines: List<String> = emptyList(),
+    assignedLine: String = "All"
+  ): Boolean {
+    // Factory Management notifications are intentionally disabled for the initial rollout.
+    // Admin is a separate technical role and may still review all alerts.
     if (role == UserRole.ADMIN) return true
-    if (role == UserRole.MANAGEMENT_VIEW) {
-      return incident.severity == AlertSeverity.CRITICAL || incident.isEscalated
-    }
+    if (department == EmployeeDepartment.MANAGEMENT || role == UserRole.MANAGEMENT_VIEW) return false
 
-    // 2. Production Manager & Quality Manager receive all their respective domain alerts
-    if (role == UserRole.PRODUCTION_MANAGER) {
-      return incident.category != IncidentCategory.QUALITY_PROBLEM || incident.isEscalated
-    }
-    if (role == UserRole.QUALITY_MANAGER) {
-      return incident.category == IncidentCategory.QUALITY_PROBLEM || incident.isEscalated
-    }
+    val isProductionHead = department == EmployeeDepartment.PRODUCTION &&
+        designation.equals("Production Head", ignoreCase = true)
+    val isQualityHead = department == EmployeeDepartment.QUALITY &&
+        designation.equals("Quality Head", ignoreCase = true)
+    val allFloorHead = isProductionHead || isQualityHead
 
-    // 3. Domain specialist role routing
-    when (incident.category) {
-      IncidentCategory.MACHINE_BREAKDOWN, IncidentCategory.POWER_OUTAGE -> {
-        if (role == UserRole.MECHANIC) return true
-      }
-      IncidentCategory.QUALITY_PROBLEM -> {
-        if (role == UserRole.QUALITY_REPORTER || role == UserRole.AUDITOR) return true
-      }
-      IncidentCategory.INPUT_MATERIAL -> {
-        if (role == UserRole.INPUT_MATERIAL) return true
-      }
-      IncidentCategory.LINE_BALANCING -> {
-        if (role == UserRole.IE) return true
-      }
-      IncidentCategory.LOW_PRODUCTION, IncidentCategory.OPERATOR_NA, IncidentCategory.OTHER -> {
-        if (role == UserRole.SUPERVISOR || role == UserRole.PRODUCTION_REPORTER) return true
-      }
+    val normalizedLine = normalizeScope(incident.lineId)
+    val incidentIsFinishing = normalizeScope(incident.floor) == normalizeScope("Finishing") ||
+        normalizedLine.startsWith("iron") || normalizedLine.startsWith("packing")
+    val floorAllowed = when {
+      allFloorHead -> true
+      department == EmployeeDepartment.FINISHING ->
+        incidentIsFinishing && (userFloor == FloorScope.FINISHING || userFloor == FloorScope.ALL)
+      userFloor == FloorScope.ALL -> false
+      else -> sameFloor(userFloor, incident.floor)
     }
+    if (!floorAllowed) return false
 
-    // 4. Floor Supervisors receive alerts affecting their floor
-    if (role == UserRole.SUPERVISOR) {
-      val incidentFloor = incident.floor.lowercase()
-      val scopeFloor = userFloor.displayName.lowercase()
-      return userFloor == FloorScope.ALL || incidentFloor.contains(scopeFloor) || scopeFloor.contains(incidentFloor)
+    val lineScope = assignedLines.filter { it.isNotBlank() }.ifEmpty {
+      listOf(assignedLine).filter { it.isNotBlank() }
     }
+    val allLinesAllowed = lineScope.isEmpty() || lineScope.any {
+      it.equals("All", ignoreCase = true) || it.equals("All lines on floor", ignoreCase = true)
+    }
+    if (!allLinesAllowed && lineScope.none { it.equals(incident.lineId, ignoreCase = true) }) return false
 
-    return false
+    val departmentCategoryAllowed = when (department) {
+      EmployeeDepartment.QUALITY -> incident.category == IncidentCategory.QUALITY_PROBLEM
+      EmployeeDepartment.PRODUCTION -> incident.category in setOf(
+        IncidentCategory.MACHINE_BREAKDOWN,
+        IncidentCategory.INPUT_MATERIAL,
+        IncidentCategory.OPERATOR_NA,
+        IncidentCategory.LOW_PRODUCTION,
+        IncidentCategory.POWER_OUTAGE,
+        IncidentCategory.OTHER
+      )
+      EmployeeDepartment.IE -> incident.category in setOf(
+        IncidentCategory.LINE_BALANCING,
+        IncidentCategory.LOW_PRODUCTION,
+        IncidentCategory.OTHER
+      )
+      EmployeeDepartment.FINISHING -> incidentIsFinishing
+      EmployeeDepartment.MANAGEMENT -> false
+    }
+    return departmentCategoryAllowed
   }
 
   fun triggerAlertNotification(
     incident: IncidentItem,
     currentRole: UserRole,
-    userFloor: FloorScope
+    userFloor: FloorScope,
+    department: EmployeeDepartment = EmployeeDepartment.PRODUCTION,
+    designation: String = currentRole.displayName,
+    assignedLines: List<String> = emptyList(),
+    assignedLine: String = "All"
   ) {
-    if (!isUserEligibleForAlert(currentRole, userFloor, incident)) {
+    if (!isUserEligibleForAlert(
+        currentRole, userFloor, incident, department, designation, assignedLines, assignedLine
+      )) {
       return
     }
 
