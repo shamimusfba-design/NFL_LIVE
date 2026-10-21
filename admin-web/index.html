@@ -204,15 +204,17 @@ async function reviewRegistration(id,approved){
   await loadCollection(activePage);
  }catch(e){status("Could not review request. Ensure server rules/backend implement atomic approval.",true);}
 }
-onAuthStateChanged(auth,async user=>{
- if(!user){showLogin();return;}
- try{
-  if(!(await verifyAdmin(user))){await signOut(auth);showLogin("This account is not approved for Admin Panel access.");return;}
-  showApp();$("adminEmail").textContent=user.email||user.uid;await loadOverview();
- }catch(e){await signOut(auth);showLogin("Admin authorization could not be verified. Access denied.");}
-});
 try{
- app=initializeApp(firebaseConfig);auth=getAuth(app);db=getFirestore(app, FIRESTORE_DATABASE_ID);
+ app=initializeApp(firebaseConfig);
+ auth=getAuth(app);
+ db=getFirestore(app, FIRESTORE_DATABASE_ID);
+ onAuthStateChanged(auth,async user=>{
+  if(!user){showLogin();return;}
+  try{
+   if(!(await verifyAdmin(user))){await signOut(auth);showLogin("This account is not approved for Admin Panel access.");return;}
+   showApp();$("adminEmail").textContent=user.email||user.uid;await loadOverview();
+  }catch(e){await signOut(auth);showLogin("Admin authorization could not be verified. Access denied.");}
+ });
 }catch(e){showLogin("Firebase config is incomplete. Set it in admin-web/index.html.");}
 </script>
 </body></html>
