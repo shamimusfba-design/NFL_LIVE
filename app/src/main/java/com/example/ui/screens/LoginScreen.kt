@@ -434,7 +434,10 @@ fun LoginScreen(
       textContentColor = LoginMuted,
       title = { Text("Register employee account", fontWeight = FontWeight.Bold) },
       text = {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+          modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
           Text(
             "Create an account request. You can sign in only after Admin approves it. Use a unique Employee ID and a password of at least 8 characters.",
             fontSize = 12.sp
