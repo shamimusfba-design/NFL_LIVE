@@ -28,6 +28,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.NflRepository
 import com.example.model.UserRole
+import com.example.model.EmployeeDepartment
+import com.example.model.FloorScope
 
 private val LoginBg = Color(0xFF061426)
 private val LoginSurface = Color(0xFF0B2038)
@@ -54,7 +56,25 @@ fun LoginScreen(
   var showRegisterDialog by remember { mutableStateOf(false) }
   var registerName by remember { mutableStateOf("") }
   var registerPassword by remember { mutableStateOf("") }
+  var registerDepartment by remember { mutableStateOf(EmployeeDepartment.PRODUCTION) }
+  var registerDesignation by remember { mutableStateOf("Supervisor") }
+  var registerFloor by remember { mutableStateOf(FloorScope.SEW_1) }
+  var registerLine by remember { mutableStateOf("All lines on floor") }
   var registerBusy by remember { mutableStateOf(false) }
+
+  val designationsByDepartment = mapOf(
+    EmployeeDepartment.PRODUCTION to listOf("Reporter", "Supervisor", "In-charge", "APM", "PM / Production Manager", "Production Head"),
+    EmployeeDepartment.QUALITY to listOf("QI", "Controller", "Officer", "Assistant Manager", "Manager", "Quality Head"),
+    EmployeeDepartment.IE to listOf("IE Officer", "IE Manager"),
+    EmployeeDepartment.FINISHING to listOf("Supervisor", "In-charge", "Manager"),
+    EmployeeDepartment.MANAGEMENT to listOf("Factory Management")
+  )
+  val registrationLineOptions = remember(registerFloor) {
+    listOf("All lines on floor") + repository.allLinesMaster
+      .filter { it.floor.equals(registerFloor.apiValue, ignoreCase = true) }
+      .map { it.id }
+      .distinct()
+  }
   
   Box(
     modifier = Modifier
@@ -431,6 +451,50 @@ fun LoginScreen(
             modifier = Modifier.fillMaxWidth(),
             colors = loginFieldColors()
           )
+          RegistrationDropdown(
+            label = "Department",
+            selected = registerDepartment.displayName,
+            options = EmployeeDepartment.entries.map { it.displayName },
+            onSelected = { selected ->
+              registerDepartment = EmployeeDepartment.entries.first { it.displayName == selected }
+              registerDesignation = designationsByDepartment[registerDepartment]?.firstOrNull() ?: "Supervisor"
+              if (registerDepartment == EmployeeDepartment.FINISHING) registerFloor = FloorScope.FINISHING
+              else if (registerFloor == FloorScope.FINISHING) registerFloor = FloorScope.SEW_1
+              registerLine = "All lines on floor"
+            }
+          )
+          RegistrationDropdown(
+            label = "Designation",
+            selected = registerDesignation,
+            options = designationsByDepartment[registerDepartment] ?: listOf("Other"),
+            onSelected = { registerDesignation = it }
+          )
+          RegistrationDropdown(
+            label = "Floor / Section",
+            selected = if (registerDesignation.contains("Head", ignoreCase = true)) "All Floor (Admin approved)" else registerFloor.displayName,
+            options = if (registerDesignation.contains("Head", ignoreCase = true)) listOf("All Floor (Admin approved)") else
+              if (registerDepartment == EmployeeDepartment.FINISHING) listOf(FloorScope.FINISHING.displayName)
+              else listOf(FloorScope.SEW_1.displayName, FloorScope.SEW_2.displayName, FloorScope.SEW_3.displayName),
+            onSelected = { selected ->
+              registerFloor = FloorScope.entries.firstOrNull { it.displayName == selected } ?: registerFloor
+              registerLine = "All lines on floor"
+            }
+          )
+          if (registerDepartment != EmployeeDepartment.MANAGEMENT &&
+              !registerDesignation.contains("Head", ignoreCase = true)) {
+            RegistrationDropdown(
+              label = "Line coverage",
+              selected = registerLine,
+              options = registrationLineOptions,
+              onSelected = { registerLine = it }
+            )
+          } else {
+            Text(
+              "Floor/line coverage will be confirmed by Admin. Department heads are assigned All Floors within their own department.",
+              fontSize = 11.sp,
+              color = LoginMuted
+            )
+          }
           OutlinedTextField(
             value = registerPassword,
             onValueChange = { registerPassword = it },
@@ -448,11 +512,24 @@ fun LoginScreen(
           enabled = !registerBusy,
           onClick = {
             registerBusy = true
-            repository.registerEmployeeAccount(usernameInput, registerName, registerPassword) { result ->
+            repository.registerEmployeeAccount(
+              usernameInput,
+              registerName,
+              registerPassword,
+              registerDepartment,
+              registerDesignation,
+              if (registerDesignation.contains("Head", ignoreCase = true)) FloorScope.ALL else registerFloor,
+              if (registerLine == "All lines on floor" || registerDesignation.contains("Head", ignoreCase = true)) "All" else registerLine
+            ) { result ->
               registerBusy = false
               if (result.success) {
                 showRegisterDialog = false
                 registerPassword = ""
+                registerName = ""
+                registerDepartment = EmployeeDepartment.PRODUCTION
+                registerDesignation = "Supervisor"
+                registerFloor = FloorScope.SEW_1
+                registerLine = "All lines on floor"
                 infoMessage = result.message
                 errorMessage = null
                 pendingApprovalStatus = com.example.model.AuthStatus.ACCOUNT_PENDING_APPROVAL
@@ -470,6 +547,44 @@ fun LoginScreen(
         }
       }
     )
+  }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RegistrationDropdown(
+  label: String,
+  selected: String,
+  options: List<String>,
+  onSelected: (String) -> Unit
+) {
+  var expanded by remember(label) { mutableStateOf(false) }
+  Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Text(label, color = LoginMuted, fontSize = 12.sp)
+    Box {
+      OutlinedButton(
+        onClick = { expanded = true },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, LoginBorder),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+      ) {
+        Text(selected, color = LoginText, modifier = Modifier.weight(1f))
+        Icon(Icons.Default.ArrowDropDown, contentDescription = "Choose $label", tint = LoginCyan)
+      }
+      DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        options.forEach { option ->
+          DropdownMenuItem(
+            text = { Text(option) },
+            onClick = {
+              expanded = false
+              onSelected(option)
+            }
+          )
+        }
+      }
+    }
   }
 }
 
