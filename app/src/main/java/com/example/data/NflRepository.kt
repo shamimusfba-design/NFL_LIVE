@@ -2300,13 +2300,36 @@ class NflRepository(private val context: Context) {
     employeeIdInput: String,
     nameInput: String,
     passwordInput: String,
+    department: EmployeeDepartment,
+    designationInput: String,
+    requestedFloor: FloorScope,
+    requestedLine: String,
     onResult: (SecurityActionResult) -> Unit
   ) {
     val employeeId = employeeIdInput.trim()
     val employeeName = nameInput.trim()
     val password = passwordInput
-    if (employeeId.isBlank() || employeeName.isBlank() || password.length < 8) {
-      onResult(SecurityActionResult(false, "Enter Employee ID, name, and a password with at least 8 characters."))
+    val designation = designationInput.trim()
+    val isDepartmentHead = designation.equals("Production Head", ignoreCase = true) ||
+        designation.equals("Quality Head", ignoreCase = true)
+    val approvedScopeFloor = if (isDepartmentHead) FloorScope.ALL else requestedFloor
+    val assignedLine = if (isDepartmentHead) "All" else requestedLine.trim().ifBlank { "All" }
+    val role = when (department) {
+      EmployeeDepartment.PRODUCTION -> when {
+        designation.equals("Reporter", true) -> UserRole.PRODUCTION_REPORTER
+        designation.equals("PM / Production Manager", true) || designation.equals("Production Head", true) -> UserRole.PRODUCTION_MANAGER
+        else -> UserRole.SUPERVISOR
+      }
+      EmployeeDepartment.QUALITY -> when {
+        designation.equals("QI", true) -> UserRole.QUALITY_REPORTER
+        else -> UserRole.QUALITY_MANAGER
+      }
+      EmployeeDepartment.IE -> UserRole.IE
+      EmployeeDepartment.FINISHING -> UserRole.SUPERVISOR
+      EmployeeDepartment.MANAGEMENT -> UserRole.MANAGEMENT_VIEW
+    }
+    if (employeeId.isBlank() || employeeName.isBlank() || designation.isBlank() || password.length < 8) {
+      onResult(SecurityActionResult(false, "Enter Employee ID, full name, designation, department, and a password with at least 8 characters."))
       return
     }
     if (employeeId.contains("/") || employeeId.contains("#")) {
@@ -2324,9 +2347,12 @@ class NflRepository(private val context: Context) {
       name = employeeName,
       password = "",
       passwordHash = sheetsStorage.sha256(password),
-      role = UserRole.SUPERVISOR,
-      floor = FloorScope.SEW_2,
-      assignedLine = "",
+      role = role,
+      floor = approvedScopeFloor,
+      assignedLine = assignedLine,
+      department = department,
+      designation = designation,
+      assignedLines = if (assignedLine == "All") emptyList() else listOf(assignedLine),
       isActive = true,
       accountStatus = AccountStatus.PENDING_APPROVAL,
       approvedDevices = emptyList()
@@ -2340,12 +2366,16 @@ class NflRepository(private val context: Context) {
         userName = employeeName,
         employeeId = employeeId,
         employeeName = employeeName,
-        role = UserRole.SUPERVISOR,
+        role = role,
         deviceId = sheetsStorage.getDeviceId(),
         deviceName = sheetsStorage.getDeviceName(),
         requestType = "NEW_ACCOUNT_REGISTRATION",
         status = "PENDING",
-        reason = "New employee account registration"
+        reason = "New employee account registration",
+        department = department.displayName,
+        designation = designation,
+        floor = approvedScopeFloor.displayName,
+        assignedLine = assignedLine
       )
       _deviceApprovalRequests.value = listOf(request) + _deviceApprovalRequests.value
       sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
@@ -2360,7 +2390,13 @@ class NflRepository(private val context: Context) {
         onResult(SecurityActionResult(false, "Cloud sync failed. No registration was confirmed. Check the connection and try again."))
         return@launch
       }
-      addAuditLog("AUTH", employeeId, "REGISTRATION_REQUESTED", employeeName, "New employee registration submitted")
+      addAuditLog(
+        "AUTH",
+        employeeId,
+        "REGISTRATION_REQUESTED",
+        employeeName,
+        "Registration requested: ${department.displayName} / $designation / ${approvedScopeFloor.displayName} / $assignedLine"
+      )
       onResult(SecurityActionResult(true, "Registration submitted. Wait for Admin approval before logging in."))
     }
   }
