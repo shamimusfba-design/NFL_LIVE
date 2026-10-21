@@ -70,10 +70,14 @@ fun LoginScreen(
     EmployeeDepartment.MANAGEMENT to listOf("Factory Management")
   )
   val registrationLineOptions = remember(registerFloor) {
-    listOf("All lines on floor") + repository.allLinesMaster
-      .filter { it.floor.equals(registerFloor.apiValue, ignoreCase = true) }
-      .map { it.id }
-      .distinct()
+    val linesForScope = if (registerFloor == FloorScope.FINISHING) {
+      listOf("Iron 1", "Iron 2", "Iron 3", "Packing 1", "Packing 2", "Packing 3")
+    } else {
+      repository.allLinesMaster
+        .filter { it.floor.equals(registerFloor.apiValue, ignoreCase = true) }
+        .map { it.id }
+    }
+    listOf("All lines on floor") + linesForScope.distinct()
   }
   
   Box(
