@@ -153,7 +153,13 @@ function renderTable(){
  const term=$("searchInput").value.trim().toLowerCase();
  const filtered=records.filter(r=>JSON.stringify(r).toLowerCase().includes(term));
  const shown=filtered.slice(0,Number($("pageSize").value));
- const keys=[...new Set(shown.flatMap(r=>Object.keys(r)))].filter(k=>!["password","passwordHash","otpHash","verificationCodeHash"].includes(k)).slice(0,8);
+ const preferred=activePage==="registration_requests"
+  ? ["employeeId","employeeName","department","designation","floor","assignedLine","status","requestedAtMillis"]
+  : activePage==="users"
+    ? ["employeeId","name","department","designation","floor","assignedLine","role","accountStatus"]
+    : [];
+ const keys=[...new Set([...preferred,...shown.flatMap(r=>Object.keys(r))])]
+  .filter(k=>!["password","passwordHash","otpHash","verificationCodeHash"].includes(k)&&shown.some(r=>k in r)).slice(0,8);
  $("tableHead").innerHTML="<tr>"+keys.map(k=>"<th>"+esc(k)+"</th>").join("")+"<th>Actions</th></tr>";
  $("tableBody").innerHTML=shown.map(r=>"<tr>"+keys.map(k=>"<td>"+esc(typeof r[k]==="object"?JSON.stringify(r[k]):r[k])+"</td>").join("")+"<td>"+(activePage==="audit_logs"?"<span class='muted'>Read only</span>":"<button class='rowbtn secondary' data-edit='"+esc(r.__docId)+"'>Edit</button>"+(activePage==="registration_requests"&&r.status==="PENDING"?"<button class='rowbtn' data-approve='"+esc(r.__docId)+"'>Accept</button><button class='rowbtn danger' data-reject='"+esc(r.__docId)+"'>Reject</button>":"")+"<button class='rowbtn danger' data-delete='"+esc(r.__docId)+"'>Delete</button>")+"</td></tr>").join("")||"<tr><td class='empty' colspan='9'>No records found.</td></tr>";
  $("rowCount").textContent=filtered.length+" matching records · "+shown.length+" shown";
@@ -193,7 +199,7 @@ async function reviewRegistration(id,approved){
   const req=snap.data();
   await setDoc(reqRef,{status:approved?"APPROVED":"REJECTED",reviewedAt:serverTimestamp(),reviewedBy:auth.currentUser.uid},{merge:true});
   if(approved && req.employeeId){
-   await setDoc(doc(db,"users",String(req.employeeId)),{id:String(req.employeeId),employeeId:String(req.employeeId),name:req.employeeName||req.userName||req.name||"",role:req.role||"SUPERVISOR",accountStatus:"APPROVED",isActive:true,approvedDevices:req.deviceId?[{deviceId:req.deviceId,deviceName:req.deviceName||"Android device",approvedAtMillis:Date.now(),approvedBy:auth.currentUser.uid}]:[]},{merge:true});
+   await setDoc(doc(db,"users",String(req.employeeId)),{id:String(req.employeeId),employeeId:String(req.employeeId),name:req.employeeName||req.userName||req.name||"",role:req.role||"SUPERVISOR",department:req.department||"PRODUCTION",designation:req.designation||"",floor:req.floor||"SEW_1",assignedLine:req.assignedLine||"All",assignedLines:req.assignedLine&&req.assignedLine!=="All"?[req.assignedLine]:[],accountStatus:"APPROVED",isActive:true,isAdmin:false,approvedDevices:req.deviceId?[{deviceId:req.deviceId,deviceName:req.deviceName||"Android device",approvedAtMillis:Date.now(),approvedBy:auth.currentUser.uid}]:[]},{merge:true});
   }
   await loadCollection(activePage);
  }catch(e){status("Could not review request. Ensure server rules/backend implement atomic approval.",true);}
