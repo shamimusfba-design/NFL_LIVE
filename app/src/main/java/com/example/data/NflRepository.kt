@@ -910,7 +910,15 @@ class NflRepository(private val context: Context) {
         existingNonDemoById[cleanRemote.id] = cleanRemote
         changed = true
         if (cleanRemote.status != IncidentStatus.RESOLVED) {
-          alertManager.triggerAlertNotification(cleanRemote, _currentRole.value, _currentFloor.value)
+          alertManager.triggerAlertNotification(
+            cleanRemote,
+            _currentRole.value,
+            _currentFloor.value,
+            _currentUser.value?.department ?: EmployeeDepartment.PRODUCTION,
+            _currentUser.value?.designation ?: _currentRole.value.displayName,
+            _currentUser.value?.assignedLines ?: emptyList(),
+            _currentUser.value?.assignedLine ?: "All"
+          )
         }
       } else {
         val merged = cleanRemote.copy(
@@ -1002,12 +1010,9 @@ class NflRepository(private val context: Context) {
       val key = remote.id.trim().lowercase(Locale.US)
       val prev = byId[key]
       if (prev == null || prev != remote) {
-        val merged = if (prev != null && remote.approvedDevices.isEmpty() && prev.approvedDevices.isNotEmpty()) {
-          remote.copy(approvedDevices = prev.approvedDevices)
-        } else {
-          remote
-        }
-        byId[key] = merged
+        // Server state is authoritative for device authorization. Never preserve stale local devices
+        // after Admin revokes or replaces a device.
+        byId[key] = remote
         changed = true
       }
     }
@@ -1020,6 +1025,16 @@ class NflRepository(private val context: Context) {
           _currentUser.value = updatedActive
           _currentRole.value = updatedActive.role
           _currentUserName.value = updatedActive.name
+          if (!updatedActive.isAdmin && (
+              !updatedActive.isActive ||
+              updatedActive.accountStatus != AccountStatus.APPROVED ||
+              updatedActive.approvedDevices.none { it.deviceId == sheetsStorage.getDeviceId() }
+            )) {
+            addAuditLog("AUTH", updatedActive.id, "SESSION_INVALIDATED_DEVICE_REVOKED", updatedActive.name, "Remote account update revoked this device")
+            _currentUser.value = null
+            _currentRole.value = null
+            _currentUserName.value = ""
+          }
         }
       }
       touchDataUpdated()
@@ -1338,6 +1353,20 @@ class NflRepository(private val context: Context) {
     if (fresh != cur) {
       _currentUser.value = fresh
       _currentRole.value = fresh.role
+      _currentUserName.value = fresh.name
+    }
+    if (!fresh.isAdmin) {
+      val deviceId = sheetsStorage.getDeviceId()
+      val isAuthorized = fresh.isActive &&
+          fresh.accountStatus == AccountStatus.APPROVED &&
+          fresh.approvedDevices.any { it.deviceId == deviceId }
+      if (!isAuthorized) {
+        addAuditLog("AUTH", fresh.id, "SESSION_INVALIDATED_DEVICE_REVOKED", fresh.name, "Session invalidated because this device is no longer approved")
+        _currentUser.value = null
+        _currentRole.value = null
+        _currentUserName.value = ""
+        return null
+      }
     }
     return fresh
   }
@@ -2270,6 +2299,116 @@ class NflRepository(private val context: Context) {
   }
 
   // Auth, 2-Device Limit, Gmail OTP Verification & User Management Methods
+  /**
+   * Creates a pending employee account from the in-app Register form.
+   * Credentials are never returned to Admin UI; only a SHA-256 hash is stored for legacy compatibility.
+   * Production rollout still requires migrating to Firebase Authentication and a salted password hash.
+   */
+  fun registerEmployeeAccount(
+    employeeIdInput: String,
+    nameInput: String,
+    passwordInput: String,
+    department: EmployeeDepartment,
+    designationInput: String,
+    requestedFloor: FloorScope,
+    requestedLine: String,
+    onResult: (SecurityActionResult) -> Unit
+  ) {
+    val employeeId = employeeIdInput.trim()
+    val employeeName = nameInput.trim()
+    val password = passwordInput
+    val designation = designationInput.trim()
+    val isDepartmentHead = designation.equals("Production Head", ignoreCase = true) ||
+        designation.equals("Quality Head", ignoreCase = true)
+    val approvedScopeFloor = if (isDepartmentHead) FloorScope.ALL else requestedFloor
+    val assignedLine = if (isDepartmentHead) "All" else requestedLine.trim().ifBlank { "All" }
+    val role = when (department) {
+      EmployeeDepartment.PRODUCTION -> when {
+        designation.equals("Reporter", true) -> UserRole.PRODUCTION_REPORTER
+        designation.equals("PM / Production Manager", true) || designation.equals("Production Head", true) -> UserRole.PRODUCTION_MANAGER
+        else -> UserRole.SUPERVISOR
+      }
+      EmployeeDepartment.QUALITY -> when {
+        designation.equals("QI", true) -> UserRole.QUALITY_REPORTER
+        else -> UserRole.QUALITY_MANAGER
+      }
+      EmployeeDepartment.IE -> UserRole.IE
+      EmployeeDepartment.FINISHING -> UserRole.SUPERVISOR
+      EmployeeDepartment.MANAGEMENT -> UserRole.MANAGEMENT_VIEW
+    }
+    if (employeeId.isBlank() || employeeName.isBlank() || designation.isBlank() || password.length < 8) {
+      onResult(SecurityActionResult(false, "Enter Employee ID, full name, designation, department, and a password with at least 8 characters."))
+      return
+    }
+    if (employeeId.contains("/") || employeeId.contains("#")) {
+      onResult(SecurityActionResult(false, "Employee ID contains unsupported characters."))
+      return
+    }
+    if (_users.value.any { it.id.equals(employeeId, ignoreCase = true) || it.employeeId.equals(employeeId, ignoreCase = true) }) {
+      onResult(SecurityActionResult(false, "This Employee ID is already registered. Ask Admin for account recovery."))
+      return
+    }
+
+    val pendingUser = UserAccount(
+      id = employeeId,
+      employeeId = employeeId,
+      name = employeeName,
+      password = "",
+      passwordHash = sheetsStorage.sha256(password),
+      role = role,
+      floor = approvedScopeFloor,
+      assignedLine = assignedLine,
+      department = department,
+      designation = designation,
+      assignedLines = if (assignedLine == "All") emptyList() else listOf(assignedLine),
+      isActive = true,
+      accountStatus = AccountStatus.PENDING_APPROVAL,
+      approvedDevices = emptyList()
+    )
+    _users.value = _users.value + pendingUser
+    sheetsStorage.saveLocalUsers(_users.value)
+    repoScope.launch {
+      val saved = firebaseSync.pushUserAccountAwait(pendingUser)
+      val request = DeviceApprovalRequest(
+        userId = employeeId,
+        userName = employeeName,
+        employeeId = employeeId,
+        employeeName = employeeName,
+        role = role,
+        deviceId = sheetsStorage.getDeviceId(),
+        deviceName = sheetsStorage.getDeviceName(),
+        requestType = "NEW_ACCOUNT_REGISTRATION",
+        status = "PENDING",
+        reason = "New employee account registration",
+        department = department.displayName,
+        designation = designation,
+        floor = approvedScopeFloor.displayName,
+        assignedLine = assignedLine
+      )
+      _deviceApprovalRequests.value = listOf(request) + _deviceApprovalRequests.value
+      sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
+      val requestSaved = firebaseSync.pushRegistrationRequestAwait(request)
+      if (!saved || !requestSaved) {
+        if (saved) firebaseSync.deleteUserAccountAwait(employeeId)
+        if (requestSaved) firebaseSync.deleteRegistrationRequestAwait(request.requestId)
+        _users.value = _users.value.filterNot { it.id.equals(employeeId, ignoreCase = true) }
+        _deviceApprovalRequests.value = _deviceApprovalRequests.value.filterNot { it.requestId == request.requestId }
+        sheetsStorage.saveLocalUsers(_users.value)
+        sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
+        onResult(SecurityActionResult(false, "Cloud sync failed. No registration was confirmed. Check the connection and try again."))
+        return@launch
+      }
+      addAuditLog(
+        "AUTH",
+        employeeId,
+        "REGISTRATION_REQUESTED",
+        employeeName,
+        "Registration requested: ${department.displayName} / $designation / ${approvedScopeFloor.displayName} / $assignedLine"
+      )
+      onResult(SecurityActionResult(true, "Registration submitted. Wait for Admin approval before logging in."))
+    }
+  }
+
   fun authenticateUser(id: String, pass: String): AuthResult {
     val cleanId = id.trim()
     val cleanIdLower = cleanId.lowercase(Locale.US)
@@ -2282,7 +2421,7 @@ class NflRepository(private val context: Context) {
       )
     }
 
-    val matchedUser = _users.value.find { user ->
+    var matchedUser = _users.value.find { user ->
       val uid = user.id.lowercase(Locale.US)
       val empId = user.employeeId.lowercase(Locale.US)
       uid == cleanIdLower || empId == cleanIdLower
@@ -2302,6 +2441,14 @@ class NflRepository(private val context: Context) {
         status = AuthStatus.INVALID_CREDENTIALS,
         message = "❌ ভুল পাসওয়ার্ড! সঠিক পাসওয়ার্ড প্রদান করুন।"
       )
+    }
+
+    // Migrate legacy plaintext credentials out of local state on successful authentication.
+    // The sync service writes only the hash and deletes the Firestore plaintext field.
+    if (matchedUser.password.isNotBlank()) {
+      val migratedHash = matchedUser.passwordHash.ifBlank { inputHash }
+      matchedUser = matchedUser.copy(password = "", passwordHash = migratedHash)
+      updateUserInternal(matchedUser)
     }
 
     if (!matchedUser.isActive || matchedUser.accountStatus == AccountStatus.SUSPENDED) {
@@ -2324,51 +2471,33 @@ class NflRepository(private val context: Context) {
       )
     }
 
-    // Enforce Two-Device Limit (Max 2 active approved devices per employee ID)
+    // One employee ID may be active on one approved device only.
+    // A new device is never auto-approved: the Admin must approve its request.
     val currentDeviceId = sheetsStorage.getDeviceId()
     val currentDeviceName = sheetsStorage.getDeviceName()
     val alreadyApprovedOnThisDevice = matchedUser.approvedDevices.any { it.deviceId == currentDeviceId }
 
     val finalUser = if (alreadyApprovedOnThisDevice) {
       matchedUser
-    } else if (matchedUser.approvedDevices.size < MAX_APPROVED_DEVICES_PER_USER) {
-      // Register this device into the employee's approved device list (up to 2 devices) and persist to backend
-      val newDevice = ApprovedDevice(
-        deviceId = currentDeviceId,
-        deviceName = currentDeviceName,
-        approvedAtMillis = System.currentTimeMillis(),
-        approvedBy = "AUTO_SLOT_${matchedUser.approvedDevices.size + 1}"
-      )
-      val updated = matchedUser.copy(approvedDevices = matchedUser.approvedDevices + newDevice)
-      updateUserInternal(updated)
-      addAuditLog(
-        type = "DEVICE_SECURITY",
-        id = updated.id,
-        action = "BIND_DEVICE",
-        by = updated.name,
-        details = "Bound device ${updated.approvedDevices.size}/$MAX_APPROVED_DEVICES_PER_USER: $currentDeviceName ($currentDeviceId)"
-      )
-      updated
     } else {
-      // 3rd device detected! Block login until Admin revokes an existing device or approves this device
       val pendingReq = createOrGetPendingDeviceApprovalRequest(
         user = matchedUser,
         deviceId = currentDeviceId,
         deviceName = currentDeviceName,
-        requestType = "THIRD_DEVICE_APPROVAL"
+        requestType = "NEW_DEVICE_APPROVAL"
       )
       addAuditLog(
         type = "DEVICE_SECURITY",
         id = matchedUser.id,
-        action = "BLOCKED_3RD_DEVICE",
+        action = "NEW_DEVICE_REQUIRES_ADMIN_APPROVAL",
         by = matchedUser.name,
-        details = "Blocked 3rd device $currentDeviceName ($currentDeviceId) — 2 devices already active"
+        details = "Blocked login from unapproved device $currentDeviceName ($currentDeviceId)"
       )
       return AuthResult(
-        status = AuthStatus.DEVICE_LIMIT_REACHED,
+        status = AuthStatus.DEVICE_APPROVAL_REQUIRED,
         user = matchedUser,
         pendingRequest = pendingReq,
-        message = "🔒 ২-ডিভাইস লিমিট পূর্ণ হয়েছে (${matchedUser.approvedDevices.size}/$MAX_APPROVED_DEVICES_PER_USER ডিভাইস সচল)। ৩য় ডিভাইস চালু করতে অ্যাডমিনের (${PRIMARY_ADMIN_GMAIL}) অনুমোদন বা পূর্বের ডিভাইস বাতিল (Revoke) প্রয়োজন।"
+        message = "This device is not approved. Ask Admin to accept the request in NFL LIVE Admin Panel. No Gmail OTP is required."
       )
     }
 
@@ -2494,26 +2623,24 @@ class NflRepository(private val context: Context) {
     }
     if (existing != null) return existing
 
-    val rawOtp = (100000 + (Math.abs(UUID.randomUUID().hashCode()) % 900000)).toString()
-    val otpHash = sheetsStorage.sha256(rawOtp)
     val req = DeviceApprovalRequest(
       userId = user.id,
       userName = user.name,
+      employeeId = user.employeeId,
+      employeeName = user.name,
       role = user.role,
       deviceId = deviceId,
       deviceName = deviceName,
       requestType = requestType,
-      otpHash = otpHash,
-      otpExpiresAtMillis = System.currentTimeMillis() + 10 * 60 * 1000L,
-      status = "PENDING"
+      status = "PENDING",
+      reason = "Admin in-app approval required"
     )
     _deviceApprovalRequests.value = listOf(req) + _deviceApprovalRequests.value
     sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
-    repoScope.launch {
-      sheetsStorage.sendVerificationEmailOnBackend(req, rawOtp, PRIMARY_ADMIN_GMAIL)
-    }
+    repoScope.launch { firebaseSync.pushRegistrationRequestAwait(req) }
     return req
   }
+
 
   /**
    * Validates the 6-digit single-use Gmail OTP code on the backend/repository with expiry & attempt limits.
@@ -2595,19 +2722,13 @@ class NflRepository(private val context: Context) {
       ?: return SecurityActionResult(false, "⚠️ ইউজার অ্যাকাউন্ট পাওয়া যায়নি।")
 
     val devIdToApprove = targetDeviceId ?: req.deviceId
-    val existingDevices = user.approvedDevices.filterNot { it.deviceId == devIdToApprove }
-    // Enforce max 2 active approved devices: if already 2 devices, keep the most recent 1 and add the newly approved device
-    val trimmedDevices = if (existingDevices.size >= MAX_APPROVED_DEVICES_PER_USER) {
-      existingDevices.takeLast(MAX_APPROVED_DEVICES_PER_USER - 1)
-    } else {
-      existingDevices
-    }
-    val updatedDevices = trimmedDevices + ApprovedDevice(
+    // Replacing the device list invalidates the previous device on its next authorization check.
+    val updatedDevices = listOf(ApprovedDevice(
       deviceId = devIdToApprove,
       deviceName = req.deviceName,
       approvedAtMillis = System.currentTimeMillis(),
       approvedBy = approvedBy
-    )
+    ))
     val updatedUser = user.copy(
       accountStatus = AccountStatus.APPROVED,
       isActive = true,
@@ -2620,6 +2741,7 @@ class NflRepository(private val context: Context) {
       if (it.requestId == requestId) approvedReq else it
     }
     sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
+    repoScope.launch { firebaseSync.pushRegistrationRequestAwait(approvedReq) }
     addAuditLog(
       type = "DEVICE_SECURITY",
       id = updatedUser.id,

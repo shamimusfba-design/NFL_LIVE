@@ -28,6 +28,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.NflRepository
 import com.example.model.UserRole
+import com.example.model.EmployeeDepartment
+import com.example.model.FloorScope
 
 private val LoginBg = Color(0xFF061426)
 private val LoginSurface = Color(0xFF0B2038)
@@ -51,10 +53,33 @@ fun LoginScreen(
   var errorMessage by remember { mutableStateOf<String?>(null) }
   var infoMessage by remember { mutableStateOf<String?>(null) }
   var pendingApprovalStatus by remember { mutableStateOf< com.example.model.AuthStatus?>(null) }
-  var showVerificationDialog by remember { mutableStateOf(false) }
-  var otpCodeInput by remember { mutableStateOf("") }
-  var isSendingOtp by remember { mutableStateOf(false) }
+  var showRegisterDialog by remember { mutableStateOf(false) }
+  var registerName by remember { mutableStateOf("") }
+  var registerPassword by remember { mutableStateOf("") }
+  var registerDepartment by remember { mutableStateOf(EmployeeDepartment.PRODUCTION) }
+  var registerDesignation by remember { mutableStateOf("Supervisor") }
+  var registerFloor by remember { mutableStateOf(FloorScope.SEW_1) }
+  var registerLine by remember { mutableStateOf("All lines on floor") }
+  var registerBusy by remember { mutableStateOf(false) }
 
+  val designationsByDepartment = mapOf(
+    EmployeeDepartment.PRODUCTION to listOf("Reporter", "Supervisor", "In-charge", "APM", "PM / Production Manager", "Production Head"),
+    EmployeeDepartment.QUALITY to listOf("QI", "Controller", "Officer", "Assistant Manager", "Manager", "Quality Head"),
+    EmployeeDepartment.IE to listOf("IE Officer", "IE Manager"),
+    EmployeeDepartment.FINISHING to listOf("Supervisor", "In-charge", "Manager"),
+    EmployeeDepartment.MANAGEMENT to listOf("Factory Management")
+  )
+  val registrationLineOptions = remember(registerFloor) {
+    val linesForScope = if (registerFloor == FloorScope.FINISHING) {
+      listOf("Iron 1", "Iron 2", "Iron 3", "Packing 1", "Packing 2", "Packing 3")
+    } else {
+      repository.allLinesMaster
+        .filter { it.floor.equals(registerFloor.apiValue, ignoreCase = true) }
+        .map { it.id }
+    }
+    listOf("All lines on floor") + linesForScope.distinct()
+  }
+  
   Box(
     modifier = Modifier
       .fillMaxSize()
@@ -184,7 +209,8 @@ fun LoginScreen(
           }
 
           AnimatedVisibility(
-            visible = pendingApprovalStatus == com.example.model.AuthStatus.DEVICE_LIMIT_REACHED ||
+            visible = pendingApprovalStatus == com.example.model.AuthStatus.DEVICE_APPROVAL_REQUIRED ||
+                pendingApprovalStatus == com.example.model.AuthStatus.DEVICE_LIMIT_REACHED ||
                 pendingApprovalStatus == com.example.model.AuthStatus.ACCOUNT_PENDING_APPROVAL
           ) {
             Surface(
@@ -194,74 +220,34 @@ fun LoginScreen(
               modifier = Modifier.fillMaxWidth()
             ) {
               Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Admin approval required", color = LoginCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Text(
-                  text = "Admin Gmail Verification (${com.example.model.PRIMARY_ADMIN_GMAIL})",
-                  color = LoginCyan,
-                  fontSize = 12.sp,
-                  fontWeight = FontWeight.Bold
+                  "This account or device is waiting for approval. No Gmail OTP is needed. Ask Admin to review the request in the NFL LIVE Admin Panel, then check again.",
+                  color = LoginMuted, fontSize = 11.sp
                 )
-                Text(
-                  text = "Enter the 6-digit single-use verification code sent to Admin Gmail, or wait for Admin approval inside the Admin Panel.",
-                  color = LoginMuted,
-                  fontSize = 11.sp
-                )
-                OutlinedTextField(
-                  value = otpCodeInput,
-                  onValueChange = { if (it.length <= 6) otpCodeInput = it.filter { ch -> ch.isDigit() } },
-                  label = { Text("6-Digit Gmail Verification Code", color = LoginMuted) },
-                  singleLine = true,
-                  keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                  modifier = Modifier.fillMaxWidth().testTag("login_otp_input"),
-                  shape = RoundedCornerShape(10.dp),
-                  colors = loginFieldColors()
-                )
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                  OutlinedButton(
-                    onClick = {
-                      if (usernameInput.isBlank()) {
-                        errorMessage = "Enter your Employee ID first."
-                        return@OutlinedButton
-                      }
-                      isSendingOtp = true
-                      repository.requestGmailVerificationCode(usernameInput) { res ->
-                        isSendingOtp = false
-                        if (res.success) {
-                          infoMessage = res.message
-                          errorMessage = null
-                        } else {
-                          errorMessage = res.message
-                        }
-                      }
-                    },
-                    enabled = !isSendingOtp,
-                    modifier = Modifier.weight(1f),
-                    border = BorderStroke(1.dp, LoginCyan)
-                  ) {
-                    Text(if (isSendingOtp) "Sending..." else "Send/Resend Code", color = LoginCyan, fontSize = 11.sp)
-                  }
-                  Button(
-                    onClick = {
-                      val verifyRes = repository.verifyGmailApprovalCode(usernameInput, otpCodeInput)
-                      if (verifyRes.success) {
-                        infoMessage = verifyRes.message
-                        errorMessage = null
+                OutlinedButton(
+                  onClick = {
+                    if (usernameInput.isBlank() || passwordInput.isBlank()) {
+                      errorMessage = "Enter your Employee ID and password first."
+                    } else {
+                      val result = repository.authenticateUser(usernameInput, passwordInput)
+                      if (result.status == com.example.model.AuthStatus.SUCCESS) {
                         pendingApprovalStatus = null
-                        if (passwordInput.isNotBlank() && repository.login(usernameInput, passwordInput)) {
-                          onLoginSuccess()
-                        }
+                        errorMessage = null
+                        onLoginSuccess()
                       } else {
-                        errorMessage = verifyRes.message
+                        pendingApprovalStatus = result.status.takeIf {
+                          it == com.example.model.AuthStatus.DEVICE_APPROVAL_REQUIRED ||
+                          it == com.example.model.AuthStatus.ACCOUNT_PENDING_APPROVAL ||
+                          it == com.example.model.AuthStatus.DEVICE_LIMIT_REACHED
+                        }
+                        errorMessage = result.message
                       }
-                    },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = LoginTeal, contentColor = Color(0xFF041526))
-                  ) {
-                    Text("Verify & Activate", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                  }
-                }
+                    }
+                  },
+                  modifier = Modifier.fillMaxWidth(),
+                  border = BorderStroke(1.dp, LoginCyan)
+                ) { Text("Check approval status", color = LoginCyan) }
               }
             }
           }
@@ -279,6 +265,7 @@ fun LoginScreen(
                   onLoginSuccess()
                 }
                 com.example.model.AuthStatus.DEVICE_LIMIT_REACHED,
+                com.example.model.AuthStatus.DEVICE_APPROVAL_REQUIRED,
                 com.example.model.AuthStatus.ACCOUNT_PENDING_APPROVAL -> {
                   pendingApprovalStatus = authResult.status
                   errorMessage = authResult.message
@@ -300,7 +287,7 @@ fun LoginScreen(
 
           TextButton(
             onClick = {
-              errorMessage = "Contact Primary Admin (${com.example.model.PRIMARY_ADMIN_GMAIL}) for account or 2-device approval."
+              errorMessage = "Use Register for a new account, or ask Admin to approve your existing account/device."
             },
             modifier = Modifier.align(Alignment.CenterHorizontally)
           ) {
@@ -330,13 +317,15 @@ fun LoginScreen(
           }
 
           HorizontalDivider(color = LoginBorder)
-          TextButton(
-            onClick = { showVerificationDialog = true },
-            modifier = Modifier.fillMaxWidth()
+          OutlinedButton(
+            onClick = { showRegisterDialog = true; errorMessage = null },
+            modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.dp, LoginTeal),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = LoginTeal)
           ) {
-            Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = LoginMuted, modifier = Modifier.size(18.dp))
+            Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Device / Account Verification (Admin Gmail OTP)", color = LoginMuted, fontSize = 12.sp)
+            Text("Register new employee account")
           }
         }
       }
@@ -437,92 +426,172 @@ fun LoginScreen(
     }
   }
 
-  if (showVerificationDialog) {
+  if (showRegisterDialog) {
     AlertDialog(
-      onDismissRequest = { showVerificationDialog = false },
+      onDismissRequest = { if (!registerBusy) showRegisterDialog = false },
       containerColor = LoginSurface,
       titleContentColor = LoginText,
       textContentColor = LoginMuted,
-      title = { Text("Device & Account Verification", fontWeight = FontWeight.Bold) },
+      title = { Text("Register employee account", fontWeight = FontWeight.Bold) },
       text = {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+          modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
           Text(
-            "Request a single-use verification code sent to Primary Admin Gmail (${com.example.model.PRIMARY_ADMIN_GMAIL}) to approve this device (max 2 active devices per Company ID).",
+            "Create an account request. You can sign in only after Admin approves it. Use a unique Employee ID and a password of at least 8 characters.",
             fontSize = 12.sp
-          )
-          Text(
-            "Device ID: ${repository.getDeviceId()} (${repository.getDeviceName()})",
-            fontSize = 10.5.sp,
-            color = LoginCyan
           )
           OutlinedTextField(
             value = usernameInput,
-            onValueChange = { usernameInput = it },
-            label = { Text("Company ID / Employee ID") },
+            onValueChange = { usernameInput = it.trimStart() },
+            label = { Text("Employee ID") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             colors = loginFieldColors()
           )
           OutlinedTextField(
-            value = otpCodeInput,
-            onValueChange = { if (it.length <= 6) otpCodeInput = it.filter { ch -> ch.isDigit() } },
-            label = { Text("6-Digit Verification Code") },
+            value = registerName,
+            onValueChange = { registerName = it },
+            label = { Text("Full name") },
             singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
             modifier = Modifier.fillMaxWidth(),
             colors = loginFieldColors()
           )
-          OutlinedButton(
-            onClick = {
-              if (usernameInput.isBlank()) {
-                errorMessage = "Please enter your Company ID first."
-                return@OutlinedButton
-              }
-              isSendingOtp = true
-              repository.requestGmailVerificationCode(usernameInput) { res ->
-                isSendingOtp = false
-                if (res.success) {
-                  infoMessage = res.message
-                  errorMessage = null
-                } else {
-                  errorMessage = res.message
-                }
-              }
-            },
-            enabled = !isSendingOtp,
-            modifier = Modifier.fillMaxWidth(),
-            border = BorderStroke(1.dp, LoginCyan)
-          ) {
+          RegistrationDropdown(
+            label = "Department",
+            selected = registerDepartment.displayName,
+            options = EmployeeDepartment.entries.map { it.displayName },
+            onSelected = { selected ->
+              registerDepartment = EmployeeDepartment.entries.first { it.displayName == selected }
+              registerDesignation = designationsByDepartment[registerDepartment]?.firstOrNull() ?: "Supervisor"
+              if (registerDepartment == EmployeeDepartment.FINISHING) registerFloor = FloorScope.FINISHING
+              else if (registerFloor == FloorScope.FINISHING) registerFloor = FloorScope.SEW_1
+              registerLine = "All lines on floor"
+            }
+          )
+          RegistrationDropdown(
+            label = "Designation",
+            selected = registerDesignation,
+            options = designationsByDepartment[registerDepartment] ?: listOf("Other"),
+            onSelected = { registerDesignation = it }
+          )
+          RegistrationDropdown(
+            label = "Floor / Section",
+            selected = if (registerDesignation.contains("Head", ignoreCase = true)) "All Floor (Admin approved)" else registerFloor.displayName,
+            options = if (registerDesignation.contains("Head", ignoreCase = true)) listOf("All Floor (Admin approved)") else
+              if (registerDepartment == EmployeeDepartment.FINISHING) listOf(FloorScope.FINISHING.displayName)
+              else listOf(FloorScope.SEW_1.displayName, FloorScope.SEW_2.displayName, FloorScope.SEW_3.displayName),
+            onSelected = { selected ->
+              registerFloor = FloorScope.entries.firstOrNull { it.displayName == selected } ?: registerFloor
+              registerLine = "All lines on floor"
+            }
+          )
+          if (registerDepartment != EmployeeDepartment.MANAGEMENT &&
+              !registerDesignation.contains("Head", ignoreCase = true)) {
+            RegistrationDropdown(
+              label = "Line coverage",
+              selected = registerLine,
+              options = registrationLineOptions,
+              onSelected = { registerLine = it }
+            )
+          } else {
             Text(
-              if (isSendingOtp) "Requesting verification email..." else "Send Code to ${com.example.model.PRIMARY_ADMIN_GMAIL}",
-              color = LoginCyan,
-              fontSize = 11.5.sp
+              "Floor/line coverage will be confirmed by Admin. Department heads are assigned All Floors within their own department.",
+              fontSize = 11.sp,
+              color = LoginMuted
             )
           }
+          OutlinedTextField(
+            value = registerPassword,
+            onValueChange = { registerPassword = it },
+            label = { Text("Create password (8+ characters)") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            modifier = Modifier.fillMaxWidth(),
+            colors = loginFieldColors()
+          )
         }
       },
       confirmButton = {
         Button(
+          enabled = !registerBusy,
           onClick = {
-            val res = repository.verifyGmailApprovalCode(usernameInput, otpCodeInput)
-            if (res.success) {
-              infoMessage = res.message
-              errorMessage = null
-              pendingApprovalStatus = null
-              showVerificationDialog = false
-            } else {
-              errorMessage = res.message
+            registerBusy = true
+            repository.registerEmployeeAccount(
+              usernameInput,
+              registerName,
+              registerPassword,
+              registerDepartment,
+              registerDesignation,
+              if (registerDesignation.contains("Head", ignoreCase = true)) FloorScope.ALL else registerFloor,
+              if (registerLine == "All lines on floor" || registerDesignation.contains("Head", ignoreCase = true)) "All" else registerLine
+            ) { result ->
+              registerBusy = false
+              if (result.success) {
+                showRegisterDialog = false
+                registerPassword = ""
+                registerName = ""
+                registerDepartment = EmployeeDepartment.PRODUCTION
+                registerDesignation = "Supervisor"
+                registerFloor = FloorScope.SEW_1
+                registerLine = "All lines on floor"
+                infoMessage = result.message
+                errorMessage = null
+                pendingApprovalStatus = com.example.model.AuthStatus.ACCOUNT_PENDING_APPROVAL
+              } else {
+                errorMessage = result.message
+              }
             }
           },
-          colors = ButtonDefaults.buttonColors(containerColor = LoginCyan, contentColor = LoginBg)
-        ) { Text("Verify Code", fontWeight = FontWeight.Bold) }
+          colors = ButtonDefaults.buttonColors(containerColor = LoginTeal, contentColor = LoginBg)
+        ) { Text(if (registerBusy) "Submitting..." else "Submit request", fontWeight = FontWeight.Bold) }
       },
       dismissButton = {
-        TextButton(onClick = { showVerificationDialog = false }) {
-          Text("Close", color = LoginMuted)
+        TextButton(enabled = !registerBusy, onClick = { showRegisterDialog = false }) {
+          Text("Cancel", color = LoginMuted)
         }
       }
     )
+  }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RegistrationDropdown(
+  label: String,
+  selected: String,
+  options: List<String>,
+  onSelected: (String) -> Unit
+) {
+  var expanded by remember(label) { mutableStateOf(false) }
+  Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Text(label, color = LoginMuted, fontSize = 12.sp)
+    Box {
+      OutlinedButton(
+        onClick = { expanded = true },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, LoginBorder),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+      ) {
+        Text(selected, color = LoginText, modifier = Modifier.weight(1f))
+        Icon(Icons.Default.ArrowDropDown, contentDescription = "Choose $label", tint = LoginCyan)
+      }
+      DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        options.forEach { option ->
+          DropdownMenuItem(
+            text = { Text(option) },
+            onClick = {
+              expanded = false
+              onSelected(option)
+            }
+          )
+        }
+      }
+    }
   }
 }
 

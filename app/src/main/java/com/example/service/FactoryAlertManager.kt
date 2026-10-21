@@ -25,7 +25,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import java.util.TimeZone
 
 enum class FactorySoundMode(val label: String) {
@@ -54,10 +57,10 @@ class FactoryAlertManager(private val context: Context) {
   val activeAlarmSilenced: StateFlow<Boolean> = _activeAlarmSilenced.asStateFlow()
 
   companion object {
-    const val CHANNEL_CRITICAL = "nfl_channel_critical"
-    const val CHANNEL_QUALITY = "nfl_channel_quality"
-    const val CHANNEL_PRODUCTION = "nfl_channel_production"
-    const val CHANNEL_GENERAL = "nfl_channel_general"
+    const val CHANNEL_CRITICAL = "nfl_channel_critical_v2"
+    const val CHANNEL_QUALITY = "nfl_channel_quality_v2"
+    const val CHANNEL_PRODUCTION = "nfl_channel_production_v2"
+    const val CHANNEL_GENERAL = "nfl_channel_general_v2"
 
     private const val PREF_SOUND_MODE = "pref_sound_mode"
     private const val PREF_MUTE_UNTIL = "pref_mute_until_millis"
@@ -84,7 +87,7 @@ class FactoryAlertManager(private val context: Context) {
       ).apply {
         description = "Urgent machine breakdown stoppages and critical factory alarms"
         enableVibration(true)
-        vibrationPattern = longArrayOf(0, 500, 200, 500, 200, 500)
+        vibrationPattern = longArrayOf(0, 700, 220, 700, 220, 900)
         setSound(alarmSound, audioAttributes)
       }
 
@@ -95,7 +98,7 @@ class FactoryAlertManager(private val context: Context) {
       ).apply {
         description = "DHU threshold breaches and endline quality warnings"
         enableVibration(true)
-        vibrationPattern = longArrayOf(0, 300, 150, 300)
+        vibrationPattern = longArrayOf(0, 500, 200, 500, 200, 700)
         setSound(defaultSound, audioAttributes)
       }
 
@@ -109,6 +112,8 @@ class FactoryAlertManager(private val context: Context) {
         setSound(defaultSound, audioAttributes)
       }
 
+      productionChannel.vibrationPattern = longArrayOf(0, 450, 180, 450, 180, 650)
+
       val generalChannel = NotificationChannel(
         CHANNEL_GENERAL,
         "General Factory Updates",
@@ -117,8 +122,22 @@ class FactoryAlertManager(private val context: Context) {
         description = "Routine sync and administrative updates"
       }
 
+      fun silentChannel(id: String, name: String, pattern: LongArray) =
+        NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH).apply {
+          description = "Vibration alert without alarm sound when mute is enabled"
+          enableVibration(true)
+          vibrationPattern = pattern
+          setSound(null, null)
+        }
+
+      val silentCritical = silentChannel("${CHANNEL_CRITICAL}_silent", "Critical Alarms (Silent + Vibration)", longArrayOf(0, 700, 220, 700, 220, 900))
+      val silentQuality = silentChannel("${CHANNEL_QUALITY}_silent", "Quality Alerts (Silent + Vibration)", longArrayOf(0, 500, 200, 500, 200, 700))
+      val silentProduction = silentChannel("${CHANNEL_PRODUCTION}_silent", "Production Alerts (Silent + Vibration)", longArrayOf(0, 450, 180, 450, 180, 650))
+      val silentGeneral = silentChannel("${CHANNEL_GENERAL}_silent", "General Updates (Silent + Vibration)", longArrayOf(0, 250, 150, 250))
+
       notificationManager.createNotificationChannels(
-        listOf(criticalChannel, qualityChannel, productionChannel, generalChannel)
+        listOf(criticalChannel, qualityChannel, productionChannel, generalChannel,
+          silentCritical, silentQuality, silentProduction, silentGeneral)
       )
     }
   }
@@ -217,56 +236,93 @@ class FactoryAlertManager(private val context: Context) {
     _activeAlarmSilenced.value = true
   }
 
-  fun isUserEligibleForAlert(role: UserRole, userFloor: FloorScope, incident: IncidentItem): Boolean {
-    // 1. Admin and Management receive all high-priority or escalated alerts
+  private fun normalizeScope(value: String): String =
+    value.trim().lowercase().replace("-", "").replace(" ", "").replace("_", "")
+
+  private fun sameFloor(userFloor: FloorScope, incidentFloor: String): Boolean {
+    if (userFloor == FloorScope.ALL) return false
+    return normalizeScope(userFloor.apiValue) == normalizeScope(incidentFloor) ||
+        normalizeScope(userFloor.displayName) == normalizeScope(incidentFloor)
+  }
+
+  fun isUserEligibleForAlert(
+    role: UserRole,
+    userFloor: FloorScope,
+    incident: IncidentItem,
+    department: EmployeeDepartment = when (role) {
+      UserRole.QUALITY_REPORTER, UserRole.QUALITY_MANAGER, UserRole.AUDITOR -> EmployeeDepartment.QUALITY
+      UserRole.IE -> EmployeeDepartment.IE
+      UserRole.MANAGEMENT_VIEW -> EmployeeDepartment.MANAGEMENT
+      else -> EmployeeDepartment.PRODUCTION
+    },
+    designation: String = role.displayName,
+    assignedLines: List<String> = emptyList(),
+    assignedLine: String = "All"
+  ): Boolean {
+    // Factory Management notifications are intentionally disabled for the initial rollout.
+    // Admin is a separate technical role and may still review all alerts.
     if (role == UserRole.ADMIN) return true
-    if (role == UserRole.MANAGEMENT_VIEW) {
-      return incident.severity == AlertSeverity.CRITICAL || incident.isEscalated
-    }
+    if (department == EmployeeDepartment.MANAGEMENT || role == UserRole.MANAGEMENT_VIEW) return false
 
-    // 2. Production Manager & Quality Manager receive all their respective domain alerts
-    if (role == UserRole.PRODUCTION_MANAGER) {
-      return incident.category != IncidentCategory.QUALITY_PROBLEM || incident.isEscalated
-    }
-    if (role == UserRole.QUALITY_MANAGER) {
-      return incident.category == IncidentCategory.QUALITY_PROBLEM || incident.isEscalated
-    }
+    val isProductionHead = department == EmployeeDepartment.PRODUCTION &&
+        designation.equals("Production Head", ignoreCase = true)
+    val isQualityHead = department == EmployeeDepartment.QUALITY &&
+        designation.equals("Quality Head", ignoreCase = true)
+    val allFloorHead = isProductionHead || isQualityHead
 
-    // 3. Domain specialist role routing
-    when (incident.category) {
-      IncidentCategory.MACHINE_BREAKDOWN, IncidentCategory.POWER_OUTAGE -> {
-        if (role == UserRole.MECHANIC) return true
-      }
-      IncidentCategory.QUALITY_PROBLEM -> {
-        if (role == UserRole.QUALITY_REPORTER || role == UserRole.AUDITOR) return true
-      }
-      IncidentCategory.INPUT_MATERIAL -> {
-        if (role == UserRole.INPUT_MATERIAL) return true
-      }
-      IncidentCategory.LINE_BALANCING -> {
-        if (role == UserRole.IE) return true
-      }
-      IncidentCategory.LOW_PRODUCTION, IncidentCategory.OPERATOR_NA, IncidentCategory.OTHER -> {
-        if (role == UserRole.SUPERVISOR || role == UserRole.PRODUCTION_REPORTER) return true
-      }
+    val normalizedLine = normalizeScope(incident.lineId)
+    val incidentIsFinishing = normalizeScope(incident.floor) == normalizeScope("Finishing") ||
+        normalizedLine.startsWith("iron") || normalizedLine.startsWith("packing")
+    val floorAllowed = when {
+      allFloorHead -> true
+      department == EmployeeDepartment.FINISHING ->
+        incidentIsFinishing && (userFloor == FloorScope.FINISHING || userFloor == FloorScope.ALL)
+      userFloor == FloorScope.ALL -> false
+      else -> sameFloor(userFloor, incident.floor)
     }
+    if (!floorAllowed) return false
 
-    // 4. Floor Supervisors receive alerts affecting their floor
-    if (role == UserRole.SUPERVISOR) {
-      val incidentFloor = incident.floor.lowercase()
-      val scopeFloor = userFloor.displayName.lowercase()
-      return userFloor == FloorScope.ALL || incidentFloor.contains(scopeFloor) || scopeFloor.contains(incidentFloor)
+    val lineScope = assignedLines.filter { it.isNotBlank() }.ifEmpty {
+      listOf(assignedLine).filter { it.isNotBlank() }
     }
+    val allLinesAllowed = lineScope.isEmpty() || lineScope.any {
+      it.equals("All", ignoreCase = true) || it.equals("All lines on floor", ignoreCase = true)
+    }
+    if (!allLinesAllowed && lineScope.none { it.equals(incident.lineId, ignoreCase = true) }) return false
 
-    return false
+    val departmentCategoryAllowed = when (department) {
+      EmployeeDepartment.QUALITY -> incident.category == IncidentCategory.QUALITY_PROBLEM
+      EmployeeDepartment.PRODUCTION -> incident.category in setOf(
+        IncidentCategory.MACHINE_BREAKDOWN,
+        IncidentCategory.INPUT_MATERIAL,
+        IncidentCategory.OPERATOR_NA,
+        IncidentCategory.LOW_PRODUCTION,
+        IncidentCategory.POWER_OUTAGE,
+        IncidentCategory.OTHER
+      )
+      EmployeeDepartment.IE -> incident.category in setOf(
+        IncidentCategory.LINE_BALANCING,
+        IncidentCategory.LOW_PRODUCTION,
+        IncidentCategory.OTHER
+      )
+      EmployeeDepartment.FINISHING -> incidentIsFinishing
+      EmployeeDepartment.MANAGEMENT -> false
+    }
+    return departmentCategoryAllowed
   }
 
   fun triggerAlertNotification(
     incident: IncidentItem,
     currentRole: UserRole,
-    userFloor: FloorScope
+    userFloor: FloorScope,
+    department: EmployeeDepartment = EmployeeDepartment.PRODUCTION,
+    designation: String = currentRole.displayName,
+    assignedLines: List<String> = emptyList(),
+    assignedLine: String = "All"
   ) {
-    if (!isUserEligibleForAlert(currentRole, userFloor, incident)) {
+    if (!isUserEligibleForAlert(
+        currentRole, userFloor, incident, department, designation, assignedLines, assignedLine
+      )) {
       return
     }
 
@@ -287,20 +343,19 @@ class FactoryAlertManager(private val context: Context) {
         activeToneGenerator = ToneGenerator(AudioManager.STREAM_ALARM, 95)
         isTonePlaying = true
 
-        when (severity) {
-          AlertSeverity.CRITICAL -> {
-            activeToneGenerator?.startTone(ToneGenerator.TONE_CDMA_EMERGENCY_RINGBACK, 1200)
-          }
-          AlertSeverity.HIGH -> {
-            activeToneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP2, 800)
-          }
-          AlertSeverity.MEDIUM -> {
-            activeToneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 500)
-          }
-          AlertSeverity.LOW_INFO -> {
-            activeToneGenerator?.startTone(ToneGenerator.TONE_PROP_ACK, 300)
-          }
+        val alarmDurationMs = when (severity) {
+          AlertSeverity.CRITICAL -> 6000
+          AlertSeverity.HIGH -> 4200
+          AlertSeverity.MEDIUM -> 2800
+          AlertSeverity.LOW_INFO -> 1400
         }
+        val alarmTone = when (severity) {
+          AlertSeverity.CRITICAL -> ToneGenerator.TONE_CDMA_EMERGENCY_RINGBACK
+          AlertSeverity.HIGH -> ToneGenerator.TONE_PROP_BEEP2
+          AlertSeverity.MEDIUM -> ToneGenerator.TONE_PROP_BEEP
+          AlertSeverity.LOW_INFO -> ToneGenerator.TONE_PROP_ACK
+        }
+        activeToneGenerator?.startTone(alarmTone, alarmDurationMs)
       } catch (_: Exception) {}
     }
   }
@@ -312,12 +367,16 @@ class FactoryAlertManager(private val context: Context) {
       }
     }
 
-    val channelId = when (incident.severity) {
+    val baseChannelId = when (incident.severity) {
       AlertSeverity.CRITICAL -> CHANNEL_CRITICAL
       AlertSeverity.HIGH -> if (incident.category == IncidentCategory.QUALITY_PROBLEM) CHANNEL_QUALITY else CHANNEL_PRODUCTION
       AlertSeverity.MEDIUM -> CHANNEL_PRODUCTION
       AlertSeverity.LOW_INFO -> CHANNEL_GENERAL
     }
+    val useSilentChannel = isSoundMuted() || incident.isSilencedOnDevice
+    val channelId = if (useSilentChannel && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      "${baseChannelId}_silent"
+    } else baseChannelId
 
     val intent = Intent(context, MainActivity::class.java).apply {
       flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -332,20 +391,43 @@ class FactoryAlertManager(private val context: Context) {
     )
 
     val titlePrefix = when (incident.severity) {
-      AlertSeverity.CRITICAL -> "🚨 CRITICAL: "
-      AlertSeverity.HIGH -> "⚠️ HIGH ALERT: "
-      AlertSeverity.MEDIUM -> "🔔 NOTICE: "
-      AlertSeverity.LOW_INFO -> "ℹ️ INFO: "
+      AlertSeverity.CRITICAL -> "🚨 CRITICAL ALARM"
+      AlertSeverity.HIGH -> "⚠️ HIGH PRIORITY ALERT"
+      AlertSeverity.MEDIUM -> "🔔 FACTORY ALERT"
+      AlertSeverity.LOW_INFO -> "ℹ️ FACTORY UPDATE"
     }
-
-    val contentTitle = "$titlePrefix${incident.category.displayName} [${incident.lineId}]"
-    val contentText = "${incident.description} • ${incident.floor} • ${incident.nptType}"
+    val issueType = incident.customNptTypeName.takeIf { it.isNotBlank() } ?: incident.nptType
+    val timestamp = SimpleDateFormat("dd MMM yyyy, hh:mm:ss a", Locale.US).apply {
+      timeZone = TimeZone.getTimeZone("Asia/Dhaka")
+    }.format(Date(incident.startTimeMillis))
+    val contentTitle = "$titlePrefix | ${incident.floor} | Line ${incident.lineId}"
+    val contentText = "$issueType: ${incident.description}"
+    val detailLines = listOf(
+      "Issue: $issueType",
+      "Floor / Section: ${incident.floor}",
+      "Affected Line: ${incident.lineId}",
+      "Description: ${incident.description}",
+      "NPT / Process: ${incident.processName.ifBlank { issueType }}",
+      "Machine: ${listOf(incident.machineType, incident.machineId.ifBlank { incident.machineRef }).filter { it.isNotBlank() }.joinToString(" - ").ifBlank { "Not specified" }}",
+      "Reported cause: ${incident.reportedCause.ifBlank { "Not specified" }}",
+      "Affected manpower: ${incident.affectedManpower}",
+      "Reported by: ${incident.reportedBy}",
+      "Reported at (Bangladesh time): $timestamp",
+      "Current status: ${incident.status.displayName}",
+      "Required action: Please acknowledge this alert, contact the responsible team, and update the incident status after action."
+    )
+    val vibrationPattern = when (incident.severity) {
+      AlertSeverity.CRITICAL -> longArrayOf(0, 700, 220, 700, 220, 900)
+      AlertSeverity.HIGH -> longArrayOf(0, 500, 180, 500, 180, 700)
+      AlertSeverity.MEDIUM -> longArrayOf(0, 400, 180, 400)
+      AlertSeverity.LOW_INFO -> longArrayOf(0, 250, 150, 250)
+    }
 
     val notification = NotificationCompat.Builder(context, channelId)
       .setSmallIcon(R.drawable.ic_nfl_logo)
       .setContentTitle(contentTitle)
       .setContentText(contentText)
-      .setStyle(NotificationCompat.BigTextStyle().bigText("$contentText\nReported by: ${incident.reportedBy}\nStatus: ${incident.status.displayName}"))
+      .setStyle(NotificationCompat.BigTextStyle().bigText(detailLines.joinToString("\n")))
       .setPriority(
         when (incident.severity) {
           AlertSeverity.CRITICAL -> NotificationCompat.PRIORITY_MAX
@@ -354,6 +436,8 @@ class FactoryAlertManager(private val context: Context) {
           AlertSeverity.LOW_INFO -> NotificationCompat.PRIORITY_LOW
         }
       )
+      .setVibrate(vibrationPattern)
+      .setOnlyAlertOnce(false)
       .setContentIntent(pendingIntent)
       .setAutoCancel(true)
       .build()

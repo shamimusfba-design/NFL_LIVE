@@ -16,6 +16,14 @@ enum class FloorScope(val displayName: String, val apiValue: String) {
   ALL("All Floor", "All")
 }
 
+enum class EmployeeDepartment(val displayName: String) {
+  PRODUCTION("Production"),
+  QUALITY("Quality"),
+  IE("IE"),
+  FINISHING("Finishing"),
+  MANAGEMENT("Management")
+}
+
 enum class PeriodScope(val displayName: String) {
   YESTERDAY("Yesterday"),
   TODAY("Today"),
@@ -57,7 +65,7 @@ data class AppFeaturePermission(
 )
 
 const val PRIMARY_ADMIN_GMAIL = "shamim.sustipe15@gmail.com"
-const val MAX_APPROVED_DEVICES_PER_USER = 2
+const val MAX_APPROVED_DEVICES_PER_USER = 1
 
 enum class AccountStatus {
   APPROVED,
@@ -105,7 +113,11 @@ data class DeviceApprovalRequest(
   val otpUsed: Boolean = false,
   val isCodeUsed: Boolean = otpUsed,
   val emailDeliveryStatus: String = "PENDING",
-  val reason: String = "Device / Account Authorization"
+  val reason: String = "Device / Account Authorization",
+  val department: String = "",
+  val designation: String = "",
+  val floor: String = "",
+  val assignedLine: String = ""
 )
 
 enum class AuthStatus {
@@ -140,6 +152,9 @@ data class UserAccount(
   val role: UserRole = UserRole.SUPERVISOR,
   val floor: FloorScope = FloorScope.SEW_2,
   val assignedLine: String = "K1",
+  val department: EmployeeDepartment = EmployeeDepartment.PRODUCTION,
+  val designation: String = role.displayName,
+  val assignedLines: List<String> = emptyList(),
   val isAdmin: Boolean = false,
 
   // 1. VISUAL / VIEW PERMISSIONS (কে দেখতে পারবে)

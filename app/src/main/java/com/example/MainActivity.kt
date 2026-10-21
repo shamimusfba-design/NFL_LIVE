@@ -1,5 +1,8 @@
 package com.example
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -58,6 +61,7 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
     repository = NflRepository(applicationContext)
+    requestNotificationPermissionIfNeeded()
 
     setContent {
       MyApplicationTheme {
@@ -810,5 +814,13 @@ class MainActivity : ComponentActivity() {
       repository.shutdown()
     }
     super.onDestroy()
+  }
+
+  private fun requestNotificationPermissionIfNeeded() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+      checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+    ) {
+      requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 4101)
+    }
   }
 }

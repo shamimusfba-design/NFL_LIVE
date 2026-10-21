@@ -1,0 +1,35 @@
+{
+  "project_info": {
+    "project_number": "716260096216",
+    "firebase_url": "https://nfl-live-72213-default-rtdb.firebaseio.com",
+    "project_id": "nfl-live-72213",
+    "storage_bucket": "nfl-live-72213.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:716260096216:android:5137b22da9c1e1a76abfad",
+        "android_client_info": { "package_name": "com.NFLLIVE.App" }
+      },
+      "oauth_client": [
+        { "client_id": "716260096216-bglnq8mvjbg4t7ll8bjdm0367v12luej.apps.googleusercontent.com", "client_type": 1, "android_info": { "package_name": "com.NFLLIVE.App", "certificate_hash": "e9be534c614fd568a5b3810e5ebf416f6332cff4" } },
+        { "client_id": "716260096216-rnqke09qgl1rb704ni8i6ddj1r0ae2cq.apps.googleusercontent.com", "client_type": 3 }
+      ],
+      "api_key": [{ "current_key": "AIzaSyD2cLbgk-35grtBXRju3gg8OgD4LHYnEs8" }],
+      "services": { "appinvite_service": { "other_platform_oauth_client": [{ "client_id": "716260096216-rnqke09qgl1rb704ni8i6ddj1r0ae2cq.apps.googleusercontent.com", "client_type": 3 }] } }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:716260096216:android:f787f27339c03e756abfad",
+        "android_client_info": { "package_name": "com.aistudio.applet.uctecj" }
+      },
+      "oauth_client": [
+        { "client_id": "716260096216-41sa0213p4ta0drc78khrvg0ao68epan.apps.googleusercontent.com", "client_type": 1, "android_info": { "package_name": "com.aistudio.applet.uctecj", "certificate_hash": "e9be534c614fd568a5b3810e5ebf416f6332cff4" } },
+        { "client_id": "716260096216-rnqke09qgl1rb704ni8i6ddj1r0ae2cq.apps.googleusercontent.com", "client_type": 3 }
+      ],
+      "api_key": [{ "current_key": "AIzaSyD2cLbgk-35grtBXRju3gg8OgD4LHYnEs8" }],
+      "services": { "appinvite_service": { "other_platform_oauth_client": [{ "client_id": "716260096216-rnqke09qgl1rb704ni8i6ddj1r0ae2cq.apps.googleusercontent.com", "client_type": 3 }] } }
+    }
+  ],
+  "configuration_version": "1"
+}
