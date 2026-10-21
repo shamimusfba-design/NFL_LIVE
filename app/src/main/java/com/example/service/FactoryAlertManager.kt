@@ -57,10 +57,10 @@ class FactoryAlertManager(private val context: Context) {
   val activeAlarmSilenced: StateFlow<Boolean> = _activeAlarmSilenced.asStateFlow()
 
   companion object {
-    const val CHANNEL_CRITICAL = "nfl_channel_critical"
-    const val CHANNEL_QUALITY = "nfl_channel_quality"
-    const val CHANNEL_PRODUCTION = "nfl_channel_production"
-    const val CHANNEL_GENERAL = "nfl_channel_general"
+    const val CHANNEL_CRITICAL = "nfl_channel_critical_v2"
+    const val CHANNEL_QUALITY = "nfl_channel_quality_v2"
+    const val CHANNEL_PRODUCTION = "nfl_channel_production_v2"
+    const val CHANNEL_GENERAL = "nfl_channel_general_v2"
 
     private const val PREF_SOUND_MODE = "pref_sound_mode"
     private const val PREF_MUTE_UNTIL = "pref_mute_until_millis"
@@ -87,7 +87,7 @@ class FactoryAlertManager(private val context: Context) {
       ).apply {
         description = "Urgent machine breakdown stoppages and critical factory alarms"
         enableVibration(true)
-        vibrationPattern = longArrayOf(0, 500, 200, 500, 200, 500)
+        vibrationPattern = longArrayOf(0, 700, 220, 700, 220, 900)
         setSound(alarmSound, audioAttributes)
       }
 
@@ -98,7 +98,7 @@ class FactoryAlertManager(private val context: Context) {
       ).apply {
         description = "DHU threshold breaches and endline quality warnings"
         enableVibration(true)
-        vibrationPattern = longArrayOf(0, 300, 150, 300)
+        vibrationPattern = longArrayOf(0, 500, 200, 500, 200, 700)
         setSound(defaultSound, audioAttributes)
       }
 
