@@ -38,3 +38,7 @@ Desktop-first web control panel plus initial Android registration/device-approva
 - The UI loads at most 250 documents per collection view.
 - Do not store passwords in Firestore. Never add service account JSON/private keys to this repo or browser code.
 - Direct client-side audit fields are not immutable or tamper-proof; critical operations should be audited by a trusted backend.
+
+## Build validation
+
+The repository now has a GitHub Actions workflow that attempts `:app:assembleDebug` for pull requests targeting `main`. A green build is required before merging this branch. The Admin Panel also requires Firebase Web App config and secure rules before it can be used with live data.
