@@ -137,4 +137,37 @@ class ExampleUnitTest {
     assertTrue(kotlin.math.abs(67.32 - actualEfficiency) < 0.1)
     assertTrue(kotlin.math.abs(81.25 - targetAchievementPct) < 0.1)
   }
+
+  @Test
+  fun `test BS OQL weekly dataset matches user requirements`() {
+    val data = com.example.ui.components.DEFAULT_BS_OQL_WEEKLY_DATA
+    assertEquals(12, data.size)
+    assertEquals("32 W", data.first().week)
+    assertEquals(4.67, data.first().oqlPct, 0.001)
+    assertEquals("43 W", data.last().week)
+    assertEquals(5.58, data.last().oqlPct, 0.001)
+
+    // Verify all 12 points
+    val expected = listOf(
+      "32 W" to 4.67,
+      "33 W" to 5.00,
+      "34 W" to 5.00,
+      "35 W" to 5.11,
+      "36 W" to 4.80,
+      "37 W" to 4.80,
+      "38 W" to 5.00,
+      "39 W" to 5.00,
+      "40 W" to 5.35,
+      "41 W" to 5.10,
+      "42 W" to 5.64,
+      "43 W" to 5.58
+    )
+    expected.forEachIndexed { index, (wk, pct) ->
+      assertEquals(wk, data[index].week)
+      assertEquals(pct, data[index].oqlPct, 0.001)
+    }
+
+    val avg = data.map { it.oqlPct }.average()
+    assertTrue(avg in 5.08..5.10)
+  }
 }

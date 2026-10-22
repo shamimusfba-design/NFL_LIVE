@@ -97,8 +97,10 @@ fun LineDeepDiveScreen(
   val totalLostPcs = lineIssues.sumOf { it.outputImpactPcs }
 
   Scaffold(
+    contentWindowInsets = WindowInsets(0, 0, 0, 0),
     topBar = {
       TopAppBar(
+        windowInsets = WindowInsets(0, 0, 0, 0),
         title = {
           Column {
             Text(
@@ -154,11 +156,11 @@ fun LineDeepDiveScreen(
   ) { paddingValues ->
     Column(
       modifier = Modifier
-        .fillMaxSize()
+        .fillMaxWidth()
         .padding(paddingValues)
         .verticalScroll(rememberScrollState())
-        .padding(14.dp),
-      verticalArrangement = Arrangement.spacedBy(14.dp)
+        .padding(8.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
       // 1. Time Horizon Filter Chips (Today, Yesterday, Weekly, Monthly)
       Row(
@@ -282,7 +284,7 @@ fun LineDeepDiveScreen(
           SpeedometerGauge(
             value = todayEffPct,
             targetValue = lineSetup.targetEfficiencyPct,
-            modifier = Modifier.fillMaxWidth().height(130.dp)
+            modifier = Modifier.fillMaxWidth()
           )
 
           // Column / Bar Chart: Hourly Target vs Output
@@ -632,11 +634,9 @@ private fun HourlyTargetVsOutputChart(rows: List<com.example.model.HourlyProduct
     shape = RoundedCornerShape(8.dp),
     colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-    modifier = Modifier
-      .fillMaxWidth()
-      .height(155.dp)
+    modifier = Modifier.fillMaxWidth()
   ) {
-    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.SpaceBetween) {
+    Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -658,7 +658,7 @@ private fun HourlyTargetVsOutputChart(rows: List<com.example.model.HourlyProduct
       Row(
         modifier = Modifier
           .fillMaxWidth()
-          .height(110.dp),
+          .height(92.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Bottom
       ) {
@@ -733,11 +733,9 @@ private fun HourVsDhuColumnChart(rows: List<com.example.model.HourlyQualityRow>)
     shape = RoundedCornerShape(8.dp),
     colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-    modifier = Modifier
-      .fillMaxWidth()
-      .height(145.dp)
+    modifier = Modifier.fillMaxWidth()
   ) {
-    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.SpaceBetween) {
+    Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
       Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text("Standard DHU Benchmark: ≤2.00", fontSize = 9.sp, color = Color(0xFF94A3B8))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -749,7 +747,7 @@ private fun HourVsDhuColumnChart(rows: List<com.example.model.HourlyQualityRow>)
       Row(
         modifier = Modifier
           .fillMaxWidth()
-          .height(100.dp),
+          .height(88.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Bottom
       ) {
@@ -800,11 +798,9 @@ private fun HourVsOqlColumnChart(rows: List<com.example.model.HourlyQualityRow>)
     shape = RoundedCornerShape(8.dp),
     colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-    modifier = Modifier
-      .fillMaxWidth()
-      .height(145.dp)
+    modifier = Modifier.fillMaxWidth()
   ) {
-    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.SpaceBetween) {
+    Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
       Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text("Standard Auditor OQL Benchmark: ≤3.50%", fontSize = 9.sp, color = Color(0xFF94A3B8))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -816,7 +812,7 @@ private fun HourVsOqlColumnChart(rows: List<com.example.model.HourlyQualityRow>)
       Row(
         modifier = Modifier
           .fillMaxWidth()
-          .height(100.dp),
+          .height(88.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Bottom
       ) {

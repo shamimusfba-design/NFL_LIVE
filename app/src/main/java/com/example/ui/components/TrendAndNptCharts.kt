@@ -35,20 +35,22 @@ fun NptPieChartCard(
   subtitle: String = "Non-productive lost time breakdown by root cause",
   breakdown: List<NptCategorySlice>,
   totalLostPcs: Int? = null,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  compactMode: Boolean = false
 ) {
   val totalMinutes = breakdown.sumOf { it.minutes }
+  val displaySlices = if (compactMode) breakdown.take(4) else breakdown
 
   Card(
-    shape = RoundedCornerShape(12.dp),
+    shape = RoundedCornerShape(if (compactMode) 8.dp else 12.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
-    elevation = CardDefaults.cardElevation(2.dp),
+    elevation = CardDefaults.cardElevation(if (compactMode) 1.dp else 2.dp),
     border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
     modifier = modifier.fillMaxWidth()
   ) {
     Column(
-      modifier = Modifier.padding(14.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp)
+      modifier = Modifier.padding(if (compactMode) 6.dp else 14.dp),
+      verticalArrangement = Arrangement.spacedBy(if (compactMode) 4.dp else 10.dp)
     ) {
       // Header
       Row(
@@ -56,36 +58,40 @@ fun NptPieChartCard(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+        Column(modifier = Modifier.weight(1f, fill = false).padding(end = 4.dp)) {
           Text(
             text = title,
-            fontSize = 13.sp,
+            fontSize = if (compactMode) 10.5.sp else 13.sp,
             fontWeight = FontWeight.Black,
-            color = Color(0xFF0F172A)
+            color = Color(0xFF0F172A),
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
           )
           Text(
-            text = subtitle,
-            fontSize = 9.5.sp,
-            color = Color(0xFF64748B)
+            text = if (compactMode) "NPT loss breakdown" else subtitle,
+            fontSize = if (compactMode) 7.5.sp else 9.5.sp,
+            color = Color(0xFF64748B),
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
           )
         }
 
         Surface(
           color = Color(0xFFFFF7ED),
-          shape = RoundedCornerShape(6.dp),
+          shape = RoundedCornerShape(3.dp),
           border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFED7AA))
         ) {
           Column(
             horizontalAlignment = Alignment.End,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = if (compactMode) 4.dp else 8.dp, vertical = if (compactMode) 2.dp else 4.dp)
           ) {
             Text(
               text = "$totalMinutes Mins Lost",
-              fontSize = 11.sp,
+              fontSize = if (compactMode) 9.sp else 11.sp,
               fontWeight = FontWeight.Black,
               color = Color(0xFFC2410C)
             )
-            if (totalLostPcs != null && totalLostPcs > 0) {
+            if (totalLostPcs != null && totalLostPcs > 0 && !compactMode) {
               Text(
                 text = "-$totalLostPcs pcs impact",
                 fontSize = 8.5.sp,
@@ -99,23 +105,23 @@ fun NptPieChartCard(
 
       if (breakdown.isEmpty() || totalMinutes == 0) {
         Box(
-          modifier = Modifier.fillMaxWidth().height(100.dp),
+          modifier = Modifier.fillMaxWidth().height(if (compactMode) 60.dp else 100.dp),
           contentAlignment = Alignment.Center
         ) {
-          Text("No NPT incidents recorded for this scope", fontSize = 11.sp, color = Color(0xFF64748B))
+          Text("No NPT incidents recorded for this scope", fontSize = if (compactMode) 9.sp else 11.sp, color = Color(0xFF64748B))
         }
       } else {
         Row(
           modifier = Modifier.fillMaxWidth(),
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(12.dp)
+          horizontalArrangement = Arrangement.spacedBy(if (compactMode) 6.dp else 12.dp)
         ) {
           // Solid Pie Chart Canvas
           Box(
-            modifier = Modifier.size(118.dp),
+            modifier = Modifier.size(if (compactMode) 80.dp else 118.dp),
             contentAlignment = Alignment.Center
           ) {
-            Canvas(modifier = Modifier.size(110.dp)) {
+            Canvas(modifier = Modifier.size(if (compactMode) 72.dp else 110.dp)) {
               var startAngle = -90f
               breakdown.forEach { slice ->
                 val sweep = (slice.percentage.toFloat() / 100f) * 360f
@@ -135,9 +141,9 @@ fun NptPieChartCard(
           // Legend and Metrics
           Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+            verticalArrangement = Arrangement.spacedBy(if (compactMode) 2.dp else 5.dp)
           ) {
-            breakdown.forEach { slice ->
+            displaySlices.forEach { slice ->
               val color = Color(slice.colorHex)
               Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -146,36 +152,37 @@ fun NptPieChartCard(
               ) {
                 Row(
                   verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(5.dp),
+                  horizontalArrangement = Arrangement.spacedBy(if (compactMode) 3.dp else 5.dp),
                   modifier = Modifier.weight(1f, fill = false)
                 ) {
                   Box(
                     modifier = Modifier
-                      .size(8.dp)
+                      .size(if (compactMode) 6.dp else 8.dp)
                       .background(color, CircleShape)
                   )
                   Text(
                     text = slice.categoryName,
-                    fontSize = 9.5.sp,
+                    fontSize = if (compactMode) 8.sp else 9.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFF334155),
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                   )
                 }
 
                 Row(
-                  horizontalArrangement = Arrangement.spacedBy(4.dp),
+                  horizontalArrangement = Arrangement.spacedBy(2.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
                   Text(
                     text = "${slice.minutes}m",
-                    fontSize = 9.5.sp,
+                    fontSize = if (compactMode) 8.sp else 9.5.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF0F172A)
                   )
                   Text(
-                    text = "(${String.format(Locale.US, "%.1f", slice.percentage)}%)",
-                    fontSize = 9.sp,
+                    text = "(${String.format(Locale.US, "%.0f", slice.percentage)}%)",
+                    fontSize = if (compactMode) 7.5.sp else 9.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = color
                   )

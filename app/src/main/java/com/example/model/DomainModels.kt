@@ -313,6 +313,15 @@ enum class IncidentStatus(val displayName: String) {
   VERIFIED("Verified")
 }
 
+data class IncidentComment(
+  val id: String = UUID.randomUUID().toString(),
+  val incidentId: String = "",
+  val userName: String = "User",
+  val userRole: String = "",
+  val commentText: String = "",
+  val timestamp: Long = System.currentTimeMillis()
+)
+
 data class IncidentItem(
   val id: String = UUID.randomUUID().toString(),
   val submissionId: String = UUID.randomUUID().toString(),
@@ -355,6 +364,7 @@ data class IncidentItem(
   val qualityThresholdValue: Double? = null,
   val defectDetails: String = "",
   val isReadOnCurrentDevice: Boolean = false,
+  val comments: List<IncidentComment> = emptyList(),
   val isDemo: Boolean = false
 )
 
@@ -494,6 +504,8 @@ data class FloorKpiSummary(
   val monthlyEfficiency: Double = 72.2,
   val monthlyEfficiencyDelta: Double = 4.1,
   val operatorsCount: Int = 266,
+  val helpersCount: Int = 32,
+  val finishingStaffCount: Int = 54,
   val machinesCount: Int = 267,
   val todayOutputPcs: Int = 3450,
   val todayTargetPcs: Int = 4200,
@@ -509,7 +521,10 @@ data class FloorKpiSummary(
   val totalSpotSent: Int = 0,
   val totalSpotReceived: Int = 0,
   val totalSpotBalance: Int = 0
-)
+) {
+  val totalManpower: Int
+    get() = operatorsCount + helpersCount + finishingStaffCount
+}
 
 data class TvDashboardData(
   val floorScope: FloorScope = FloorScope.SEW_2,

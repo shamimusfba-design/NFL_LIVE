@@ -43,21 +43,25 @@ fun ExecutiveKpiCard(
   accentColor: Color = Color(0xFF1976D2),
   endVisual: (@Composable () -> Unit)? = null,
   onClick: (() -> Unit)? = null,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  compactMode: Boolean = false
 ) {
   val cardModifier = if (onClick != null) modifier.clickable(onClick = onClick) else modifier
   Card(
     modifier = cardModifier,
-    shape = RoundedCornerShape(12.dp),
+    shape = RoundedCornerShape(if (compactMode) 6.dp else 12.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
-    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    elevation = CardDefaults.cardElevation(defaultElevation = if (compactMode) 1.dp else 2.dp),
     border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0)))
   ) {
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 12.dp, vertical = 10.dp),
-      verticalArrangement = Arrangement.spacedBy(6.dp)
+        .padding(
+          horizontal = if (compactMode) 6.dp else 12.dp,
+          vertical = if (compactMode) 3.dp else 10.dp
+        ),
+      verticalArrangement = Arrangement.spacedBy(if (compactMode) 1.dp else 6.dp)
     ) {
       // Title row with subtle category indicator and trend badge
       Row(
@@ -67,22 +71,22 @@ fun ExecutiveKpiCard(
       ) {
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          horizontalArrangement = Arrangement.spacedBy(if (compactMode) 3.dp else 5.dp),
           modifier = Modifier.weight(1f, fill = false)
         ) {
           Box(
             modifier = Modifier
-              .size(8.dp)
+              .size(if (compactMode) 5.dp else 7.dp)
               .clip(CircleShape)
               .background(accentColor)
           )
           Text(
             text = title,
-            fontSize = 11.sp,
+            fontSize = if (compactMode) 8.sp else 10.5.sp,
             fontWeight = FontWeight.Bold,
-            color = Color(0xFF475569),
+            color = Color(0xFF334155),
             maxLines = 2,
-            lineHeight = 13.sp,
+            lineHeight = if (compactMode) 9.5.sp else 12.5.sp,
             overflow = TextOverflow.Ellipsis
           )
         }
@@ -90,14 +94,17 @@ fun ExecutiveKpiCard(
         if (trendText != null) {
           Surface(
             color = if (isPositiveTrend) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
-            shape = RoundedCornerShape(4.dp)
+            shape = RoundedCornerShape(3.dp)
           ) {
             Text(
               text = trendText,
-              fontSize = 9.sp,
+              fontSize = if (compactMode) 6.5.sp else 9.sp,
               fontWeight = FontWeight.Bold,
               color = if (isPositiveTrend) Color(0xFF2E7D32) else Color(0xFFC62828),
-              modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+              modifier = Modifier.padding(
+                horizontal = if (compactMode) 3.dp else 5.dp,
+                vertical = if (compactMode) 0.5.dp else 2.dp
+              ),
               maxLines = 1,
               softWrap = false
             )
@@ -113,10 +120,12 @@ fun ExecutiveKpiCard(
       ) {
         Text(
           text = valueText,
-          fontSize = 20.sp,
+          fontSize = if (compactMode) 13.sp else 20.sp,
           fontWeight = FontWeight.Black,
           color = Color(0xFF0F172A),
-          letterSpacing = (-0.5).sp
+          lineHeight = if (compactMode) 14.sp else 22.sp,
+          letterSpacing = if (compactMode) (-0.2).sp else (-0.5).sp,
+          maxLines = 1
         )
 
         if (endVisual != null) {
@@ -127,22 +136,20 @@ fun ExecutiveKpiCard(
       // Linear attainment progress bar if applicable (when no endVisual)
       if (progressFraction != null && endVisual == null) {
         val clamped = progressFraction.coerceIn(0f, 1f)
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(if (compactMode) 2.5.dp else 5.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .background(Color(0xFFF1F5F9))
+        ) {
           Box(
             modifier = Modifier
-              .fillMaxWidth()
-              .height(5.dp)
-              .clip(RoundedCornerShape(3.dp))
-              .background(Color(0xFFF1F5F9))
-          ) {
-            Box(
-              modifier = Modifier
-                .fillMaxWidth(clamped)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(3.dp))
-                .background(accentColor)
-            )
-          }
+              .fillMaxWidth(clamped)
+              .fillMaxHeight()
+              .clip(RoundedCornerShape(2.dp))
+              .background(accentColor)
+          )
         }
       }
 
@@ -150,7 +157,8 @@ fun ExecutiveKpiCard(
       if (targetText != null) {
         Text(
           text = targetText,
-          fontSize = 10.sp,
+          fontSize = if (compactMode) 7.sp else 10.sp,
+          lineHeight = if (compactMode) 8.sp else 12.sp,
           fontWeight = FontWeight.Medium,
           color = Color(0xFF64748B),
           maxLines = 1,
@@ -274,54 +282,70 @@ fun MiniDonutProgress(
 fun OperatorMachineMetricCard(
   operatorsCount: Int,
   machinesCount: Int,
-  modifier: Modifier = Modifier
+  helpersCount: Int = 0,
+  finishingCount: Int = 0,
+  modifier: Modifier = Modifier,
+  compactMode: Boolean = false
 ) {
+  val totalManpower = operatorsCount + helpersCount + finishingCount
+
   Card(
     modifier = modifier,
-    shape = RoundedCornerShape(12.dp),
+    shape = RoundedCornerShape(if (compactMode) 6.dp else 12.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
-    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    elevation = CardDefaults.cardElevation(defaultElevation = if (compactMode) 1.dp else 2.dp),
     border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0)))
   ) {
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 10.dp, vertical = 10.dp),
+        .padding(
+          horizontal = if (compactMode) 5.dp else 10.dp,
+          vertical = if (compactMode) 3.dp else 10.dp
+        ),
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically
     ) {
-      // Left Column: Operators
+      // Left Column: Total Manpower (Operators + Helpers + Finishing)
       Column(
-        modifier = Modifier.weight(1f),
+        modifier = Modifier.weight(1.15f),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp)
+        verticalArrangement = Arrangement.spacedBy(if (compactMode) 0.5.dp else 2.dp)
       ) {
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(4.dp)
+          horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-          Icon(Icons.Default.Group, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(13.dp))
+          Icon(Icons.Default.Group, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(if (compactMode) 9.dp else 13.dp))
           Text(
-            text = "Operators",
-            fontSize = 11.sp,
-            color = Color(0xFF475569),
+            text = "Manpower",
+            fontSize = if (compactMode) 8.sp else 11.sp,
+            lineHeight = if (compactMode) 9.sp else 12.sp,
+            color = Color(0xFF1E3A8A),
             fontWeight = FontWeight.Bold,
             maxLines = 1,
             softWrap = false
           )
         }
         Text(
-          text = "$operatorsCount",
-          fontSize = 17.sp,
+          text = if (totalManpower > 0) "$totalManpower" else "$operatorsCount",
+          fontSize = if (compactMode) 13.sp else 17.sp,
+          lineHeight = if (compactMode) 14.sp else 19.sp,
           fontWeight = FontWeight.Black,
           color = Color(0xFF0F172A),
           maxLines = 1,
           softWrap = false
         )
         Text(
-          text = "Present Today",
-          fontSize = 8.sp,
-          color = Color(0xFF94A3B8),
+          text = if (helpersCount > 0 || finishingCount > 0) {
+            "Op:$operatorsCount•Hl:$helpersCount•Fn:$finishingCount"
+          } else {
+            "Present Today"
+          },
+          fontSize = if (compactMode) 6.5.sp else 8.sp,
+          lineHeight = if (compactMode) 7.5.sp else 10.sp,
+          fontWeight = FontWeight.SemiBold,
+          color = Color(0xFF475569),
           maxLines = 1,
           softWrap = false
         )
@@ -331,24 +355,25 @@ fun OperatorMachineMetricCard(
       Box(
         modifier = Modifier
           .width(1.dp)
-          .height(38.dp)
+          .height(if (compactMode) 22.dp else 38.dp)
           .background(Color(0xFFE2E8F0))
       )
 
       // Right Column: Running Machines
       Column(
-        modifier = Modifier.weight(1f),
+        modifier = Modifier.weight(0.9f),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp)
+        verticalArrangement = Arrangement.spacedBy(if (compactMode) 0.5.dp else 2.dp)
       ) {
         Row(
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(4.dp)
+          horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-          Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF7C3AED), modifier = Modifier.size(13.dp))
+          Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF7C3AED), modifier = Modifier.size(if (compactMode) 9.dp else 13.dp))
           Text(
             text = "Machines",
-            fontSize = 11.sp,
+            fontSize = if (compactMode) 8.sp else 11.sp,
+            lineHeight = if (compactMode) 9.sp else 12.sp,
             color = Color(0xFF475569),
             fontWeight = FontWeight.Bold,
             maxLines = 1,
@@ -357,7 +382,8 @@ fun OperatorMachineMetricCard(
         }
         Text(
           text = "$machinesCount",
-          fontSize = 17.sp,
+          fontSize = if (compactMode) 13.sp else 17.sp,
+          lineHeight = if (compactMode) 14.sp else 19.sp,
           fontWeight = FontWeight.Black,
           color = Color(0xFF0F172A),
           maxLines = 1,
@@ -365,8 +391,9 @@ fun OperatorMachineMetricCard(
         )
         Text(
           text = "Running Live",
-          fontSize = 8.sp,
-          color = Color(0xFF94A3B8),
+          fontSize = if (compactMode) 6.5.sp else 8.sp,
+          lineHeight = if (compactMode) 7.5.sp else 10.sp,
+          color = Color(0xFF64748B),
           maxLines = 1,
           softWrap = false
         )
@@ -377,13 +404,15 @@ fun OperatorMachineMetricCard(
 
 /**
  * Grouped Bar Chart comparing Line Target (Royal Blue) vs Production Output (Emerald Green)
- * with clear values, background grid guidelines, and lines on X-axis.
+ * with dynamic line-count scaling so all 10 to 26 lines fit on-screen without clipping.
  */
 @Composable
 fun TargetVsOutputBarChart(
   title: String,
   lines: List<LinePerformancePoint>,
   modifier: Modifier = Modifier,
+  compactMode: Boolean = false,
+  fitAllLinesToWidth: Boolean = compactMode,
   onLineClick: ((String) -> Unit)? = null
 ) {
   val displayLines = lines.ifEmpty {
@@ -399,186 +428,345 @@ fun TargetVsOutputBarChart(
     )
   }
 
+  val lineCount = displayLines.size
+  val valFontSize = when {
+    !fitAllLinesToWidth -> 8.5.sp
+    lineCount <= 10 -> 7.sp
+    lineCount <= 14 -> 6.sp
+    lineCount <= 18 -> 5.2.sp
+    else -> 4.5.sp
+  }
+  val lineBadgeFontSize = when {
+    !fitAllLinesToWidth -> 9.sp
+    lineCount <= 10 -> 7.5.sp
+    lineCount <= 14 -> 6.8.sp
+    lineCount <= 18 -> 6.sp
+    else -> 5.2.sp
+  }
+  val singleBarWidth = when {
+    !fitAllLinesToWidth -> 14.dp
+    lineCount <= 10 -> 9.dp
+    lineCount <= 14 -> 7.dp
+    lineCount <= 18 -> 5.5.dp
+    else -> 4.dp
+  }
+  val barPairGap = when {
+    !fitAllLinesToWidth -> 3.dp
+    lineCount <= 14 -> 1.5.dp
+    else -> 0.5.dp
+  }
+
   Card(
-    shape = RoundedCornerShape(12.dp),
+    shape = RoundedCornerShape(if (compactMode) 6.dp else 12.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
-    elevation = CardDefaults.cardElevation(2.dp),
+    elevation = CardDefaults.cardElevation(if (compactMode) 1.dp else 2.dp),
     border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
     modifier = modifier.fillMaxWidth()
   ) {
     Column(
-      modifier = Modifier.padding(14.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp)
+      modifier = Modifier
+        .then(if (compactMode) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
+        .padding(if (compactMode) 5.dp else 10.dp),
+      verticalArrangement = Arrangement.spacedBy(if (compactMode) 3.dp else 6.dp)
     ) {
-      // Header with Legend
+      // Header with Legend & Line Count badge
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        Column {
-          Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF0F172A))
-          Text(text = "Daily piece comparison across active lines", fontSize = 10.sp, color = Color(0xFF64748B))
+        Column(modifier = Modifier.weight(1f, fill = false)) {
+          Text(
+            text = title,
+            fontSize = if (compactMode) 9.5.sp else 13.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = Color(0xFF0F172A),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+          Text(
+            text = if (compactMode) "All $lineCount lines visible • Target vs Output pcs" else "Daily piece comparison across all $lineCount lines",
+            fontSize = if (compactMode) 7.sp else 10.sp,
+            color = Color(0xFF64748B),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Box(modifier = Modifier.size(8.dp).background(Color(0xFF1E88E5), RoundedCornerShape(2.dp)))
-            Text(text = "Target", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569))
+        Row(horizontalArrangement = Arrangement.spacedBy(if (compactMode) 6.dp else 12.dp)) {
+          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compactMode) 2.dp else 4.dp)) {
+            Box(modifier = Modifier.size(if (compactMode) 6.dp else 8.dp).background(Color(0xFF1E88E5), RoundedCornerShape(2.dp)))
+            Text(text = "Target", fontSize = if (compactMode) 7.5.sp else 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569))
           }
-          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Box(modifier = Modifier.size(8.dp).background(Color(0xFF10B981), RoundedCornerShape(2.dp)))
-            Text(text = "Output", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569))
+          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compactMode) 2.dp else 4.dp)) {
+            Box(modifier = Modifier.size(if (compactMode) 6.dp else 8.dp).background(Color(0xFF10B981), RoundedCornerShape(2.dp)))
+            Text(text = "Achieved", fontSize = if (compactMode) 7.5.sp else 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569))
           }
         }
       }
 
-      // Chart body with Y-axis guidelines and horizontally scrollable grouped bars
       val maxTarget = (displayLines.maxOfOrNull { maxOf(it.targetPcs, it.achievementPcs ?: 0) } ?: 600).coerceAtLeast(100)
       val maxVal = (Math.ceil(maxTarget / 100.0) * 100).toFloat()
 
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .height(180.dp)
+      BoxWithConstraints(
+        modifier = if (compactMode) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth().height(135.dp)
       ) {
-        // Fixed Y-axis labels on the left
-        Column(
-          modifier = Modifier
-            .width(32.dp)
-            .fillMaxHeight()
-            .padding(bottom = 22.dp),
-          verticalArrangement = Arrangement.SpaceBetween
-        ) {
-          listOf(maxVal.toInt(), (maxVal * 0.75).toInt(), (maxVal * 0.5).toInt(), (maxVal * 0.25).toInt(), 0).forEach { v ->
-            Text(
-              text = "$v",
-              fontSize = 8.5.sp,
-              fontWeight = FontWeight.SemiBold,
-              color = Color(0xFF94A3B8),
-              textAlign = TextAlign.End,
-              modifier = Modifier.fillMaxWidth()
-            )
-          }
-        }
+        val availableHeightDp = maxHeight.value.coerceAtLeast(60f)
+        val barMaxHeightDp = (availableHeightDp - (if (compactMode) 26f else 30f)).coerceAtLeast(24f)
 
-        Spacer(modifier = Modifier.width(4.dp))
-
-        // Horizontally scrollable chart bars area (resets to 0 whenever floor/title changes)
-        val chartScrollState = key(title) { rememberScrollState() }
-
-        Box(
-          modifier = Modifier
-            .weight(1f)
-            .fillMaxHeight()
-            .horizontalScroll(chartScrollState)
-        ) {
-          val barWidthPerLine = 48.dp
-          val totalChartWidth = (displayLines.size * 48).coerceAtLeast(320).dp
-
-          // Grid lines behind bars
+        Row(modifier = Modifier.fillMaxSize()) {
+          // Fixed Y-axis labels on the left
           Column(
             modifier = Modifier
-              .width(totalChartWidth)
+              .width(if (compactMode) 20.dp else 32.dp)
               .fillMaxHeight()
-              .padding(bottom = 22.dp),
+              .padding(bottom = if (compactMode) 13.dp else 22.dp),
             verticalArrangement = Arrangement.SpaceBetween
           ) {
-            repeat(5) {
-              Box(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .height(1.dp)
-                  .background(Color(0xFFF1F5F9))
+            listOf(maxVal.toInt(), (maxVal * 0.75).toInt(), (maxVal * 0.5).toInt(), (maxVal * 0.25).toInt(), 0).forEach { v ->
+              Text(
+                text = "$v",
+                fontSize = if (compactMode) 6.sp else 8.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF94A3B8),
+                textAlign = TextAlign.End,
+                modifier = Modifier.fillMaxWidth()
               )
             }
           }
 
-          // Grouped bars layer
-          Row(
-            modifier = Modifier
-              .width(totalChartWidth)
-              .fillMaxHeight()
-              .padding(bottom = 2.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.Bottom
-          ) {
-            displayLines.forEach { line ->
-              val targetHeight = ((line.targetPcs / maxVal) * 125f).coerceIn(8f, 125f).dp
-              val outputHeight = (((line.achievementPcs ?: 0) / maxVal) * 125f).coerceIn(4f, 125f).dp
+          Spacer(modifier = Modifier.width(2.dp))
 
+          if (fitAllLinesToWidth) {
+            // Fit 100% of lines into the available width without horizontal scrolling!
+            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
               Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Bottom,
                 modifier = Modifier
-                  .width(barWidthPerLine)
-                  .then(if (onLineClick != null) Modifier.clickable { onLineClick(line.lineId) } else Modifier)
+                  .fillMaxSize()
+                  .padding(bottom = if (compactMode) 13.dp else 20.dp),
+                verticalArrangement = Arrangement.SpaceBetween
               ) {
-                Row(
-                  horizontalArrangement = Arrangement.spacedBy(3.dp),
-                  verticalAlignment = Alignment.Bottom
-                ) {
-                  // Target Bar
-                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                      text = "${line.targetPcs}",
-                      fontSize = 8.5.sp,
-                      fontWeight = FontWeight.Bold,
-                      color = Color(0xFF64748B)
-                    )
-                    Box(
-                      modifier = Modifier
-                        .width(14.dp)
-                        .height(targetHeight)
-                        .background(Color(0xFF1E88E5), RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                    )
-                  }
+                repeat(5) {
+                  Box(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .height(1.dp)
+                      .background(Color(0xFFF1F5F9))
+                  )
+                }
+              }
 
-                  // Output Bar
-                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (line.achievementPcs != null) {
+              Row(
+                modifier = Modifier
+                  .fillMaxSize()
+                  .padding(bottom = 1.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.Bottom
+              ) {
+                displayLines.forEach { line ->
+                  val targetHeight = ((line.targetPcs / maxVal) * barMaxHeightDp).coerceIn(3f, barMaxHeightDp).dp
+                  val outputHeight = (((line.achievementPcs ?: 0) / maxVal) * barMaxHeightDp).coerceIn(2f, barMaxHeightDp).dp
+
+                  Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Bottom,
+                    modifier = Modifier
+                      .weight(1f)
+                      .fillMaxHeight()
+                      .then(if (onLineClick != null) Modifier.clickable { onLineClick(line.lineId) } else Modifier)
+                  ) {
+                    Row(
+                      horizontalArrangement = Arrangement.spacedBy(barPairGap),
+                      verticalAlignment = Alignment.Bottom
+                    ) {
+                      // Target Bar
+                      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                          text = "${line.targetPcs}",
+                          fontSize = valFontSize,
+                          lineHeight = valFontSize,
+                          fontWeight = FontWeight.Bold,
+                          color = Color(0xFF475569),
+                          maxLines = 1,
+                          softWrap = false
+                        )
+                        Box(
+                          modifier = Modifier
+                            .width(singleBarWidth)
+                            .height(targetHeight)
+                            .background(Color(0xFF1E88E5), RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                        )
+                      }
+
+                      // Output Bar
+                      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (line.achievementPcs != null) {
+                          Text(
+                            text = "${line.achievementPcs}",
+                            fontSize = valFontSize,
+                            lineHeight = valFontSize,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF047857),
+                            maxLines = 1,
+                            softWrap = false
+                          )
+                          Box(
+                            modifier = Modifier
+                              .width(singleBarWidth)
+                              .height(outputHeight)
+                              .background(Color(0xFF10B981), RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                          )
+                        } else {
+                          Text(
+                            text = "-",
+                            fontSize = valFontSize,
+                            lineHeight = valFontSize,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF94A3B8),
+                            maxLines = 1
+                          )
+                          Box(
+                            modifier = Modifier
+                              .width(singleBarWidth)
+                              .height(4.dp)
+                              .background(Color(0xFFCBD5E1), RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                          )
+                        }
+                      }
+                    }
+
+                    Spacer(modifier = Modifier.height(1.dp))
+                    Surface(
+                      color = Color(0xFF0F172A),
+                      shape = RoundedCornerShape(2.dp)
+                    ) {
                       Text(
-                        text = "${line.achievementPcs}",
-                        fontSize = 8.5.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color(0xFF047857)
-                      )
-                      Box(
-                        modifier = Modifier
-                          .width(14.dp)
-                          .height(outputHeight)
-                          .background(Color(0xFF10B981), RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                      )
-                    } else {
-                      Text(
-                        text = "-",
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF94A3B8)
-                      )
-                      Box(
-                        modifier = Modifier
-                          .width(14.dp)
-                          .height(8.dp)
-                          .background(Color(0xFFCBD5E1), RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                        text = line.lineId,
+                        fontSize = lineBadgeFontSize,
+                        lineHeight = lineBadgeFontSize,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(horizontal = if (lineCount > 16) 1.5.dp else 3.dp, vertical = 0.5.dp)
                       )
                     }
                   }
                 }
+              }
+            }
+          } else {
+            // Mobile scrollable chart area
+            val chartScrollState = key(title) { rememberScrollState() }
+            Box(
+              modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .horizontalScroll(chartScrollState)
+            ) {
+              val barWidthPerLine = 48.dp
+              val totalChartWidth = (displayLines.size * 48).coerceAtLeast(320).dp
 
-                Spacer(modifier = Modifier.height(4.dp))
-                // Clear bold line label badge
-                Surface(
-                  color = Color(0xFF0F172A),
-                  shape = RoundedCornerShape(4.dp)
-                ) {
-                  Text(
-                    text = "Line ${line.lineId}",
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Black,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+              Column(
+                modifier = Modifier
+                  .width(totalChartWidth)
+                  .fillMaxHeight()
+                  .padding(bottom = 22.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+              ) {
+                repeat(5) {
+                  Box(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .height(1.dp)
+                      .background(Color(0xFFF1F5F9))
                   )
+                }
+              }
+
+              Row(
+                modifier = Modifier
+                  .width(totalChartWidth)
+                  .fillMaxHeight()
+                  .padding(bottom = 2.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.Bottom
+              ) {
+                displayLines.forEach { line ->
+                  val targetHeight = ((line.targetPcs / maxVal) * barMaxHeightDp).coerceIn(4f, barMaxHeightDp).dp
+                  val outputHeight = (((line.achievementPcs ?: 0) / maxVal) * barMaxHeightDp).coerceIn(2f, barMaxHeightDp).dp
+
+                  Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Bottom,
+                    modifier = Modifier
+                      .width(barWidthPerLine)
+                      .then(if (onLineClick != null) Modifier.clickable { onLineClick(line.lineId) } else Modifier)
+                  ) {
+                    Row(
+                      horizontalArrangement = Arrangement.spacedBy(3.dp),
+                      verticalAlignment = Alignment.Bottom
+                    ) {
+                      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                          text = "${line.targetPcs}",
+                          fontSize = 8.5.sp,
+                          fontWeight = FontWeight.Bold,
+                          color = Color(0xFF64748B)
+                        )
+                        Box(
+                          modifier = Modifier
+                            .width(14.dp)
+                            .height(targetHeight)
+                            .background(Color(0xFF1E88E5), RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                        )
+                      }
+
+                      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (line.achievementPcs != null) {
+                          Text(
+                            text = "${line.achievementPcs}",
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF047857)
+                          )
+                          Box(
+                            modifier = Modifier
+                              .width(14.dp)
+                              .height(outputHeight)
+                              .background(Color(0xFF10B981), RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                          )
+                        } else {
+                          Text(
+                            text = "-",
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF94A3B8)
+                          )
+                          Box(
+                            modifier = Modifier
+                              .width(14.dp)
+                              .height(6.dp)
+                              .background(Color(0xFFCBD5E1), RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                          )
+                        }
+                      }
+                    }
+
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Surface(
+                      color = Color(0xFF0F172A),
+                      shape = RoundedCornerShape(3.dp)
+                    ) {
+                      Text(
+                        text = line.lineId,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                      )
+                    }
+                  }
                 }
               }
             }
@@ -591,12 +779,15 @@ fun TargetVsOutputBarChart(
 
 /**
  * Line Efficiency Chart comparing Today Efficiency vs Monthly Efficiency
+ * with dynamic line-count scaling so all 10 to 26 lines fit on-screen without clipping.
  */
 @Composable
 fun LineEfficiencyBarChart(
   title: String,
   lines: List<LinePerformancePoint>,
   modifier: Modifier = Modifier,
+  compactMode: Boolean = false,
+  fitAllLinesToWidth: Boolean = compactMode,
   onLineClick: ((String) -> Unit)? = null
 ) {
   val displayLines = lines.ifEmpty {
@@ -612,165 +803,314 @@ fun LineEfficiencyBarChart(
     )
   }
 
+  val lineCount = displayLines.size
+  val valFontSize = when {
+    !fitAllLinesToWidth -> 7.5.sp
+    lineCount <= 10 -> 6.8.sp
+    lineCount <= 14 -> 5.8.sp
+    lineCount <= 18 -> 5.0.sp
+    else -> 4.3.sp
+  }
+  val lineBadgeFontSize = when {
+    !fitAllLinesToWidth -> 10.sp
+    lineCount <= 10 -> 7.5.sp
+    lineCount <= 14 -> 6.8.sp
+    lineCount <= 18 -> 6.sp
+    else -> 5.2.sp
+  }
+  val singleBarWidth = when {
+    !fitAllLinesToWidth -> 13.dp
+    lineCount <= 10 -> 9.dp
+    lineCount <= 14 -> 7.dp
+    lineCount <= 18 -> 5.5.dp
+    else -> 4.dp
+  }
+  val barPairGap = when {
+    !fitAllLinesToWidth -> 2.dp
+    lineCount <= 14 -> 1.dp
+    else -> 0.5.dp
+  }
+
   Card(
-    shape = RoundedCornerShape(12.dp),
+    shape = RoundedCornerShape(if (compactMode) 6.dp else 12.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
-    elevation = CardDefaults.cardElevation(2.dp),
+    elevation = CardDefaults.cardElevation(if (compactMode) 1.dp else 2.dp),
     border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
     modifier = modifier.fillMaxWidth()
   ) {
     Column(
-      modifier = Modifier.padding(14.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp)
+      modifier = Modifier
+        .then(if (compactMode) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
+        .padding(if (compactMode) 5.dp else 10.dp),
+      verticalArrangement = Arrangement.spacedBy(if (compactMode) 3.dp else 6.dp)
     ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        Column {
-          Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF0F172A))
-          Text(text = "Target Benchmark: 75% | Today vs Monthly Avg", fontSize = 10.sp, color = Color(0xFF64748B))
+        Column(modifier = Modifier.weight(1f, fill = false)) {
+          Text(
+            text = title,
+            fontSize = if (compactMode) 9.5.sp else 13.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = Color(0xFF0F172A),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+          Text(
+            text = if (compactMode) "All $lineCount lines visible • Bench: 75% | Today vs Month" else "Target Benchmark: 75% | Today vs Monthly Avg ($lineCount lines)",
+            fontSize = if (compactMode) 7.sp else 10.sp,
+            color = Color(0xFF64748B),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Box(modifier = Modifier.size(8.dp).background(Color(0xFF0284C7), RoundedCornerShape(2.dp)))
-            Text(text = "Today", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569))
+        Row(horizontalArrangement = Arrangement.spacedBy(if (compactMode) 6.dp else 12.dp)) {
+          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compactMode) 2.dp else 4.dp)) {
+            Box(modifier = Modifier.size(if (compactMode) 6.dp else 8.dp).background(Color(0xFF0284C7), RoundedCornerShape(2.dp)))
+            Text(text = "Today Eff", fontSize = if (compactMode) 7.5.sp else 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569))
           }
-          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Box(modifier = Modifier.size(8.dp).background(Color(0xFFF59E0B), RoundedCornerShape(2.dp)))
-            Text(text = "Month", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569))
+          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compactMode) 2.dp else 4.dp)) {
+            Box(modifier = Modifier.size(if (compactMode) 6.dp else 8.dp).background(Color(0xFFF59E0B), RoundedCornerShape(2.dp)))
+            Text(text = "Monthly Eff", fontSize = if (compactMode) 7.5.sp else 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569))
           }
         }
       }
 
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .height(160.dp)
+      BoxWithConstraints(
+        modifier = if (compactMode) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth().height(130.dp)
       ) {
-        // Y-axis labels
-        Column(
-          modifier = Modifier
-            .width(32.dp)
-            .fillMaxHeight()
-            .padding(bottom = 22.dp),
-          verticalArrangement = Arrangement.SpaceBetween
-        ) {
-          listOf("100%", "80%", "60%", "40%", "0%").forEach { label ->
-            Text(
-              text = label,
-              fontSize = 8.sp,
-              fontWeight = FontWeight.Medium,
-              color = Color(0xFF94A3B8),
-              textAlign = TextAlign.End,
-              modifier = Modifier.fillMaxWidth()
-            )
-          }
-        }
+        val availableHeightDp = maxHeight.value.coerceAtLeast(60f)
+        val barMaxHeightDp = (availableHeightDp - (if (compactMode) 26f else 30f)).coerceAtLeast(24f).toDouble()
 
-        Spacer(modifier = Modifier.width(4.dp))
-
-        Box(
-          modifier = Modifier
-            .weight(1f)
-            .fillMaxHeight()
-            .horizontalScroll(rememberScrollState())
-        ) {
-          val totalChartWidth = (displayLines.size * 48).coerceAtLeast(320).dp
-
-          // Grid lines
+        Row(modifier = Modifier.fillMaxSize()) {
+          // Y-axis labels
           Column(
             modifier = Modifier
-              .width(totalChartWidth)
+              .width(if (compactMode) 22.dp else 32.dp)
               .fillMaxHeight()
-              .padding(bottom = 22.dp),
+              .padding(bottom = if (compactMode) 13.dp else 22.dp),
             verticalArrangement = Arrangement.SpaceBetween
           ) {
-            repeat(5) {
-              Box(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .height(1.dp)
-                  .background(Color(0xFFF1F5F9))
+            listOf("100%", "80%", "60%", "40%", "0%").forEach { label ->
+              Text(
+                text = label,
+                fontSize = if (compactMode) 6.sp else 8.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFF94A3B8),
+                textAlign = TextAlign.End,
+                modifier = Modifier.fillMaxWidth()
               )
             }
           }
 
-          Row(
-            modifier = Modifier
-              .width(totalChartWidth)
-              .fillMaxHeight()
-              .padding(bottom = 2.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.Bottom
-          ) {
-            displayLines.forEach { line ->
-              val todayEff = line.todayEfficiencyPct ?: 0.0
-              val monthEff = line.monthlyEfficiencyPct
-              val todayH = ((todayEff / 100f) * 110f).coerceIn(4.0, 110.0).dp
-              val monthH = ((monthEff / 100f) * 110f).coerceIn(4.0, 110.0).dp
+          Spacer(modifier = Modifier.width(2.dp))
 
+          if (fitAllLinesToWidth) {
+            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
               Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Bottom,
                 modifier = Modifier
-                  .width(48.dp)
-                  .then(if (onLineClick != null) Modifier.clickable { onLineClick(line.lineId) } else Modifier)
+                  .fillMaxSize()
+                  .padding(bottom = if (compactMode) 13.dp else 20.dp),
+                verticalArrangement = Arrangement.SpaceBetween
               ) {
-                Row(
-                  horizontalArrangement = Arrangement.spacedBy(2.dp),
-                  verticalAlignment = Alignment.Bottom
-                ) {
-                  // Today Eff Bar
-                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (line.todayEfficiencyPct != null) {
+                repeat(5) {
+                  Box(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .height(1.dp)
+                      .background(Color(0xFFF1F5F9))
+                  )
+                }
+              }
+
+              Row(
+                modifier = Modifier
+                  .fillMaxSize()
+                  .padding(bottom = 1.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.Bottom
+              ) {
+                displayLines.forEach { line ->
+                  val todayEff = line.todayEfficiencyPct ?: 0.0
+                  val monthEff = line.monthlyEfficiencyPct
+                  val todayH = ((todayEff / 100.0) * barMaxHeightDp).coerceIn(3.0, barMaxHeightDp).dp
+                  val monthH = ((monthEff / 100.0) * barMaxHeightDp).coerceIn(3.0, barMaxHeightDp).dp
+
+                  Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Bottom,
+                    modifier = Modifier
+                      .weight(1f)
+                      .fillMaxHeight()
+                      .then(if (onLineClick != null) Modifier.clickable { onLineClick(line.lineId) } else Modifier)
+                  ) {
+                    Row(
+                      horizontalArrangement = Arrangement.spacedBy(barPairGap),
+                      verticalAlignment = Alignment.Bottom
+                    ) {
+                      // Today Eff Bar
+                      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                          text = if (line.todayEfficiencyPct != null) "${todayEff.toInt()}%" else "-",
+                          fontSize = valFontSize,
+                          lineHeight = valFontSize,
+                          fontWeight = FontWeight.Bold,
+                          color = Color(0xFF0369A1),
+                          maxLines = 1,
+                          softWrap = false
+                        )
+                        Box(
+                          modifier = Modifier
+                            .width(singleBarWidth)
+                            .height(todayH)
+                            .background(Color(0xFF0284C7), RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                        )
+                      }
+
+                      // Month Eff Bar
+                      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                          text = "${monthEff.toInt()}%",
+                          fontSize = valFontSize,
+                          lineHeight = valFontSize,
+                          fontWeight = FontWeight.Bold,
+                          color = Color(0xFFB45309),
+                          maxLines = 1,
+                          softWrap = false
+                        )
+                        Box(
+                          modifier = Modifier
+                            .width(singleBarWidth)
+                            .height(monthH)
+                            .background(Color(0xFFF59E0B), RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                        )
+                      }
+                    }
+
+                    Spacer(modifier = Modifier.height(1.dp))
+                    Surface(
+                      color = Color(0xFFF1F5F9),
+                      shape = RoundedCornerShape(2.dp),
+                      border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFCBD5E1))
+                    ) {
                       Text(
-                        text = "${todayEff.toInt()}%",
-                        fontSize = 7.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF0369A1)
+                        text = line.lineId,
+                        fontSize = lineBadgeFontSize,
+                        lineHeight = lineBadgeFontSize,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFF0F172A),
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(horizontal = if (lineCount > 16) 1.5.dp else 3.dp, vertical = 0.5.dp)
                       )
                     }
-                    Box(
-                      modifier = Modifier
-                        .width(13.dp)
-                        .height(todayH)
-                        .background(Color(0xFF0284C7), RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
-                    )
-                  }
-
-                  // Month Eff Bar
-                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                      text = "${monthEff.toInt()}%",
-                      fontSize = 7.5.sp,
-                      fontWeight = FontWeight.Bold,
-                      color = Color(0xFFB45309)
-                    )
-                    Box(
-                      modifier = Modifier
-                        .width(13.dp)
-                        .height(monthH)
-                        .background(Color(0xFFF59E0B), RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
-                    )
                   }
                 }
+              }
+            }
+          } else {
+            Box(
+              modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .horizontalScroll(rememberScrollState())
+            ) {
+              val barWidthPerLine = 48.dp
+              val totalChartWidth = (displayLines.size * 48).coerceAtLeast(320).dp
 
-                Spacer(modifier = Modifier.height(4.dp))
-                Surface(
-                  color = Color(0xFFF1F5F9),
-                  shape = RoundedCornerShape(4.dp),
-                  border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
-                ) {
-                  Text(
-                    text = line.lineId,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Black,
-                    color = Color(0xFF0F172A),
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+              Column(
+                modifier = Modifier
+                  .width(totalChartWidth)
+                  .fillMaxHeight()
+                  .padding(bottom = 22.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+              ) {
+                repeat(5) {
+                  Box(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .height(1.dp)
+                      .background(Color(0xFFF1F5F9))
                   )
+                }
+              }
+
+              Row(
+                modifier = Modifier
+                  .width(totalChartWidth)
+                  .fillMaxHeight()
+                  .padding(bottom = 2.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.Bottom
+              ) {
+                displayLines.forEach { line ->
+                  val todayEff = line.todayEfficiencyPct ?: 0.0
+                  val monthEff = line.monthlyEfficiencyPct
+                  val todayH = ((todayEff / 100.0) * barMaxHeightDp).coerceIn(3.0, barMaxHeightDp).dp
+                  val monthH = ((monthEff / 100.0) * barMaxHeightDp).coerceIn(3.0, barMaxHeightDp).dp
+
+                  Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Bottom,
+                    modifier = Modifier
+                      .width(barWidthPerLine)
+                      .then(if (onLineClick != null) Modifier.clickable { onLineClick(line.lineId) } else Modifier)
+                  ) {
+                    Row(
+                      horizontalArrangement = Arrangement.spacedBy(2.dp),
+                      verticalAlignment = Alignment.Bottom
+                    ) {
+                      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (line.todayEfficiencyPct != null) {
+                          Text(
+                            text = "${todayEff.toInt()}%",
+                            fontSize = 7.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0369A1)
+                          )
+                        }
+                        Box(
+                          modifier = Modifier
+                            .width(13.dp)
+                            .height(todayH)
+                            .background(Color(0xFF0284C7), RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                        )
+                      }
+
+                      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                          text = "${monthEff.toInt()}%",
+                          fontSize = 7.5.sp,
+                          fontWeight = FontWeight.Bold,
+                          color = Color(0xFFB45309)
+                        )
+                        Box(
+                          modifier = Modifier
+                            .width(13.dp)
+                            .height(monthH)
+                            .background(Color(0xFFF59E0B), RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                        )
+                      }
+                    }
+
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Surface(
+                      color = Color(0xFFF1F5F9),
+                      shape = RoundedCornerShape(3.dp),
+                      border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
+                    ) {
+                      Text(
+                        text = line.lineId,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFF0F172A),
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                      )
+                    }
+                  }
                 }
               }
             }
@@ -1529,38 +1869,52 @@ fun Top5DhuLinesCard(
   title: String = "Top 5 DHU Lines — Today (Endline QC)",
   lines: List<LinePerformancePoint>,
   onLineClick: ((String) -> Unit)? = null,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  compactMode: Boolean = false
 ) {
-  val top5Lines = lines.sortedByDescending { it.dhu ?: 0.0 }.take(5)
+  val top5Lines = lines.sortedByDescending { it.dhu ?: 0.0 }.take(if (compactMode) 4 else 5)
   val maxDhu = (top5Lines.maxOfOrNull { it.dhu ?: 0.0 } ?: 3.0).coerceAtLeast(2.5).toFloat()
 
   Card(
-    shape = RoundedCornerShape(12.dp),
+    shape = RoundedCornerShape(if (compactMode) 8.dp else 12.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
-    elevation = CardDefaults.cardElevation(2.dp),
+    elevation = CardDefaults.cardElevation(if (compactMode) 1.dp else 2.dp),
     border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
     modifier = modifier.fillMaxWidth()
   ) {
     Column(
-      modifier = Modifier.padding(14.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp)
+      modifier = Modifier.padding(if (compactMode) 6.dp else 14.dp),
+      verticalArrangement = Arrangement.spacedBy(if (compactMode) 4.dp else 10.dp)
     ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-          Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
-          Text(text = "Highest defect rate lines • Tap bar to open Deep-Dive", fontSize = 9.5.sp, color = Color(0xFF64748B))
+        Column(modifier = Modifier.weight(1f, fill = false).padding(end = 4.dp)) {
+          Text(
+            text = title,
+            fontSize = if (compactMode) 10.5.sp else 13.sp,
+            fontWeight = FontWeight.Black,
+            color = Color(0xFF0F172A),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+          Text(
+            text = if (compactMode) "Highest defect rate lines" else "Highest defect rate lines • Tap bar to open Deep-Dive",
+            fontSize = if (compactMode) 7.5.sp else 9.5.sp,
+            color = Color(0xFF64748B),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
         }
-        Surface(color = Color(0xFFFEE2E2), shape = RoundedCornerShape(4.dp)) {
+        Surface(color = Color(0xFFFEE2E2), shape = RoundedCornerShape(3.dp)) {
           Text(
             text = "HIGH DHU",
-            fontSize = 8.5.sp,
+            fontSize = if (compactMode) 7.5.sp else 8.5.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFFDC2626),
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp)
+            modifier = Modifier.padding(horizontal = if (compactMode) 4.dp else 6.dp, vertical = 2.dp)
           )
         }
       }
@@ -1569,7 +1923,7 @@ fun Top5DhuLinesCard(
       Box(
         modifier = Modifier
           .fillMaxWidth()
-          .height(165.dp)
+          .height(if (compactMode) 96.dp else 125.dp)
       ) {
         // Grid guidelines
         Column(
@@ -1577,31 +1931,33 @@ fun Top5DhuLinesCard(
           verticalArrangement = Arrangement.SpaceBetween
         ) {
           Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("${String.format(java.util.Locale.US, "%.1f", maxDhu)}", fontSize = 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(24.dp))
+            Text("${String.format(java.util.Locale.US, "%.1f", maxDhu)}", fontSize = if (compactMode) 7.sp else 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(if (compactMode) 18.dp else 24.dp))
             Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFF1F5F9)))
           }
           Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("2.0", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444), modifier = Modifier.width(24.dp))
+            Text("2.0", fontSize = if (compactMode) 7.sp else 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444), modifier = Modifier.width(if (compactMode) 18.dp else 24.dp))
             Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFFECACA)))
           }
           Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("0.0", fontSize = 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(24.dp))
+            Text("0.0", fontSize = if (compactMode) 7.sp else 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(if (compactMode) 18.dp else 24.dp))
             Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFE2E8F0)))
           }
         }
+
+        val barMultiplier = if (compactMode) 55f else 85f
 
         // Columns layer
         Row(
           modifier = Modifier
             .fillMaxSize()
-            .padding(start = 26.dp, end = 6.dp, bottom = 4.dp),
+            .padding(start = if (compactMode) 20.dp else 26.dp, end = 4.dp, bottom = 2.dp),
           horizontalArrangement = Arrangement.SpaceEvenly,
           verticalAlignment = Alignment.Bottom
         ) {
           top5Lines.forEach { line ->
             val dhuVal = line.dhu ?: 1.85
             val barFraction = ((dhuVal.toFloat() / maxDhu)).coerceIn(0.12f, 1.0f)
-            val barHeight = (barFraction * 115f).dp
+            val barHeight = (barFraction * barMultiplier).dp
             val isHighDhu = dhuVal > 2.0
 
             Column(
@@ -1609,65 +1965,62 @@ fun Top5DhuLinesCard(
               verticalArrangement = Arrangement.Bottom,
               modifier = Modifier
                 .clickable { onLineClick?.invoke(line.lineId) }
-                .padding(horizontal = 2.dp)
+                .padding(horizontal = 1.dp)
             ) {
               // Explicit Numerical DATA LABEL on top of each bar
               Text(
                 text = String.format(java.util.Locale.US, "%.2f", dhuVal),
-                fontSize = 10.sp,
+                fontSize = if (compactMode) 7.5.sp else 10.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = if (isHighDhu) Color(0xFFDC2626) else Color(0xFF047857),
-                modifier = Modifier.padding(bottom = 2.dp)
+                modifier = Modifier.padding(bottom = 1.dp)
               )
 
               // Column Bar
               Box(
                 modifier = Modifier
-                  .width(32.dp)
+                  .width(if (compactMode) 18.dp else 32.dp)
                   .height(barHeight)
                   .background(
                     if (isHighDhu) Color(0xFFEF4444) else Color(0xFFF59E0B),
-                    RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
+                    RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
                   )
               )
 
               // Line Label
               Text(
                 text = line.lineId,
-                fontSize = 11.sp,
+                fontSize = if (compactMode) 8.5.sp else 11.sp,
                 fontWeight = FontWeight.Black,
                 color = Color(0xFF0F172A),
-                modifier = Modifier.padding(top = 4.dp)
-              )
-              Text(
-                text = line.floor.take(5),
-                fontSize = 8.sp,
-                color = Color(0xFF64748B)
+                modifier = Modifier.padding(top = 2.dp)
               )
             }
           }
         }
       }
 
-      // Legend Row
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-      ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-          Box(modifier = Modifier.size(8.dp).background(Color(0xFFEF4444), CircleShape))
-          Text("Critical (>2.00 DHU)", fontSize = 8.5.sp, color = Color(0xFF64748B))
-          Spacer(Modifier.width(6.dp))
-          Box(modifier = Modifier.size(8.dp).background(Color(0xFFF59E0B), CircleShape))
-          Text("Caution (≤2.00 DHU)", fontSize = 8.5.sp, color = Color(0xFF64748B))
+      if (!compactMode) {
+        // Legend Row
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Box(modifier = Modifier.size(8.dp).background(Color(0xFFEF4444), CircleShape))
+            Text("Critical (>2.00 DHU)", fontSize = 8.5.sp, color = Color(0xFF64748B))
+            Spacer(Modifier.width(6.dp))
+            Box(modifier = Modifier.size(8.dp).background(Color(0xFFF59E0B), CircleShape))
+            Text("Caution (≤2.00 DHU)", fontSize = 8.5.sp, color = Color(0xFF64748B))
+          }
+          Text(
+            text = "Benchmark: ≤2.00",
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFFDC2626)
+          )
         }
-        Text(
-          text = "Benchmark: ≤2.00",
-          fontSize = 8.5.sp,
-          fontWeight = FontWeight.Bold,
-          color = Color(0xFFDC2626)
-        )
       }
     }
   }
@@ -1681,7 +2034,8 @@ fun Top5DhuLinesCard(
 fun Top5DefectsPieChartCard(
   title: String = "Top 5 Defects — Today (Endline QC)",
   defects: List<DefectSummary>,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  compactMode: Boolean = false
 ) {
   val sliceColors = listOf(
     Color(0xFFDC2626), // Puckering - Red
@@ -1691,36 +2045,49 @@ fun Top5DefectsPieChartCard(
     Color(0xFF7C3AED)  // Needle Cut - Purple
   )
 
-  val top5 = defects.take(5)
+  val top5 = defects.take(if (compactMode) 4 else 5)
   val totalCount = top5.sumOf { it.count }.coerceAtLeast(1)
 
   Card(
-    shape = RoundedCornerShape(12.dp),
+    shape = RoundedCornerShape(if (compactMode) 8.dp else 12.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
-    elevation = CardDefaults.cardElevation(2.dp),
+    elevation = CardDefaults.cardElevation(if (compactMode) 1.dp else 2.dp),
     border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
     modifier = modifier.fillMaxWidth()
   ) {
     Column(
-      modifier = Modifier.padding(14.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp)
+      modifier = Modifier.padding(if (compactMode) 6.dp else 14.dp),
+      verticalArrangement = Arrangement.spacedBy(if (compactMode) 4.dp else 10.dp)
     ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-          Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
-          Text(text = "Online top 5 garment defect breakdown with percentage & count", fontSize = 9.5.sp, color = Color(0xFF64748B))
-        }
-        Surface(color = Color(0xFFEFF6FF), shape = RoundedCornerShape(4.dp)) {
+        Column(modifier = Modifier.weight(1f, fill = false).padding(end = 4.dp)) {
           Text(
-            text = "PIE CHART",
-            fontSize = 8.5.sp,
+            text = title,
+            fontSize = if (compactMode) 10.5.sp else 13.sp,
+            fontWeight = FontWeight.Black,
+            color = Color(0xFF0F172A),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+          Text(
+            text = if (compactMode) "Top defect breakdown" else "Online top 5 garment defect breakdown with percentage & count",
+            fontSize = if (compactMode) 7.5.sp else 9.5.sp,
+            color = Color(0xFF64748B),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+        }
+        Surface(color = Color(0xFFEFF6FF), shape = RoundedCornerShape(3.dp)) {
+          Text(
+            text = "PIE",
+            fontSize = if (compactMode) 7.5.sp else 8.5.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF1D4ED8),
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp)
+            modifier = Modifier.padding(horizontal = if (compactMode) 4.dp else 6.dp, vertical = 2.dp)
           )
         }
       }
@@ -1732,10 +2099,10 @@ fun Top5DefectsPieChartCard(
       ) {
         // Solid Filled Pie Chart Canvas
         Box(
-          modifier = Modifier.size(130.dp),
+          modifier = Modifier.size(if (compactMode) 80.dp else 130.dp),
           contentAlignment = Alignment.Center
         ) {
-          Canvas(modifier = Modifier.size(120.dp)) {
+          Canvas(modifier = Modifier.size(if (compactMode) 72.dp else 120.dp)) {
             var currentAngle = -90f
             top5.forEachIndexed { idx, d ->
               val sweep = (d.count.toFloat() / totalCount.toFloat()) * 360f
@@ -1756,44 +2123,43 @@ fun Top5DefectsPieChartCard(
         Column(
           modifier = Modifier
             .weight(1f)
-            .padding(start = 14.dp),
-          verticalArrangement = Arrangement.spacedBy(6.dp)
+            .padding(start = if (compactMode) 8.dp else 14.dp),
+          verticalArrangement = Arrangement.spacedBy(if (compactMode) 3.dp else 6.dp)
         ) {
           top5.forEachIndexed { idx, d ->
             val pct = ((d.count.toFloat() / totalCount.toFloat()) * 100).let { Math.round(it * 10.0) / 10.0 }
             val color = sliceColors[idx % sliceColors.size]
             Surface(
               color = Color(0xFFF8FAFC),
-              shape = RoundedCornerShape(6.dp),
+              shape = RoundedCornerShape(if (compactMode) 4.dp else 6.dp),
               border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF1F5F9)),
               modifier = Modifier.fillMaxWidth()
             ) {
               Row(
                 modifier = Modifier
                   .fillMaxWidth()
-                  .padding(horizontal = 8.dp, vertical = 4.5.dp),
+                  .padding(horizontal = if (compactMode) 6.dp else 8.dp, vertical = if (compactMode) 2.dp else 4.5.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 Row(
                   verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(6.dp),
+                  horizontalArrangement = Arrangement.spacedBy(if (compactMode) 4.dp else 6.dp),
                   modifier = Modifier.weight(1f)
                 ) {
-                  Box(modifier = Modifier.size(8.dp).background(color, CircleShape))
+                  Box(modifier = Modifier.size(if (compactMode) 6.dp else 8.dp).background(color, CircleShape))
                   Text(
                     text = d.defectType,
-                    fontSize = 9.5.sp,
+                    fontSize = if (compactMode) 8.sp else 9.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFF1E293B),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                   )
                 }
-                // Explicit Data label with count and percentage
                 Text(
                   text = "${d.count} (${pct}%)",
-                  fontSize = 9.5.sp,
+                  fontSize = if (compactMode) 8.sp else 9.5.sp,
                   fontWeight = FontWeight.ExtraBold,
                   color = color
                 )
@@ -1962,7 +2328,7 @@ fun LiveLinePerformanceTable(
         Box(
           modifier = Modifier
             .width(2.dp)
-            .fillMaxHeight()
+            .height((36 + lines.size * 42).dp)
             .background(Color(0xFFCBD5E1))
         )
 
@@ -2169,40 +2535,60 @@ fun LiveLinePerformanceTable(
 fun LowestEfficiencyRankingCard(
   title: String = "Top 5 Lowest-Efficiency Lines (Intervention Alert)",
   lines: List<LinePerformancePoint>,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  compactMode: Boolean = false
 ) {
-  val rankingLines = lines.take(5)
+  val rankingLines = lines.take(if (compactMode) 3 else 5)
   Card(
-    shape = RoundedCornerShape(12.dp),
+    shape = RoundedCornerShape(if (compactMode) 8.dp else 12.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
-    elevation = CardDefaults.cardElevation(2.dp),
+    elevation = CardDefaults.cardElevation(if (compactMode) 1.dp else 2.dp),
     border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
     modifier = modifier.fillMaxWidth()
   ) {
     Column(
-      modifier = Modifier.padding(14.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp)
+      modifier = Modifier.padding(if (compactMode) 6.dp else 14.dp),
+      verticalArrangement = Arrangement.spacedBy(if (compactMode) 4.dp else 10.dp)
     ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-          Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
-          Text(text = "Lines requiring line balancing or supervisor support", fontSize = 9.5.sp, color = Color(0xFF64748B))
+        Column(modifier = Modifier.weight(1f, fill = false).padding(end = 4.dp)) {
+          Text(
+            text = title,
+            fontSize = if (compactMode) 10.5.sp else 13.sp,
+            fontWeight = FontWeight.Black,
+            color = Color(0xFF0F172A),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+          Text(
+            text = if (compactMode) "Lines needing balancing" else "Lines requiring line balancing or supervisor support",
+            fontSize = if (compactMode) 7.5.sp else 9.5.sp,
+            color = Color(0xFF64748B),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
         }
-        Surface(color = Color(0xFFFEF2F2), shape = RoundedCornerShape(4.dp)) {
-          Text("LOW EFFICIENCY", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFDC2626), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp))
+        Surface(color = Color(0xFFFEF2F2), shape = RoundedCornerShape(3.dp)) {
+          Text(
+            text = "LOW EFF",
+            fontSize = if (compactMode) 7.5.sp else 8.5.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFFDC2626),
+            modifier = Modifier.padding(horizontal = if (compactMode) 4.dp else 6.dp, vertical = 2.dp)
+          )
         }
       }
 
       if (rankingLines.isEmpty()) {
-        Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
-          Text("No reported efficiency data for selected scope", fontSize = 11.sp, color = Color(0xFF64748B))
+        Box(modifier = Modifier.fillMaxWidth().height(if (compactMode) 60.dp else 100.dp), contentAlignment = Alignment.Center) {
+          Text("No reported efficiency data for selected scope", fontSize = if (compactMode) 9.sp else 11.sp, color = Color(0xFF64748B))
         }
       } else {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(if (compactMode) 4.dp else 8.dp)) {
           rankingLines.forEachIndexed { rank, line ->
             val eff = line.todayEfficiencyPct ?: 0.0
             val ach = line.achievementPcs ?: 0
@@ -2210,47 +2596,51 @@ fun LowestEfficiencyRankingCard(
             val isSevere = eff < 60.0
             Surface(
               color = if (isSevere) Color(0xFFFFF1F2) else Color(0xFFF8FAFC),
-              shape = RoundedCornerShape(8.dp),
+              shape = RoundedCornerShape(if (compactMode) 4.dp else 8.dp),
               border = androidx.compose.foundation.BorderStroke(1.dp, if (isSevere) Color(0xFFFECDD3) else Color(0xFFE2E8F0))
             ) {
               Row(
                 modifier = Modifier
                   .fillMaxWidth()
-                  .padding(horizontal = 10.dp, vertical = 8.dp),
+                  .padding(horizontal = if (compactMode) 6.dp else 10.dp, vertical = if (compactMode) 3.dp else 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compactMode) 4.dp else 8.dp)) {
                   Surface(
                     color = if (isSevere) Color(0xFFE11D48) else Color(0xFF64748B),
                     shape = CircleShape,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(if (compactMode) 16.dp else 22.dp)
                   ) {
                     Box(contentAlignment = Alignment.Center) {
-                      Text("#${rank + 1}", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Black)
+                      Text("#${rank + 1}", color = Color.White, fontSize = if (compactMode) 7.5.sp else 9.5.sp, fontWeight = FontWeight.Black)
                     }
                   }
                   Column {
-                    Text("Line ${line.lineId} (${line.floor})", fontWeight = FontWeight.Black, fontSize = 12.sp, color = Color(0xFF0F172A))
-                    Text("Style: ${line.styleNumber.ifBlank { "Standard" }} • SMV: ${line.smv}", fontSize = 9.sp, color = Color(0xFF64748B))
+                    Text("Line ${line.lineId}", fontWeight = FontWeight.Black, fontSize = if (compactMode) 10.5.sp else 12.sp, color = Color(0xFF0F172A))
+                    if (!compactMode) {
+                      Text("Style: ${line.styleNumber.ifBlank { "Standard" }} • SMV: ${line.smv}", fontSize = 9.sp, color = Color(0xFF64748B))
+                    }
                   }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compactMode) 6.dp else 12.dp)) {
                   Column(horizontalAlignment = Alignment.End) {
-                    Text("$ach / $tgt pcs", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
-                    Text("Attain: ${line.achievementPct ?: 0.0}%", fontSize = 8.5.sp, color = Color(0xFF64748B))
+                    Text("$ach / $tgt pcs", fontSize = if (compactMode) 9.5.sp else 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
+                    if (!compactMode) {
+                      Text("Attain: ${line.achievementPct ?: 0.0}%", fontSize = 8.5.sp, color = Color(0xFF64748B))
+                    }
                   }
                   Surface(
                     color = if (isSevere) Color(0xFFBE123C) else Color(0xFFD97706),
-                    shape = RoundedCornerShape(6.dp)
+                    shape = RoundedCornerShape(if (compactMode) 3.dp else 6.dp)
                   ) {
                     Text(
-                      text = "${String.format(java.util.Locale.US, "%.1f", eff)}% EFF",
+                      text = "${String.format(java.util.Locale.US, "%.1f", eff)}%",
                       color = Color.White,
-                      fontSize = 11.sp,
+                      fontSize = if (compactMode) 9.5.sp else 11.sp,
                       fontWeight = FontWeight.Black,
-                      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                      modifier = Modifier.padding(horizontal = if (compactMode) 5.dp else 8.dp, vertical = if (compactMode) 2.dp else 4.dp)
                     )
                   }
                 }
@@ -2266,54 +2656,98 @@ fun LowestEfficiencyRankingCard(
 /**
  * Line-wise Today's DHU Column Chart
  */
+/**
+ * Line-wise Today's DHU Column Chart (Fits all lines of the floor without truncation)
+ */
 @Composable
 fun LineWiseDhuBarChart(
   title: String = "Line-wise Today's DHU (Defect Rate %)",
   lines: List<LinePerformancePoint>,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  compactMode: Boolean = false
 ) {
-  val linesWithDhu = lines.filter { it.dhu != null && (it.dhu ?: 0.0) > 0.0 }
-  val displayLines = if (linesWithDhu.isNotEmpty()) linesWithDhu.take(16) else lines.take(16)
+  val displayLines = lines
+  val lineCount = displayLines.size.coerceAtLeast(1)
   val maxDhu = (displayLines.maxOfOrNull { it.dhu ?: 0.0 } ?: 3.0).coerceAtLeast(3.0).toFloat()
 
+  val valFontSize = when {
+    lineCount <= 10 -> if (compactMode) 7.sp else 8.5.sp
+    lineCount <= 16 -> if (compactMode) 6.sp else 7.5.sp
+    else -> if (compactMode) 5.sp else 6.5.sp
+  }
+  val lineLabelFontSize = when {
+    lineCount <= 10 -> if (compactMode) 7.5.sp else 9.sp
+    lineCount <= 16 -> if (compactMode) 6.5.sp else 8.sp
+    else -> if (compactMode) 5.5.sp else 7.sp
+  }
+  val barWidth = when {
+    lineCount <= 10 -> if (compactMode) 12.dp else 18.dp
+    lineCount <= 16 -> if (compactMode) 9.dp else 14.dp
+    else -> if (compactMode) 6.dp else 10.dp
+  }
+
   Card(
-    shape = RoundedCornerShape(12.dp),
+    shape = RoundedCornerShape(if (compactMode) 6.dp else 12.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
-    elevation = CardDefaults.cardElevation(2.dp),
+    elevation = CardDefaults.cardElevation(if (compactMode) 1.dp else 2.dp),
     border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
     modifier = modifier.fillMaxWidth()
   ) {
-    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(
+      modifier = Modifier
+        .then(if (compactMode) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
+        .padding(if (compactMode) 5.dp else 10.dp),
+      verticalArrangement = Arrangement.spacedBy(if (compactMode) 3.dp else 6.dp)
+    ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-          Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
-          Text(text = "Defects per hundred units (Standard ≤ 2.00%)", fontSize = 9.5.sp, color = Color(0xFF64748B))
+        Column(modifier = Modifier.weight(1f, fill = false).padding(end = 4.dp)) {
+          Text(
+            text = title,
+            fontSize = if (compactMode) 9.5.sp else 13.sp,
+            fontWeight = FontWeight.Black,
+            color = Color(0xFF0F172A),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+          Text(
+            text = if (compactMode) "All ${displayLines.size} lines • Std ≤ 2.0%" else "Defects per hundred units across all ${displayLines.size} lines (Std ≤ 2.00%)",
+            fontSize = if (compactMode) 7.sp else 9.5.sp,
+            color = Color(0xFF64748B),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
         }
-        Surface(color = Color(0xFFFEF3C7), shape = RoundedCornerShape(4.dp)) {
-          Text("LINE-WISE DHU", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp))
+        Surface(color = Color(0xFFFEF3C7), shape = RoundedCornerShape(3.dp)) {
+          Text(
+            text = "DHU",
+            fontSize = if (compactMode) 7.sp else 8.5.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFFB45309),
+            modifier = Modifier.padding(horizontal = if (compactMode) 4.dp else 6.dp, vertical = 1.5.dp)
+          )
         }
       }
 
-      Box(
-        modifier = Modifier
-          .fillMaxWidth()
-          .height(160.dp)
+      BoxWithConstraints(
+        modifier = if (compactMode) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth().height(130.dp)
       ) {
+        val barMaxH = (maxHeight.value - (if (compactMode) 22f else 28f)).coerceAtLeast(24f)
+
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
           Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("${String.format(java.util.Locale.US, "%.1f", maxDhu)}%", fontSize = 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(30.dp))
+            Text("${String.format(java.util.Locale.US, "%.1f", maxDhu)}%", fontSize = if (compactMode) 6.sp else 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(if (compactMode) 20.dp else 30.dp))
             Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFF1F5F9)))
           }
           Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("2.0%", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444), modifier = Modifier.width(30.dp))
+            Text("2.0%", fontSize = if (compactMode) 6.sp else 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444), modifier = Modifier.width(if (compactMode) 20.dp else 30.dp))
             Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFFECACA)))
           }
           Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("0.0%", fontSize = 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(30.dp))
+            Text("0.0%", fontSize = if (compactMode) 6.sp else 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(if (compactMode) 20.dp else 30.dp))
             Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFE2E8F0)))
           }
         }
@@ -2321,32 +2755,47 @@ fun LineWiseDhuBarChart(
         Row(
           modifier = Modifier
             .fillMaxSize()
-            .padding(start = 32.dp, end = 4.dp, bottom = 4.dp),
+            .padding(start = if (compactMode) 22.dp else 32.dp, end = 2.dp, bottom = 1.dp),
           horizontalArrangement = Arrangement.SpaceEvenly,
           verticalAlignment = Alignment.Bottom
         ) {
           displayLines.forEach { line ->
             val dhu = line.dhu ?: 0.0
             val fraction = (dhu.toFloat() / maxDhu).coerceIn(0.08f, 1.0f)
-            val barH = (fraction * 110f).dp
+            val barH = (fraction * barMaxH).dp
             val isOver = dhu > 2.0
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
+            Column(
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.Bottom,
+              modifier = Modifier.weight(1f).fillMaxHeight()
+            ) {
               Text(
                 text = String.format(java.util.Locale.US, "%.1f", dhu),
-                fontSize = 8.5.sp,
+                fontSize = valFontSize,
+                lineHeight = valFontSize,
                 fontWeight = FontWeight.Bold,
-                color = if (isOver) Color(0xFFDC2626) else Color(0xFF16A34A)
+                color = if (isOver) Color(0xFFDC2626) else Color(0xFF16A34A),
+                maxLines = 1,
+                softWrap = false
               )
               Box(
                 modifier = Modifier
-                  .width(18.dp)
+                  .width(barWidth)
                   .height(barH)
                   .background(
                     if (isOver) Color(0xFFEF4444) else Color(0xFF10B981),
-                    RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
+                    RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp)
                   )
               )
-              Text(text = line.lineId, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
+              Text(
+                text = line.lineId,
+                fontSize = lineLabelFontSize,
+                lineHeight = lineLabelFontSize,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF0F172A),
+                maxLines = 1,
+                softWrap = false
+              )
             }
           }
         }
@@ -2356,56 +2805,97 @@ fun LineWiseDhuBarChart(
 }
 
 /**
- * Line-wise Today's OQL Column Chart
+ * Line-wise Today's OQL Column Chart (Fits all lines of the floor without truncation)
  */
 @Composable
 fun LineWiseOqlBarChart(
   title: String = "Line-wise OQL % (Outgoing Quality Level)",
   lines: List<LinePerformancePoint>,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  compactMode: Boolean = false
 ) {
-  val linesWithOql = lines.filter { it.todayOqlPct != null && (it.todayOqlPct ?: 0.0) > 0.0 }
-  val displayLines = if (linesWithOql.isNotEmpty()) linesWithOql.take(16) else lines.take(16)
+  val displayLines = lines
+  val lineCount = displayLines.size.coerceAtLeast(1)
   val maxOql = (displayLines.maxOfOrNull { it.todayOqlPct ?: 0.0 } ?: 6.0).coerceAtLeast(6.0).toFloat()
 
+  val valFontSize = when {
+    lineCount <= 10 -> if (compactMode) 7.sp else 8.5.sp
+    lineCount <= 16 -> if (compactMode) 6.sp else 7.5.sp
+    else -> if (compactMode) 5.sp else 6.5.sp
+  }
+  val lineLabelFontSize = when {
+    lineCount <= 10 -> if (compactMode) 7.5.sp else 9.sp
+    lineCount <= 16 -> if (compactMode) 6.5.sp else 8.sp
+    else -> if (compactMode) 5.5.sp else 7.sp
+  }
+  val barWidth = when {
+    lineCount <= 10 -> if (compactMode) 12.dp else 18.dp
+    lineCount <= 16 -> if (compactMode) 9.dp else 14.dp
+    else -> if (compactMode) 6.dp else 10.dp
+  }
+
   Card(
-    shape = RoundedCornerShape(12.dp),
+    shape = RoundedCornerShape(if (compactMode) 6.dp else 12.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
-    elevation = CardDefaults.cardElevation(2.dp),
+    elevation = CardDefaults.cardElevation(if (compactMode) 1.dp else 2.dp),
     border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
     modifier = modifier.fillMaxWidth()
   ) {
-    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(
+      modifier = Modifier
+        .then(if (compactMode) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
+        .padding(if (compactMode) 5.dp else 10.dp),
+      verticalArrangement = Arrangement.spacedBy(if (compactMode) 3.dp else 6.dp)
+    ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-          Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
-          Text(text = "Defective garment percentage (Standard ≤ 5.00%)", fontSize = 9.5.sp, color = Color(0xFF64748B))
+        Column(modifier = Modifier.weight(1f, fill = false).padding(end = 4.dp)) {
+          Text(
+            text = title,
+            fontSize = if (compactMode) 9.5.sp else 13.sp,
+            fontWeight = FontWeight.Black,
+            color = Color(0xFF0F172A),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+          Text(
+            text = if (compactMode) "All ${displayLines.size} lines • Std ≤ 5.0%" else "Defective garment percentage across all ${displayLines.size} lines (Std ≤ 5.00%)",
+            fontSize = if (compactMode) 7.sp else 9.5.sp,
+            color = Color(0xFF64748B),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
         }
-        Surface(color = Color(0xFFEFF6FF), shape = RoundedCornerShape(4.dp)) {
-          Text("LINE-WISE OQL", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp))
+        Surface(color = Color(0xFFEFF6FF), shape = RoundedCornerShape(3.dp)) {
+          Text(
+            text = "OQL",
+            fontSize = if (compactMode) 7.sp else 8.5.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF1D4ED8),
+            modifier = Modifier.padding(horizontal = if (compactMode) 4.dp else 6.dp, vertical = 1.5.dp)
+          )
         }
       }
 
-      Box(
-        modifier = Modifier
-          .fillMaxWidth()
-          .height(160.dp)
+      BoxWithConstraints(
+        modifier = if (compactMode) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth().height(130.dp)
       ) {
+        val barMaxH = (maxHeight.value - (if (compactMode) 22f else 28f)).coerceAtLeast(24f)
+
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
           Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("${String.format(java.util.Locale.US, "%.1f", maxOql)}%", fontSize = 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(30.dp))
+            Text("${String.format(java.util.Locale.US, "%.1f", maxOql)}%", fontSize = if (compactMode) 6.sp else 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(if (compactMode) 20.dp else 30.dp))
             Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFF1F5F9)))
           }
           Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("5.0%", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444), modifier = Modifier.width(30.dp))
+            Text("5.0%", fontSize = if (compactMode) 6.sp else 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444), modifier = Modifier.width(if (compactMode) 20.dp else 30.dp))
             Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFFECACA)))
           }
           Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("0.0%", fontSize = 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(30.dp))
+            Text("0.0%", fontSize = if (compactMode) 6.sp else 8.sp, color = Color(0xFF94A3B8), modifier = Modifier.width(if (compactMode) 20.dp else 30.dp))
             Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFE2E8F0)))
           }
         }
@@ -2413,32 +2903,47 @@ fun LineWiseOqlBarChart(
         Row(
           modifier = Modifier
             .fillMaxSize()
-            .padding(start = 32.dp, end = 4.dp, bottom = 4.dp),
+            .padding(start = if (compactMode) 22.dp else 32.dp, end = 2.dp, bottom = 1.dp),
           horizontalArrangement = Arrangement.SpaceEvenly,
           verticalAlignment = Alignment.Bottom
         ) {
           displayLines.forEach { line ->
             val oql = line.todayOqlPct ?: 0.0
             val fraction = (oql.toFloat() / maxOql).coerceIn(0.08f, 1.0f)
-            val barH = (fraction * 110f).dp
+            val barH = (fraction * barMaxH).dp
             val isOver = oql > 5.0
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Bottom) {
+            Column(
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.Bottom,
+              modifier = Modifier.weight(1f).fillMaxHeight()
+            ) {
               Text(
                 text = String.format(java.util.Locale.US, "%.1f", oql),
-                fontSize = 8.5.sp,
+                fontSize = valFontSize,
+                lineHeight = valFontSize,
                 fontWeight = FontWeight.Bold,
-                color = if (isOver) Color(0xFFDC2626) else Color(0xFF2563EB)
+                color = if (isOver) Color(0xFFDC2626) else Color(0xFF2563EB),
+                maxLines = 1,
+                softWrap = false
               )
               Box(
                 modifier = Modifier
-                  .width(18.dp)
+                  .width(barWidth)
                   .height(barH)
                   .background(
                     if (isOver) Color(0xFFEF4444) else Color(0xFF3B82F6),
-                    RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
+                    RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp)
                   )
               )
-              Text(text = line.lineId, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
+              Text(
+                text = line.lineId,
+                fontSize = lineLabelFontSize,
+                lineHeight = lineLabelFontSize,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF0F172A),
+                maxLines = 1,
+                softWrap = false
+              )
             }
           }
         }
@@ -2454,62 +2959,82 @@ fun LineWiseOqlBarChart(
 fun DefectParetoBarAndLineChart(
   title: String = "Defect Pareto Analysis (80/20 Cumulative Distribution)",
   paretoData: List<ParetoDefectPoint>,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  compactMode: Boolean = false
 ) {
-  val data = paretoData.take(8)
+  val data = paretoData.take(if (compactMode) 5 else 8)
   val maxCount = (data.maxOfOrNull { it.count } ?: 10).coerceAtLeast(10)
 
   Card(
-    shape = RoundedCornerShape(12.dp),
+    shape = RoundedCornerShape(if (compactMode) 8.dp else 12.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
-    elevation = CardDefaults.cardElevation(2.dp),
+    elevation = CardDefaults.cardElevation(if (compactMode) 1.dp else 2.dp),
     border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
     modifier = modifier.fillMaxWidth()
   ) {
     Column(
-      modifier = Modifier.padding(14.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp)
+      modifier = Modifier.padding(if (compactMode) 6.dp else 10.dp),
+      verticalArrangement = Arrangement.spacedBy(if (compactMode) 4.dp else 6.dp)
     ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-          Text(text = title, fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
-          Text(text = "Columns: Defect Count • Red Line: Cumulative % (80% benchmark)", fontSize = 9.5.sp, color = Color(0xFF64748B))
+        Column(modifier = Modifier.weight(1f, fill = false).padding(end = 4.dp)) {
+          Text(
+            text = title,
+            fontSize = if (compactMode) 10.5.sp else 13.sp,
+            fontWeight = FontWeight.Black,
+            color = Color(0xFF0F172A),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+          Text(
+            text = if (compactMode) "Defect Pareto (80% benchmark)" else "Columns: Defect Count • Red Line: Cumulative % (80% benchmark)",
+            fontSize = if (compactMode) 7.5.sp else 9.5.sp,
+            color = Color(0xFF64748B),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
         }
-        Surface(color = Color(0xFFF3E8FF), shape = RoundedCornerShape(4.dp)) {
-          Text("PARETO DUAL AXIS", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7E22CE), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp))
+        Surface(color = Color(0xFFF3E8FF), shape = RoundedCornerShape(3.dp)) {
+          Text(
+            text = "PARETO",
+            fontSize = if (compactMode) 7.5.sp else 8.5.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF7E22CE),
+            modifier = Modifier.padding(horizontal = if (compactMode) 4.dp else 6.dp, vertical = 2.dp)
+          )
         }
       }
 
       if (data.isEmpty()) {
-        Box(modifier = Modifier.fillMaxWidth().height(140.dp), contentAlignment = Alignment.Center) {
-          Text("No defect entries recorded for this scope", fontSize = 11.sp, color = Color(0xFF64748B))
+        Box(modifier = Modifier.fillMaxWidth().height(if (compactMode) 70.dp else 140.dp), contentAlignment = Alignment.Center) {
+          Text("No defect entries recorded for this scope", fontSize = if (compactMode) 9.sp else 11.sp, color = Color(0xFF64748B))
         }
       } else {
         Box(
           modifier = Modifier
             .fillMaxWidth()
-            .height(180.dp)
+            .height(if (compactMode) 96.dp else 135.dp)
         ) {
           // Background guidelines & axis labels
           Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-              Text("$maxCount", fontSize = 8.sp, color = Color(0xFF64748B), modifier = Modifier.width(24.dp))
+              Text("$maxCount", fontSize = if (compactMode) 7.sp else 8.sp, color = Color(0xFF64748B), modifier = Modifier.width(if (compactMode) 18.dp else 24.dp))
               Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFF1F5F9)))
-              Text("100%", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7C3AED), modifier = Modifier.width(28.dp), textAlign = TextAlign.End)
+              Text("100%", fontSize = if (compactMode) 7.sp else 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7C3AED), modifier = Modifier.width(if (compactMode) 22.dp else 28.dp), textAlign = TextAlign.End)
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-              Text("${(maxCount * 0.8).toInt()}", fontSize = 8.sp, color = Color(0xFF64748B), modifier = Modifier.width(24.dp))
+              Text("${(maxCount * 0.8).toInt()}", fontSize = if (compactMode) 7.sp else 8.sp, color = Color(0xFF64748B), modifier = Modifier.width(if (compactMode) 18.dp else 24.dp))
               Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFFDE047))) // 80% line
-              Text("80%", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD97706), modifier = Modifier.width(28.dp), textAlign = TextAlign.End)
+              Text("80%", fontSize = if (compactMode) 7.sp else 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD97706), modifier = Modifier.width(if (compactMode) 22.dp else 28.dp), textAlign = TextAlign.End)
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-              Text("0", fontSize = 8.sp, color = Color(0xFF64748B), modifier = Modifier.width(24.dp))
+              Text("0", fontSize = if (compactMode) 7.sp else 8.sp, color = Color(0xFF64748B), modifier = Modifier.width(if (compactMode) 18.dp else 24.dp))
               Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFFE2E8F0)))
-              Text("0%", fontSize = 8.sp, color = Color(0xFF64748B), modifier = Modifier.width(28.dp), textAlign = TextAlign.End)
+              Text("0%", fontSize = if (compactMode) 7.sp else 8.sp, color = Color(0xFF64748B), modifier = Modifier.width(if (compactMode) 22.dp else 28.dp), textAlign = TextAlign.End)
             }
           }
 
@@ -2517,7 +3042,7 @@ fun DefectParetoBarAndLineChart(
           Canvas(
             modifier = Modifier
               .fillMaxSize()
-              .padding(start = 32.dp, end = 34.dp, bottom = 24.dp, top = 10.dp)
+              .padding(start = if (compactMode) 22.dp else 32.dp, end = if (compactMode) 24.dp else 34.dp, bottom = if (compactMode) 16.dp else 24.dp, top = 6.dp)
           ) {
             if (data.size >= 2) {
               val w = size.width
@@ -2534,60 +3059,62 @@ fun DefectParetoBarAndLineChart(
                   color = Color(0xFFE11D48),
                   start = points[i],
                   end = points[i + 1],
-                  strokeWidth = 3.dp.toPx(),
+                  strokeWidth = (if (compactMode) 2.dp else 3.dp).toPx(),
                   cap = StrokeCap.Round
                 )
               }
 
               points.forEach { pt ->
-                drawCircle(color = Color.White, radius = 5.dp.toPx(), center = pt)
-                drawCircle(color = Color(0xFFBE123C), radius = 3.5.dp.toPx(), center = pt)
+                drawCircle(color = Color.White, radius = (if (compactMode) 3.5.dp else 5.dp).toPx(), center = pt)
+                drawCircle(color = Color(0xFFBE123C), radius = (if (compactMode) 2.5.dp else 3.5.dp).toPx(), center = pt)
               }
             }
           }
+
+          val barMultiplier = if (compactMode) 55f else 85f
 
           // Columns for Individual Defect Count on Primary Axis
           Row(
             modifier = Modifier
               .fillMaxSize()
-              .padding(start = 32.dp, end = 34.dp, bottom = 4.dp),
+              .padding(start = if (compactMode) 22.dp else 32.dp, end = if (compactMode) 24.dp else 34.dp, bottom = 2.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.Bottom
           ) {
             data.forEach { item ->
               val fraction = (item.count.toFloat() / maxCount.toFloat()).coerceIn(0.08f, 1.0f)
-              val barH = (fraction * 115f).dp
+              val barH = (fraction * barMultiplier).dp
               Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Bottom,
-                modifier = Modifier.padding(horizontal = 2.dp)
+                modifier = Modifier.padding(horizontal = 1.dp)
               ) {
                 Text(
                   text = "${item.count}",
-                  fontSize = 9.sp,
+                  fontSize = if (compactMode) 7.5.sp else 9.sp,
                   fontWeight = FontWeight.Black,
                   color = Color(0xFF1E293B)
                 )
                 Text(
                   text = "${item.cumulativePercentage.toInt()}%",
-                  fontSize = 7.5.sp,
+                  fontSize = if (compactMode) 6.5.sp else 7.5.sp,
                   fontWeight = FontWeight.ExtraBold,
                   color = Color(0xFFBE123C),
-                  modifier = Modifier.padding(bottom = 2.dp)
+                  modifier = Modifier.padding(bottom = 1.dp)
                 )
                 Box(
                   modifier = Modifier
-                    .width(22.dp)
+                    .width(if (compactMode) 14.dp else 22.dp)
                     .height(barH)
-                    .background(Color(0xFF3B82F6), RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                    .background(Color(0xFF3B82F6), RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
                 )
                 Text(
-                  text = item.defectName.take(6),
-                  fontSize = 8.5.sp,
+                  text = item.defectName.take(5),
+                  fontSize = if (compactMode) 7.sp else 8.5.sp,
                   fontWeight = FontWeight.Bold,
                   color = Color(0xFF475569),
                   maxLines = 1,
-                  modifier = Modifier.padding(top = 2.dp)
+                  modifier = Modifier.padding(top = 1.dp)
                 )
               }
             }

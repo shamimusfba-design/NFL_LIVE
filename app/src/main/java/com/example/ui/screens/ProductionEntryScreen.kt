@@ -49,20 +49,21 @@ fun ProductionEntryScreen(
   val syncStatusBanner by repository.syncStatusBanner.collectAsState()
   val currentUser by repository.currentUser.collectAsState()
   val isAdminUser = currentUser?.isAdmin == true && currentUser?.role == com.example.model.UserRole.ADMIN
-  val isWithinTimeWindow = isAdminUser || repository.isWithinDailyEntryWindow()
-  val hasRoleProdPermission = isAdminUser || (currentUser?.let {
+  val isIeUser = currentUser?.role == com.example.model.UserRole.IE
+  val isWithinTimeWindow = isAdminUser || isIeUser || repository.isWithinDailyEntryWindow()
+  val hasRoleProdPermission = isAdminUser || isIeUser || (currentUser?.let {
     (it.canProductionWrite || it.canFinishingWrite) &&
-        it.role in setOf(com.example.model.UserRole.SUPERVISOR, com.example.model.UserRole.PRODUCTION_REPORTER)
+        it.role in setOf(com.example.model.UserRole.SUPERVISOR, com.example.model.UserRole.PRODUCTION_REPORTER, com.example.model.UserRole.IE)
   } ?: false)
   val canWrite = hasRoleProdPermission && isWithinTimeWindow
-  val canNavigateQuality = isAdminUser || (currentUser?.let {
+  val canNavigateQuality = isAdminUser || isIeUser || (currentUser?.let {
     (it.canQualityWrite || it.canOqlWrite) &&
-        it.role in setOf(com.example.model.UserRole.QUALITY_REPORTER, com.example.model.UserRole.AUDITOR)
+        it.role in setOf(com.example.model.UserRole.QUALITY_REPORTER, com.example.model.UserRole.AUDITOR, com.example.model.UserRole.IE)
   } ?: false)
-  val canNavigateMonthly = isAdminUser || (currentUser?.let {
+  val canNavigateMonthly = isAdminUser || isIeUser || (currentUser?.let {
     it.canMonthlyTargetWrite && it.role == com.example.model.UserRole.IE
   } ?: false)
-  val canNavigateMorningSetup = isAdminUser || (currentUser?.let {
+  val canNavigateMorningSetup = isAdminUser || isIeUser || (currentUser?.let {
     it.canMorningTargetWrite && it.role in setOf(
       com.example.model.UserRole.IE,
       com.example.model.UserRole.PRODUCTION_REPORTER
@@ -136,8 +137,10 @@ fun ProductionEntryScreen(
   val singleLineSetup = remember(selectedSingleLine, allTargets) { repository.getLineSetup(selectedSingleLine) }
 
   Scaffold(
+    contentWindowInsets = WindowInsets(0, 0, 0, 0),
     topBar = {
       TopAppBar(
+        windowInsets = WindowInsets(0, 0, 0, 0),
         title = {
           Column {
             Text(
@@ -176,11 +179,11 @@ fun ProductionEntryScreen(
   ) { paddingValues ->
     Column(
       modifier = Modifier
-        .fillMaxSize()
+        .fillMaxWidth()
         .padding(paddingValues)
         .verticalScroll(rememberScrollState())
-        .padding(14.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp)
+        .padding(8.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
       // 1. TOP MODULE NAVIGATION TABS (Strictly gated by user write permissions)
       Row(
@@ -411,11 +414,12 @@ fun ProductionEntryScreen(
 
               DropdownMenu(
                 expanded = showHourDropdown,
-                onDismissRequest = { showHourDropdown = false }
+                onDismissRequest = { showHourDropdown = false },
+                modifier = Modifier.background(Color.White)
               ) {
                 repository.defaultHourSlots.forEach { slot ->
                   DropdownMenuItem(
-                    text = { Text(slot, fontWeight = FontWeight.SemiBold) },
+                    text = { Text(slot, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A)) },
                     onClick = {
                       selectedHour = slot
                       showHourDropdown = false
@@ -639,6 +643,7 @@ fun ProductionEntryScreen(
                     enabled = canWrite && !isSlotLocked,
                     placeholder = { Text(if (isSlotLocked) "Locked" else "Pcs", fontSize = 12.sp, color = Color(0xFF94A3B8)) },
                     singleLine = true,
+                    colors = com.example.ui.theme.nflInputColors(),
                     textStyle = LocalTextStyle.current.copy(
                       fontSize = 15.sp,
                       fontWeight = FontWeight.Black,
@@ -750,11 +755,12 @@ fun ProductionEntryScreen(
 
                 DropdownMenu(
                   expanded = showLineDropdown,
-                  onDismissRequest = { showLineDropdown = false }
+                  onDismissRequest = { showLineDropdown = false },
+                  modifier = Modifier.background(Color.White)
                 ) {
                   availableLines.forEach { line ->
                     DropdownMenuItem(
-                      text = { Text("Line ${line.id} (${selectedFloor.displayName})", fontWeight = FontWeight.SemiBold) },
+                      text = { Text("Line ${line.id} (${selectedFloor.displayName})", fontWeight = FontWeight.Bold, color = Color(0xFF0F172A)) },
                       onClick = {
                         selectedSingleLine = line.id
                         showLineDropdown = false
@@ -813,6 +819,7 @@ fun ProductionEntryScreen(
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth().testTag("single_hourly_output_input"),
+                colors = com.example.ui.theme.nflInputColors(),
                 textStyle = LocalTextStyle.current.copy(fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A)),
                 shape = RoundedCornerShape(8.dp)
               )
@@ -823,8 +830,10 @@ fun ProductionEntryScreen(
               value = singleRemarksText,
               onValueChange = { if (canWrite && !isSingleSlotLocked) singleRemarksText = it },
               enabled = canWrite && !isSingleSlotLocked,
-              placeholder = { Text("Downtime / Remarks (Optional)", fontSize = 12.sp) },
+              placeholder = { Text("Downtime / Remarks (Optional)", fontSize = 12.sp, color = Color(0xFF64748B)) },
               modifier = Modifier.fillMaxWidth(),
+              colors = com.example.ui.theme.nflInputColors(),
+              textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFF0F172A)),
               singleLine = true,
               shape = RoundedCornerShape(8.dp)
             )

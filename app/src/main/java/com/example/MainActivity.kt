@@ -56,11 +56,14 @@ class MainActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+      window.decorView.isForceDarkAllowed = false
+    }
     enableEdgeToEdge()
     repository = NflRepository(applicationContext)
 
     setContent {
-      MyApplicationTheme {
+      MyApplicationTheme(darkTheme = false) {
         val currentUser by repository.currentUser.collectAsState()
         val currentRole by repository.currentRole.collectAsState()
         val currentUserName by repository.currentUserName.collectAsState()
@@ -72,11 +75,23 @@ class MainActivity : ComponentActivity() {
               android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
         }
 
+        LaunchedEffect(isTelevisionDevice) {
+          if (isTelevisionDevice && repository.currentUser.value == null) {
+            repository.login("management", "123")
+          }
+        }
+
         var currentScreen by remember {
           mutableStateOf(
             when {
+              isTelevisionDevice -> {
+                if (repository.currentUser.value == null) {
+                  repository.login("management", "123")
+                }
+                AppScreen.TV_DASHBOARD
+              }
               currentUser == null -> AppScreen.LOGIN
-              isTelevisionDevice || currentUser?.id == "management" -> AppScreen.TV_DASHBOARD
+              currentUser?.id == "management" -> AppScreen.TV_DASHBOARD
               else -> AppScreen.HOME
             }
           )
@@ -122,483 +137,487 @@ class MainActivity : ComponentActivity() {
                 drawerContentColor = Color.White,
                 modifier = Modifier.width(300.dp)
               ) {
-                Column(
-                  modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                ) {
-                  // 1. Drawer Header with NFL LIVE Branding & Current User
-                  Surface(
-                    color = Color(0xFF1E293B),
-                    modifier = Modifier.fillMaxWidth()
+                CompositionLocalProvider(LocalContentColor provides Color.White) {
+                  Column(
+                    modifier = Modifier
+                      .fillMaxSize()
+                      .verticalScroll(rememberScrollState())
                   ) {
-                    Column(
-                      modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(16.dp)
+                    // 1. Drawer Header with NFL LIVE Branding & Current User
+                    Surface(
+                      color = Color(0xFF1E293B),
+                      modifier = Modifier.fillMaxWidth()
                     ) {
-                      Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                      Column(
+                        modifier = Modifier
+                          .fillMaxWidth()
+                          .statusBarsPadding()
+                          .padding(16.dp)
                       ) {
-                        Surface(
-                          color = Color.White,
-                          shape = RoundedCornerShape(6.dp),
-                          modifier = Modifier.size(36.dp)
+                        Row(
+                          verticalAlignment = Alignment.CenterVertically,
+                          horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                          Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                              painter = painterResource(R.drawable.ic_nfl_logo),
-                              contentDescription = "NFL Live Logo",
-                              modifier = Modifier.size(24.dp),
-                              tint = Color.Unspecified
+                          Surface(
+                            color = Color.White,
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.size(36.dp)
+                          ) {
+                            Box(contentAlignment = Alignment.Center) {
+                              Icon(
+                                painter = painterResource(R.drawable.ic_nfl_logo),
+                                contentDescription = "NFL Live Logo",
+                                modifier = Modifier.size(24.dp),
+                                tint = Color.Unspecified
+                              )
+                            }
+                          }
+                          Column {
+                            Text(
+                              text = "NFL LIVE",
+                              color = Color.White,
+                              fontSize = 17.sp,
+                              fontWeight = FontWeight.Black
+                            )
+                            Text(
+                              text = "Northern Fashions Ltd.",
+                              color = Color(0xFF94A3B8),
+                              fontSize = 10.sp
+                            )
+                            Text(
+                              text = "Dev: Shamim • IPE & Planning",
+                              color = Color(0xFF38BDF8),
+                              fontSize = 9.5.sp,
+                              fontWeight = FontWeight.Bold
                             )
                           }
                         }
-                        Column {
-                          Text(
-                            text = "NFL LIVE",
-                            color = Color.White,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Black
-                          )
-                          Text(
-                            text = "Northern Fashions Ltd.",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 10.sp
-                          )
-                          Text(
-                            text = "Dev: Shamim • IPE & Planning",
-                            color = Color(0xFF38BDF8),
-                            fontSize = 9.5.sp,
-                            fontWeight = FontWeight.Bold
-                          )
-                        }
-                      }
 
-                      Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
 
-                      // User Info Badge with Direct Switch / Login Action
-                      Surface(
-                        color = Color(0xFF0F172A),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                      ) {
-                        Row(
-                          modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(10.dp),
-                          verticalAlignment = Alignment.CenterVertically,
-                          horizontalArrangement = Arrangement.SpaceBetween
+                        // User Info Badge with Direct Switch / Login Action
+                        Surface(
+                          color = Color(0xFF0F172A),
+                          shape = RoundedCornerShape(8.dp),
+                          modifier = Modifier.fillMaxWidth()
                         ) {
                           Row(
+                            modifier = Modifier
+                              .fillMaxWidth()
+                              .padding(10.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.weight(1f)
+                            horizontalArrangement = Arrangement.SpaceBetween
                           ) {
-                            Box(
-                              modifier = Modifier
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF10B981))
-                            )
-                            Column {
-                              Text(
-                                text = currentRole.displayName,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                maxLines = 1
+                            Row(
+                              verticalAlignment = Alignment.CenterVertically,
+                              horizontalArrangement = Arrangement.spacedBy(8.dp),
+                              modifier = Modifier.weight(1f)
+                            ) {
+                              Box(
+                                modifier = Modifier
+                                  .size(10.dp)
+                                  .clip(CircleShape)
+                                  .background(Color(0xFF10B981))
                               )
-                              Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                              Column {
                                 Text(
-                                  text = "ID: ${currentUser?.id ?: currentRole.name.lowercase()}",
-                                  color = Color(0xFF38BDF8),
-                                  fontSize = 10.sp
+                                  text = currentRole.displayName,
+                                  color = Color.White,
+                                  fontWeight = FontWeight.Bold,
+                                  fontSize = 12.sp,
+                                  maxLines = 1
                                 )
-                                if (currentUser?.isViewOnly == true) {
-                                  Surface(
-                                    color = Color(0xFFFEF3C7),
-                                    shape = RoundedCornerShape(3.dp)
-                                  ) {
-                                    Text(
-                                      text = "VIEW ONLY",
-                                      color = Color(0xFFB45309),
-                                      fontSize = 7.5.sp,
-                                      fontWeight = FontWeight.Bold,
-                                      modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
-                                    )
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                  Text(
+                                    text = "ID: ${currentUser?.id ?: currentRole.name.lowercase()}",
+                                    color = Color(0xFF38BDF8),
+                                    fontSize = 10.sp
+                                  )
+                                  if (currentUser?.isViewOnly == true) {
+                                    Surface(
+                                      color = Color(0xFFFEF3C7),
+                                      shape = RoundedCornerShape(3.dp)
+                                    ) {
+                                      Text(
+                                        text = "VIEW ONLY",
+                                        color = Color(0xFFB45309),
+                                        fontSize = 7.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                      )
+                                    }
                                   }
                                 }
                               }
                             }
-                          }
 
-                          Surface(
-                            onClick = {
-                              currentScreen = AppScreen.LOGIN
-                              scope.launch { drawerState.close() }
-                            },
-                            color = Color(0xFF1E3A8A),
-                            shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF60A5FA).copy(alpha = 0.5f))
-                          ) {
-                            Text(
-                              text = "Switch",
-                              color = Color(0xFFFDE047),
-                              fontSize = 10.sp,
-                              fontWeight = FontWeight.Bold,
-                              modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
+                            Surface(
+                              onClick = {
+                                currentScreen = AppScreen.LOGIN
+                                scope.launch { drawerState.close() }
+                              },
+                              color = Color(0xFF1E3A8A),
+                              shape = RoundedCornerShape(6.dp),
+                              border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF60A5FA).copy(alpha = 0.5f))
+                            ) {
+                              Text(
+                                text = "Switch",
+                                color = Color(0xFFFDE047),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                              )
+                            }
                           }
                         }
                       }
                     }
-                  }
 
-                  Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                  // Direct Login & Account Switch in Drawer
-                  NavigationDrawerItem(
-                    label = { Text("🔑 Switch User / Login Screen", color = Color(0xFFFDE047), fontWeight = FontWeight.Bold, fontSize = 12.sp) },
-                    selected = false,
-                    onClick = {
-                      currentScreen = AppScreen.LOGIN
-                      scope.launch { drawerState.close() }
-                    },
-                    colors = NavigationDrawerItemDefaults.colors(
-                      unselectedContainerColor = Color(0xFF1E293B)
-                    ),
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                  )
-
-                  val isAdminUser = currentUser?.isAdmin == true && currentUser?.role == UserRole.ADMIN
-                  val canViewDash = isAdminUser || (currentUser?.canViewDashboard ?: true)
-                  val canViewTv = isAdminUser || (currentUser?.canViewTvDashboard ?: false)
-                  val canViewMonthly = isAdminUser || (currentUser?.let { it.canViewMonthlyEfficiency || it.canViewMonthlyDhu || it.canViewMonthlyOql } ?: false)
-                  val canViewDeepDive = isAdminUser || (currentUser?.canViewLineDeepDive ?: false)
-                  val canViewAudit = isAdminUser || (currentUser?.canViewAuditLogs ?: false)
-
-                  val canWriteMorningSetup = isAdminUser || (currentUser?.let { it.canMorningTargetWrite && it.role !in setOf(UserRole.MANAGEMENT_VIEW, UserRole.PRODUCTION_MANAGER, UserRole.QUALITY_MANAGER, UserRole.IE, UserRole.QUALITY_REPORTER) } ?: false)
-                  val canWriteMonthlySetup = isAdminUser || (currentUser?.let { it.canMonthlyTargetWrite && it.role == UserRole.IE } ?: false)
-                  val canWriteNpt = isAdminUser || (currentUser?.let { it.canNptWrite && it.role !in setOf(UserRole.MANAGEMENT_VIEW, UserRole.PRODUCTION_MANAGER, UserRole.QUALITY_MANAGER, UserRole.IE) } ?: false)
-                  val canWriteProd = isAdminUser || (currentUser?.let { (it.canProductionWrite || it.canFinishingWrite) && it.role in setOf(UserRole.SUPERVISOR, UserRole.PRODUCTION_REPORTER) } ?: false)
-                  val canWriteQual = isAdminUser || (currentUser?.let { (it.canQualityWrite || it.canOqlWrite) && it.role in setOf(UserRole.QUALITY_REPORTER, UserRole.AUDITOR) } ?: false)
-                  val canWriteAnyEntry = canWriteProd || canWriteQual
-
-                  // 2. Navigation Items
-                  Text(
-                    text = "FACTORY MODULES",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF64748B),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                  )
-
-                  NavigationDrawerItem(
-                    label = { Text("🏠 Home (Live Matrix & Gauges)") },
-                    selected = currentScreen == AppScreen.HOME,
-                    onClick = {
-                      currentScreen = AppScreen.HOME
-                      scope.launch { drawerState.close() }
-                    },
-                    colors = NavigationDrawerItemDefaults.colors(
-                      unselectedContainerColor = Color.Transparent,
-                      selectedContainerColor = Color(0xFF1E293B),
-                      selectedTextColor = Color(0xFF38BDF8),
-                      unselectedTextColor = Color(0xFFE2E8F0)
-                    ),
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
-                  )
-
-                  NavigationDrawerItem(
-                    label = {
-                      Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                      ) {
-                        Text("🔔 Smart Factory Alerts")
-                        val unreadCount = incidents.count { it.status != com.example.model.IncidentStatus.RESOLVED && it.status != com.example.model.IncidentStatus.VERIFIED }
-                        if (unreadCount > 0) {
-                          Surface(
-                            color = Color(0xFFEF4444),
-                            shape = CircleShape
-                          ) {
-                            Text(
-                              text = unreadCount.toString(),
-                              fontSize = 10.sp,
-                              fontWeight = FontWeight.Bold,
-                              color = Color.White,
-                              modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                          }
-                        }
-                      }
-                    },
-                    selected = currentScreen == AppScreen.NOTIFICATION_CENTER,
-                    onClick = {
-                      currentScreen = AppScreen.NOTIFICATION_CENTER
-                      scope.launch { drawerState.close() }
-                    },
-                    colors = NavigationDrawerItemDefaults.colors(
-                      unselectedContainerColor = Color.Transparent,
-                      selectedContainerColor = Color(0xFF1E293B),
-                      selectedTextColor = Color(0xFF38BDF8),
-                      unselectedTextColor = Color(0xFFE2E8F0)
-                    ),
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
-                  )
-
-                  if (canWriteMorningSetup) {
+                    // Direct Login & Account Switch in Drawer
                     NavigationDrawerItem(
-                      label = { Text("🌅 Morning Line Setup") },
-                      selected = currentScreen == AppScreen.SUPERVISOR_SETUP,
+                      label = { Text("🔑 Switch User / Login Screen", color = Color(0xFFFDE047), fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                      selected = false,
                       onClick = {
-                        currentScreen = AppScreen.SUPERVISOR_SETUP
+                        currentScreen = AppScreen.LOGIN
                         scope.launch { drawerState.close() }
                       },
                       colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = Color.Transparent,
-                        selectedContainerColor = Color(0xFF1E293B),
-                        selectedTextColor = Color(0xFF38BDF8),
-                        unselectedTextColor = Color(0xFFE2E8F0)
+                        unselectedContainerColor = Color(0xFF1E293B)
                       ),
-                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     )
-                  }
 
-                  if (canViewDeepDive) {
-                    NavigationDrawerItem(
-                      label = { Text("📊 Line Deep Dive Performance") },
-                      selected = currentScreen == AppScreen.LINE_DEEP_DIVE,
-                      onClick = {
-                        currentScreen = AppScreen.LINE_DEEP_DIVE
-                        scope.launch { drawerState.close() }
-                      },
-                      colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = Color.Transparent,
-                        selectedContainerColor = Color(0xFF1E293B),
-                        selectedTextColor = Color(0xFF38BDF8),
-                        unselectedTextColor = Color(0xFFE2E8F0)
-                      ),
-                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
-                    )
-                  }
+                    val isAdminUser = currentUser?.isAdmin == true && currentUser?.role == UserRole.ADMIN
+                    val canViewDash = isAdminUser || (currentUser?.canViewDashboard ?: true)
+                    val canViewTv = isAdminUser || (currentUser?.canViewTvDashboard ?: false)
+                    val canViewMonthly = isAdminUser || (currentUser?.let { it.canViewMonthlyEfficiency || it.canViewMonthlyDhu || it.canViewMonthlyOql } ?: false)
+                    val canViewDeepDive = isAdminUser || (currentUser?.canViewLineDeepDive ?: false)
+                    val canViewAudit = isAdminUser || (currentUser?.canViewAuditLogs ?: false)
 
-                  if (canWriteNpt) {
-                    NavigationDrawerItem(
-                      label = { Text("⚙️ NPT & Maintenance Tracking") },
-                      selected = currentScreen == AppScreen.NPT_SUPERVISOR,
-                      onClick = {
-                        currentScreen = AppScreen.NPT_SUPERVISOR
-                        scope.launch { drawerState.close() }
-                      },
-                      colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = Color.Transparent,
-                        selectedContainerColor = Color(0xFF1E293B),
-                        selectedTextColor = Color(0xFF38BDF8),
-                        unselectedTextColor = Color(0xFFE2E8F0)
-                      ),
-                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
-                    )
-                  }
+                    val isIeUser = currentUser?.role == UserRole.IE
+                    val canWriteMorningSetup = isAdminUser || isIeUser || (currentUser?.let { it.canMorningTargetWrite && it.role in setOf(UserRole.IE, UserRole.PRODUCTION_REPORTER) } ?: false)
+                    val canWriteMonthlySetup = isAdminUser || isIeUser || (currentUser?.let { it.canMonthlyTargetWrite && it.role == UserRole.IE } ?: false)
+                    val canWriteNpt = isAdminUser || isIeUser || (currentUser?.let { it.canNptWrite && it.role !in setOf(UserRole.MANAGEMENT_VIEW, UserRole.PRODUCTION_MANAGER, UserRole.QUALITY_MANAGER) } ?: false)
+                    val canWriteProd = isAdminUser || isIeUser || (currentUser?.let { (it.canProductionWrite || it.canFinishingWrite) && it.role in setOf(UserRole.SUPERVISOR, UserRole.PRODUCTION_REPORTER, UserRole.IE) } ?: false)
+                    val canWriteQual = isAdminUser || isIeUser || (currentUser?.let { (it.canQualityWrite || it.canOqlWrite) && it.role in setOf(UserRole.QUALITY_REPORTER, UserRole.AUDITOR, UserRole.IE) } ?: false)
+                    val canWriteAnyEntry = canWriteProd || canWriteQual
 
-                  if (canWriteProd) {
-                    NavigationDrawerItem(
-                      label = { Text("🧵 Production Data Entry") },
-                      selected = currentScreen == AppScreen.PRODUCTION_ENTRY,
-                      onClick = {
-                        currentScreen = AppScreen.PRODUCTION_ENTRY
-                        scope.launch { drawerState.close() }
-                      },
-                      colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = Color.Transparent,
-                        selectedContainerColor = Color(0xFF1E293B),
-                        selectedTextColor = Color(0xFF38BDF8),
-                        unselectedTextColor = Color(0xFFE2E8F0)
-                      ),
-                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
-                    )
-                  }
-
-                  if (canWriteQual) {
-                    NavigationDrawerItem(
-                      label = { Text("🔍 Quality / Defect Entry") },
-                      selected = currentScreen == AppScreen.QUALITY_ENTRY,
-                      onClick = {
-                        currentScreen = AppScreen.QUALITY_ENTRY
-                        scope.launch { drawerState.close() }
-                      },
-                      colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = Color.Transparent,
-                        selectedContainerColor = Color(0xFF1E293B),
-                        selectedTextColor = Color(0xFF38BDF8),
-                        unselectedTextColor = Color(0xFFE2E8F0)
-                      ),
-                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
-                    )
-                  }
-
-                  if (canWriteMonthlySetup) {
-                    NavigationDrawerItem(
-                      label = { Text("📅 Monthly Data Entry (মান্থলি ডাটা এন্ট্রি)") },
-                      selected = currentScreen == AppScreen.MONTHLY_SETUP,
-                      onClick = {
-                        currentScreen = AppScreen.MONTHLY_SETUP
-                        scope.launch { drawerState.close() }
-                      },
-                      colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = Color.Transparent,
-                        selectedContainerColor = Color(0xFF1E293B),
-                        selectedTextColor = Color(0xFF38BDF8),
-                        unselectedTextColor = Color(0xFFE2E8F0)
-                      ),
-                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
-                    )
-                  }
-
-                  // Admin & Management section
-                  if (isAdminUser || canViewTv || canViewAudit || canViewMonthly) {
+                    // 2. Navigation Items
                     Text(
-                      text = "MANAGEMENT & SECURITY",
-                      fontSize = 10.sp,
+                      text = "FACTORY MODULES",
+                      fontSize = 10.5.sp,
                       fontWeight = FontWeight.Bold,
-                      color = Color(0xFF64748B),
-                      modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                      color = Color(0xFF94A3B8),
+                      modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                     )
-                  }
 
-                  if (isAdminUser) {
                     NavigationDrawerItem(
-                      label = { Text("👥 User & Access Control") },
-                      selected = currentScreen == AppScreen.ADMIN_USERS,
+                      label = { Text("🏠 Home (Live Matrix & Gauges)", color = if (currentScreen == AppScreen.HOME) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
+                      selected = currentScreen == AppScreen.HOME,
                       onClick = {
-                        currentScreen = AppScreen.ADMIN_USERS
+                        currentScreen = AppScreen.HOME
                         scope.launch { drawerState.close() }
                       },
                       colors = NavigationDrawerItemDefaults.colors(
                         unselectedContainerColor = Color.Transparent,
                         selectedContainerColor = Color(0xFF1E293B),
                         selectedTextColor = Color(0xFF38BDF8),
-                        unselectedTextColor = Color(0xFFE2E8F0)
+                        unselectedTextColor = Color.White
                       ),
                       modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
                     )
-                  }
 
-                  if (canViewMonthly) {
                     NavigationDrawerItem(
-                      label = { Text("📈 Monthly Breakdown Reports") },
-                      selected = currentScreen == AppScreen.MONTHLY_BREAKDOWN,
+                      label = {
+                        Row(
+                          modifier = Modifier.fillMaxWidth(),
+                          verticalAlignment = Alignment.CenterVertically,
+                          horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                          Text("🔔 Smart Factory Alerts", color = if (currentScreen == AppScreen.NOTIFICATION_CENTER) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold)
+                          val unreadCount = incidents.count { it.status != com.example.model.IncidentStatus.RESOLVED && it.status != com.example.model.IncidentStatus.VERIFIED }
+                          if (unreadCount > 0) {
+                            Surface(
+                              color = Color(0xFFEF4444),
+                              shape = CircleShape
+                            ) {
+                              Text(
+                                text = unreadCount.toString(),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                              )
+                            }
+                          }
+                        }
+                      },
+                      selected = currentScreen == AppScreen.NOTIFICATION_CENTER,
                       onClick = {
-                        currentScreen = AppScreen.MONTHLY_BREAKDOWN
+                        currentScreen = AppScreen.NOTIFICATION_CENTER
                         scope.launch { drawerState.close() }
                       },
                       colors = NavigationDrawerItemDefaults.colors(
                         unselectedContainerColor = Color.Transparent,
                         selectedContainerColor = Color(0xFF1E293B),
                         selectedTextColor = Color(0xFF38BDF8),
-                        unselectedTextColor = Color(0xFFE2E8F0)
+                        unselectedTextColor = Color.White
                       ),
                       modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
                     )
-                  }
 
-                  if (canViewTv) {
-                    NavigationDrawerItem(
-                      label = { Text("📺 Smart TV Dashboard (16:9)") },
-                      selected = currentScreen == AppScreen.TV_DASHBOARD,
-                      onClick = {
-                        currentScreen = AppScreen.TV_DASHBOARD
-                        scope.launch { drawerState.close() }
-                      },
-                      colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = Color.Transparent,
-                        selectedContainerColor = Color(0xFF1E293B),
-                        selectedTextColor = Color(0xFF38BDF8),
-                        unselectedTextColor = Color(0xFFE2E8F0)
-                      ),
-                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
-                    )
-                  }
-
-                  if (canViewAudit) {
-                    NavigationDrawerItem(
-                      label = { Text("📜 History & Audit Logs") },
-                      selected = currentScreen == AppScreen.HISTORY_SYNC,
-                      onClick = {
-                        currentScreen = AppScreen.HISTORY_SYNC
-                        scope.launch { drawerState.close() }
-                      },
-                      colors = NavigationDrawerItemDefaults.colors(
-                        unselectedContainerColor = Color.Transparent,
-                        selectedContainerColor = Color(0xFF1E293B),
-                        selectedTextColor = Color(0xFF38BDF8),
-                        unselectedTextColor = Color(0xFFE2E8F0)
-                      ),
-                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
-                    )
-                  }
-
-                  Spacer(modifier = Modifier.height(16.dp))
-                  Divider(color = Color(0xFF334155))
-
-                  // Developer Credit Banner in Drawer
-                  Surface(
-                    color = Color(0xFF0F172A),
-                    shape = RoundedCornerShape(8.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B)),
-                    modifier = Modifier
-                      .fillMaxWidth()
-                      .padding(horizontal = 12.dp, vertical = 6.dp)
-                  ) {
-                    Column(
-                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                      horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                      Text(
-                        text = "This app is developed by Shamim",
-                        color = Color(0xFF38BDF8),
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Bold
-                      )
-                      Spacer(Modifier.height(2.dp))
-                      Text(
-                        text = "IPE and Planning",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
+                    if (canWriteMorningSetup) {
+                      NavigationDrawerItem(
+                        label = { Text("🌅 Morning Line Setup", color = if (currentScreen == AppScreen.SUPERVISOR_SETUP) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
+                        selected = currentScreen == AppScreen.SUPERVISOR_SETUP,
+                        onClick = {
+                          currentScreen = AppScreen.SUPERVISOR_SETUP
+                          scope.launch { drawerState.close() }
+                        },
+                        colors = NavigationDrawerItemDefaults.colors(
+                          unselectedContainerColor = Color.Transparent,
+                          selectedContainerColor = Color(0xFF1E293B),
+                          selectedTextColor = Color(0xFF38BDF8),
+                          unselectedTextColor = Color.White
+                        ),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
                       )
                     }
-                  }
 
-                  // Logout Action
-                  NavigationDrawerItem(
-                    label = { Text("🚪 Logout (${currentUserName.take(15)})", color = Color(0xFFF87171), fontWeight = FontWeight.Bold) },
-                    selected = false,
-                    onClick = {
-                      repository.logout()
-                      currentScreen = AppScreen.LOGIN
-                      scope.launch { drawerState.close() }
-                    },
-                    colors = NavigationDrawerItemDefaults.colors(
-                      unselectedContainerColor = Color.Transparent
-                    ),
-                    modifier = Modifier.padding(10.dp)
-                  )
+                    if (canViewDeepDive) {
+                      NavigationDrawerItem(
+                        label = { Text("📊 Line Deep Dive Performance", color = if (currentScreen == AppScreen.LINE_DEEP_DIVE) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
+                        selected = currentScreen == AppScreen.LINE_DEEP_DIVE,
+                        onClick = {
+                          currentScreen = AppScreen.LINE_DEEP_DIVE
+                          scope.launch { drawerState.close() }
+                        },
+                        colors = NavigationDrawerItemDefaults.colors(
+                          unselectedContainerColor = Color.Transparent,
+                          selectedContainerColor = Color(0xFF1E293B),
+                          selectedTextColor = Color(0xFF38BDF8),
+                          unselectedTextColor = Color.White
+                        ),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                      )
+                    }
+
+                    if (canWriteNpt) {
+                      NavigationDrawerItem(
+                        label = { Text("⚙️ NPT & Maintenance Tracking", color = if (currentScreen == AppScreen.NPT_SUPERVISOR) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
+                        selected = currentScreen == AppScreen.NPT_SUPERVISOR,
+                        onClick = {
+                          currentScreen = AppScreen.NPT_SUPERVISOR
+                          scope.launch { drawerState.close() }
+                        },
+                        colors = NavigationDrawerItemDefaults.colors(
+                          unselectedContainerColor = Color.Transparent,
+                          selectedContainerColor = Color(0xFF1E293B),
+                          selectedTextColor = Color(0xFF38BDF8),
+                          unselectedTextColor = Color.White
+                        ),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                      )
+                    }
+
+                    if (canWriteProd) {
+                      NavigationDrawerItem(
+                        label = { Text("🧵 Production Data Entry", color = if (currentScreen == AppScreen.PRODUCTION_ENTRY) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
+                        selected = currentScreen == AppScreen.PRODUCTION_ENTRY,
+                        onClick = {
+                          currentScreen = AppScreen.PRODUCTION_ENTRY
+                          scope.launch { drawerState.close() }
+                        },
+                        colors = NavigationDrawerItemDefaults.colors(
+                          unselectedContainerColor = Color.Transparent,
+                          selectedContainerColor = Color(0xFF1E293B),
+                          selectedTextColor = Color(0xFF38BDF8),
+                          unselectedTextColor = Color.White
+                        ),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                      )
+                    }
+
+                    if (canWriteQual) {
+                      NavigationDrawerItem(
+                        label = { Text("🔍 Quality / Defect Entry", color = if (currentScreen == AppScreen.QUALITY_ENTRY) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
+                        selected = currentScreen == AppScreen.QUALITY_ENTRY,
+                        onClick = {
+                          currentScreen = AppScreen.QUALITY_ENTRY
+                          scope.launch { drawerState.close() }
+                        },
+                        colors = NavigationDrawerItemDefaults.colors(
+                          unselectedContainerColor = Color.Transparent,
+                          selectedContainerColor = Color(0xFF1E293B),
+                          selectedTextColor = Color(0xFF38BDF8),
+                          unselectedTextColor = Color.White
+                        ),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                      )
+                    }
+
+                    if (canWriteMonthlySetup) {
+                      NavigationDrawerItem(
+                        label = { Text("📅 Monthly Data Entry (মান্থলি ডাটা এন্ট্রি)", color = if (currentScreen == AppScreen.MONTHLY_SETUP) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
+                        selected = currentScreen == AppScreen.MONTHLY_SETUP,
+                        onClick = {
+                          currentScreen = AppScreen.MONTHLY_SETUP
+                          scope.launch { drawerState.close() }
+                        },
+                        colors = NavigationDrawerItemDefaults.colors(
+                          unselectedContainerColor = Color.Transparent,
+                          selectedContainerColor = Color(0xFF1E293B),
+                          selectedTextColor = Color(0xFF38BDF8),
+                          unselectedTextColor = Color.White
+                        ),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                      )
+                    }
+
+                    // Admin & Management section
+                    if (isAdminUser || canViewTv || canViewAudit || canViewMonthly) {
+                      Text(
+                        text = "MANAGEMENT & SECURITY",
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                      )
+                    }
+
+                    if (isAdminUser) {
+                      NavigationDrawerItem(
+                        label = { Text("👥 User & Access Control", color = if (currentScreen == AppScreen.ADMIN_USERS) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
+                        selected = currentScreen == AppScreen.ADMIN_USERS,
+                        onClick = {
+                          currentScreen = AppScreen.ADMIN_USERS
+                          scope.launch { drawerState.close() }
+                        },
+                        colors = NavigationDrawerItemDefaults.colors(
+                          unselectedContainerColor = Color.Transparent,
+                          selectedContainerColor = Color(0xFF1E293B),
+                          selectedTextColor = Color(0xFF38BDF8),
+                          unselectedTextColor = Color.White
+                        ),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                      )
+                    }
+
+                    if (canViewMonthly) {
+                      NavigationDrawerItem(
+                        label = { Text("📈 Monthly Breakdown Reports", color = if (currentScreen == AppScreen.MONTHLY_BREAKDOWN) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
+                        selected = currentScreen == AppScreen.MONTHLY_BREAKDOWN,
+                        onClick = {
+                          currentScreen = AppScreen.MONTHLY_BREAKDOWN
+                          scope.launch { drawerState.close() }
+                        },
+                        colors = NavigationDrawerItemDefaults.colors(
+                          unselectedContainerColor = Color.Transparent,
+                          selectedContainerColor = Color(0xFF1E293B),
+                          selectedTextColor = Color(0xFF38BDF8),
+                          unselectedTextColor = Color.White
+                        ),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                      )
+                    }
+
+                    if (canViewTv) {
+                      NavigationDrawerItem(
+                        label = { Text("📺 Smart TV Dashboard (16:9)", color = if (currentScreen == AppScreen.TV_DASHBOARD) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
+                        selected = currentScreen == AppScreen.TV_DASHBOARD,
+                        onClick = {
+                          currentScreen = AppScreen.TV_DASHBOARD
+                          scope.launch { drawerState.close() }
+                        },
+                        colors = NavigationDrawerItemDefaults.colors(
+                          unselectedContainerColor = Color.Transparent,
+                          selectedContainerColor = Color(0xFF1E293B),
+                          selectedTextColor = Color(0xFF38BDF8),
+                          unselectedTextColor = Color.White
+                        ),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                      )
+                    }
+
+                    if (canViewAudit) {
+                      NavigationDrawerItem(
+                        label = { Text("📜 History & Audit Logs", color = if (currentScreen == AppScreen.HISTORY_SYNC) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
+                        selected = currentScreen == AppScreen.HISTORY_SYNC,
+                        onClick = {
+                          currentScreen = AppScreen.HISTORY_SYNC
+                          scope.launch { drawerState.close() }
+                        },
+                        colors = NavigationDrawerItemDefaults.colors(
+                          unselectedContainerColor = Color.Transparent,
+                          selectedContainerColor = Color(0xFF1E293B),
+                          selectedTextColor = Color(0xFF38BDF8),
+                          unselectedTextColor = Color.White
+                        ),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                      )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Divider(color = Color(0xFF334155))
+
+                    // Developer Credit Banner in Drawer
+                    Surface(
+                      color = Color(0xFF0F172A),
+                      shape = RoundedCornerShape(8.dp),
+                      border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B)),
+                      modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                      Column(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                      ) {
+                        Text(
+                          text = "This app is developed by Shamim",
+                          color = Color(0xFF38BDF8),
+                          fontSize = 11.5.sp,
+                          fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                          text = "IPE and Planning",
+                          color = Color(0xFF94A3B8),
+                          fontSize = 10.sp,
+                          fontWeight = FontWeight.Medium
+                        )
+                      }
+                    }
+
+                    // Logout Action
+                    NavigationDrawerItem(
+                      label = { Text("🚪 Logout (${currentUserName.take(15)})", color = Color(0xFFF87171), fontWeight = FontWeight.Bold) },
+                      selected = false,
+                      onClick = {
+                        repository.logout()
+                        currentScreen = AppScreen.LOGIN
+                        scope.launch { drawerState.close() }
+                      },
+                      colors = NavigationDrawerItemDefaults.colors(
+                        unselectedContainerColor = Color.Transparent
+                      ),
+                      modifier = Modifier.padding(10.dp)
+                    )
+                  }
                 }
               }
             }
           ) {
             val isAdminUser = currentUser?.isAdmin == true && currentUser?.role == UserRole.ADMIN
-            val canViewDeepDive = isAdminUser || (currentUser?.canViewLineDeepDive ?: false)
-            val canWriteMorningSetup = isAdminUser || (currentUser?.let { it.canMorningTargetWrite && it.role !in setOf(UserRole.MANAGEMENT_VIEW, UserRole.PRODUCTION_MANAGER, UserRole.QUALITY_MANAGER, UserRole.IE, UserRole.QUALITY_REPORTER) } ?: false)
-            val canWriteMonthlySetup = isAdminUser || (currentUser?.let { it.canMonthlyTargetWrite && it.role == UserRole.IE } ?: false)
-            val canWriteNpt = isAdminUser || (currentUser?.let { it.canNptWrite && it.role !in setOf(UserRole.MANAGEMENT_VIEW, UserRole.PRODUCTION_MANAGER, UserRole.QUALITY_MANAGER, UserRole.IE) } ?: false)
-            val canWriteProd = isAdminUser || (currentUser?.let { (it.canProductionWrite || it.canFinishingWrite) && it.role in setOf(UserRole.SUPERVISOR, UserRole.PRODUCTION_REPORTER) } ?: false)
-            val canWriteQual = isAdminUser || (currentUser?.let { (it.canQualityWrite || it.canOqlWrite) && it.role in setOf(UserRole.QUALITY_REPORTER, UserRole.AUDITOR) } ?: false)
+            val isIeUser = currentUser?.role == UserRole.IE
+            val canViewDeepDive = isAdminUser || isIeUser || (currentUser?.canViewLineDeepDive ?: false)
+            val canWriteMorningSetup = isAdminUser || isIeUser || (currentUser?.let { it.canMorningTargetWrite && it.role in setOf(UserRole.IE, UserRole.PRODUCTION_REPORTER) } ?: false)
+            val canWriteMonthlySetup = isAdminUser || isIeUser || (currentUser?.let { it.canMonthlyTargetWrite && it.role == UserRole.IE } ?: false)
+            val canWriteNpt = isAdminUser || isIeUser || (currentUser?.let { it.canNptWrite && it.role !in setOf(UserRole.MANAGEMENT_VIEW, UserRole.PRODUCTION_MANAGER, UserRole.QUALITY_MANAGER) } ?: false)
+            val canWriteProd = isAdminUser || isIeUser || (currentUser?.let { (it.canProductionWrite || it.canFinishingWrite) && it.role in setOf(UserRole.SUPERVISOR, UserRole.PRODUCTION_REPORTER, UserRole.IE) } ?: false)
+            val canWriteQual = isAdminUser || isIeUser || (currentUser?.let { (it.canQualityWrite || it.canOqlWrite) && it.role in setOf(UserRole.QUALITY_REPORTER, UserRole.AUDITOR, UserRole.IE) } ?: false)
             val canWriteAnyEntry = canWriteProd || canWriteQual
 
             Scaffold(
@@ -694,6 +713,8 @@ class MainActivity : ComponentActivity() {
               }
             ) { innerPadding ->
               Surface(
+                color = Color(0xFFF1F5F9),
+                contentColor = Color(0xFF0F172A),
                 modifier = Modifier
                   .fillMaxSize()
                   .padding(if (currentScreen == AppScreen.TV_DASHBOARD) PaddingValues(0.dp) else innerPadding)
@@ -707,7 +728,7 @@ class MainActivity : ComponentActivity() {
                     repository = repository,
                     onNavigateToProduction = { if (canWriteProd) currentScreen = AppScreen.PRODUCTION_ENTRY },
                     onNavigateToQuality = { if (canWriteQual) currentScreen = AppScreen.QUALITY_ENTRY },
-                    onNavigateToNpt = { if (canWriteNpt) currentScreen = AppScreen.NPT_SUPERVISOR },
+                    onNavigateToNpt = { currentScreen = AppScreen.NPT_SUPERVISOR },
                     onNavigateToSetup = { if (canWriteMorningSetup) currentScreen = AppScreen.SUPERVISOR_SETUP },
                     onNavigateToTv = { currentScreen = AppScreen.TV_DASHBOARD },
                     onNavigateToHistory = { currentScreen = AppScreen.HISTORY_SYNC },

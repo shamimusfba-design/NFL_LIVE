@@ -514,6 +514,18 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         put("status", inc.status.name)
         put("isMutedOnCurrentDevice", inc.isMutedOnCurrentDevice)
         put("reportedBy", inc.reportedBy)
+        val commentsArr = JSONArray()
+        inc.comments.forEach { c ->
+          commentsArr.put(JSONObject().apply {
+            put("id", c.id)
+            put("incidentId", c.incidentId)
+            put("userName", c.userName)
+            put("userRole", c.userRole)
+            put("commentText", c.commentText)
+            put("timestamp", c.timestamp)
+          })
+        }
+        put("comments", commentsArr)
       })
     }
     prefs.edit().putString(KEY_SAVED_INCIDENTS, arr.toString()).apply()
@@ -525,6 +537,23 @@ class GoogleSheetsStorageService(private val appContext: Context) {
       val arr = JSONArray(raw)
       (0 until arr.length()).mapNotNull { i ->
         val obj = arr.optJSONObject(i) ?: return@mapNotNull null
+        val commentsList = mutableListOf<IncidentComment>()
+        val commentsArr = obj.optJSONArray("comments")
+        if (commentsArr != null) {
+          for (cIdx in 0 until commentsArr.length()) {
+            val cObj = commentsArr.optJSONObject(cIdx) ?: continue
+            commentsList.add(
+              IncidentComment(
+                id = cObj.optString("id", UUID.randomUUID().toString()),
+                incidentId = cObj.optString("incidentId", ""),
+                userName = cObj.optString("userName", "User"),
+                userRole = cObj.optString("userRole", ""),
+                commentText = cObj.optString("commentText", ""),
+                timestamp = cObj.optLong("timestamp", System.currentTimeMillis())
+              )
+            )
+          }
+        }
         IncidentItem(
           id = obj.optString("id", UUID.randomUUID().toString()),
           submissionId = obj.optString("submissionId", UUID.randomUUID().toString()),
@@ -554,6 +583,7 @@ class GoogleSheetsStorageService(private val appContext: Context) {
           status = runCatching { IncidentStatus.valueOf(obj.optString("status", "OPEN")) }.getOrDefault(IncidentStatus.OPEN),
           isMutedOnCurrentDevice = obj.optBoolean("isMutedOnCurrentDevice", false),
           reportedBy = obj.optString("reportedBy", "Supervisor"),
+          comments = commentsList,
           isDemo = false
         )
       }
@@ -1169,6 +1199,7 @@ class GoogleSheetsStorageService(private val appContext: Context) {
       setup.targetEfficiencyPct,
       setup.operatorsCount,
       setup.helpersCount,
+      setup.finishingStaffCount,
       if (setup.includeHelpersInEfficiency) "YES" else "NO",
       setup.workingMinutesPerHour,
       isoTime(setup.snapshotTimestamp),
@@ -1179,7 +1210,7 @@ class GoogleSheetsStorageService(private val appContext: Context) {
     )
     val headers = listOf(
       "line_id", "effective_date", "style_number", "order_number", "smv",
-      "target_hourly_pcs", "target_eff_pct", "operators_count", "helpers_count",
+      "target_hourly_pcs", "target_eff_pct", "operators_count", "helpers_count", "finishing_count",
       "include_helpers", "working_mins_hr", "snapshot_time", "floor",
       "item_name", "target_daily_pcs", "machines_count"
     )

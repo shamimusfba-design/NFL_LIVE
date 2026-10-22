@@ -231,29 +231,36 @@ fun HistorySyncScreen(
                       if (showCorrectDialog) {
                         AlertDialog(
                           onDismissRequest = { showCorrectDialog = false },
-                          title = { Text("Admin Record Correction (Line ${item.lineId})", fontWeight = FontWeight.Bold, fontSize = 15.sp) },
+                          containerColor = Color.White,
+                          title = { Text("Admin Record Correction (Line ${item.lineId})", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF0F172A)) },
                           text = {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                              Text("Date: ${item.date} • Slot: ${item.hourSlot}", fontSize = 12.sp, color = Color(0xFF546E7A))
+                              Text("Date: ${item.date} • Slot: ${item.hourSlot}", fontSize = 12.sp, color = Color(0xFF334155))
                               OutlinedTextField(
                                 value = newQtyInput,
                                 onValueChange = { if (it.all { ch -> ch.isDigit() }) newQtyInput = it },
-                                label = { Text("Corrected Output Qty (pcs)") },
+                                label = { Text("Corrected Output Qty (pcs)", color = Color(0xFF1E293B)) },
                                 singleLine = true,
+                                colors = com.example.ui.theme.nflInputColors(),
+                                textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Bold),
                                 modifier = Modifier.fillMaxWidth()
                               )
                               OutlinedTextField(
                                 value = newRemarksInput,
                                 onValueChange = { newRemarksInput = it },
-                                label = { Text("Remarks") },
+                                label = { Text("Remarks", color = Color(0xFF1E293B)) },
                                 singleLine = true,
+                                colors = com.example.ui.theme.nflInputColors(),
+                                textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Bold),
                                 modifier = Modifier.fillMaxWidth()
                               )
                               OutlinedTextField(
                                 value = reasonInput,
                                 onValueChange = { reasonInput = it; actionError = null },
-                                label = { Text("Mandatory Correction Reason (Audit Log) *") },
+                                label = { Text("Mandatory Correction Reason (Audit Log) *", color = Color(0xFF1E293B)) },
                                 singleLine = false,
+                                colors = com.example.ui.theme.nflInputColors(),
+                                textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Bold),
                                 modifier = Modifier.fillMaxWidth()
                               )
                               if (actionError != null) {
@@ -295,14 +302,17 @@ fun HistorySyncScreen(
                       if (showDeleteDialog) {
                         AlertDialog(
                           onDismissRequest = { showDeleteDialog = false },
-                          title = { Text("Admin Delete Record (Line ${item.lineId})", fontWeight = FontWeight.Bold, fontSize = 15.sp) },
+                          containerColor = Color.White,
+                          title = { Text("Admin Delete Record (Line ${item.lineId})", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF0F172A)) },
                           text = {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                              Text("Deleting ${item.outputQty} pcs for Line ${item.lineId} (${item.date} • ${item.hourSlot}).", fontSize = 12.sp)
+                              Text("Deleting ${item.outputQty} pcs for Line ${item.lineId} (${item.date} • ${item.hourSlot}).", fontSize = 12.sp, color = Color(0xFF0F172A))
                               OutlinedTextField(
                                 value = reasonInput,
                                 onValueChange = { reasonInput = it; actionError = null },
-                                label = { Text("Mandatory Deletion Reason (Audit Log) *") },
+                                label = { Text("Mandatory Deletion Reason (Audit Log) *", color = Color(0xFF1E293B)) },
+                                colors = com.example.ui.theme.nflInputColors(),
+                                textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Bold),
                                 modifier = Modifier.fillMaxWidth()
                               )
                               if (actionError != null) {
@@ -437,28 +447,35 @@ fun HistorySyncScreen(
                       if (showCorrectDialog) {
                         AlertDialog(
                           onDismissRequest = { showCorrectDialog = false },
-                          title = { Text("Admin QA Record Correction (Line ${item.lineId})", fontWeight = FontWeight.Bold, fontSize = 15.sp) },
+                          containerColor = Color.White,
+                          title = { Text("Admin QA Record Correction (Line ${item.lineId})", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF0F172A)) },
                           text = {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                              Text("Date: ${item.date} • Slot: ${item.hourSlot}", fontSize = 12.sp, color = Color(0xFF546E7A))
+                              Text("Date: ${item.date} • Slot: ${item.hourSlot}", fontSize = 12.sp, color = Color(0xFF334155))
                               OutlinedTextField(
                                 value = newCheckedInput,
                                 onValueChange = { if (it.all { ch -> ch.isDigit() }) newCheckedInput = it },
-                                label = { Text("Checked Garments") },
+                                label = { Text("Checked Garments", color = Color(0xFF1E293B)) },
                                 singleLine = true,
+                                colors = com.example.ui.theme.nflInputColors(),
+                                textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Bold),
                                 modifier = Modifier.fillMaxWidth()
                               )
                               OutlinedTextField(
                                 value = newDefectiveInput,
                                 onValueChange = { if (it.all { ch -> ch.isDigit() }) newDefectiveInput = it },
-                                label = { Text("Defective Garments") },
+                                label = { Text("Defective Garments", color = Color(0xFF1E293B)) },
                                 singleLine = true,
+                                colors = com.example.ui.theme.nflInputColors(),
+                                textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Bold),
                                 modifier = Modifier.fillMaxWidth()
                               )
                               OutlinedTextField(
                                 value = reasonInput,
                                 onValueChange = { reasonInput = it; actionError = null },
-                                label = { Text("Mandatory Correction Reason (Audit Log) *") },
+                                label = { Text("Mandatory Correction Reason (Audit Log) *", color = Color(0xFF1E293B)) },
+                                colors = com.example.ui.theme.nflInputColors(),
+                                textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Bold),
                                 modifier = Modifier.fillMaxWidth()
                               )
                               if (actionError != null) {
@@ -501,14 +518,17 @@ fun HistorySyncScreen(
                       if (showDeleteDialog) {
                         AlertDialog(
                           onDismissRequest = { showDeleteDialog = false },
-                          title = { Text("Admin Delete QA Record (Line ${item.lineId})", fontWeight = FontWeight.Bold, fontSize = 15.sp) },
+                          containerColor = Color.White,
+                          title = { Text("Admin Delete QA Record (Line ${item.lineId})", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF0F172A)) },
                           text = {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                              Text("Deleting QA inspection for Line ${item.lineId} (${item.date} • ${item.hourSlot}).", fontSize = 12.sp)
+                              Text("Deleting QA inspection for Line ${item.lineId} (${item.date} • ${item.hourSlot}).", fontSize = 12.sp, color = Color(0xFF0F172A))
                               OutlinedTextField(
                                 value = reasonInput,
                                 onValueChange = { reasonInput = it; actionError = null },
-                                label = { Text("Mandatory Deletion Reason (Audit Log) *") },
+                                label = { Text("Mandatory Deletion Reason (Audit Log) *", color = Color(0xFF1E293B)) },
+                                colors = com.example.ui.theme.nflInputColors(),
+                                textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Bold),
                                 modifier = Modifier.fillMaxWidth()
                               )
                               if (actionError != null) {

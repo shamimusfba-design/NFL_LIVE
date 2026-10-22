@@ -46,11 +46,11 @@ fun MonthlySetupScreen(
   val context = LocalContext.current
   val currentMonthKey = remember { SimpleDateFormat("yyyy-MM", Locale.US).format(Date()) }
   val monthlyPrefs = remember(context) { context.getSharedPreferences("nfl_monthly_data_settings", android.content.Context.MODE_PRIVATE) }
-  var autoMonthlyMode by remember(currentMonthKey) { mutableStateOf(monthlyPrefs.getBoolean("auto_$currentMonthKey", currentMonthKey > "2026-10")) }
+  var autoMonthlyMode by remember(currentMonthKey) { mutableStateOf(monthlyPrefs.getBoolean("auto_$currentMonthKey", false)) }
   val userName by repository.currentUserName.collectAsState()
   val currentUser by repository.currentUser.collectAsState()
-  val canMonthlyTargetWrite = currentUser?.let { it.isAdmin || (it.role == com.example.model.UserRole.IE && it.canMonthlyTargetWrite) } ?: false
-  val canEditLineMonthlyData = currentUser?.let { it.isAdmin || (it.role == com.example.model.UserRole.IE && it.canMonthlyTargetWrite) } ?: false
+  val canMonthlyTargetWrite = currentUser?.let { it.isAdmin || it.role == com.example.model.UserRole.IE || it.canMonthlyTargetWrite } ?: false
+  val canEditLineMonthlyData = currentUser?.let { it.isAdmin || it.role == com.example.model.UserRole.IE || it.canMonthlyTargetWrite } ?: false
   var selectedFloor by remember { mutableStateOf(FloorScope.SEW_2) }
   val selectedFloorName = if (selectedFloor == FloorScope.ALL) "All Floor" else selectedFloor.apiValue
   val autoFloorTarget = remember(selectedFloor, productionEntries, qualityEntries, currentMonthKey) {
@@ -92,8 +92,10 @@ fun MonthlySetupScreen(
   }
 
   Scaffold(
+    contentWindowInsets = WindowInsets(0, 0, 0, 0),
     topBar = {
       TopAppBar(
+        windowInsets = WindowInsets(0, 0, 0, 0),
         title = {
           Column {
             Text("Monthly Achieved Data Setup", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
@@ -112,11 +114,11 @@ fun MonthlySetupScreen(
   ) { paddingValues ->
     Column(
       modifier = Modifier
-        .fillMaxSize()
+        .fillMaxWidth()
         .padding(paddingValues)
         .verticalScroll(rememberScrollState())
-        .padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp)
+        .padding(8.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
       // 1. Floor Selector Chips
       Card(
@@ -207,12 +209,14 @@ fun MonthlySetupScreen(
           OutlinedTextField(
             value = updateEffText,
             onValueChange = { updateEffText = it },
-            label = { Text("Monthly Achieved Efficiency (%) — আপটুডেট এচিভ") },
-            placeholder = { Text("e.g. 71.5") },
+            label = { Text("Monthly Achieved Efficiency (%) — আপটুডেট এচিভ", color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) },
+            placeholder = { Text("e.g. 71.5", color = Color(0xFF475569)) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             enabled = canMonthlyTargetWrite && !autoMonthlyMode,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            colors = com.example.ui.theme.nflInputColors(),
+            textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Black, fontSize = 14.sp)
           )
 
           // Floor-level Monthly Target and Achievement (entered separately from line data)
@@ -220,20 +224,24 @@ fun MonthlySetupScreen(
             OutlinedTextField(
               value = floorTargetPcsText,
               onValueChange = { floorTargetPcsText = it },
-              label = { Text("Floor Monthly Target (pcs)") },
+              label = { Text("Floor Monthly Target (pcs)", color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) },
               modifier = Modifier.weight(1f),
               singleLine = true,
               enabled = canMonthlyTargetWrite && !autoMonthlyMode,
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+              colors = com.example.ui.theme.nflInputColors(),
+              textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Black, fontSize = 14.sp)
             )
             OutlinedTextField(
               value = floorAchievementPcsText,
               onValueChange = { floorAchievementPcsText = it },
-              label = { Text("Floor Monthly Achievement (pcs)") },
+              label = { Text("Floor Monthly Achievement (pcs)", color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) },
               modifier = Modifier.weight(1f),
               singleLine = true,
               enabled = canMonthlyTargetWrite && !autoMonthlyMode,
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+              colors = com.example.ui.theme.nflInputColors(),
+              textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Black, fontSize = 14.sp)
             )
           }
 
@@ -242,23 +250,27 @@ fun MonthlySetupScreen(
             OutlinedTextField(
               value = updateOqlText,
               onValueChange = { updateOqlText = it },
-              label = { Text("Monthly Achieved OQL (%)") },
-              placeholder = { Text("e.g. 3.20") },
+              label = { Text("Monthly Achieved OQL (%)", color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) },
+              placeholder = { Text("e.g. 3.20", color = Color(0xFF475569)) },
               modifier = Modifier.weight(1f),
               singleLine = true,
               enabled = canMonthlyTargetWrite && !autoMonthlyMode,
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+              colors = com.example.ui.theme.nflInputColors(),
+              textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Black, fontSize = 14.sp)
             )
 
             OutlinedTextField(
               value = updateDhuText,
               onValueChange = { updateDhuText = it },
-              label = { Text("Monthly Achieved DHU") },
-              placeholder = { Text("e.g. 1.75") },
+              label = { Text("Monthly Achieved DHU", color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) },
+              placeholder = { Text("e.g. 1.75", color = Color(0xFF475569)) },
               modifier = Modifier.weight(1f),
               singleLine = true,
               enabled = canMonthlyTargetWrite && !autoMonthlyMode,
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+              colors = com.example.ui.theme.nflInputColors(),
+              textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Black, fontSize = 14.sp)
             )
           }
 
@@ -270,23 +282,27 @@ fun MonthlySetupScreen(
             OutlinedTextField(
               value = friPassText,
               onValueChange = { friPassText = it },
-              label = { Text("FRI Pass Rate (%)") },
-              placeholder = { Text("e.g. 100.0") },
+              label = { Text("FRI Pass Rate (%)", color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) },
+              placeholder = { Text("e.g. 100.0", color = Color(0xFF475569)) },
               modifier = Modifier.weight(1f),
               singleLine = true,
               enabled = canMonthlyTargetWrite && !autoMonthlyMode,
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+              colors = com.example.ui.theme.nflInputColors(),
+              textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Black, fontSize = 14.sp)
             )
 
             OutlinedTextField(
               value = bsOqlText,
               onValueChange = { bsOqlText = it },
-              label = { Text("BS OQL (%) — IE Entry") },
-              placeholder = { Text("e.g. 2.40") },
+              label = { Text("BS OQL (%) — IE Entry", color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) },
+              placeholder = { Text("e.g. 2.40", color = Color(0xFF475569)) },
               modifier = Modifier.weight(1f),
               singleLine = true,
               enabled = canMonthlyTargetWrite && !autoMonthlyMode,
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+              colors = com.example.ui.theme.nflInputColors(),
+              textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Black, fontSize = 14.sp)
             )
           }
 
@@ -570,33 +586,38 @@ private fun LineMonthlyDataRow(
     }
     OutlinedTextField(
       value = draft.efficiency, onValueChange = { onDraftChange(draft.copy(efficiency = it)) },
-      label = { Text("Efficiency %", fontSize = 9.sp) }, singleLine = true, enabled = canEdit,
+      label = { Text("Efficiency %", fontSize = 9.sp, color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) }, singleLine = true, enabled = canEdit,
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-      modifier = Modifier.width(120.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+      colors = com.example.ui.theme.nflInputColors(),
+      modifier = Modifier.width(120.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF0A0F1D))
     )
     OutlinedTextField(
       value = draft.monthlyTarget, onValueChange = { onDraftChange(draft.copy(monthlyTarget = it)) },
-      label = { Text("Target pcs", fontSize = 9.sp) }, singleLine = true, enabled = canEdit,
+      label = { Text("Target pcs", fontSize = 9.sp, color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) }, singleLine = true, enabled = canEdit,
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-      modifier = Modifier.width(110.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+      colors = com.example.ui.theme.nflInputColors(),
+      modifier = Modifier.width(110.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF0A0F1D))
     )
     OutlinedTextField(
       value = draft.achievement, onValueChange = { onDraftChange(draft.copy(achievement = it)) },
-      label = { Text("Achieved pcs", fontSize = 9.sp) }, singleLine = true, enabled = canEdit,
+      label = { Text("Achieved pcs", fontSize = 9.sp, color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) }, singleLine = true, enabled = canEdit,
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-      modifier = Modifier.width(130.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+      colors = com.example.ui.theme.nflInputColors(),
+      modifier = Modifier.width(130.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF0A0F1D))
     )
     OutlinedTextField(
       value = draft.dhu, onValueChange = { onDraftChange(draft.copy(dhu = it)) },
-      label = { Text("DHU %", fontSize = 9.sp) }, singleLine = true, enabled = canEdit,
+      label = { Text("DHU %", fontSize = 9.sp, color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) }, singleLine = true, enabled = canEdit,
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-      modifier = Modifier.width(105.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+      colors = com.example.ui.theme.nflInputColors(),
+      modifier = Modifier.width(105.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF0A0F1D))
     )
     OutlinedTextField(
       value = draft.oql, onValueChange = { onDraftChange(draft.copy(oql = it)) },
-      label = { Text("OQL %", fontSize = 9.sp) }, singleLine = true, enabled = canEdit,
+      label = { Text("OQL %", fontSize = 9.sp, color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) }, singleLine = true, enabled = canEdit,
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-      modifier = Modifier.width(105.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+      colors = com.example.ui.theme.nflInputColors(),
+      modifier = Modifier.width(105.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF0A0F1D))
     )
   }
 }

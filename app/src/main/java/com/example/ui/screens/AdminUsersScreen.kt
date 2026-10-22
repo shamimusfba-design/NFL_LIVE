@@ -797,16 +797,18 @@ fun AdminUsersScreen(
               OutlinedTextField(
                 value = userSearchQuery,
                 onValueChange = { userSearchQuery = it },
-                placeholder = { Text("Search users by name, ID or role...", fontSize = 12.sp, color = Color(0xFF94A3B8)) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(18.dp)) },
+                placeholder = { Text("Search users by name, ID or role...", fontSize = 12.sp, color = Color(0xFF475569)) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(18.dp)) },
                 trailingIcon = {
                   if (userSearchQuery.isNotEmpty()) {
                     IconButton(onClick = { userSearchQuery = "" }) {
-                      Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF64748B), modifier = Modifier.size(18.dp))
+                      Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF475569), modifier = Modifier.size(18.dp))
                     }
                   }
                 },
                 singleLine = true,
+                colors = com.example.ui.theme.nflInputColors(),
+                textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Bold, fontSize = 13.sp),
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp)
               )
@@ -1047,6 +1049,7 @@ fun AdminUsersScreen(
         showUserDialog = false
         editingUser = null
       },
+      containerColor = Color.White,
       title = {
         Column {
           Text(if (editingUser != null) "Edit User Permissions" else "Create New Factory User", fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -1065,6 +1068,8 @@ fun AdminUsersScreen(
             placeholder = { Text("e.g. prod_01, sup_line_k") },
             enabled = editingUser == null,
             singleLine = true,
+            colors = com.example.ui.theme.nflInputColors(),
+            textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
             modifier = Modifier.fillMaxWidth()
           )
 
@@ -1074,6 +1079,8 @@ fun AdminUsersScreen(
             label = { Text("Full Name *") },
             placeholder = { Text("e.g. Md. Shamim Hossain") },
             singleLine = true,
+            colors = com.example.ui.theme.nflInputColors(),
+            textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
             modifier = Modifier.fillMaxWidth()
           )
 
@@ -1082,6 +1089,8 @@ fun AdminUsersScreen(
             onValueChange = { formPassword = it },
             label = { Text("Password *") },
             singleLine = true,
+            colors = com.example.ui.theme.nflInputColors(),
+            textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
             modifier = Modifier.fillMaxWidth()
           )
 
@@ -1158,6 +1167,8 @@ fun AdminUsersScreen(
             onValueChange = { formLine = it },
             label = { Text("Assigned Line (e.g. K1, J1, Iron 1, Packing 1, All)") },
             singleLine = true,
+            colors = com.example.ui.theme.nflInputColors(),
+            textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
             modifier = Modifier.fillMaxWidth()
           )
 

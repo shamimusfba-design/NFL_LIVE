@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -55,11 +56,12 @@ fun LoginScreen(
   var otpCodeInput by remember { mutableStateOf("") }
   var isSendingOtp by remember { mutableStateOf(false) }
 
-  Box(
-    modifier = Modifier
-      .fillMaxSize()
-      .background(Brush.verticalGradient(listOf(Color(0xFF061426), Color(0xFF092543), Color(0xFF04101F))))
-  ) {
+  CompositionLocalProvider(LocalContentColor provides Color.White) {
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .background(Brush.verticalGradient(listOf(Color(0xFF061426), Color(0xFF092543), Color(0xFF04101F))))
+    ) {
     Column(
       modifier = Modifier
         .fillMaxSize()
@@ -130,8 +132,9 @@ fun LoginScreen(
               errorMessage = null
               infoMessage = null
             },
+            textStyle = TextStyle(color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium),
             label = { Text("Employee ID", color = LoginMuted) },
-            placeholder = { Text("e.g. admin, supervisor, or employee card #", color = LoginMuted.copy(alpha = 0.5f), fontSize = 13.sp) },
+            placeholder = { Text("e.g. admin, supervisor, or employee card #", color = LoginMuted.copy(alpha = 0.6f), fontSize = 13.sp) },
             leadingIcon = { Icon(Icons.Default.Badge, contentDescription = null, tint = LoginCyan) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag("login_id_input"),
@@ -144,6 +147,7 @@ fun LoginScreen(
               passwordInput = it
               errorMessage = null
             },
+            textStyle = TextStyle(color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium),
             label = { Text("Password", color = LoginMuted) },
             leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = LoginCyan) },
             trailingIcon = {
@@ -208,6 +212,7 @@ fun LoginScreen(
                 OutlinedTextField(
                   value = otpCodeInput,
                   onValueChange = { if (it.length <= 6) otpCodeInput = it.filter { ch -> ch.isDigit() } },
+                  textStyle = TextStyle(color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold),
                   label = { Text("6-Digit Gmail Verification Code", color = LoginMuted) },
                   singleLine = true,
                   keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
@@ -296,6 +301,28 @@ fun LoginScreen(
             Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(10.dp))
             Text("Sign in securely", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+          }
+
+          // 1-Click TV Wallboard Display Launch (View-Only Mode for Smart TVs & Android TV Boxes)
+          OutlinedButton(
+            onClick = {
+              if (repository.login("management", "123")) {
+                pendingApprovalStatus = null
+                errorMessage = null
+                onLoginSuccess()
+              }
+            },
+            modifier = Modifier.fillMaxWidth().height(48.dp).testTag("login_tv_wallboard_btn"),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.5.dp, LoginTeal),
+            colors = ButtonDefaults.outlinedButtonColors(
+              containerColor = LoginTeal.copy(alpha = 0.12f),
+              contentColor = LoginTeal
+            )
+          ) {
+            Icon(Icons.Default.Tv, contentDescription = null, tint = LoginTeal, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Launch Smart TV Wallboard (Auto-Fit Display)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
           }
 
           TextButton(
@@ -458,7 +485,8 @@ fun LoginScreen(
           OutlinedTextField(
             value = usernameInput,
             onValueChange = { usernameInput = it },
-            label = { Text("Company ID / Employee ID") },
+            textStyle = TextStyle(color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium),
+            label = { Text("Company ID / Employee ID", color = Color(0xFFCBD5E1)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             colors = loginFieldColors()
@@ -466,7 +494,8 @@ fun LoginScreen(
           OutlinedTextField(
             value = otpCodeInput,
             onValueChange = { if (it.length <= 6) otpCodeInput = it.filter { ch -> ch.isDigit() } },
-            label = { Text("6-Digit Verification Code") },
+            textStyle = TextStyle(color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold),
+            label = { Text("6-Digit Verification Code", color = Color(0xFFCBD5E1)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
             modifier = Modifier.fillMaxWidth(),
@@ -524,17 +553,21 @@ fun LoginScreen(
       }
     )
   }
+  }
 }
 
 @Composable
 private fun loginFieldColors() = OutlinedTextFieldDefaults.colors(
-  focusedTextColor = LoginText,
-  unfocusedTextColor = LoginText,
+  focusedTextColor = Color.White,
+  unfocusedTextColor = Color.White,
   focusedBorderColor = LoginCyan,
   unfocusedBorderColor = LoginBorder,
-  cursorColor = LoginCyan,
-  focusedContainerColor = LoginBg.copy(alpha = 0.35f),
-  unfocusedContainerColor = LoginBg.copy(alpha = 0.35f),
+  cursorColor = Color(0xFF38BDF8),
+  focusedContainerColor = Color(0xFF04101F).copy(alpha = 0.5f),
+  unfocusedContainerColor = Color(0xFF04101F).copy(alpha = 0.5f),
   focusedLabelColor = LoginCyan,
-  unfocusedLabelColor = LoginMuted
+  unfocusedLabelColor = Color(0xFFCBD5E1),
+  focusedPlaceholderColor = Color(0xFF94A3B8),
+  unfocusedPlaceholderColor = Color(0xFF64748B)
 )
+

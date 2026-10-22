@@ -361,6 +361,14 @@ fun NotificationCenterScreen(
               },
               onSilence = {
                 repository.silenceActiveAlarm()
+              },
+              onAddComment = { commentText ->
+                repository.addIncidentComment(
+                  incident.id,
+                  commentText,
+                  currentUser?.name ?: currentRole.displayName,
+                  currentUser?.role?.displayName ?: currentRole.displayName
+                )
               }
             )
           }
@@ -374,16 +382,19 @@ fun NotificationCenterScreen(
     val inc = resolvingIncident!!
     AlertDialog(
       onDismissRequest = { resolvingIncident = null },
-      title = { Text("Resolve Issue [${inc.lineId}]", fontWeight = FontWeight.Bold) },
+      containerColor = Color.White,
+      title = { Text("Resolve Issue [${inc.lineId}]", fontWeight = FontWeight.Bold, color = Color(0xFF0F172A)) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text("Category: ${inc.category.displayName}", fontSize = 12.sp, color = Color(0xFF64748B))
-          Text("Description: ${inc.description}", fontSize = 12.sp)
+          Text("Category: ${inc.category.displayName}", fontSize = 12.sp, color = Color(0xFF475569))
+          Text("Description: ${inc.description}", fontSize = 12.sp, color = Color(0xFF0F172A))
           OutlinedTextField(
             value = resolutionNoteInput,
             onValueChange = { resolutionNoteInput = it },
-            label = { Text("Resolution Note / Actions Taken") },
-            placeholder = { Text("e.g. Belt replaced, needle adjusted") },
+            label = { Text("Resolution Note / Actions Taken", color = Color(0xFF1E293B)) },
+            placeholder = { Text("e.g. Belt replaced, needle adjusted", color = Color(0xFF475569)) },
+            colors = com.example.ui.theme.nflInputColors(),
+            textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Bold),
             modifier = Modifier.fillMaxWidth()
           )
         }
@@ -405,7 +416,7 @@ fun NotificationCenterScreen(
       },
       dismissButton = {
         TextButton(onClick = { resolvingIncident = null }) {
-          Text("Cancel")
+          Text("Cancel", color = Color(0xFF334155))
         }
       }
     )
@@ -416,15 +427,18 @@ fun NotificationCenterScreen(
     val inc = verifyingIncident!!
     AlertDialog(
       onDismissRequest = { verifyingIncident = null },
-      title = { Text("Verify Corrective Action [${inc.lineId}]", fontWeight = FontWeight.Bold) },
+      containerColor = Color.White,
+      title = { Text("Verify Corrective Action [${inc.lineId}]", fontWeight = FontWeight.Bold, color = Color(0xFF0F172A)) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text("Verified Resolution: ${inc.resolutionNote}", fontSize = 12.sp, color = Color(0xFF64748B))
+          Text("Verified Resolution: ${inc.resolutionNote}", fontSize = 12.sp, color = Color(0xFF475569))
           OutlinedTextField(
             value = correctiveActionInput,
             onValueChange = { correctiveActionInput = it },
-            label = { Text("Verification / QA Observation") },
-            placeholder = { Text("Confirmed line running at target pace") },
+            label = { Text("Verification / QA Observation", color = Color(0xFF1E293B)) },
+            placeholder = { Text("Confirmed line running at target pace", color = Color(0xFF475569)) },
+            colors = com.example.ui.theme.nflInputColors(),
+            textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Bold),
             modifier = Modifier.fillMaxWidth()
           )
         }
@@ -446,7 +460,7 @@ fun NotificationCenterScreen(
       },
       dismissButton = {
         TextButton(onClick = { verifyingIncident = null }) {
-          Text("Cancel")
+          Text("Cancel", color = Color(0xFF334155))
         }
       }
     )
@@ -463,7 +477,8 @@ private fun AlertItemCard(
   onResolve: () -> Unit,
   onVerify: () -> Unit,
   onEscalate: () -> Unit,
-  onSilence: () -> Unit
+  onSilence: () -> Unit,
+  onAddComment: (String) -> Unit = {}
 ) {
   val borderColor = when (incident.severity) {
     AlertSeverity.CRITICAL -> Color(0xFFEF4444)
@@ -700,6 +715,129 @@ private fun AlertItemCard(
             contentPadding = PaddingValues(horizontal = 10.dp)
           ) {
             Text("Verify Corrective Action", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+          }
+        }
+      }
+
+      // Notification / Incident Comments Section
+      var showComments by remember(incident.id) { mutableStateOf(incident.comments.isNotEmpty()) }
+      var commentInput by remember(incident.id) { mutableStateOf("") }
+      val authorName = currentUser?.name ?: currentRole.displayName
+
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(top = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+      ) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color(0xFF1E293B))
+            .clickable { showComments = !showComments }
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(Icons.Default.ChatBubbleOutline, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
+            Text(
+              text = if (incident.comments.isEmpty()) "💬 Add Comments / Remarks" else "💬 Comments (${incident.comments.size})",
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              color = Color(0xFF38BDF8)
+            )
+          }
+          Icon(
+            imageVector = if (showComments) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+            contentDescription = null,
+            tint = Color(0xFF38BDF8),
+            modifier = Modifier.size(16.dp)
+          )
+        }
+
+        if (showComments) {
+          if (incident.comments.isEmpty()) {
+            Text(
+              text = "No remarks yet. Anyone can add remarks below.",
+              fontSize = 10.sp,
+              color = Color(0xFF94A3B8),
+              modifier = Modifier.padding(horizontal = 4.dp)
+            )
+          } else {
+            incident.comments.forEach { c ->
+              val timeStr = SimpleDateFormat("hh:mm a, dd MMM", Locale.US).format(Date(c.timestamp))
+              Surface(
+                color = Color(0xFF0F172A),
+                shape = RoundedCornerShape(6.dp),
+                border = BorderStroke(1.dp, Color(0xFF334155)),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Text(
+                      text = "👤 ${c.userName} ${if (c.userRole.isNotBlank()) "(${c.userRole})" else ""}",
+                      fontSize = 10.5.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = Color(0xFFF1F5F9)
+                    )
+                    Text(
+                      text = timeStr,
+                      fontSize = 9.sp,
+                      color = Color(0xFF64748B)
+                    )
+                  }
+                  Text(
+                    text = c.commentText,
+                    fontSize = 11.sp,
+                    color = Color(0xFFCBD5E1)
+                  )
+                }
+              }
+            }
+          }
+
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            OutlinedTextField(
+              value = commentInput,
+              onValueChange = { commentInput = it },
+              placeholder = { Text("Comment as $authorName...", fontSize = 11.sp, color = Color(0xFF64748B)) },
+              modifier = Modifier.weight(1f),
+              singleLine = true,
+              shape = RoundedCornerShape(6.dp),
+              colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Color(0xFF38BDF8),
+                unfocusedBorderColor = Color(0xFF334155),
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedContainerColor = Color(0xFF0F172A),
+                unfocusedContainerColor = Color(0xFF0F172A)
+              ),
+              textStyle = LocalTextStyle.current.copy(fontSize = 11.5.sp, color = Color.White)
+            )
+            Button(
+              onClick = {
+                if (commentInput.isNotBlank()) {
+                  onAddComment(commentInput)
+                  commentInput = ""
+                }
+              },
+              enabled = commentInput.isNotBlank(),
+              shape = RoundedCornerShape(6.dp),
+              colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+              Text("Post", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
           }
         }
       }

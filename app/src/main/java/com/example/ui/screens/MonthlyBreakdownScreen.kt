@@ -33,6 +33,7 @@ import com.example.model.FloorScope
 import com.example.model.LinePerformancePoint
 import com.example.model.MonthlyMetricType
 import com.example.model.PeriodScope
+import com.example.ui.components.BsOqlWeeklyTrendChartCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,6 +77,7 @@ fun MonthlyBreakdownScreen(
   val horizontalScrollState = rememberScrollState()
 
   Scaffold(
+    contentWindowInsets = WindowInsets(0, 0, 0, 0),
     topBar = {
       Surface(
         color = Color(0xFF0A2558),
@@ -84,7 +86,6 @@ fun MonthlyBreakdownScreen(
         Column(
           modifier = Modifier
             .fillMaxWidth()
-            .statusBarsPadding()
         ) {
           Row(
             modifier = Modifier
@@ -220,7 +221,7 @@ fun MonthlyBreakdownScreen(
       contentPadding = PaddingValues(10.dp),
       verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-      // 1. Executive Summary KPI Card for active metric
+      // 1. Executive Summary KPI Card for active metric (Up-to-Date OQL / DHU / Efficiency)
       item {
         FloorMetricSummaryCard(
           metric = activeMetric,
@@ -230,24 +231,34 @@ fun MonthlyBreakdownScreen(
         )
       }
 
+      // =========================================================================
+      // NEW CHART: Weekly Trend Chart for "BS OQL" (Insaf Life Dashboard Module)
+      // Placed directly below the existing "Up-to-Date OQL" metric card
+      // =========================================================================
+      if (activeMetric == MonthlyMetricType.OQL) {
+        item {
+          BsOqlWeeklyTrendChartCard(
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("monthly_oql_weekly_trend_chart")
+          )
+        }
+      }
+
       // 2. Search & Filter Bar
       item {
         OutlinedTextField(
           value = searchQuery,
           onValueChange = { searchQuery = it },
-          placeholder = { Text("Filter lines by ID, style or item...", fontSize = 12.sp, color = Color(0xFF94A3B8)) },
-          leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(18.dp)) },
+          placeholder = { Text("Filter lines by ID, style or item...", fontSize = 12.sp, color = Color(0xFF475569)) },
+          leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(18.dp)) },
           singleLine = true,
           shape = RoundedCornerShape(10.dp),
-          colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = Color.White,
-            unfocusedContainerColor = Color.White,
-            focusedBorderColor = Color(0xFF2563EB),
-            unfocusedBorderColor = Color(0xFFCBD5E1)
-          ),
+          colors = com.example.ui.theme.nflInputColors(),
+          textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Bold, fontSize = 13.sp),
           modifier = Modifier
             .fillMaxWidth()
-            .height(50.dp)
+            .height(52.dp)
         )
       }
 
@@ -479,7 +490,7 @@ private fun FloorMetricSummaryCard(
           MonthlyMetricType.OQL -> {
             val avgOql = if (lines.isNotEmpty()) lines.map { it.monthlyOqlPct }.average() else monthlyTarget.targetOqlPct
             SummaryKpiTile(
-              label = "Monthly OQL",
+              label = "Up-to-Date OQL",
               value = String.format(java.util.Locale.US, "%.2f%%", avgOql),
               subtext = "Buyer Quality Level",
               color = if (avgOql <= 3.5) Color(0xFF059669) else Color(0xFFD97706),

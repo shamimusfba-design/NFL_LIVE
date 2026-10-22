@@ -34,78 +34,78 @@ class NflRepository(private val context: Context) {
 
   // Complete Verified Factory Master across all floors including all specified lines
   val allLinesMaster = listOf(
-    // Sew 1 (22 lines + Iron 1, Packing 1)
-    LineInfo(id = "A1", floor = "Sew 1"),
+    // Sew 1 (22 sewing lines A1 to H2 + Iron 1, Packing 1)
+    LineInfo(id = "A1", floor = "Sew 1", aliases = listOf("A")),
     LineInfo(id = "A2", floor = "Sew 1"),
-    LineInfo(id = "B", floor = "Sew 1"),
-    LineInfo(id = "C", floor = "Sew 1"),
-    LineInfo(id = "D1A", floor = "Sew 1"),
-    LineInfo(id = "D2A", floor = "Sew 1"),
+    LineInfo(id = "B", floor = "Sew 1", aliases = listOf("B1")),
+    LineInfo(id = "C", floor = "Sew 1", aliases = listOf("C1")),
+    LineInfo(id = "D1A", floor = "Sew 1", aliases = listOf("D1", "D")),
+    LineInfo(id = "D2A", floor = "Sew 1", aliases = listOf("D2")),
     LineInfo(id = "D1B", floor = "Sew 1"),
     LineInfo(id = "D2B", floor = "Sew 1"),
-    LineInfo(id = "E1A", floor = "Sew 1"),
-    LineInfo(id = "E2A", floor = "Sew 1"),
+    LineInfo(id = "E1A", floor = "Sew 1", aliases = listOf("E1", "E")),
+    LineInfo(id = "E2A", floor = "Sew 1", aliases = listOf("E2")),
     LineInfo(id = "E1B", floor = "Sew 1"),
     LineInfo(id = "E2B", floor = "Sew 1"),
-    LineInfo(id = "FA", floor = "Sew 1"),
-    LineInfo(id = "FB", floor = "Sew 1"),
-    LineInfo(id = "G1A", floor = "Sew 1"),
-    LineInfo(id = "G2A", floor = "Sew 1"),
+    LineInfo(id = "FA", floor = "Sew 1", aliases = listOf("F", "F1")),
+    LineInfo(id = "FB", floor = "Sew 1", aliases = listOf("F2")),
+    LineInfo(id = "G1A", floor = "Sew 1", aliases = listOf("G1", "G")),
+    LineInfo(id = "G2A", floor = "Sew 1", aliases = listOf("G2")),
     LineInfo(id = "G1B", floor = "Sew 1"),
     LineInfo(id = "G2B", floor = "Sew 1"),
-    LineInfo(id = "H1A", floor = "Sew 1"),
-    LineInfo(id = "H2A", floor = "Sew 1"),
+    LineInfo(id = "H1A", floor = "Sew 1", aliases = listOf("H1", "H")),
+    LineInfo(id = "H2A", floor = "Sew 1", aliases = listOf("H2")),
     LineInfo(id = "H1B", floor = "Sew 1"),
     LineInfo(id = "H2B", floor = "Sew 1"),
     LineInfo(id = "Iron 1", floor = "Sew 1"),
     LineInfo(id = "Packing 1", floor = "Sew 1"),
 
-    // Sew 2 (16 lines + Iron 2, Packing 2)
+    // Sew 2 (17 sewing lines J1 to R1 + Iron 2, Packing 2)
     LineInfo(id = "J1", floor = "Sew 2", aliases = listOf("J")),
     LineInfo(id = "J2", floor = "Sew 2"),
-    LineInfo(id = "K1", floor = "Sew 2"),
+    LineInfo(id = "K1", floor = "Sew 2", aliases = listOf("K")),
     LineInfo(id = "K2", floor = "Sew 2"),
-    LineInfo(id = "L1", floor = "Sew 2"),
+    LineInfo(id = "L1", floor = "Sew 2", aliases = listOf("L")),
     LineInfo(id = "L2", floor = "Sew 2"),
     LineInfo(id = "M1", floor = "Sew 2", aliases = listOf("M")),
     LineInfo(id = "M2", floor = "Sew 2"),
-    LineInfo(id = "N1", floor = "Sew 2"),
+    LineInfo(id = "N1", floor = "Sew 2", aliases = listOf("N")),
     LineInfo(id = "N2", floor = "Sew 2"),
-    LineInfo(id = "O1", floor = "Sew 2"),
+    LineInfo(id = "O1", floor = "Sew 2", aliases = listOf("O")),
     LineInfo(id = "O2", floor = "Sew 2"),
     LineInfo(id = "P1", floor = "Sew 2", aliases = listOf("P")),
     LineInfo(id = "P2", floor = "Sew 2"),
-    LineInfo(id = "Q1", floor = "Sew 2"),
+    LineInfo(id = "Q1", floor = "Sew 2", aliases = listOf("Q")),
     LineInfo(id = "Q2", floor = "Sew 2"),
-    LineInfo(id = "R1", floor = "Sew 2", aliases = listOf("R")),
+    LineInfo(id = "R1", floor = "Sew 2", aliases = listOf("R", "R2")),
     LineInfo(id = "Iron 2", floor = "Sew 2"),
     LineInfo(id = "Packing 2", floor = "Sew 2"),
 
-    // Sew 3 (26 lines + Iron 3, Packing 3)
-    LineInfo(id = "S1", floor = "Sew 3"),
+    // Sew 3 (25 sewing lines S1 to ZA2B + Iron 3, Packing 3)
+    LineInfo(id = "S1", floor = "Sew 3", aliases = listOf("S")),
     LineInfo(id = "S2", floor = "Sew 3"),
-    LineInfo(id = "T1", floor = "Sew 3"),
+    LineInfo(id = "T1", floor = "Sew 3", aliases = listOf("T")),
     LineInfo(id = "T2", floor = "Sew 3"),
     LineInfo(id = "U1", floor = "Sew 3", aliases = listOf("U")),
     LineInfo(id = "U2", floor = "Sew 3"),
     LineInfo(id = "UA", floor = "Sew 3"),
     LineInfo(id = "UB", floor = "Sew 3"),
-    LineInfo(id = "V1A", floor = "Sew 3"),
+    LineInfo(id = "V1A", floor = "Sew 3", aliases = listOf("V1", "V")),
     LineInfo(id = "V1B", floor = "Sew 3"),
-    LineInfo(id = "V2A", floor = "Sew 3"),
+    LineInfo(id = "V2A", floor = "Sew 3", aliases = listOf("V2")),
     LineInfo(id = "V2B", floor = "Sew 3"),
-    LineInfo(id = "W1A", floor = "Sew 3"),
+    LineInfo(id = "W1A", floor = "Sew 3", aliases = listOf("W1", "W")),
     LineInfo(id = "W1B", floor = "Sew 3"),
-    LineInfo(id = "W2A", floor = "Sew 3"),
+    LineInfo(id = "W2A", floor = "Sew 3", aliases = listOf("W2")),
     LineInfo(id = "W2B", floor = "Sew 3"),
-    LineInfo(id = "X1", floor = "Sew 3"),
-    LineInfo(id = "Y1", floor = "Sew 3"),
+    LineInfo(id = "X1", floor = "Sew 3", aliases = listOf("X", "X2")),
+    LineInfo(id = "Y1", floor = "Sew 3", aliases = listOf("Y")),
     LineInfo(id = "Y2", floor = "Sew 3"),
-    LineInfo(id = "Z1", floor = "Sew 3"),
+    LineInfo(id = "Z1", floor = "Sew 3", aliases = listOf("Z")),
     LineInfo(id = "Z2", floor = "Sew 3"),
-    LineInfo(id = "ZA1A", floor = "Sew 3"),
+    LineInfo(id = "ZA1A", floor = "Sew 3", aliases = listOf("ZA", "ZA1")),
     LineInfo(id = "ZA1B", floor = "Sew 3"),
-    LineInfo(id = "ZA2A", floor = "Sew 3"),
+    LineInfo(id = "ZA2A", floor = "Sew 3", aliases = listOf("ZA2")),
     LineInfo(id = "ZA2B", floor = "Sew 3"),
     LineInfo(id = "Iron 3", floor = "Sew 3"),
     LineInfo(id = "Packing 3", floor = "Sew 3")
@@ -135,16 +135,16 @@ class NflRepository(private val context: Context) {
   )
 
   val standardDefectTypes = listOf(
-    "Poor iron",
-    "Uncut thread",
-    "Dirty spot",
-    "Oil spot",
-    "Skip stitch",
-    "Open seam",
-    "Broken stitch",
+    "Skip Stitch",
+    "Uncut Thread",
+    "Dirty Spot",
+    "Oil Spot",
+    "Open Seam",
+    "Broken Stitch",
     "Puckering",
     "Pleat",
-    "Shading"
+    "Shading",
+    "Poor Iron"
   )
 
   // Reactive state
@@ -499,16 +499,16 @@ class NflRepository(private val context: Context) {
         canViewMonthlyDhu = true,
         canViewMonthlyOql = true,
         canViewLineDeepDive = true,
-        canViewAuditLogs = false,
+        canViewAuditLogs = true,
         canExportReports = true,
-        canProductionWrite = false, // Cannot edit daily Production or Quality records
-        canFinishingWrite = false,
-        canQualityWrite = false,
-        canOqlWrite = false,
-        canNptWrite = false,
-        canMorningTargetWrite = true, // IE may edit daily line target and manpower
-        canMonthlyTargetWrite = true, // Access only to explicitly authorized Monthly Data operations
-        canTargetRevisionWrite = false
+        canProductionWrite = true, // IE has full authority to enter any hourly or monthly report data
+        canFinishingWrite = true,
+        canQualityWrite = true,
+        canOqlWrite = true,
+        canNptWrite = true,
+        canMorningTargetWrite = true,
+        canMonthlyTargetWrite = true,
+        canTargetRevisionWrite = true
       ),
       UserAccount(
         id = "input",
@@ -635,9 +635,18 @@ class NflRepository(private val context: Context) {
         val saved = savedById[defUser.id.lowercase(Locale.US)]
         if (saved != null) {
           // Migrate built-in account permissions without changing unrelated saved settings.
-          when (defUser.id.lowercase(Locale.US)) {
-            "ie" -> saved.copy(canMorningTargetWrite = true, canMonthlyTargetWrite = true)
-            "production" -> saved.copy(canMorningTargetWrite = true, canMonthlyTargetWrite = false)
+          when {
+            defUser.id.lowercase(Locale.US) == "ie" || saved.role == UserRole.IE -> saved.copy(
+              canProductionWrite = true,
+              canFinishingWrite = true,
+              canQualityWrite = true,
+              canOqlWrite = true,
+              canNptWrite = true,
+              canMorningTargetWrite = true,
+              canMonthlyTargetWrite = true,
+              canTargetRevisionWrite = true
+            )
+            defUser.id.lowercase(Locale.US) == "production" -> saved.copy(canMorningTargetWrite = true, canMonthlyTargetWrite = false)
             else -> saved
           }
         } else {
@@ -645,7 +654,20 @@ class NflRepository(private val context: Context) {
         }
       }
       val defaultIds = _users.value.map { it.id.lowercase(Locale.US) }.toSet()
-      val customUsers = savedUsers.filter { it.id.lowercase(Locale.US) !in defaultIds }
+      val customUsers = savedUsers.filter { it.id.lowercase(Locale.US) !in defaultIds }.map { u ->
+        if (u.role == UserRole.IE) {
+          u.copy(
+            canProductionWrite = true,
+            canFinishingWrite = true,
+            canQualityWrite = true,
+            canOqlWrite = true,
+            canNptWrite = true,
+            canMorningTargetWrite = true,
+            canMonthlyTargetWrite = true,
+            canTargetRevisionWrite = true
+          )
+        } else u
+      }
       _users.value = mergedDefault + customUsers
       _currentUser.value?.let { cur ->
         _currentUser.value = _users.value.find { it.id.equals(cur.id, ignoreCase = true) } ?: cur
@@ -1579,10 +1601,12 @@ class NflRepository(private val context: Context) {
       LineSeedData("Packing 1", "Packing 1", 4.80, 750, 85.0, 720)
     )
 
-    // Sew 2 (14 real factory lines + Iron 2, Packing 2)
+    // Sew 2 (17 real factory lines + Iron 2, Packing 2)
     val sew2Seeds = listOf(
       LineSeedData("J1", "Track Jacket", 15.20, 500, 75.0, 450),
+      LineSeedData("J2", "Track Jacket", 15.20, 480, 75.0, 435),
       LineSeedData("K1", "Sports Vest", 11.00, 420, 72.0, 340),
+      LineSeedData("K2", "Sports Vest", 11.00, 460, 72.0, 410),
       LineSeedData("L1", "Polo Shirt", 14.50, 480, 75.0, 390),
       LineSeedData("L2", "Basic T-Shirt", 10.50, 550, 78.0, 490),
       LineSeedData("M1", "Zip Hoodie", 16.80, 380, 70.0, 310),
@@ -1592,6 +1616,7 @@ class NflRepository(private val context: Context) {
       LineSeedData("O1", "Crew Neck Tee", 12.20, 520, 75.0, 480),
       LineSeedData("O2", "Raglan Tee", 13.00, 490, 74.0, 430),
       LineSeedData("P1", "Polo Pique", 14.80, 480, 75.0, 420),
+      LineSeedData("P2", "Polo Pique", 14.80, 470, 75.0, 415),
       LineSeedData("Q1", "Fleece Jogger", 17.50, 400, 70.0, 350),
       LineSeedData("Q2", "Basic T-Shirt", 10.50, 580, 78.0, 510),
       LineSeedData("R1", "Zip Hoodie", 16.80, 380, 70.0, 320),
@@ -1599,13 +1624,14 @@ class NflRepository(private val context: Context) {
       LineSeedData("Packing 2", "Packing 2", 4.80, 750, 84.0, 710)
     )
 
-    // Sew 3 (24 real factory lines + Iron 3, Packing 3)
+    // Sew 3 (25 real factory lines + Iron 3, Packing 3)
     val sew3Seeds = listOf(
       LineSeedData("S1", "Track Jacket", 15.20, 520, 75.0, 490),
       LineSeedData("S2", "Polo Shirt", 14.50, 470, 75.0, 420),
       LineSeedData("T1", "Sports Vest", 11.00, 480, 72.0, 450),
       LineSeedData("T2", "Basic T-Shirt", 10.50, 550, 78.0, 500),
-      LineSeedData("U", "Polo Shirt", 14.50, 440, 75.0, 410),
+      LineSeedData("U1", "Polo Shirt", 14.50, 440, 75.0, 410),
+      LineSeedData("U2", "Polo Shirt", 14.50, 460, 75.0, 425),
       LineSeedData("UA", "Crew Neck Tee", 12.20, 510, 75.0, 460),
       LineSeedData("UB", "Zip Hoodie", 16.80, 400, 70.0, 350),
       LineSeedData("V1A", "Sports Vest", 11.00, 500, 72.0, 470),
@@ -1711,7 +1737,8 @@ class NflRepository(private val context: Context) {
     targetDailyPcs: Int,
     targetEfficiencyPct: Double,
     operatorsCount: Int = 20,
-    helpersCount: Int = 2
+    helpersCount: Int = 2,
+    finishingStaffCount: Int = 4
   ) {
     val existing = getLineSetup(lineId)
     val updated = existing.copy(
@@ -1725,6 +1752,7 @@ class NflRepository(private val context: Context) {
       targetEfficiencyPct = targetEfficiencyPct,
       operatorsCount = operatorsCount,
       helpersCount = helpersCount,
+      finishingStaffCount = finishingStaffCount,
       snapshotTimestamp = System.currentTimeMillis(),
       isDemo = false
     )
@@ -1755,10 +1783,10 @@ class NflRepository(private val context: Context) {
         _lastSecurityMessage.value = msg
         return entry
       }
-      if (!u.isAdmin) {
+      if (!u.isAdmin && u.role != UserRole.IE) {
         // Role & permission check
         val allowed = if (isFinishing) u.canFinishingWrite else u.canProductionWrite
-        val rolePermitted = u.role in setOf(UserRole.SUPERVISOR, UserRole.PRODUCTION_REPORTER)
+        val rolePermitted = u.role in setOf(UserRole.SUPERVISOR, UserRole.PRODUCTION_REPORTER, UserRole.IE)
         if (!allowed || !rolePermitted) {
           val msg = "⚠️ Access Denied: Role '${u.role.displayName}' does not have permission for Production Entry."
           _syncStatusBanner.value = msg
@@ -1782,7 +1810,7 @@ class NflRepository(private val context: Context) {
               it.hourSlot.equals(entry.hourSlot, ignoreCase = true)
         }
         if (alreadySubmitted) {
-          val msg = "🔒 Record Locked: Line ${entry.lineId} (${entry.hourSlot} on $normDate) is already submitted. Ordinary users cannot edit or delete submitted records; Admin approval with reason is required."
+          val msg = "🔒 Record Locked: Line ${entry.lineId} (${entry.hourSlot} on $normDate) is already submitted. Ordinary users cannot edit or delete submitted records; Admin/IE approval is required."
           _syncStatusBanner.value = msg
           _lastSecurityMessage.value = msg
           addAuditLog("SECURITY", entry.lineId, "BLOCKED_EDIT_SUBMITTED_PROD", u.id, "Attempted overwrite of ${entry.hourSlot} on $normDate")
@@ -1839,8 +1867,8 @@ class NflRepository(private val context: Context) {
         _syncStatusBanner.value = "⚠️ Access Denied: Account is not active or approved."
         return
       }
-      if (!u.isAdmin) {
-        val rolePermitted = u.role in setOf(UserRole.SUPERVISOR, UserRole.PRODUCTION_REPORTER)
+      if (!u.isAdmin && u.role != UserRole.IE) {
+        val rolePermitted = u.role in setOf(UserRole.SUPERVISOR, UserRole.PRODUCTION_REPORTER, UserRole.IE)
         if ((!u.canProductionWrite && !u.canFinishingWrite) || !rolePermitted) {
           _syncStatusBanner.value = "⚠️ Access Denied: You do not have permission for Batch Production Entry"
           addAuditLog("SECURITY", entries.first().lineId, "UNAUTHORIZED_BATCH_PROD", u.id, "Blocked batch production submission")
@@ -1855,8 +1883,8 @@ class NflRepository(private val context: Context) {
         }
       }
     }
-    // Filter out slots that are already locked for non-Admin users
-    val permittedEntries = if (u != null && !u.isAdmin) {
+    // Filter out slots that are already locked for non-Admin / non-IE users
+    val permittedEntries = if (u != null && !u.isAdmin && u.role != UserRole.IE) {
       entries.filter { candidate ->
         !isProductionSlotLocked(candidate.lineId, sheetsStorage.normalizeToIsoDate(candidate.date), candidate.hourSlot)
       }
@@ -1923,9 +1951,8 @@ class NflRepository(private val context: Context) {
         _lastSecurityMessage.value = msg
         return entry
       }
-      if (!u.isAdmin) {
-        // Strict Role Check: Supervisor, Production Reporter, Management, IE, TV cannot enter Quality data
-        val rolePermitted = u.role in setOf(UserRole.QUALITY_REPORTER, UserRole.AUDITOR)
+      if (!u.isAdmin && u.role != UserRole.IE) {
+        val rolePermitted = u.role in setOf(UserRole.QUALITY_REPORTER, UserRole.AUDITOR, UserRole.IE)
         if ((!u.canQualityWrite && !u.canOqlWrite) || !rolePermitted) {
           val msg = "⚠️ Access Denied: Role '${u.role.displayName}' cannot enter Quality data."
           _syncStatusBanner.value = msg
@@ -1949,7 +1976,7 @@ class NflRepository(private val context: Context) {
               it.hourSlot.equals(entry.hourSlot, ignoreCase = true)
         }
         if (alreadySubmitted) {
-          val msg = "🔒 Record Locked: Quality record for Line ${entry.lineId} (${entry.hourSlot} on $normDate) is already submitted. Only Admin can correct or delete submitted records with a reason."
+          val msg = "🔒 Record Locked: Quality record for Line ${entry.lineId} (${entry.hourSlot} on $normDate) is already submitted. Only Admin/IE can correct submitted records."
           _syncStatusBanner.value = msg
           _lastSecurityMessage.value = msg
           addAuditLog("SECURITY", entry.lineId, "BLOCKED_EDIT_SUBMITTED_QA", u.id, "Attempted overwrite of QA ${entry.hourSlot} on $normDate")
@@ -2242,7 +2269,7 @@ class NflRepository(private val context: Context) {
   fun saveLineSetup(setup: SupervisorLineSetup) {
     val u = getAuthoritativeCurrentUser()
     val allowedRole = u?.role in setOf(UserRole.IE, UserRole.PRODUCTION_REPORTER)
-    if (u != null && !u.isAdmin && (!allowedRole || !u.canMorningTargetWrite)) {
+    if (u != null && !u.isAdmin && u.role != UserRole.IE && (!allowedRole || !u.canMorningTargetWrite)) {
       _syncStatusBanner.value = "⚠️ Access Denied: Daily line targets and manpower can only be edited by authorized IE or Production Reporter accounts."
       return
     }
@@ -2257,14 +2284,52 @@ class NflRepository(private val context: Context) {
     _targets.value = listOf(liveSetup) + filtered
     sheetsStorage.saveLocalSetups(_targets.value)
     touchDataUpdated()
-    addAuditLog("SETUP", liveSetup.lineId, "SAVE_TARGET", u?.name ?: "Supervisor", "Daily target: ${liveSetup.targetDailyPcs}, Eff: ${liveSetup.targetEfficiencyPct}% (Cloud Firestore & Google Sheet)")
+    addAuditLog("SETUP", liveSetup.lineId, "SAVE_TARGET", u?.name ?: "IE/Reporter", "Daily target: ${liveSetup.targetDailyPcs}, Hourly: ${liveSetup.targetHourlyPcs}, SMV: ${liveSetup.smv}, MP: ${liveSetup.totalManpower}")
     repoScope.launch {
       val fOk = firebaseSync.pushLineSetupAwait(liveSetup)
       val sOk = sheetsStorage.pushLineSetupRow(liveSetup)
       _syncStatusBanner.value = if (fOk || sOk) {
-        "✓ Saved Line ${liveSetup.lineId} Target (${liveSetup.targetDailyPcs} pcs) to Shared Cloud • ${_lastRefreshTime.value}"
+        "✓ Saved Line ${liveSetup.lineId} Target (${liveSetup.targetHourlyPcs}/hr • ${liveSetup.targetDailyPcs}/day) to Cloud • ${_lastRefreshTime.value}"
       } else {
         "⚠️ Saved Line ${liveSetup.lineId} Target locally (Pending Cloud Sync)"
+      }
+    }
+  }
+
+  fun saveBatchLineSetups(setups: List<SupervisorLineSetup>) {
+    if (setups.isEmpty()) return
+    val u = getAuthoritativeCurrentUser()
+    val allowedRole = u?.role in setOf(UserRole.IE, UserRole.PRODUCTION_REPORTER)
+    if (u != null && !u.isAdmin && u.role != UserRole.IE && (!allowedRole || !u.canMorningTargetWrite)) {
+      _syncStatusBanner.value = "⚠️ Access Denied: Daily line targets and manpower can only be edited by authorized IE or Production Reporter accounts."
+      return
+    }
+    val nowTs = System.currentTimeMillis()
+    val liveSetups = setups.map { s ->
+      s.copy(
+        date = sheetsStorage.normalizeToIsoDate(s.date),
+        snapshotTimestamp = nowTs,
+        isDemo = false
+      )
+    }
+    val keys = liveSetups.map { setupSlotKey(it.lineId, it.date) }.toSet()
+    val filtered = _targets.value.filterNot { setupSlotKey(it.lineId, it.date) in keys }
+    _targets.value = liveSetups + filtered
+    sheetsStorage.saveLocalSetups(_targets.value)
+    touchDataUpdated()
+    addAuditLog("SETUP_BATCH", liveSetups.first().floor, "SAVE_FLOOR_TARGETS", u?.name ?: "IE/Reporter", "Updated ${liveSetups.size} lines on ${liveSetups.first().floor}")
+    _syncStatusBanner.value = "⏳ Saving ${liveSetups.size} line targets to Shared Cloud..."
+    repoScope.launch {
+      var syncedCount = 0
+      liveSetups.forEach { liveSetup ->
+        val fOk = firebaseSync.pushLineSetupAwait(liveSetup)
+        val sOk = sheetsStorage.pushLineSetupRow(liveSetup)
+        if (fOk || sOk) syncedCount++
+      }
+      _syncStatusBanner.value = if (syncedCount > 0) {
+        "✓ Saved all ${liveSetups.size} Line Targets to Shared Cloud • ${_lastRefreshTime.value}"
+      } else {
+        "✓ Saved all ${liveSetups.size} Line Targets locally (Pending Cloud Sync)"
       }
     }
   }
@@ -2856,11 +2921,38 @@ class NflRepository(private val context: Context) {
   // Monthly Target Methods
   fun getMonthlyTarget(floorName: String): MonthlyFactoryTarget {
     val norm = floorName.trim().replace("-", " ").replace("  ", " ")
-    return _monthlyTargets.value.find { target ->
+    val direct = _monthlyTargets.value.find { target ->
       target.lineId.isBlank() &&
         (target.floor.trim().replace("-", " ").replace("  ", " ").equals(norm, ignoreCase = true) ||
           target.floor.equals(floorName, ignoreCase = true))
-    } ?: MonthlyFactoryTarget(floor = floorName)
+    }
+    if (direct != null) return direct
+
+    if (norm.equals("All", ignoreCase = true) || norm.equals("All Floor", ignoreCase = true)) {
+      val floorLevelTargets = _monthlyTargets.value.filter {
+        it.lineId.isBlank() && it.floor.trim().replace("-", " ").lowercase(Locale.US) in setOf("sew 1", "sew 2", "sew 3")
+      }
+      if (floorLevelTargets.isNotEmpty()) {
+        val avgTargetEff = Math.round(floorLevelTargets.map { it.targetEfficiencyPct }.average() * 10.0) / 10.0
+        val avgUpdateEff = Math.round(floorLevelTargets.map { it.updateEfficiencyPct }.average() * 10.0) / 10.0
+        val avgTargetOql = Math.round(floorLevelTargets.map { it.targetOqlPct }.average() * 100.0) / 100.0
+        val avgTargetDhu = Math.round(floorLevelTargets.map { it.targetDhuPct }.average() * 100.0) / 100.0
+        val avgBsOql = Math.round(floorLevelTargets.map { it.bsOqlPct }.average() * 100.0) / 100.0
+        val avgFri = Math.round(floorLevelTargets.map { it.friPassRatePct }.average() * 10.0) / 10.0
+        return MonthlyFactoryTarget(
+          floor = floorName,
+          targetEfficiencyPct = avgTargetEff,
+          updateEfficiencyPct = avgUpdateEff,
+          monthlyTargetPcs = floorLevelTargets.sumOf { it.monthlyTargetPcs },
+          monthlyAchievementPcs = floorLevelTargets.sumOf { it.monthlyAchievementPcs },
+          targetOqlPct = avgTargetOql,
+          targetDhuPct = avgTargetDhu,
+          bsOqlPct = avgBsOql,
+          friPassRatePct = avgFri
+        )
+      }
+    }
+    return MonthlyFactoryTarget(floor = floorName)
   }
 
   fun getMonthlyLineTarget(floorName: String, lineId: String): MonthlyFactoryTarget? {
@@ -3071,6 +3163,33 @@ class NflRepository(private val context: Context) {
     addAuditLog("INCIDENT", id, "ESCALATE", _currentUserName.value, reason)
     updatedItem?.let { item ->
       alertManager.triggerAlertNotification(item, _currentRole.value, _currentFloor.value)
+      firebaseSync.pushIncident(item)
+      repoScope.launch { sheetsStorage.pushIncidentRow(item) }
+    }
+  }
+
+  fun addIncidentComment(incidentId: String, commentText: String, userName: String, userRole: String = "") {
+    if (commentText.isBlank()) return
+    val author = userName.ifBlank { _currentUser.value?.name ?: _currentUserName.value }.ifBlank { "User" }
+    val role = userRole.ifBlank { _currentUser.value?.role?.displayName ?: _currentRole.value.displayName }
+    val newComment = IncidentComment(
+      incidentId = incidentId,
+      userName = author,
+      userRole = role,
+      commentText = commentText.trim(),
+      timestamp = System.currentTimeMillis()
+    )
+    var targetLineId = ""
+    _incidents.value = _incidents.value.map { item ->
+      if (item.id == incidentId) {
+        targetLineId = item.lineId
+        item.copy(comments = item.comments + newComment, isDemo = false)
+      } else item
+    }
+    sheetsStorage.saveLocalIncidents(_incidents.value)
+    touchDataUpdated()
+    addAuditLog("INCIDENT", incidentId, "COMMENT", author, "Line $targetLineId: ${commentText.take(40)}")
+    _incidents.value.find { it.id == incidentId }?.let { item ->
       firebaseSync.pushIncident(item)
       repoScope.launch { sheetsStorage.pushIncidentRow(item) }
     }
@@ -3411,14 +3530,27 @@ class NflRepository(private val context: Context) {
     periodScope: PeriodScope = _currentPeriod.value
   ): TvDashboardData {
     ensureDateBoundsFresh()
-    val floorLines = allLinesMaster.filter { isInSelectedFloor(it.floor, floorScope) }
+    val floorLines = allLinesMaster.filter { line ->
+      val isFinishingSection = line.id.startsWith("Iron", ignoreCase = true) || line.id.startsWith("Packing", ignoreCase = true)
+      if (floorScope == FloorScope.FINISHING) {
+        isFinishingSection || isInSelectedFloor(line.floor, floorScope)
+      } else {
+        !isFinishingSection && isInSelectedFloor(line.floor, floorScope)
+      }
+    }
     val dedupedProds = deduplicateProductionRecords(_productionEntries.value)
     val dedupedQas = deduplicateQualityRecords(_qualityEntries.value)
+
+    fun canonicalLineKey(rawLineId: String): String {
+      val trimmed = rawLineId.trim()
+      val matched = allLinesMaster.find { it.matches(trimmed) }
+      return (matched?.id ?: trimmed).uppercase(Locale.US)
+    }
 
     val prodsInPeriodByLine = HashMap<String, MutableList<ProductionRecord>>(floorLines.size * 2)
     dedupedProds.forEach { rec ->
       if (isDateInPeriod(rec.date, periodScope)) {
-        val key = rec.lineId.trim().uppercase(Locale.US)
+        val key = canonicalLineKey(rec.lineId)
         prodsInPeriodByLine.getOrPut(key) { mutableListOf() }.add(rec)
       }
     }
@@ -3427,9 +3559,10 @@ class NflRepository(private val context: Context) {
     val periodQuality = ArrayList<QualityRecord>()
     dedupedQas.forEach { rec ->
       if (isDateInPeriod(rec.date, periodScope)) {
-        val key = rec.lineId.trim().uppercase(Locale.US)
+        val key = canonicalLineKey(rec.lineId)
         qasInPeriodByLine.getOrPut(key) { mutableListOf() }.add(rec)
-        if (isInSelectedFloor(rec.floor, floorScope)) {
+        val resolvedFloor = allLinesMaster.find { it.matches(rec.lineId) }?.floor ?: rec.floor
+        if (isInSelectedFloor(resolvedFloor, floorScope)) {
           periodQuality.add(rec)
         }
       }
@@ -3439,12 +3572,19 @@ class NflRepository(private val context: Context) {
     val activeFloorIncidents = ArrayList<IncidentItem>()
     _incidents.value.forEach { inc ->
       if (inc.status != IncidentStatus.RESOLVED) {
-        val key = inc.lineId.trim().uppercase(Locale.US)
+        val key = canonicalLineKey(inc.lineId)
         openIncidentsByLine[key] = (openIncidentsByLine[key] ?: 0) + 1
-        if (isInSelectedFloor(inc.floor, floorScope)) {
+        val resolvedFloor = allLinesMaster.find { it.matches(inc.lineId) }?.floor ?: inc.floor
+        if (isInSelectedFloor(resolvedFloor, floorScope)) {
           activeFloorIncidents.add(inc)
         }
       }
+    }
+
+    val floorMonthlyTarget = if (floorScope == FloorScope.ALL) {
+      getMonthlyTarget("All Floor")
+    } else {
+      getMonthlyTarget(floorScope.apiValue)
     }
 
     val setupsByLine = HashMap<String, SupervisorLineSetup>(floorLines.size * 2)
@@ -3455,6 +3595,8 @@ class NflRepository(private val context: Context) {
 
       val prods = prodsInPeriodByLine[lineKey] ?: emptyList()
       val qas = qasInPeriodByLine[lineKey] ?: emptyList()
+      val lineMonthly = getMonthlyLineTarget(setup.floor, setup.lineId)
+      val floorMonthlyForLine = getMonthlyTarget(setup.floor)
 
       val hasReported = prods.isNotEmpty()
       val outputQty = if (hasReported) prods.sumOf { it.outputQty } else 0
@@ -3487,6 +3629,22 @@ class NflRepository(private val context: Context) {
       val oqlPct = if (checked > 0) ((defective.toDouble() / checked) * 100).let { Math.round(it * 100.0) / 100.0 } else 0.0
       val dhuVal = if (checked > 0) ((defectsTotal.toDouble() / checked) * 100).let { Math.round(it * 100.0) / 100.0 } else 0.0
 
+      val resolvedMonthlyEff = when {
+        lineMonthly != null && lineMonthly.updateEfficiencyPct > 0.0 -> lineMonthly.updateEfficiencyPct
+        effPct > 0.0 -> Math.round(((effPct * 0.65) + (floorMonthlyForLine.updateEfficiencyPct * 0.35)) * 10.0) / 10.0
+        else -> floorMonthlyForLine.updateEfficiencyPct
+      }
+      val resolvedMonthlyOql = when {
+        lineMonthly != null && lineMonthly.targetOqlPct > 0.0 -> lineMonthly.targetOqlPct
+        oqlPct > 0.0 -> oqlPct
+        else -> floorMonthlyForLine.targetOqlPct
+      }
+      val resolvedMonthlyDhu = when {
+        lineMonthly != null && lineMonthly.targetDhuPct > 0.0 -> lineMonthly.targetDhuPct
+        dhuVal > 0.0 -> dhuVal
+        else -> floorMonthlyForLine.targetDhuPct
+      }
+
       val openIncs = openIncidentsByLine[lineKey] ?: 0
 
       LinePerformancePoint(
@@ -3503,12 +3661,12 @@ class NflRepository(private val context: Context) {
         isConfirmedZero = isConfirmedZero,
         achievementPct = if (hasReported) achPct else null,
         todayEfficiencyPct = if (hasReported) effPct else null,
-        monthlyEfficiencyPct = effPct,
+        monthlyEfficiencyPct = resolvedMonthlyEff,
         todayOqlPct = if (hasQa && checked > 0) oqlPct else null,
-        monthlyOqlPct = oqlPct,
+        monthlyOqlPct = resolvedMonthlyOql,
         dhu = if (hasQa && checked > 0) dhuVal else null,
-        monthlyDhuPct = dhuVal,
-        bsOqlPct = if (hasQa && checked > 0) (oqlPct * 0.85).let { Math.round(it * 100.0) / 100.0 } else 0.0,
+        monthlyDhuPct = resolvedMonthlyDhu,
+        bsOqlPct = if (hasQa && checked > 0) (oqlPct * 0.85).let { Math.round(it * 100.0) / 100.0 } else floorMonthlyForLine.bsOqlPct,
         reportingStatus = if (hasReported) "Complete" else "Not reported",
         openIncidentsCount = openIncs,
         defectSent = sentQas,
@@ -3561,12 +3719,6 @@ class NflRepository(private val context: Context) {
     val totalSpotRecv = summaries.sumOf { it.spotReceived }
     val totalSpotBal = summaries.sumOf { it.spotBalance }
 
-    val floorMonthlyTarget = if (floorScope == FloorScope.ALL) {
-      getMonthlyTarget("All Floor")
-    } else {
-      getMonthlyTarget(floorScope.displayName)
-    }
-
     val kpi = FloorKpiSummary(
       todayEfficiency = effWeighted,
       todayTargetEfficiency = targetEffAvg,
@@ -3579,6 +3731,8 @@ class NflRepository(private val context: Context) {
       bsQaOql = floorMonthlyTarget.bsOqlPct,
       friPassRate = floorMonthlyTarget.friPassRatePct,
       operatorsCount = summaries.sumOf { (setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)).operatorsCount },
+      helpersCount = summaries.sumOf { (setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)).helpersCount },
+      finishingStaffCount = summaries.sumOf { (setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)).finishingStaffCount },
       machinesCount = summaries.sumOf { (setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)).machinesCount },
       reportingCoveragePct = if (summaries.isNotEmpty()) Math.round((reportedOnly.size.toDouble() / summaries.size) * 100).toInt() else 0,
       openIncidentsCount = activeFloorIncidents.size,

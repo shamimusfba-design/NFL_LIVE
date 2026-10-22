@@ -93,18 +93,19 @@ fun HomeScreen(
   val openIncidents = incidents.filter { it.status != IncidentStatus.RESOLVED }
 
   val isAdminUser = currentUser?.isAdmin == true || currentRole == UserRole.ADMIN
-  val canViewDash = isAdminUser || (currentUser?.canViewDashboard ?: true)
-  val canViewTv = isAdminUser || (currentUser?.canViewTvDashboard ?: false)
-  val canViewMonthlyEff = isAdminUser || (currentUser?.canViewMonthlyEfficiency ?: false)
-  val canViewMonthlyDhu = isAdminUser || (currentUser?.canViewMonthlyDhu ?: false)
-  val canViewMonthlyOql = isAdminUser || (currentUser?.canViewMonthlyOql ?: false)
-  val canViewDeepDive = isAdminUser || (currentUser?.canViewLineDeepDive ?: false)
+  val isIeUser = currentUser?.role == UserRole.IE || currentRole == UserRole.IE
+  val canViewDash = isAdminUser || isIeUser || (currentUser?.canViewDashboard ?: true)
+  val canViewTv = isAdminUser || isIeUser || (currentUser?.canViewTvDashboard ?: false)
+  val canViewMonthlyEff = isAdminUser || isIeUser || (currentUser?.canViewMonthlyEfficiency ?: false)
+  val canViewMonthlyDhu = isAdminUser || isIeUser || (currentUser?.canViewMonthlyDhu ?: false)
+  val canViewMonthlyOql = isAdminUser || isIeUser || (currentUser?.canViewMonthlyOql ?: false)
+  val canViewDeepDive = isAdminUser || isIeUser || (currentUser?.canViewLineDeepDive ?: false)
 
-  val canWriteProd = isAdminUser || (currentUser?.let { it.canProductionWrite || it.canFinishingWrite || it.canTargetRevisionWrite } ?: false)
-  val canWriteQual = isAdminUser || (currentUser?.let { it.canQualityWrite || it.canOqlWrite } ?: false)
-  val canWriteNpt = isAdminUser || (currentUser?.canNptWrite ?: false)
-  val canWriteMorningSetup = isAdminUser || (currentUser?.canMorningTargetWrite ?: false)
-  val canWriteMonthlySetup = isAdminUser || (currentUser?.canMonthlyTargetWrite ?: false)
+  val canWriteProd = isAdminUser || isIeUser || (currentUser?.let { it.canProductionWrite || it.canFinishingWrite || it.canTargetRevisionWrite } ?: false)
+  val canWriteQual = isAdminUser || isIeUser || (currentUser?.let { it.canQualityWrite || it.canOqlWrite } ?: false)
+  val canWriteNpt = isAdminUser || isIeUser || (currentUser?.canNptWrite ?: false)
+  val canWriteMorningSetup = isAdminUser || isIeUser || (currentUser?.let { it.canMorningTargetWrite && it.role in setOf(com.example.model.UserRole.IE, com.example.model.UserRole.PRODUCTION_REPORTER) } ?: false)
+  val canWriteMonthlySetup = isAdminUser || isIeUser || (currentUser?.canMonthlyTargetWrite ?: false)
   val safeLineDeepDiveClick: (String) -> Unit = { lineId ->
     if (canViewDeepDive) onNavigateToLineDeepDive(lineId)
   }
@@ -288,7 +289,7 @@ fun HomeScreen(
                   .padding(2.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
               ) {
-                FloorScope.values().filterNot { it.displayName.equals("Finishing", ignoreCase = true) }.forEach { floor ->
+                FloorScope.values().forEach { floor ->
                   val isSelected = currentFloor == floor
                   Surface(
                     onClick = { repository.setFloor(floor) },
@@ -297,11 +298,12 @@ fun HomeScreen(
                     modifier = Modifier.weight(1f)
                   ) {
                     Text(
-                      text = floor.displayName,
+                      text = if (floor == FloorScope.FINISHING) "Finish" else floor.displayName,
                       color = if (isSelected) Color.White else Color(0xFF90CAF9),
-                      fontSize = 11.sp,
+                      fontSize = 10.sp,
                       fontWeight = FontWeight.Bold,
                       textAlign = TextAlign.Center,
+                      maxLines = 1,
                       modifier = Modifier.padding(vertical = 4.dp)
                     )
                   }
@@ -344,18 +346,21 @@ fun HomeScreen(
         Column(
           modifier = Modifier
             .fillMaxWidth()
-            .padding(12.dp),
-          verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+          verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
       // 1. Open Incident / NPT Alert Strip
       if (openIncidents.isNotEmpty()) {
+        val topIncident = openIncidents.first()
+        val elapsedMinutes = ((System.currentTimeMillis() - topIncident.startTimeMillis) / 60000).coerceAtLeast(0)
+        val commentCount = topIncident.comments.size
         Card(
           shape = RoundedCornerShape(10.dp),
           colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
           border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFFDBA74))),
           modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = canWriteNpt) { if (canWriteNpt) onNavigateToNpt() }
+            .clickable { onNavigateToNpt() }
         ) {
           Row(
             modifier = Modifier
@@ -385,8 +390,6 @@ fun HomeScreen(
                   fontWeight = FontWeight.Black,
                   color = Color(0xFF9A3412)
                 )
-                val topIncident = openIncidents.first()
-                val elapsedMinutes = ((System.currentTimeMillis() - topIncident.startTimeMillis) / 60000).coerceAtLeast(0)
                 Text(
                   text = "Line ${topIncident.lineId} (${topIncident.category.displayName}) • $elapsedMinutes mins elapsed",
                   fontSize = 10.sp,
@@ -400,13 +403,18 @@ fun HomeScreen(
               color = Color(0xFFEA580C),
               shape = RoundedCornerShape(6.dp)
             ) {
-              Text(
-                text = "Manage →",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-              )
+              Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+              ) {
+                Text(
+                  text = if (commentCount > 0) "💬 $commentCount • Manage →" else "💬 Comment →",
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = Color.White
+                )
+              }
             }
           }
         }
@@ -472,7 +480,7 @@ fun HomeScreen(
 
         // Card 1: Monthly Efficiency (Tap to view Line-by-Line Monthly Efficiency page)
         ExecutiveKpiCard(
-          title = "Monthly\nEfficiency",
+          title = "Monthly Efficiency",
           valueText = "${monthAchEff}%",
           targetText = if (canViewMonthlyEff) "Tap for Line Table →" else "🔒 View Restricted",
           trendText = "EFF",
@@ -487,7 +495,7 @@ fun HomeScreen(
 
         // Card 2: Monthly DHU (Tap to view Line-by-Line Monthly DHU page)
         ExecutiveKpiCard(
-          title = "Monthly\nDHU",
+          title = "Monthly DHU",
           valueText = String.format(java.util.Locale.US, "%.2f", monthDhu),
           targetText = if (canViewMonthlyDhu) "Target: ≤ 1.50 • Tap →" else "🔒 View Restricted",
           trendText = "DHU",
@@ -519,9 +527,9 @@ fun HomeScreen(
           modifier = Modifier.weight(1f)
         )
 
-        // Card 4: Monthly OQL (Tap to view Line-by-Line Monthly OQL page)
+        // Card 4: Up-to-Date OQL (Monthly OQL - Tap to view Line-by-Line Monthly OQL page)
         ExecutiveKpiCard(
-          title = "Monthly\nOQL",
+          title = "Monthly OQL",
           valueText = "${tvData.kpis.todayOql}%",
           targetText = if (canViewMonthlyOql) "Benchmark: 5.00% • Tap →" else "🔒 View Restricted",
           trendText = if (tvData.kpis.todayOql <= 5.0) "PASS" else "ALERT",
@@ -532,6 +540,16 @@ fun HomeScreen(
           modifier = Modifier.weight(1f).testTag("kpi_monthly_oql_btn")
         )
       }
+
+      // =========================================================================
+      // NEW CHART: Weekly Trend Chart for "BS OQL" (Insaf Life Dashboard Module)
+      // Placed directly below the existing "Up-to-Date OQL" metric card
+      // =========================================================================
+      BsOqlWeeklyTrendChartCard(
+        modifier = Modifier
+          .fillMaxWidth()
+          .testTag("insaf_life_bs_oql_weekly_chart")
+      )
 
       // Row 3: BS OQL (Buyer Standard OQL entered by IE) & FRI Pass Rate
       Row(
@@ -574,6 +592,8 @@ fun HomeScreen(
           OperatorMachineMetricCard(
             operatorsCount = tvData.kpis.operatorsCount,
             machinesCount = tvData.kpis.machinesCount,
+            helpersCount = tvData.kpis.helpersCount,
+            finishingCount = tvData.kpis.finishingStaffCount,
             modifier = Modifier.fillMaxWidth()
           )
         }
@@ -819,6 +839,7 @@ fun HomeScreen(
             listOf(
               "SPEEDOMETER" to "⚡ Line-Wise Efficiency",
               "COLUMN" to "📊 Target vs Output (Pieces)",
+              "EFF_BAR" to "📈 Today vs Monthly Efficiency",
               "PARETO" to "🎯 Top 5 Defects (Pareto)"
             ).forEach { (id, label) ->
               val isSelected = selectedChartTab == id
@@ -852,6 +873,11 @@ fun HomeScreen(
           )
           "COLUMN" -> TargetVsOutputBarChart(
             title = "${currentFloor.displayName} — Target vs Output Pieces (Column Chart)",
+            lines = tvData.linePerformance,
+            onLineClick = safeLineDeepDiveClick
+          )
+          "EFF_BAR" -> com.example.ui.components.LineEfficiencyBarChart(
+            title = "${currentFloor.displayName} — Line-Wise Today vs Monthly Efficiency",
             lines = tvData.linePerformance,
             onLineClick = safeLineDeepDiveClick
           )
@@ -987,6 +1013,7 @@ fun HomeScreen(
 
     AlertDialog(
       onDismissRequest = { showBsOqlDialog = false },
+      containerColor = Color.White,
       title = {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           Icon(Icons.Default.Tune, contentDescription = null, tint = Color(0xFF0284C7), modifier = Modifier.size(24.dp))
@@ -1052,6 +1079,8 @@ fun HomeScreen(
             enabled = canEdit,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             trailingIcon = { Text("%", fontWeight = FontWeight.Bold, color = Color(0xFF64748B), modifier = Modifier.padding(end = 12.dp)) },
+            colors = com.example.ui.theme.nflInputColors(),
+            textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
             modifier = Modifier.fillMaxWidth()
           )
 
@@ -1155,6 +1184,7 @@ fun HomeScreen(
   selectedLineDetail?.let { line ->
     AlertDialog(
       onDismissRequest = { selectedLineDetail = null },
+      containerColor = Color.White,
       title = {
         Text("Line ${line.lineId} — Live Performance", fontWeight = FontWeight.Black, fontSize = 16.sp)
       },
@@ -1323,8 +1353,8 @@ fun DualDefectTrackingCard(
     modifier = modifier.fillMaxWidth()
   ) {
     Column(
-      modifier = Modifier.padding(14.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp)
+      modifier = Modifier.padding(10.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1568,8 +1598,8 @@ fun LineWiseDhuCard(
     modifier = modifier.fillMaxWidth()
   ) {
     Column(
-      modifier = Modifier.padding(14.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp)
+      modifier = Modifier.padding(10.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1702,7 +1732,7 @@ fun LineWiseDhuCard(
         Box(
           modifier = Modifier
             .width(2.dp)
-            .fillMaxHeight()
+            .height((36 + lines.size * 42).dp)
             .background(Color(0xFFCBD5E1))
         )
 
@@ -1751,12 +1781,11 @@ fun LineWiseDhuCard(
             // Data Rows for Remaining Columns
             lines.forEachIndexed { index, line ->
               val isEven = index % 2 == 0
-              val hash = line.lineId.hashCode().let { if (it < 0) -it else it }
-              val dhuVal = line.dhu ?: (1.6 + ((hash % 12) / 10.0))
-              val effVal = line.todayEfficiencyPct ?: 74.0
-              val achVal = line.achievementPct ?: 86.0
-              val oqlVal = line.todayOqlPct ?: 3.5
-              val dayOutput = line.achievementPcs ?: 420
+              val dhuVal = line.dhu ?: 0.0
+              val effVal = line.todayEfficiencyPct ?: 0.0
+              val achVal = line.achievementPct ?: 0.0
+              val oqlVal = line.todayOqlPct ?: 0.0
+              val dayOutput = line.achievementPcs ?: 0
               val sent = line.defectSent
               val recv = line.defectReceived
               val bal = line.defectBalance

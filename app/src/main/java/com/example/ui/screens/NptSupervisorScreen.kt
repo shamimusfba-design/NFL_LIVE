@@ -39,7 +39,7 @@ fun NptSupervisorScreen(
   val incidents by repository.incidents.collectAsState()
   val userName by repository.currentUserName.collectAsState()
   val currentUser by repository.currentUser.collectAsState()
-  val canNptWrite = currentUser?.canNptWrite ?: false
+  val canNptWrite = currentUser?.let { it.isAdmin || it.role == UserRole.IE || it.canNptWrite } ?: false
 
   var selectedTab by remember { mutableIntStateOf(0) } // 0: Active NPT, 1: NPT History
   var filterCategory by remember { mutableStateOf<String>("ALL") }
@@ -121,8 +121,10 @@ fun NptSupervisorScreen(
   }
 
   Scaffold(
+    contentWindowInsets = WindowInsets(0, 0, 0, 0),
     topBar = {
       TopAppBar(
+        windowInsets = WindowInsets(0, 0, 0, 0),
         title = {
           Column {
             Text(
@@ -593,6 +595,14 @@ fun NptSupervisorScreen(
                     }
                   }
                 }
+
+                // Interactive Comments Section (Anyone can read & add comments with auto user name)
+                NptIncidentCommentsSection(
+                  incident = inc,
+                  repository = repository,
+                  currentUserName = currentUser?.name ?: userName,
+                  currentUserRole = currentUser?.role?.displayName ?: "Staff"
+                )
               }
             }
           }
@@ -605,6 +615,7 @@ fun NptSupervisorScreen(
   if (showReportNptDialog) {
     AlertDialog(
       onDismissRequest = { showReportNptDialog = false },
+      containerColor = Color.White,
       title = {
         Column {
           Text("Report NPT & Start Timer", fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -713,6 +724,8 @@ fun NptSupervisorScreen(
               label = { Text("Enter Custom NPT Type *") },
               placeholder = { Text("e.g. Needle Breakage, Boiler Off") },
               singleLine = true,
+              colors = com.example.ui.theme.nflInputColors(),
+              textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
               modifier = Modifier.fillMaxWidth()
             )
           }
@@ -724,6 +737,8 @@ fun NptSupervisorScreen(
             label = { Text("Process Name (প্রসেসের নাম)") },
             placeholder = { Text("e.g. Collar Attach, Side Seam, Hemming") },
             singleLine = true,
+            colors = com.example.ui.theme.nflInputColors(),
+            textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
             modifier = Modifier.fillMaxWidth()
           )
 
@@ -765,6 +780,8 @@ fun NptSupervisorScreen(
               label = { Text("Machine Reference / Asset ID") },
               placeholder = { Text("e.g. SNLS-04") },
               singleLine = true,
+              colors = com.example.ui.theme.nflInputColors(),
+              textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
               modifier = Modifier.fillMaxWidth()
             )
           }
@@ -775,6 +792,8 @@ fun NptSupervisorScreen(
             onValueChange = { formDescription = it },
             label = { Text("NPT Description (সমস্যার বিবরণ) *") },
             placeholder = { Text("e.g. Motor heated, needle bar vibrating, stitch skipping") },
+            colors = com.example.ui.theme.nflInputColors(),
+            textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
             modifier = Modifier.fillMaxWidth()
           )
 
@@ -784,6 +803,8 @@ fun NptSupervisorScreen(
             onValueChange = { formReportedCause = it },
             label = { Text("Reported Cause (কারণ - ঐচ্ছিক)") },
             placeholder = { Text("e.g. Bearing loose, belt cut") },
+            colors = com.example.ui.theme.nflInputColors(),
+            textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
             modifier = Modifier.fillMaxWidth()
           )
         }
@@ -839,15 +860,18 @@ fun NptSupervisorScreen(
   if (attendingIncidentId != null) {
     AlertDialog(
       onDismissRequest = { attendingIncidentId = null },
-      title = { Text("Mechanic Attendance", fontWeight = FontWeight.Bold) },
+      containerColor = Color.White,
+      title = { Text("Mechanic Attendance", fontWeight = FontWeight.Bold, color = Color(0xFF0F172A)) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text("Mechanic attending this stoppage:", fontSize = 12.sp)
+          Text("Mechanic attending this stoppage:", fontSize = 12.sp, color = Color(0xFF334155))
           OutlinedTextField(
             value = mechanicNameInput,
             onValueChange = { mechanicNameInput = it },
             label = { Text("Mechanic Name") },
             singleLine = true,
+            colors = com.example.ui.theme.nflInputColors(),
+            textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
             modifier = Modifier.fillMaxWidth()
           )
         }
@@ -877,15 +901,18 @@ fun NptSupervisorScreen(
   if (resolvingIncidentId != null) {
     AlertDialog(
       onDismissRequest = { resolvingIncidentId = null },
-      title = { Text("Stop NPT & Resolve Stoppage", fontWeight = FontWeight.Bold) },
+      containerColor = Color.White,
+      title = { Text("Stop NPT & Resolve Stoppage", fontWeight = FontWeight.Bold, color = Color(0xFF0F172A)) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text("Record the restoration action taken so that NPT duration is finalized:", fontSize = 12.sp)
+          Text("Record the restoration action taken so that NPT duration is finalized:", fontSize = 12.sp, color = Color(0xFF334155))
           OutlinedTextField(
             value = resolutionNoteText,
             onValueChange = { resolutionNoteText = it },
             label = { Text("Resolution Note *") },
             placeholder = { Text("e.g. Machine repaired, test run pass, production resumed") },
+            colors = com.example.ui.theme.nflInputColors(),
+            textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
             modifier = Modifier.fillMaxWidth()
           )
         }
@@ -915,3 +942,129 @@ fun NptSupervisorScreen(
     )
   }
 }
+
+@Composable
+fun NptIncidentCommentsSection(
+  incident: IncidentItem,
+  repository: NflRepository,
+  currentUserName: String,
+  currentUserRole: String
+) {
+  var isExpanded by remember(incident.id) { mutableStateOf(incident.comments.isNotEmpty()) }
+  var commentInput by remember(incident.id) { mutableStateOf("") }
+  val comments = incident.comments
+
+  Column(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(top = 6.dp),
+    verticalArrangement = Arrangement.spacedBy(6.dp)
+  ) {
+    // Header toggle
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(6.dp))
+        .background(Color(0xFFF1F5F9))
+        .clickable { isExpanded = !isExpanded }
+        .padding(horizontal = 10.dp, vertical = 6.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Icon(Icons.Default.ChatBubbleOutline, contentDescription = null, tint = Color(0xFF0284C7), modifier = Modifier.size(15.dp))
+        Text(
+          text = if (comments.isEmpty()) "💬 Add Comments / Remarks (মন্তব্য করুন)" else "💬 Comments (${comments.size})",
+          fontSize = 11.sp,
+          fontWeight = FontWeight.Bold,
+          color = Color(0xFF0369A1)
+        )
+      }
+      Icon(
+        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+        contentDescription = null,
+        tint = Color(0xFF0369A1),
+        modifier = Modifier.size(16.dp)
+      )
+    }
+
+    if (isExpanded) {
+      if (comments.isEmpty()) {
+        Text(
+          text = "No remarks yet. Anyone can write comments below.",
+          fontSize = 10.5.sp,
+          color = Color(0xFF64748B),
+          modifier = Modifier.padding(horizontal = 4.dp)
+        )
+      } else {
+        comments.forEach { c ->
+          val formattedTime = java.text.SimpleDateFormat("hh:mm a, dd MMM", java.util.Locale.US).format(java.util.Date(c.timestamp))
+          Surface(
+            color = Color.White,
+            shape = RoundedCornerShape(6.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Text(
+                  text = "👤 ${c.userName} ${if (c.userRole.isNotBlank()) "(${c.userRole})" else ""}",
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = Color(0xFF0F172A)
+                )
+                Text(
+                  text = formattedTime,
+                  fontSize = 9.sp,
+                  color = Color(0xFF64748B)
+                )
+              }
+              Text(
+                text = c.commentText,
+                fontSize = 11.5.sp,
+                color = Color(0xFF334155)
+              )
+            }
+          }
+        }
+      }
+
+      // Input row
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+      ) {
+        OutlinedTextField(
+          value = commentInput,
+          onValueChange = { commentInput = it },
+          placeholder = { Text("Comment as $currentUserName...", fontSize = 11.sp, color = Color(0xFF94A3B8)) },
+          modifier = Modifier.weight(1f),
+          singleLine = true,
+          shape = RoundedCornerShape(6.dp),
+          colors = com.example.ui.theme.nflInputColors(),
+          textStyle = LocalTextStyle.current.copy(fontSize = 12.sp, color = Color(0xFF0F172A))
+        )
+        Button(
+          onClick = {
+            if (commentInput.isNotBlank()) {
+              repository.addIncidentComment(incident.id, commentInput, currentUserName, currentUserRole)
+              commentInput = ""
+            }
+          },
+          enabled = commentInput.isNotBlank(),
+          shape = RoundedCornerShape(6.dp),
+          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+          contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+        ) {
+          Text("Post", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+      }
+    }
+  }
+}
+

@@ -41,20 +41,21 @@ fun QualityEntryScreen(
   val isOnline by repository.isOnline.collectAsState()
   val currentUser by repository.currentUser.collectAsState()
   val isAdminUser = currentUser?.isAdmin == true && currentUser?.role == com.example.model.UserRole.ADMIN
-  val isWithinTimeWindow = isAdminUser || repository.isWithinDailyEntryWindow()
-  val hasRoleQualityPermission = isAdminUser || (currentUser?.let {
+  val isIeUser = currentUser?.role == com.example.model.UserRole.IE
+  val isWithinTimeWindow = isAdminUser || isIeUser || repository.isWithinDailyEntryWindow()
+  val hasRoleQualityPermission = isAdminUser || isIeUser || (currentUser?.let {
     (it.canQualityWrite || it.canOqlWrite) &&
-        it.role in setOf(com.example.model.UserRole.QUALITY_REPORTER, com.example.model.UserRole.AUDITOR)
+        it.role in setOf(com.example.model.UserRole.QUALITY_REPORTER, com.example.model.UserRole.AUDITOR, com.example.model.UserRole.IE)
   } ?: false)
   val canQualityWrite = hasRoleQualityPermission && isWithinTimeWindow
-  val canNavigateProd = isAdminUser || (currentUser?.let {
+  val canNavigateProd = isAdminUser || isIeUser || (currentUser?.let {
     (it.canProductionWrite || it.canFinishingWrite) &&
-        it.role in setOf(com.example.model.UserRole.SUPERVISOR, com.example.model.UserRole.PRODUCTION_REPORTER)
+        it.role in setOf(com.example.model.UserRole.SUPERVISOR, com.example.model.UserRole.PRODUCTION_REPORTER, com.example.model.UserRole.IE)
   } ?: false)
-  val canNavigateMonthly = isAdminUser || (currentUser?.let {
+  val canNavigateMonthly = isAdminUser || isIeUser || (currentUser?.let {
     it.canMonthlyTargetWrite && it.role == com.example.model.UserRole.IE
   } ?: false)
-  val canNavigateMorningSetup = isAdminUser || (currentUser?.let {
+  val canNavigateMorningSetup = isAdminUser || isIeUser || (currentUser?.let {
     it.canMorningTargetWrite && it.role in setOf(
       com.example.model.UserRole.IE,
       com.example.model.UserRole.PRODUCTION_REPORTER
@@ -135,8 +136,10 @@ fun QualityEntryScreen(
   val totalDefects = defectRows.sumOf { it.count }
 
   Scaffold(
+    contentWindowInsets = WindowInsets(0, 0, 0, 0),
     topBar = {
       TopAppBar(
+        windowInsets = WindowInsets(0, 0, 0, 0),
         title = {
           Text(
             text = "Quality Entry",
@@ -163,11 +166,11 @@ fun QualityEntryScreen(
   ) { paddingValues ->
     Column(
       modifier = Modifier
-        .fillMaxSize()
+        .fillMaxWidth()
         .padding(paddingValues)
         .verticalScroll(rememberScrollState())
-        .padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(16.dp)
+        .padding(8.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
       // Top Module Navigation Tabs (Strictly gated by user write permissions)
       Row(
@@ -363,11 +366,12 @@ fun QualityEntryScreen(
 
               DropdownMenu(
                 expanded = showLineDropdown,
-                onDismissRequest = { showLineDropdown = false }
+                onDismissRequest = { showLineDropdown = false },
+                modifier = Modifier.background(Color.White)
               ) {
                 availableLines.forEach { line ->
                   DropdownMenuItem(
-                    text = { Text("Line ${line.id} (${selectedFloor.displayName})", fontWeight = FontWeight.SemiBold) },
+                    text = { Text("Line ${line.id} (${selectedFloor.displayName})", fontWeight = FontWeight.Bold, color = Color(0xFF0F172A)) },
                     onClick = {
                       selectedLine = line.id
                       showLineDropdown = false
@@ -476,11 +480,12 @@ fun QualityEntryScreen(
 
                 DropdownMenu(
                   expanded = showHourDropdown,
-                  onDismissRequest = { showHourDropdown = false }
+                  onDismissRequest = { showHourDropdown = false },
+                  modifier = Modifier.background(Color.White)
                 ) {
                   repository.defaultHourSlots.forEach { slot ->
                     DropdownMenuItem(
-                      text = { Text(slot) },
+                      text = { Text(slot, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A)) },
                       onClick = {
                         selectedHour = slot
                         showHourDropdown = false
@@ -556,6 +561,7 @@ fun QualityEntryScreen(
                 modifier = Modifier
                   .fillMaxWidth()
                   .testTag("checked_garments_input"),
+                colors = com.example.ui.theme.nflInputColors(),
                 textStyle = LocalTextStyle.current.copy(
                   fontSize = 20.sp,
                   fontWeight = FontWeight.Bold,
@@ -585,6 +591,7 @@ fun QualityEntryScreen(
                 modifier = Modifier
                   .fillMaxWidth()
                   .testTag("defective_garments_input"),
+                colors = com.example.ui.theme.nflInputColors(),
                 textStyle = LocalTextStyle.current.copy(
                   fontSize = 20.sp,
                   fontWeight = FontWeight.Bold,
@@ -595,7 +602,262 @@ fun QualityEntryScreen(
             }
           }
 
-          // Sewing Defect Rectification Tracking (সুইং ডিফেক্ট আদান-প্রদান ও রেক্টিফিকেশন)
+          // DEFECTS SECTION (Directly below Defect Qty input as requested)
+          val defectiveInt = defectiveGarmentsText.toIntOrNull() ?: 0
+          val isExceedingTotalDefect = defectiveInt > 0 && totalDefects > defectiveInt
+
+          Column(
+            modifier = Modifier
+              .fillMaxWidth()
+              .background(Color(0xFFF8FAFC), RoundedCornerShape(10.dp))
+              .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Column {
+                Text(
+                  text = "Defect Breakdown by Type (ডিফেক্ট বিবরণ)",
+                  fontSize = 13.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = Color(0xFF0F172A)
+                )
+                Text(
+                  text = "Select preset defect or choose custom if needed",
+                  fontSize = 10.sp,
+                  color = Color(0xFF64748B)
+                )
+              }
+
+              Surface(
+                color = if (isExceedingTotalDefect) Color(0xFFFEE2E2) else Color(0xFFEFF6FF),
+                shape = RoundedCornerShape(4.dp)
+              ) {
+                Text(
+                  text = "Total: $totalDefects pcs",
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = if (isExceedingTotalDefect) Color(0xFFDC2626) else Color(0xFF1D4ED8),
+                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                )
+              }
+            }
+
+            // Defect Rows
+            defectRows.forEachIndexed { index, defectItem ->
+              var showDefectTypeDropdown by remember { mutableStateOf(false) }
+              val isStandardType = repository.standardDefectTypes.any { it.equals(defectItem.defectType, ignoreCase = true) }
+              val isCustomOption = defectItem.defectType.startsWith("Custom", ignoreCase = true) || !isStandardType
+
+              Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                  // Defect type dropdown selector
+                  Box(modifier = Modifier.weight(1.3f)) {
+                    OutlinedCard(
+                      modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showDefectTypeDropdown = true },
+                      shape = RoundedCornerShape(6.dp),
+                      colors = CardDefaults.outlinedCardColors(containerColor = Color.White),
+                      border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF93C5FD))
+                    ) {
+                      Row(
+                        modifier = Modifier
+                          .fillMaxWidth()
+                          .padding(horizontal = 10.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                      ) {
+                        Text(
+                          text = defectItem.defectType,
+                          fontSize = 12.sp,
+                          fontWeight = FontWeight.Bold,
+                          color = Color(0xFF0A0F1D),
+                          maxLines = 1
+                        )
+                        Icon(
+                          imageVector = Icons.Default.KeyboardArrowDown,
+                          contentDescription = null,
+                          tint = Color(0xFF1D4ED8),
+                          modifier = Modifier.size(16.dp)
+                        )
+                      }
+                    }
+
+                    DropdownMenu(
+                      expanded = showDefectTypeDropdown,
+                      onDismissRequest = { showDefectTypeDropdown = false },
+                      modifier = Modifier.background(Color.White)
+                    ) {
+                      repository.standardDefectTypes.forEach { dType ->
+                        DropdownMenuItem(
+                          text = { Text(dType, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A)) },
+                          onClick = {
+                            defectRows = defectRows.mapIndexed { idx, itm ->
+                              if (idx == index) itm.copy(defectType = dType) else itm
+                            }
+                            showDefectTypeDropdown = false
+                          }
+                        )
+                      }
+                      DropdownMenuItem(
+                        text = { Text("✏️ + Custom Defect... (কাস্টম ডিফেক্ট)", fontWeight = FontWeight.Bold, color = NflRoyalBlue) },
+                        onClick = {
+                          defectRows = defectRows.mapIndexed { idx, itm ->
+                            if (idx == index) itm.copy(defectType = "Custom Defect") else itm
+                          }
+                          showDefectTypeDropdown = false
+                        }
+                      )
+                    }
+                  }
+
+                  // Count input
+                  OutlinedTextField(
+                    value = defectItem.count.toString(),
+                    onValueChange = { newVal ->
+                      val cnt = newVal.toIntOrNull() ?: 0
+                      defectRows = defectRows.mapIndexed { idx, itm ->
+                        if (idx == index) itm.copy(count = cnt) else itm
+                      }
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier
+                      .weight(0.7f)
+                      .testTag("defect_count_input_$index"),
+                    colors = com.example.ui.theme.nflInputColors(),
+                    textStyle = LocalTextStyle.current.copy(
+                      fontSize = 14.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = Color(0xFF102A43)
+                    ),
+                    shape = RoundedCornerShape(6.dp)
+                  )
+
+                  // Delete button
+                  IconButton(
+                    onClick = {
+                      defectRows = defectRows.filterIndexed { idx, _ -> idx != index }
+                    },
+                    modifier = Modifier.size(36.dp)
+                  ) {
+                    Icon(
+                      imageVector = Icons.Default.DeleteOutline,
+                      contentDescription = "Remove defect",
+                      tint = Color(0xFF90A4AE),
+                      modifier = Modifier.size(20.dp)
+                    )
+                  }
+                }
+
+                // Show custom defect text input ONLY if user selected Custom/Other option!
+                if (isCustomOption) {
+                  OutlinedTextField(
+                    value = defectItem.defectType.replace("Custom Defect", "").trimStart(),
+                    onValueChange = { typedName ->
+                      defectRows = defectRows.mapIndexed { idx, itm ->
+                        if (idx == index) itm.copy(defectType = typedName.ifEmpty { "Custom Defect" }) else itm
+                      }
+                    },
+                    label = { Text("Enter Custom Defect Name (কাস্টম নাম লিখুন)", fontSize = 11.sp) },
+                    placeholder = { Text("e.g. Broken Needle, Slub, Pleat", fontSize = 11.sp) },
+                    singleLine = true,
+                    colors = com.example.ui.theme.nflInputColors(),
+                    textStyle = LocalTextStyle.current.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A)),
+                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                    shape = RoundedCornerShape(6.dp)
+                  )
+                }
+              }
+            }
+
+            // "+ Add defect" button
+            TextButton(
+              onClick = {
+                defectRows = defectRows + DefectItem("Skip Stitch", 1)
+              },
+              modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .testTag("add_defect_btn")
+            ) {
+              Icon(Icons.Default.Add, contentDescription = null, tint = NflPrimaryBlue, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("+ Add defect", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = NflPrimaryBlue)
+            }
+
+            // Explanatory footnote and Total defects count
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = "One garment may have multiple defects.",
+                fontSize = 11.sp,
+                color = Color(0xFF78909C)
+              )
+              Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                  text = "Total defects:",
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.Medium,
+                  color = Color(0xFF37474F)
+                )
+                Text(
+                  text = "$totalDefects pcs",
+                  fontSize = 14.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = if (isExceedingTotalDefect) Color(0xFFDC2626) else Color(0xFF102A43)
+                )
+              }
+            }
+
+            // Validation Warning Banner: "Can't exceed total defect"
+            if (isExceedingTotalDefect) {
+              Surface(
+                color = Color(0xFFFEF2F2),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Row(
+                  modifier = Modifier.padding(10.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = Color(0xFFDC2626),
+                    modifier = Modifier.size(20.dp)
+                  )
+                  Column {
+                    Text(
+                      text = "Can't exceed total defect (মোট ডিফেক্টের বেশি হতে পারবে না)!",
+                      color = Color(0xFF991B1B),
+                      fontSize = 12.sp,
+                      fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                      text = "Type-wise defects ($totalDefects pcs) exceeds Defective Garments ($defectiveInt pcs).",
+                      color = Color(0xFFB91C1C),
+                      fontSize = 11.sp
+                    )
+                  }
+                }
+              }
+            }
+          }
+
+          // SEWING DEFECT & SPOT DEFECT RECTIFICATION SECTION (Now placed AFTER defects breakdown)
           val liveSent = defectSentText.toIntOrNull() ?: 0
           val liveRecv = defectReceivedText.toIntOrNull() ?: 0
           val liveBal = (liveSent - liveRecv).coerceAtLeast(0)
@@ -661,6 +923,7 @@ fun QualityEntryScreen(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
+                    colors = com.example.ui.theme.nflInputColors(textColor = Color(0xFFEA580C)),
                     textStyle = LocalTextStyle.current.copy(
                       fontSize = 16.sp,
                       fontWeight = FontWeight.Bold,
@@ -684,6 +947,7 @@ fun QualityEntryScreen(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
+                    colors = com.example.ui.theme.nflInputColors(textColor = Color(0xFF16A34A)),
                     textStyle = LocalTextStyle.current.copy(
                       fontSize = 16.sp,
                       fontWeight = FontWeight.Bold,
@@ -779,6 +1043,7 @@ fun QualityEntryScreen(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
+                    colors = com.example.ui.theme.nflInputColors(textColor = Color(0xFF7E22CE)),
                     textStyle = LocalTextStyle.current.copy(
                       fontSize = 16.sp,
                       fontWeight = FontWeight.Bold,
@@ -802,6 +1067,7 @@ fun QualityEntryScreen(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
+                    colors = com.example.ui.theme.nflInputColors(textColor = Color(0xFF0D9488)),
                     textStyle = LocalTextStyle.current.copy(
                       fontSize = 16.sp,
                       fontWeight = FontWeight.Bold,
@@ -841,192 +1107,20 @@ fun QualityEntryScreen(
             }
           }
 
-          // Defects Section
-          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-              text = "Defects",
-              fontSize = 13.sp,
-              fontWeight = FontWeight.Bold,
-              color = Color(0xFF263238)
-            )
-
-            // Defect Rows
-            defectRows.forEachIndexed { index, defectItem ->
-              var showDefectTypeDropdown by remember { mutableStateOf(false) }
-
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-              ) {
-                // Defect type dropdown selector
-                Box(modifier = Modifier.weight(1.3f)) {
-                  OutlinedCard(
-                    modifier = Modifier
-                      .fillMaxWidth()
-                      .clickable { showDefectTypeDropdown = true },
-                    shape = RoundedCornerShape(6.dp),
-                    colors = CardDefaults.outlinedCardColors(containerColor = Color.White)
-                  ) {
-                    Row(
-                      modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 10.dp),
-                      verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                      Text(
-                        text = defectItem.defectType,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color(0xFF263238)
-                      )
-                      Icon(
-                        imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = Color(0xFF78909C),
-                        modifier = Modifier.size(16.dp)
-                      )
-                    }
-                  }
-
-                  DropdownMenu(
-                    expanded = showDefectTypeDropdown,
-                    onDismissRequest = { showDefectTypeDropdown = false }
-                  ) {
-                    repository.standardDefectTypes.forEach { dType ->
-                      DropdownMenuItem(
-                        text = { Text(dType) },
-                        onClick = {
-                          defectRows = defectRows.mapIndexed { idx, itm ->
-                            if (idx == index) itm.copy(defectType = dType) else itm
-                          }
-                          showDefectTypeDropdown = false
-                        }
-                      )
-                    }
-                    DropdownMenuItem(
-                      text = { Text("✏️ + Custom Defect...", fontWeight = FontWeight.Bold, color = NflRoyalBlue) },
-                      onClick = {
-                        defectRows = defectRows.mapIndexed { idx, itm ->
-                          if (idx == index) itm.copy(defectType = "Custom Defect") else itm
-                        }
-                        showDefectTypeDropdown = false
-                      }
-                    )
-                  }
-                }
-
-                // Count input
-                OutlinedTextField(
-                  value = defectItem.count.toString(),
-                  onValueChange = { newVal ->
-                    val cnt = newVal.toIntOrNull() ?: 0
-                    defectRows = defectRows.mapIndexed { idx, itm ->
-                      if (idx == index) itm.copy(count = cnt) else itm
-                    }
-                  },
-                  singleLine = true,
-                  keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                  modifier = Modifier
-                    .weight(0.7f)
-                    .testTag("defect_count_input_$index"),
-                  textStyle = LocalTextStyle.current.copy(
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF102A43)
-                  ),
-                  shape = RoundedCornerShape(6.dp)
-                )
-
-                // Delete button
-                IconButton(
-                  onClick = {
-                    defectRows = defectRows.filterIndexed { idx, _ -> idx != index }
-                  },
-                  modifier = Modifier.size(36.dp)
-                ) {
-                  Icon(
-                    imageVector = Icons.Default.DeleteOutline,
-                    contentDescription = "Remove defect",
-                    tint = Color(0xFF90A4AE),
-                    modifier = Modifier.size(20.dp)
-                  )
-                }
-              }
-
-              if (defectItem.defectType !in repository.standardDefectTypes) {
-                OutlinedTextField(
-                  value = defectItem.defectType.replace("Custom Defect", ""),
-                  onValueChange = { typedName ->
-                    defectRows = defectRows.mapIndexed { idx, itm ->
-                      if (idx == index) itm.copy(defectType = typedName.ifEmpty { "Custom Defect" }) else itm
-                    }
-                  },
-                  label = { Text("Enter Custom Defect Name (কাস্টম ডিফেক্টের নাম লিখুন)") },
-                  placeholder = { Text("e.g. Broken Needle, Slub, Pleat") },
-                  singleLine = true,
-                  modifier = Modifier.fillMaxWidth(),
-                  shape = RoundedCornerShape(6.dp)
-                )
-              }
-            }
-
-            // "+ Add defect" button
-            TextButton(
-              onClick = {
-                defectRows = defectRows + DefectItem("Poor Iron", 1)
-              },
-              modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .testTag("add_defect_btn")
-            ) {
-              Icon(Icons.Default.Add, contentDescription = null, tint = NflPrimaryBlue, modifier = Modifier.size(16.dp))
-              Spacer(modifier = Modifier.width(4.dp))
-              Text("+ Add defect", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = NflPrimaryBlue)
-            }
-
-            // Explanatory footnote and Total defects count
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Text(
-                text = "One garment may have multiple defects.",
-                fontSize = 11.sp,
-                color = Color(0xFF78909C)
-              )
-              Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                  text = "Total defects:",
-                  fontSize = 13.sp,
-                  fontWeight = FontWeight.Medium,
-                  color = Color(0xFF37474F)
-                )
-                Text(
-                  text = "$totalDefects",
-                  fontSize = 16.sp,
-                  fontWeight = FontWeight.Bold,
-                  color = Color(0xFF102A43)
-                )
-              }
-            }
-          }
-
           // Optional remarks
           OutlinedTextField(
             value = remarksText,
             onValueChange = { remarksText = it },
-            placeholder = { Text("Quality Remarks (Optional)", fontSize = 12.sp, color = Color(0xFF90A4AE)) },
+            placeholder = { Text("Quality Remarks (Optional)", fontSize = 12.sp, color = Color(0xFF64748B)) },
             modifier = Modifier.fillMaxWidth(),
+            colors = com.example.ui.theme.nflInputColors(),
+            textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFF0F172A)),
             shape = RoundedCornerShape(8.dp),
             singleLine = true
           )
 
           // Calculated live metrics banner
           val checkedInt = checkedGarmentsText.toIntOrNull() ?: 0
-          val defectiveInt = defectiveGarmentsText.toIntOrNull() ?: 0
           if (checkedInt > 0) {
             val liveOql = (defectiveInt.toDouble() / checkedInt.toDouble()) * 100.0
             val liveDhu = (totalDefects.toDouble() / checkedInt.toDouble()) * 100.0
@@ -1136,6 +1230,10 @@ fun QualityEntryScreen(
               }
               if (defective > checked) {
                 validationError = "Defective garments ($defective) cannot exceed checked garments ($checked)."
+                return@Button
+              }
+              if (totalDefects > defective) {
+                validationError = "Can't exceed total defect! Type-wise breakdown ($totalDefects pcs) cannot exceed Defective Garments ($defective pcs)."
                 return@Button
               }
 
