@@ -56,14 +56,6 @@ fun HistorySyncScreen(
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
           }
         },
-        actions = {
-          IconButton(
-            onClick = { repository.refreshFromGoogleSheet() },
-            modifier = Modifier.testTag("history_refresh_btn")
-          ) {
-            Icon(Icons.Default.Refresh, contentDescription = "Refresh Data", tint = if (isSyncing) Color(0xFFFDE047) else Color.White)
-          }
-        },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = NflRoyalBlue)
       )
     },
@@ -111,13 +103,15 @@ fun HistorySyncScreen(
             }
           }
 
-          Button(
-            onClick = { repository.refreshFromGoogleSheet() },
-            colors = ButtonDefaults.buttonColors(containerColor = if (pendingCount == 0) NflGreen else NflAmber),
-            shape = RoundedCornerShape(6.dp),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-          ) {
-            Text(if (isSyncing) "Updating..." else "Refresh Data", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+          if (pendingCount > 0) {
+            Button(
+              onClick = { repository.retryPendingSubmissions() },
+              colors = ButtonDefaults.buttonColors(containerColor = NflAmber),
+              shape = RoundedCornerShape(6.dp),
+              contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+              Text(if (isSyncing) "Syncing..." else "Sync now / Retry", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
           }
         }
       }

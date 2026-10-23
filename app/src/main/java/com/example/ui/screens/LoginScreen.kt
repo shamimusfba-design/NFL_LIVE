@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,6 +34,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -79,7 +83,7 @@ private fun nflAuthTextFieldColors() = OutlinedTextFieldDefaults.colors(
   cursorColor = Color(0xFF0755F5)
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun LoginScreen(
   repository: NflRepository,
@@ -88,10 +92,10 @@ fun LoginScreen(
   val users by repository.users.collectAsState()
   val isFirstAdminProvisioned = remember(users) { repository.isFirstAdminProvisioned() }
 
-  var screenMode by remember { mutableStateOf(AuthScreenMode.LOGIN) }
+  var screenMode by rememberSaveable { mutableStateOf(AuthScreenMode.LOGIN) }
 
-  // Login state
-  var employeeId by remember { mutableStateOf("") }
+  // Login state (never persist passwords across process death)
+  var employeeId by rememberSaveable { mutableStateOf("") }
   var password by remember { mutableStateOf("") }
   var showPassword by remember { mutableStateOf(false) }
   var isLoading by remember { mutableStateOf(false) }
@@ -105,23 +109,23 @@ fun LoginScreen(
   var otpStatusSuccess by remember { mutableStateOf(false) }
   var isSendingOtp by remember { mutableStateOf(false) }
 
-  // Employee Registration state
-  var regFullName by remember { mutableStateOf("") }
-  var regEmployeeId by remember { mutableStateOf("") }
-  var regDesignation by remember { mutableStateOf(EmployeeDesignation.PRODUCTION_SUPERVISOR) }
+  // Employee Registration state (never persist passwords across process death)
+  var regFullName by rememberSaveable { mutableStateOf("") }
+  var regEmployeeId by rememberSaveable { mutableStateOf("") }
+  var regDesignation by rememberSaveable { mutableStateOf(EmployeeDesignation.PRODUCTION_SUPERVISOR) }
   var regDesignationExpanded by remember { mutableStateOf(false) }
-  var regPhysicalFloor by remember { mutableStateOf(FloorScope.SEW_1) }
+  var regPhysicalFloor by rememberSaveable { mutableStateOf(FloorScope.SEW_1) }
   var regPassword by remember { mutableStateOf("") }
   var regConfirmPassword by remember { mutableStateOf("") }
   var showRegPassword by remember { mutableStateOf(false) }
 
-  // First Admin (1015198) Bootstrap state
-  var bootstrapAdminName by remember { mutableStateOf("Initial Administrator") }
+  // First Admin (1015198) Bootstrap state (never persist passwords)
+  var bootstrapAdminName by rememberSaveable { mutableStateOf("Initial Administrator") }
   var bootstrapPassword by remember { mutableStateOf("") }
   var bootstrapConfirmPassword by remember { mutableStateOf("") }
   var showBootstrapPassword by remember { mutableStateOf(false) }
 
-  // Mandatory Password Change state
+  // Mandatory Password Change state (never persist passwords)
   var currentTempPassword by remember { mutableStateOf("") }
   var newPassword by remember { mutableStateOf("") }
   var confirmNewPassword by remember { mutableStateOf("") }
@@ -137,16 +141,17 @@ fun LoginScreen(
     screenMode = AuthScreenMode.LOGIN
   }
 
-  Box(
+  BoxWithConstraints(
     modifier = Modifier
       .fillMaxSize()
       .background(Color(0xFF061B43))
   ) {
+    val headerHeight = (maxHeight * 0.35f).coerceIn(180.dp, 310.dp)
     // Realistic Garment Sewing Floor Factory Header with Deep Navy Dissolve Gradient
     Box(
       modifier = Modifier
         .fillMaxWidth()
-        .height(310.dp)
+        .height(headerHeight)
     ) {
       Image(
         painter = painterResource(id = R.drawable.img_factory_header),
@@ -176,6 +181,7 @@ fun LoginScreen(
         .fillMaxSize()
         .statusBarsPadding()
         .navigationBarsPadding()
+        .imePadding()
         .verticalScroll(rememberScrollState())
         .padding(horizontal = 20.dp, vertical = 16.dp),
       horizontalAlignment = Alignment.CenterHorizontally
@@ -384,7 +390,7 @@ fun LoginScreen(
                         )
                         Text(
                           text = "Initialize primary administrator account",
-                          fontSize = 10.sp,
+                          fontSize = 11.sp,
                           color = Color(0xFF78350F),
                           maxLines = 1,
                           overflow = TextOverflow.Ellipsis
@@ -403,7 +409,7 @@ fun LoginScreen(
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
-                          .height(32.dp)
+                          .heightIn(min = 36.dp)
                           .testTag("open_bootstrap_admin_button")
                       ) {
                         Icon(
@@ -434,6 +440,7 @@ fun LoginScreen(
                   label = { Text("Employee ID") },
                   placeholder = { Text("Enter Employee ID (e.g. $INITIAL_ADMIN_EMPLOYEE_ID)") },
                   leadingIcon = { Icon(Icons.Default.Badge, contentDescription = "Employee ID") },
+                  keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                   singleLine = true,
                   colors = fieldColors,
                   modifier = Modifier
@@ -463,7 +470,10 @@ fun LoginScreen(
                     }
                   },
                   visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                  keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                  keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Done
+                  ),
                   singleLine = true,
                   colors = fieldColors,
                   modifier = Modifier
@@ -632,7 +642,7 @@ fun LoginScreen(
                   shape = RoundedCornerShape(14.dp),
                   modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .heightIn(min = 50.dp)
                     .testTag("login_submit_button")
                 ) {
                   if (isLoading) {
@@ -669,7 +679,7 @@ fun LoginScreen(
                   shape = RoundedCornerShape(14.dp),
                   modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .heightIn(min = 50.dp)
                     .testTag("open_register_button")
                 ) {
                   Icon(
@@ -684,14 +694,14 @@ fun LoginScreen(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF0755F5),
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                   )
                 }
               }
 
               AuthScreenMode.REGISTER -> {
                 val isFinishingRole = DesignationPolicy.isFinishingDesignation(regDesignation)
-                val isAllFloorRole = regDesignation.defaultAuthorizedScope == FloorScope.ALL
                 val effectivePhysicalFloor = if (isFinishingRole) FloorScope.FINISHING else regPhysicalFloor
                 val previewAuthorizedScope = DesignationPolicy.resolveAuthorizedScope(regDesignation, effectivePhysicalFloor)
 
@@ -704,6 +714,7 @@ fun LoginScreen(
                   label = { Text("Full Name") },
                   placeholder = { Text("Enter your full official name") },
                   leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                  keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                   singleLine = true,
                   colors = fieldColors,
                   modifier = Modifier
@@ -721,6 +732,7 @@ fun LoginScreen(
                   label = { Text("Employee ID") },
                   placeholder = { Text("Enter official Employee ID") },
                   leadingIcon = { Icon(Icons.Default.Badge, contentDescription = null) },
+                  keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                   singleLine = true,
                   colors = fieldColors,
                   modifier = Modifier
@@ -822,7 +834,7 @@ fun LoginScreen(
                     ) {
                       Text(
                         text = regDesignation.defaultRole.displayName,
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF1E40AF),
                         maxLines = 1,
@@ -833,75 +845,51 @@ fun LoginScreen(
                   }
                 }
 
-                // All-floor designations do not require selecting a single physical floor.
+                // Physical Floor Selection (Sew-1, Sew-2, Sew-3, or Finishing for Finishing roles; never All Floor)
                 Column(
                   modifier = Modifier.fillMaxWidth(),
                   verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                   Text(
-                    text = when {
-                      isAllFloorRole -> "Assigned Floor / Department Scope (Auto-mapped)"
-                      isFinishingRole -> "Assigned Section (Auto-mapped)"
-                      else -> "Assigned Physical Floor"
-                    },
+                    text = if (isFinishingRole) "Assigned Section (Auto-mapped)" else "Assigned Physical Floor",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF334155)
                   )
-                  when {
-                    isAllFloorRole -> {
-                      FilterChip(
-                        selected = true,
-                        onClick = {},
-                        label = { Text("All Floor • All Departments", fontWeight = FontWeight.Bold) },
-                        leadingIcon = { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                        colors = FilterChipDefaults.filterChipColors(
-                          selectedContainerColor = Color(0xFFDBEAFE),
-                          selectedLabelColor = Color(0xFF1E3A8A)
+                  if (isFinishingRole) {
+                    FilterChip(
+                      selected = true,
+                      onClick = {},
+                      label = { Text("Finishing Section", fontWeight = FontWeight.Bold) },
+                      leadingIcon = { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                    )
+                  } else {
+                    FlowRow(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.spacedBy(8.dp),
+                      verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                      DesignationPolicy.validPhysicalSewingFloors.forEach { floorOption ->
+                        val isSelected = regPhysicalFloor == floorOption
+                        FilterChip(
+                          selected = isSelected,
+                          onClick = { regPhysicalFloor = floorOption },
+                          colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFFDBEAFE),
+                            selectedLabelColor = Color(0xFF1E3A8A),
+                            containerColor = Color(0xFFF8FAFC),
+                            labelColor = Color(0xFF475569)
+                          ),
+                          label = {
+                            Text(
+                              text = floorOption.displayName,
+                              fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium,
+                              maxLines = 1
+                            )
+                          },
+                          modifier = Modifier
+                            .testTag("register_floor_${floorOption.name.lowercase()}")
                         )
-                      )
-                      Text(
-                        text = "You can view all authorized factory areas. Data-entry permissions remain controlled by your approved role.",
-                        fontSize = 11.sp,
-                        color = Color(0xFF64748B)
-                      )
-                    }
-                    isFinishingRole -> {
-                      FilterChip(
-                        selected = true,
-                        onClick = {},
-                        label = { Text("Finishing Section", fontWeight = FontWeight.Bold) },
-                        leadingIcon = { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                      )
-                    }
-                    else -> {
-                      Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                      ) {
-                        DesignationPolicy.validPhysicalSewingFloors.forEach { floorOption ->
-                          val isSelected = regPhysicalFloor == floorOption
-                          FilterChip(
-                            selected = isSelected,
-                            onClick = { regPhysicalFloor = floorOption },
-                            colors = FilterChipDefaults.filterChipColors(
-                              selectedContainerColor = Color(0xFFDBEAFE),
-                              selectedLabelColor = Color(0xFF1E3A8A),
-                              containerColor = Color(0xFFF8FAFC),
-                              labelColor = Color(0xFF475569)
-                            ),
-                            label = {
-                              Text(
-                                text = floorOption.displayName,
-                                fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium,
-                                maxLines = 1
-                              )
-                            },
-                            modifier = Modifier
-                              .weight(1f)
-                              .testTag("register_floor_${floorOption.name.lowercase()}")
-                          )
-                        }
                       }
                     }
                   }
@@ -925,7 +913,10 @@ fun LoginScreen(
                     }
                   },
                   visualTransformation = if (showRegPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                  keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                  keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Next
+                  ),
                   singleLine = true,
                   colors = fieldColors,
                   modifier = Modifier
@@ -944,7 +935,10 @@ fun LoginScreen(
                   placeholder = { Text("Re-enter password") },
                   leadingIcon = { Icon(Icons.Default.LockReset, contentDescription = null) },
                   visualTransformation = if (showRegPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                  keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                  keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Done
+                  ),
                   singleLine = true,
                   colors = fieldColors,
                   modifier = Modifier
@@ -984,7 +978,7 @@ fun LoginScreen(
                   shape = RoundedCornerShape(12.dp),
                   modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .heightIn(min = 50.dp)
                     .testTag("register_submit_button")
                 ) {
                   Icon(Icons.Default.HowToReg, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -1372,7 +1366,7 @@ private fun FeatureIconColumn(
     }
     Text(
       text = title,
-      fontSize = 10.5.sp,
+      fontSize = 11.sp,
       fontWeight = FontWeight.SemiBold,
       color = Color(0xFFE2E8F0),
       textAlign = TextAlign.Center,

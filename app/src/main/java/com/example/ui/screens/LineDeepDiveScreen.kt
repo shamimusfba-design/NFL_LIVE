@@ -122,16 +122,6 @@ fun LineDeepDiveScreen(
           }
         },
         actions = {
-          IconButton(
-            onClick = { repository.refreshFromGoogleSheet() },
-            modifier = Modifier.testTag("deep_dive_refresh_btn")
-          ) {
-            Icon(
-              imageVector = Icons.Default.Refresh,
-              contentDescription = "Refresh Google Sheet",
-              tint = if (isSyncing) Color(0xFFFDE047) else Color(0xFF4ADE80)
-            )
-          }
           Box {
             TextButton(onClick = { showLineSwitcher = true }) {
               Text("Switch Line", color = Color(0xFFFDE047), fontWeight = FontWeight.Bold, fontSize = 11.sp)

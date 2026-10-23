@@ -48,6 +48,8 @@ fun SettingsScreen(
   val isSyncing by repository.isSyncing.collectAsState()
   val lastRefreshTime by repository.lastRefreshTime.collectAsState()
   val syncBanner by repository.syncStatusBanner.collectAsState()
+  val currentUser by repository.currentUser.collectAsState()
+  val firestoreReadStats by repository.firestoreReadStats.collectAsState()
 
   var editSheetId by remember(sheetId) { mutableStateOf(sheetId) }
   var editWebAppUrl by remember(webAppUrl) { mutableStateOf(webAppUrl) }
@@ -85,22 +87,6 @@ fun SettingsScreen(
         navigationIcon = {
           IconButton(onClick = onNavigateBack, modifier = Modifier.testTag("settings_back_btn")) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-          }
-        },
-        actions = {
-          IconButton(
-            onClick = {
-              repository.refreshFromGoogleSheet { _, msg ->
-                statusMessage = msg
-              }
-            },
-            modifier = Modifier.testTag("settings_top_refresh_btn")
-          ) {
-            Icon(
-              imageVector = Icons.Default.Refresh,
-              contentDescription = "Refresh Data",
-              tint = if (isSyncing) Color(0xFFFDE047) else Color(0xFF4ADE80)
-            )
           }
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF002D62))
@@ -198,32 +184,53 @@ fun SettingsScreen(
             )
           }
 
-          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-              onClick = {
-                repository.refreshFromGoogleSheet { _, msg ->
-                  statusMessage = msg
-                }
-              },
-              colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669)),
-              shape = RoundedCornerShape(8.dp),
-              modifier = Modifier.weight(1f).testTag("settings_refresh_sheet_btn")
-            ) {
-              Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
-              Spacer(Modifier.width(4.dp))
-              Text(if (isSyncing) "Updating..." else "Refresh Live Data", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            }
+          Button(
+            onClick = {
+              repository.refreshFromGoogleSheet { _, msg ->
+                statusMessage = msg
+              }
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669)),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.fillMaxWidth().testTag("settings_refresh_sheet_btn")
+          ) {
+            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(if (isSyncing) "Syncing..." else "Sync now / Retry", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+          }
 
-            OutlinedButton(
-              onClick = {
-                repository.pushAllLocalToGoogleSheet { _, msg ->
-                  statusMessage = msg
-                }
-              },
+          if (currentUser?.isAdmin == true) {
+            Surface(
+              color = Color(0xFFF8FAFC),
               shape = RoundedCornerShape(8.dp),
-              modifier = Modifier.weight(1f).testTag("settings_push_sheet_btn")
+              border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)),
+              modifier = Modifier.fillMaxWidth().testTag("admin_firestore_usage_card")
             ) {
-              Text("Sync Local Records", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+              Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                val totalDocs = firestoreReadStats.values.sumOf { it.totalChangesReceived }
+                val totalServer = firestoreReadStats.values.sumOf { it.serverChangesReceived }
+                val totalCache = firestoreReadStats.values.sumOf { it.cacheChangesReceived }
+                Text(
+                  text = "Firestore Session Read Counter (Admin Debug)",
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = Color(0xFF0F172A)
+                )
+                Text(
+                  text = "Total docs received: $totalDocs (Server: $totalServer • Cache: $totalCache)",
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.SemiBold,
+                  color = Color(0xFF334155)
+                )
+                firestoreReadStats.entries.forEach { (colName, stats) ->
+                  Text(
+                    text = "• $colName: ${stats.totalChangesReceived} docs (server=${stats.serverChangesReceived}, cache=${stats.cacheChangesReceived}, lastCache=${stats.lastIsFromCache})",
+                    fontSize = 9.5.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = Color(0xFF475569)
+                  )
+                }
+              }
             }
           }
         }

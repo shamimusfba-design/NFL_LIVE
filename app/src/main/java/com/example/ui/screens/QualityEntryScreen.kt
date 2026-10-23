@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -14,20 +15,46 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.NflRepository
 import com.example.model.*
 import com.example.ui.theme.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+internal val DefectItemListSaver: Saver<List<DefectItem>, ArrayList<String>> = Saver(
+  save = { list ->
+    val out = ArrayList<String>(list.size * 2)
+    list.forEach { item ->
+      out.add(item.defectType)
+      out.add(item.count.toString())
+    }
+    out
+  },
+  restore = { saved ->
+    val result = mutableListOf<DefectItem>()
+    var i = 0
+    while (i + 1 < saved.size) {
+      result.add(DefectItem(saved[i], saved[i + 1].toIntOrNull() ?: 0))
+      i += 2
+    }
+    result
+  }
+)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun QualityEntryScreen(
   repository: NflRepository,
@@ -37,6 +64,7 @@ fun QualityEntryScreen(
   onNavigateToMonthlySetup: () -> Unit = {},
   onNavigateToSetup: () -> Unit = {}
 ) {
+  val focusManager = LocalFocusManager.current
   val repoFloor by repository.currentFloor.collectAsState()
   val repoAssignedLine by repository.assignedLine.collectAsState()
   val isOnline by repository.isOnline.collectAsState()
@@ -64,40 +92,51 @@ fun QualityEntryScreen(
   } ?: false)
   val entries by repository.qualityEntries.collectAsState()
   val allTargets by repository.targets.collectAsState()
-  val syncStatusBanner by repository.syncStatusBanner.collectAsState()
 
-  var selectedFloor by remember { mutableStateOf(if (repoFloor == FloorScope.ALL) FloorScope.SEW_2 else repoFloor) }
+  var selectedFloorName by rememberSaveable {
+    mutableStateOf((if (repoFloor == FloorScope.ALL) FloorScope.SEW_2 else repoFloor).name)
+  }
+  val selectedFloor = remember(selectedFloorName) {
+    FloorScope.entries.find { it.name == selectedFloorName } ?: FloorScope.SEW_2
+  }
   val availableLines = remember(selectedFloor) {
     repository.allLinesMaster.filter { it.floor == selectedFloor.apiValue }
   }
-  var selectedLine by remember(selectedFloor) {
+  var selectedLine by rememberSaveable {
     mutableStateOf(
       if (availableLines.any { it.id == repoAssignedLine }) repoAssignedLine
       else availableLines.firstOrNull()?.id ?: "K1"
     )
   }
+  LaunchedEffect(selectedFloor) {
+    if (availableLines.none { it.id == selectedLine }) {
+      selectedLine = if (availableLines.any { it.id == repoAssignedLine }) repoAssignedLine
+      else availableLines.firstOrNull()?.id ?: "K1"
+    }
+  }
   var showLineDropdown by remember { mutableStateOf(false) }
 
   val currentBdDate = remember { repository.getCurrentBangladeshDateIso() }
-  var selectedDate by remember { mutableStateOf(currentBdDate) }
-  var selectedHour by remember { mutableStateOf("10:00 - 11:00") }
-  var selectedStyle by remember { mutableStateOf("") }
-  var checkedGarmentsText by remember { mutableStateOf("") }
-  var defectiveGarmentsText by remember { mutableStateOf("") }
-  var defectSentText by remember { mutableStateOf("") }
-  var defectReceivedText by remember { mutableStateOf("") }
-  var spotSentText by remember { mutableStateOf("") }
-  var spotReceivedText by remember { mutableStateOf("") }
+  var selectedDate by rememberSaveable { mutableStateOf(currentBdDate) }
+  var selectedHour by rememberSaveable { mutableStateOf("10:00 - 11:00") }
+  var selectedStyle by rememberSaveable { mutableStateOf("") }
+  var checkedGarmentsText by rememberSaveable { mutableStateOf("") }
+  var defectiveGarmentsText by rememberSaveable { mutableStateOf("") }
+  var defectSentText by rememberSaveable { mutableStateOf("") }
+  var defectReceivedText by rememberSaveable { mutableStateOf("") }
+  var spotSentText by rememberSaveable { mutableStateOf("") }
+  var spotReceivedText by rememberSaveable { mutableStateOf("") }
 
   val lineSetup = remember(selectedLine, allTargets) { repository.getLineSetup(selectedLine) }
 
   // Defects list state (starts blank by default)
-  var defectRows by remember { mutableStateOf(emptyList<DefectItem>()) }
+  var defectRows by rememberSaveable(stateSaver = DefectItemListSaver) { mutableStateOf(emptyList()) }
 
-  var remarksText by remember { mutableStateOf("") }
+  var remarksText by rememberSaveable { mutableStateOf("") }
+  var lastQualityContextKey by rememberSaveable { mutableStateOf("") }
   var showHourDropdown by remember { mutableStateOf(false) }
-  var showStyleDropdown by remember { mutableStateOf(false) }
-  var submissionSuccessMsg by remember { mutableStateOf<String?>(null) }
+  var saveUiState by remember { mutableStateOf(SaveUiState.Idle) }
+  var isSubmitting by remember { mutableStateOf(false) }
   var validationError by remember { mutableStateOf<String?>(null) }
 
   val existingSlotRecord = remember(entries, selectedLine, selectedDate, selectedHour) {
@@ -109,20 +148,38 @@ fun QualityEntryScreen(
     }
   }
 
-  LaunchedEffect(selectedLine, selectedDate, selectedHour, existingSlotRecord?.timestamp, existingSlotRecord?.revision) {
-    if (existingSlotRecord != null) {
-      if (existingSlotRecord.styleNumber.isNotBlank()) {
-        selectedStyle = existingSlotRecord.styleNumber
+  val currentQualityContextKey = "$selectedLine|$selectedDate|$selectedHour|${existingSlotRecord?.timestamp ?: 0L}|${existingSlotRecord?.revision ?: 0}"
+  LaunchedEffect(currentQualityContextKey) {
+    if (lastQualityContextKey != currentQualityContextKey) {
+      if (existingSlotRecord != null) {
+        if (existingSlotRecord.styleNumber.isNotBlank()) {
+          selectedStyle = existingSlotRecord.styleNumber
+        }
+        checkedGarmentsText = if (existingSlotRecord.checkedGarments > 0) existingSlotRecord.checkedGarments.toString() else ""
+        defectiveGarmentsText = if (existingSlotRecord.defectiveGarments > 0 || existingSlotRecord.isConfirmedZero) existingSlotRecord.defectiveGarments.toString() else ""
+        defectSentText = if (existingSlotRecord.defectSent > 0) existingSlotRecord.defectSent.toString() else ""
+        defectReceivedText = if (existingSlotRecord.defectReceived > 0) existingSlotRecord.defectReceived.toString() else ""
+        spotSentText = if (existingSlotRecord.spotSent > 0) existingSlotRecord.spotSent.toString() else ""
+        spotReceivedText = if (existingSlotRecord.spotReceived > 0) existingSlotRecord.spotReceived.toString() else ""
+        defectRows = existingSlotRecord.defects
+        remarksText = existingSlotRecord.remarks
+      } else {
+        checkedGarmentsText = ""
+        defectiveGarmentsText = ""
+        defectSentText = ""
+        defectReceivedText = ""
+        spotSentText = ""
+        spotReceivedText = ""
+        defectRows = emptyList()
+        remarksText = ""
       }
-      checkedGarmentsText = if (existingSlotRecord.checkedGarments > 0) existingSlotRecord.checkedGarments.toString() else ""
-      defectiveGarmentsText = if (existingSlotRecord.defectiveGarments > 0 || existingSlotRecord.isConfirmedZero) existingSlotRecord.defectiveGarments.toString() else ""
-      defectSentText = if (existingSlotRecord.defectSent > 0) existingSlotRecord.defectSent.toString() else ""
-      defectReceivedText = if (existingSlotRecord.defectReceived > 0) existingSlotRecord.defectReceived.toString() else ""
-      spotSentText = if (existingSlotRecord.spotSent > 0) existingSlotRecord.spotSent.toString() else ""
-      spotReceivedText = if (existingSlotRecord.spotReceived > 0) existingSlotRecord.spotReceived.toString() else ""
-      defectRows = existingSlotRecord.defects
-      remarksText = existingSlotRecord.remarks
-    } else {
+      lastQualityContextKey = currentQualityContextKey
+    }
+  }
+
+  // Clear drafts on logout
+  LaunchedEffect(currentUser?.id) {
+    if (currentUser == null) {
       checkedGarmentsText = ""
       defectiveGarmentsText = ""
       defectSentText = ""
@@ -131,6 +188,7 @@ fun QualityEntryScreen(
       spotReceivedText = ""
       defectRows = emptyList()
       remarksText = ""
+      lastQualityContextKey = ""
     }
   }
 
@@ -150,7 +208,10 @@ fun QualityEntryScreen(
           )
         },
         navigationIcon = {
-          IconButton(onClick = onNavigateBack, modifier = Modifier.testTag("quality_back_btn")) {
+          IconButton(
+            onClick = onNavigateBack,
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).testTag("quality_back_btn")
+          ) {
             Icon(
               imageVector = Icons.AutoMirrored.Filled.ArrowBack,
               contentDescription = "Back",
@@ -169,67 +230,76 @@ fun QualityEntryScreen(
       modifier = Modifier
         .fillMaxWidth()
         .padding(paddingValues)
+        .imePadding()
+        .navigationBarsPadding()
         .verticalScroll(rememberScrollState())
         .padding(8.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
       // Top Module Navigation Tabs (Strictly gated by user write permissions)
-      Row(
+      FlowRow(
         modifier = Modifier
           .fillMaxWidth()
           .background(Color.White, RoundedCornerShape(10.dp))
           .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
       ) {
         if (canNavigateProd) {
           Surface(
             onClick = onNavigateToProduction,
             shape = RoundedCornerShape(8.dp),
             color = Color(0xFFF1F5F9),
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f).heightIn(min = 40.dp)
           ) {
-            Text(
-              text = "🧵 Production",
-              fontSize = 10.sp,
-              fontWeight = FontWeight.SemiBold,
-              color = Color(0xFF475569),
-              textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-              modifier = Modifier.padding(vertical = 7.dp),
-              maxLines = 1
-            )
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp, vertical = 7.dp)) {
+              Text(
+                text = "🧵 Production",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF475569),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
           }
         }
         Surface(
           shape = RoundedCornerShape(8.dp),
           color = Color(0xFF0F172A),
-          modifier = Modifier.weight(1f)
+          modifier = Modifier.weight(1f).heightIn(min = 40.dp)
         ) {
-          Text(
-            text = "🔍 Quality",
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            modifier = Modifier.padding(vertical = 7.dp),
-            maxLines = 1
-          )
+          Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp, vertical = 7.dp)) {
+            Text(
+              text = "🔍 Quality",
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              color = Color.White,
+              textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
+            )
+          }
         }
         if (canNavigateMonthly) {
           Surface(
             onClick = onNavigateToMonthlySetup,
             shape = RoundedCornerShape(8.dp),
             color = Color(0xFFF1F5F9),
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f).heightIn(min = 40.dp)
           ) {
-            Text(
-              text = "📅 Monthly",
-              fontSize = 10.sp,
-              fontWeight = FontWeight.SemiBold,
-              color = Color(0xFF475569),
-              textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-              modifier = Modifier.padding(vertical = 7.dp),
-              maxLines = 1
-            )
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp, vertical = 7.dp)) {
+              Text(
+                text = "📅 Monthly",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF475569),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
           }
         }
         if (canNavigateMorningSetup) {
@@ -237,22 +307,24 @@ fun QualityEntryScreen(
             onClick = onNavigateToSetup,
             shape = RoundedCornerShape(8.dp),
             color = Color(0xFFF1F5F9),
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f).heightIn(min = 40.dp)
           ) {
-            Text(
-              text = "🌅 Targets",
-              fontSize = 10.sp,
-              fontWeight = FontWeight.SemiBold,
-              color = Color(0xFF475569),
-              textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-              modifier = Modifier.padding(vertical = 7.dp),
-              maxLines = 1
-            )
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp, vertical = 7.dp)) {
+              Text(
+                text = "🌅 Targets",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF475569),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
           }
         }
       }
 
-      // 1. Floor Selector Chips (Sew 1, Sew 2, Sew 3, Finishing)
+      // 1. Floor Selector Chips (Sew 1, Sew 2, Sew 3)
       Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(10.dp),
@@ -262,36 +334,42 @@ fun QualityEntryScreen(
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
           Text(
             text = "Select Factory Floor / Section:",
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF475569)
           )
-          Row(
+          FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
           ) {
             listOf(FloorScope.SEW_1, FloorScope.SEW_2, FloorScope.SEW_3).forEach { floor ->
               val isSelected = selectedFloor == floor
               Surface(
-                onClick = { selectedFloor = floor },
+                onClick = {
+                  selectedFloorName = floor.name
+                  saveUiState = SaveUiState.Idle
+                  validationError = null
+                },
                 shape = RoundedCornerShape(8.dp),
                 color = if (isSelected) Color(0xFF0F172A) else Color(0xFFF1F5F9),
                 border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Color(0xFF0F172A) else Color(0xFFCBD5E1)),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp)
               ) {
-                Text(
-                  text = when (floor) {
-                    FloorScope.SEW_1 -> "Sew-1"
-                    FloorScope.SEW_2 -> "Sew-2"
-                    FloorScope.SEW_3 -> "Sew-3"
-                    else -> floor.displayName
-                  },
-                  fontSize = 11.5.sp,
-                  fontWeight = FontWeight.Bold,
-                  color = if (isSelected) Color.White else Color(0xFF334155),
-                  textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                  modifier = Modifier.padding(vertical = 8.dp)
-                )
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp)) {
+                  Text(
+                    text = when (floor) {
+                      FloorScope.SEW_1 -> "Sew-1"
+                      FloorScope.SEW_2 -> "Sew-2"
+                      FloorScope.SEW_3 -> "Sew-3"
+                      else -> floor.displayName
+                    },
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isSelected) Color.White else Color(0xFF334155),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                  )
+                }
               }
             }
           }
@@ -310,8 +388,8 @@ fun QualityEntryScreen(
               ) {
                 Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(18.dp))
                 Column {
-                  Text("View-Only Mode (Quality Entry Locked)", color = Color(0xFF92400E), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                  Text("You have read-only access. Only authorized QC Inspectors & Auditors can enter defect records. (Management has view-only access).", color = Color(0xFFB45309), fontSize = 10.sp)
+                  Text("View-Only Mode (Quality Entry Locked)", color = Color(0xFF92400E), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                  Text("You have read-only access. Only authorized QC Inspectors & Auditors can enter defect records. (Management has view-only access).", color = Color(0xFFB45309), fontSize = 11.sp)
                 }
               }
             }
@@ -319,7 +397,7 @@ fun QualityEntryScreen(
         }
       }
 
-      // Main Card matching Image 1 Right
+      // Main Card
       Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -344,10 +422,11 @@ fun QualityEntryScreen(
                 onClick = { showLineDropdown = true },
                 shape = RoundedCornerShape(8.dp),
                 colors = CardDefaults.outlinedCardColors(containerColor = Color(0xFFEFF6FF)),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF93C5FD))
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF93C5FD)),
+                modifier = Modifier.heightIn(min = 48.dp)
               ) {
                 Row(
-                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
                   verticalAlignment = Alignment.CenterVertically,
                   horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
@@ -359,7 +438,7 @@ fun QualityEntryScreen(
                   )
                   Icon(
                     imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = null,
+                    contentDescription = "Select line",
                     tint = Color(0xFF1E40AF)
                   )
                 }
@@ -376,6 +455,7 @@ fun QualityEntryScreen(
                     onClick = {
                       selectedLine = line.id
                       showLineDropdown = false
+                      saveUiState = SaveUiState.Idle
                     }
                   )
                 }
@@ -407,7 +487,7 @@ fun QualityEntryScreen(
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
               Text("Date", fontSize = 12.sp, color = Color(0xFF78909C))
               OutlinedCard(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 shape = RoundedCornerShape(8.dp),
                 colors = CardDefaults.outlinedCardColors(containerColor = Color(0xFFF8FAFC))
               ) {
@@ -441,6 +521,7 @@ fun QualityEntryScreen(
                 OutlinedCard(
                   modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 48.dp)
                     .clickable { showHourDropdown = true }
                     .testTag("quality_hour_picker_btn"),
                   shape = RoundedCornerShape(8.dp),
@@ -455,7 +536,8 @@ fun QualityEntryScreen(
                   ) {
                     Row(
                       verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.spacedBy(6.dp)
+                      horizontalArrangement = Arrangement.spacedBy(6.dp),
+                      modifier = Modifier.weight(1f)
                     ) {
                       Icon(
                         imageVector = Icons.Default.Schedule,
@@ -467,12 +549,14 @@ fun QualityEntryScreen(
                         text = selectedHour,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
-                        color = Color(0xFF263238)
+                        color = Color(0xFF263238),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                       )
                     }
                     Icon(
                       imageVector = Icons.Default.KeyboardArrowDown,
-                      contentDescription = null,
+                      contentDescription = "Select hour slot",
                       tint = Color(0xFF546E7A),
                       modifier = Modifier.size(16.dp)
                     )
@@ -490,6 +574,7 @@ fun QualityEntryScreen(
                       onClick = {
                         selectedHour = slot
                         showHourDropdown = false
+                        saveUiState = SaveUiState.Idle
                       }
                     )
                   }
@@ -512,7 +597,7 @@ fun QualityEntryScreen(
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically
             ) {
-              Column {
+              Column(modifier = Modifier.weight(1f)) {
                 Text(
                   text = "Item: ${lineSetup.itemName}",
                   fontSize = 13.sp,
@@ -528,7 +613,7 @@ fun QualityEntryScreen(
               Surface(color = Color(0xFFDCFCE7), shape = RoundedCornerShape(4.dp)) {
                 Text(
                   text = "Quality Audit",
-                  fontSize = 10.sp,
+                  fontSize = 11.sp,
                   fontWeight = FontWeight.ExtraBold,
                   color = Color(0xFF166534),
                   modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
@@ -537,7 +622,11 @@ fun QualityEntryScreen(
             }
           }
 
-          // Checked Garments (pcs) & Defective Garments (pcs) Side-by-Side (Matches Screenshot)
+          val isSlotLocked = !isAdminUser && entries.any {
+            !it.isDemo && it.lineId == selectedLine && it.date == selectedDate && it.hourSlot == selectedHour
+          }
+
+          // Checked Garments (pcs) & Defective Garments (pcs) Side-by-Side
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -557,8 +646,15 @@ fun QualityEntryScreen(
                     validationError = null
                   }
                 },
+                enabled = !isSubmitting,
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(
+                  keyboardType = KeyboardType.Number,
+                  imeAction = ImeAction.Next
+                ),
+                keyboardActions = KeyboardActions(
+                  onNext = { focusManager.moveFocus(FocusDirection.Right) }
+                ),
                 modifier = Modifier
                   .fillMaxWidth()
                   .testTag("checked_garments_input"),
@@ -587,8 +683,15 @@ fun QualityEntryScreen(
                     validationError = null
                   }
                 },
+                enabled = !isSubmitting,
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(
+                  keyboardType = KeyboardType.Number,
+                  imeAction = ImeAction.Next
+                ),
+                keyboardActions = KeyboardActions(
+                  onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                ),
                 modifier = Modifier
                   .fillMaxWidth()
                   .testTag("defective_garments_input"),
@@ -603,7 +706,7 @@ fun QualityEntryScreen(
             }
           }
 
-          // DEFECTS SECTION (Directly below Defect Qty input as requested)
+          // DEFECTS SECTION
           val defectiveInt = defectiveGarmentsText.toIntOrNull() ?: 0
           val isExceedingTotalDefect = defectiveInt > 0 && totalDefects > defectiveInt
 
@@ -619,7 +722,7 @@ fun QualityEntryScreen(
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically
             ) {
-              Column {
+              Column(modifier = Modifier.weight(1f)) {
                 Text(
                   text = "Defect Breakdown by Type",
                   fontSize = 13.sp,
@@ -628,7 +731,7 @@ fun QualityEntryScreen(
                 )
                 Text(
                   text = "Select preset defect or choose custom if needed",
-                  fontSize = 10.sp,
+                  fontSize = 11.sp,
                   color = Color(0xFF64748B)
                 )
               }
@@ -664,6 +767,7 @@ fun QualityEntryScreen(
                     OutlinedCard(
                       modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(min = 48.dp)
                         .clickable { showDefectTypeDropdown = true },
                       shape = RoundedCornerShape(6.dp),
                       colors = CardDefaults.outlinedCardColors(containerColor = Color.White),
@@ -672,7 +776,7 @@ fun QualityEntryScreen(
                       Row(
                         modifier = Modifier
                           .fillMaxWidth()
-                          .padding(horizontal = 10.dp, vertical = 10.dp),
+                          .padding(horizontal = 10.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                       ) {
@@ -681,11 +785,13 @@ fun QualityEntryScreen(
                           fontSize = 12.sp,
                           fontWeight = FontWeight.Bold,
                           color = Color(0xFF0A0F1D),
-                          maxLines = 1
+                          maxLines = 1,
+                          overflow = TextOverflow.Ellipsis,
+                          modifier = Modifier.weight(1f)
                         )
                         Icon(
                           imageVector = Icons.Default.KeyboardArrowDown,
-                          contentDescription = null,
+                          contentDescription = "Select defect type",
                           tint = Color(0xFF1D4ED8),
                           modifier = Modifier.size(16.dp)
                         )
@@ -720,7 +826,7 @@ fun QualityEntryScreen(
                     }
                   }
 
-                  // Count input with vertical + / - stepper buttons (top +, bottom -)
+                  // Count input with vertical + / - stepper buttons
                   Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -735,9 +841,12 @@ fun QualityEntryScreen(
                       },
                       placeholder = { Text("0", fontSize = 12.sp, color = Color(0xFF94A3B8)) },
                       singleLine = true,
-                      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                      keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Next
+                      ),
                       modifier = Modifier
-                        .width(58.dp)
+                        .widthIn(min = 54.dp, max = 64.dp)
                         .testTag("defect_count_input_$index"),
                       colors = com.example.ui.theme.nflInputColors(),
                       textStyle = LocalTextStyle.current.copy(
@@ -749,12 +858,11 @@ fun QualityEntryScreen(
                       shape = RoundedCornerShape(6.dp)
                     )
 
-                    // Vertical + / - Stepper buttons (Top +, Bottom -)
+                    // Vertical + / - Stepper buttons
                     Column(
                       verticalArrangement = Arrangement.spacedBy(2.dp),
                       horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                      // Top: Plus Button (+)
                       Surface(
                         onClick = {
                           defectRows = defectRows.mapIndexed { idx, itm ->
@@ -765,7 +873,7 @@ fun QualityEntryScreen(
                         color = Color(0xFFDCFCE7),
                         border = BorderStroke(1.dp, Color(0xFF86EFAC)),
                         modifier = Modifier
-                          .size(width = 30.dp, height = 22.dp)
+                          .size(width = 32.dp, height = 24.dp)
                           .testTag("defect_inc_btn_$index")
                       ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -773,12 +881,11 @@ fun QualityEntryScreen(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Increase defect count",
                             tint = Color(0xFF15803D),
-                            modifier = Modifier.size(13.dp)
+                            modifier = Modifier.size(14.dp)
                           )
                         }
                       }
 
-                      // Bottom: Minus Button (-)
                       Surface(
                         onClick = {
                           defectRows = defectRows.mapIndexed { idx, itm ->
@@ -789,7 +896,7 @@ fun QualityEntryScreen(
                         color = Color(0xFFFEE2E2),
                         border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
                         modifier = Modifier
-                          .size(width = 30.dp, height = 22.dp)
+                          .size(width = 32.dp, height = 24.dp)
                           .testTag("defect_dec_btn_$index")
                       ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -797,19 +904,19 @@ fun QualityEntryScreen(
                             imageVector = Icons.Default.Remove,
                             contentDescription = "Decrease defect count",
                             tint = Color(0xFFB91C1C),
-                            modifier = Modifier.size(13.dp)
+                            modifier = Modifier.size(14.dp)
                           )
                         }
                       }
                     }
                   }
 
-                  // Delete button
+                  // Delete button (48dp touch target)
                   IconButton(
                     onClick = {
                       defectRows = defectRows.filterIndexed { idx, _ -> idx != index }
                     },
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(48.dp)
                   ) {
                     Icon(
                       imageVector = Icons.Default.DeleteOutline,
@@ -848,6 +955,7 @@ fun QualityEntryScreen(
               },
               modifier = Modifier
                 .align(Alignment.CenterHorizontally)
+                .heightIn(min = 48.dp)
                 .testTag("add_defect_btn")
             ) {
               Icon(Icons.Default.Add, contentDescription = null, tint = NflPrimaryBlue, modifier = Modifier.size(16.dp))
@@ -864,7 +972,8 @@ fun QualityEntryScreen(
               Text(
                 text = "One garment may have multiple defects.",
                 fontSize = 11.sp,
-                color = Color(0xFF78909C)
+                color = Color(0xFF78909C),
+                modifier = Modifier.weight(1f)
               )
               Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
@@ -919,7 +1028,7 @@ fun QualityEntryScreen(
             }
           }
 
-          // SEWING DEFECT & SPOT DEFECT RECTIFICATION SECTION (Now placed AFTER defects breakdown)
+          // SEWING DEFECT & SPOT DEFECT RECTIFICATION SECTION
           val liveSent = defectSentText.toIntOrNull() ?: 0
           val liveRecv = defectReceivedText.toIntOrNull() ?: 0
           val liveBal = (liveSent - liveRecv).coerceAtLeast(0)
@@ -939,7 +1048,7 @@ fun QualityEntryScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                   Text(
                     text = "Sewing Defect Rectification",
                     fontSize = 12.sp,
@@ -948,7 +1057,7 @@ fun QualityEntryScreen(
                   )
                   Text(
                     text = "Hourly Sent to Line vs Received & Pending Balance",
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     color = Color(0xFF64748B)
                   )
                 }
@@ -959,7 +1068,7 @@ fun QualityEntryScreen(
                 ) {
                   Text(
                     text = if (liveBal > 0) "Pending: $liveBal pcs" else "All Cleared",
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (liveBal > 0) Color(0xFFDC2626) else Color(0xFF166534),
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp)
@@ -982,8 +1091,15 @@ fun QualityEntryScreen(
                   OutlinedTextField(
                     value = defectSentText,
                     onValueChange = { if (it.all { ch -> ch.isDigit() }) defectSentText = it },
+                    enabled = !isSubmitting,
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(
+                      keyboardType = KeyboardType.Number,
+                      imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                      onNext = { focusManager.moveFocus(FocusDirection.Right) }
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                     colors = com.example.ui.theme.nflInputColors(textColor = Color(0xFFEA580C)),
                     textStyle = LocalTextStyle.current.copy(
@@ -1006,8 +1122,15 @@ fun QualityEntryScreen(
                   OutlinedTextField(
                     value = defectReceivedText,
                     onValueChange = { if (it.all { ch -> ch.isDigit() }) defectReceivedText = it },
+                    enabled = !isSubmitting,
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(
+                      keyboardType = KeyboardType.Number,
+                      imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                      onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                     colors = com.example.ui.theme.nflInputColors(textColor = Color(0xFF16A34A)),
                     textStyle = LocalTextStyle.current.copy(
@@ -1033,9 +1156,9 @@ fun QualityEntryScreen(
                     border = androidx.compose.foundation.BorderStroke(1.dp, if (liveBal > 0) Color(0xFFFECACA) else Color(0xFFBBF7D0)),
                     modifier = Modifier
                       .fillMaxWidth()
-                      .height(56.dp)
+                      .heightIn(min = 56.dp)
                   ) {
-                    Box(contentAlignment = Alignment.Center) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(4.dp)) {
                       Text(
                         text = "$liveBal",
                         fontSize = 18.sp,
@@ -1059,7 +1182,7 @@ fun QualityEntryScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                   Text(
                     text = "Spot Defect Rectification",
                     fontSize = 12.sp,
@@ -1068,7 +1191,7 @@ fun QualityEntryScreen(
                   )
                   Text(
                     text = "Hourly Sent to Spot Table vs Clean Received & Pending",
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     color = Color(0xFF64748B)
                   )
                 }
@@ -1079,7 +1202,7 @@ fun QualityEntryScreen(
                 ) {
                   Text(
                     text = if (liveSpotBal > 0) "Pending Spot: $liveSpotBal" else "Spot Cleared",
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (liveSpotBal > 0) Color(0xFFDC2626) else Color(0xFF166534),
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp)
@@ -1102,8 +1225,15 @@ fun QualityEntryScreen(
                   OutlinedTextField(
                     value = spotSentText,
                     onValueChange = { if (it.all { ch -> ch.isDigit() }) spotSentText = it },
+                    enabled = !isSubmitting,
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(
+                      keyboardType = KeyboardType.Number,
+                      imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                      onNext = { focusManager.moveFocus(FocusDirection.Right) }
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                     colors = com.example.ui.theme.nflInputColors(textColor = Color(0xFF7E22CE)),
                     textStyle = LocalTextStyle.current.copy(
@@ -1126,8 +1256,15 @@ fun QualityEntryScreen(
                   OutlinedTextField(
                     value = spotReceivedText,
                     onValueChange = { if (it.all { ch -> ch.isDigit() }) spotReceivedText = it },
+                    enabled = !isSubmitting,
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(
+                      keyboardType = KeyboardType.Number,
+                      imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                      onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                     colors = com.example.ui.theme.nflInputColors(textColor = Color(0xFF0D9488)),
                     textStyle = LocalTextStyle.current.copy(
@@ -1153,9 +1290,9 @@ fun QualityEntryScreen(
                     border = androidx.compose.foundation.BorderStroke(1.dp, if (liveSpotBal > 0) Color(0xFFFECACA) else Color(0xFFCCFBF1)),
                     modifier = Modifier
                       .fillMaxWidth()
-                      .height(56.dp)
+                      .heightIn(min = 56.dp)
                   ) {
-                    Box(contentAlignment = Alignment.Center) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(4.dp)) {
                       Text(
                         text = "$liveSpotBal",
                         fontSize = 18.sp,
@@ -1173,12 +1310,17 @@ fun QualityEntryScreen(
           OutlinedTextField(
             value = remarksText,
             onValueChange = { remarksText = it },
+            enabled = !isSubmitting,
             placeholder = { Text("Quality Remarks (Optional)", fontSize = 12.sp, color = Color(0xFF64748B)) },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().testTag("quality_remarks_input"),
             colors = com.example.ui.theme.nflInputColors(),
             textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFF0F172A)),
             shape = RoundedCornerShape(8.dp),
-            singleLine = true
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(
+              onDone = { focusManager.clearFocus() }
+            )
           )
 
           // Calculated live metrics banner
@@ -1218,14 +1360,15 @@ fun QualityEntryScreen(
               text = validationError ?: "",
               color = NflRed,
               fontSize = 12.sp,
-              fontWeight = FontWeight.Medium
+              fontWeight = FontWeight.Medium,
+              modifier = Modifier.testTag("quality_validation_error_text")
             )
           }
 
-          if (submissionSuccessMsg != null) {
-            val activeMsg = (syncStatusBanner ?: "").ifBlank { submissionSuccessMsg ?: "" }
-            val isWarning = activeMsg.startsWith("⚠️") || activeMsg.startsWith("🔒")
-            val isSaving = activeMsg.startsWith("⏳") || activeMsg.startsWith("🔄")
+          val saveFeedbackMsg = formatSaveFeedbackMessage(saveUiState)
+          if (saveFeedbackMsg != null) {
+            val isWarning = saveUiState == SaveUiState.SyncFailed
+            val isSaving = saveUiState == SaveUiState.Saving || saveUiState == SaveUiState.SavedLocally
             Surface(
               shape = RoundedCornerShape(6.dp),
               color = when {
@@ -1233,7 +1376,7 @@ fun QualityEntryScreen(
                 isSaving -> Color(0xFFE0F2FE)
                 else -> NflGreenLight
               },
-              modifier = Modifier.fillMaxWidth()
+              modifier = Modifier.fillMaxWidth().testTag("quality_save_status_banner")
             ) {
               Row(
                 modifier = Modifier.padding(10.dp),
@@ -1241,7 +1384,11 @@ fun QualityEntryScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
               ) {
                 Icon(
-                  imageVector = if (isWarning) Icons.Default.Warning else Icons.Default.CheckCircle,
+                  imageVector = when {
+                    isWarning -> Icons.Default.Warning
+                    isSaving -> Icons.Default.Sync
+                    else -> Icons.Default.CheckCircle
+                  },
                   contentDescription = null,
                   tint = when {
                     isWarning -> Color(0xFFD97706)
@@ -1251,7 +1398,7 @@ fun QualityEntryScreen(
                   modifier = Modifier.size(16.dp)
                 )
                 Text(
-                  text = activeMsg,
+                  text = saveFeedbackMsg,
                   color = when {
                     isWarning -> Color(0xFF92400E)
                     isSaving -> Color(0xFF0369A1)
@@ -1264,13 +1411,10 @@ fun QualityEntryScreen(
             }
           }
 
-          val isSlotLocked = !isAdminUser && entries.any {
-            !it.isDemo && it.lineId == selectedLine && it.date == selectedDate && it.hourSlot == selectedHour
-          }
-
-          // SUBMIT QUALITY Button (Solid Dark Green Rounded Button matching Image 1 Right)
+          // SUBMIT QUALITY Button
           Button(
             onClick = {
+              if (isSubmitting) return@Button
               if (!canQualityWrite || isSlotLocked) {
                 validationError = if (isSlotLocked) {
                   "🔒 Quality record for Line $selectedLine ($selectedHour) is already submitted. Only Admin can modify submitted records with a reason."
@@ -1326,23 +1470,48 @@ fun QualityEntryScreen(
                 isConfirmedZero = (defective == 0)
               )
 
-              repository.submitQuality(record)
-              val oqlVal = (defective.toDouble() / checked.toDouble()) * 100.0
-              submissionSuccessMsg = "Quality submitted for Line $selectedLine! OQL: ${"%.2f".format(oqlVal)}% • Sewing: $sSent/$sRecv (Bal: $sBal) • Spot: $spotS/$spotR (Bal: $spotB)"
+              isSubmitting = true
+              saveUiState = SaveUiState.Saving
               validationError = null
+              var localSucceeded = false
+              repository.submitQuality(
+                entry = record,
+                onLocalSaved = {
+                  localSucceeded = true
+                  saveUiState = SaveUiState.SavedLocally
+                  checkedGarmentsText = ""
+                  defectiveGarmentsText = ""
+                  defectSentText = ""
+                  defectReceivedText = ""
+                  spotSentText = ""
+                  spotReceivedText = ""
+                  defectRows = emptyList()
+                  remarksText = ""
+                },
+                onCloudResult = { synced ->
+                  isSubmitting = false
+                  saveUiState = if (synced) SaveUiState.Synced else SaveUiState.SyncFailed
+                }
+              )
+              if (!localSucceeded) {
+                isSubmitting = false
+                saveUiState = SaveUiState.Idle
+                validationError = repository.lastSecurityMessage.value ?: repository.syncStatusBanner.value ?: "Could not save quality entry."
+              }
             },
             modifier = Modifier
               .fillMaxWidth()
-              .height(48.dp)
+              .heightIn(min = 48.dp)
               .testTag("submit_quality_button"),
-            enabled = canQualityWrite && !isSlotLocked,
+            enabled = canQualityWrite && !isSlotLocked && !isSubmitting,
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(
-              containerColor = if (canQualityWrite && !isSlotLocked) NflGreen else Color(0xFF94A3B8)
+              containerColor = if (canQualityWrite && !isSlotLocked && !isSubmitting) NflGreen else Color(0xFF94A3B8)
             )
           ) {
             Text(
               text = when {
+                isSubmitting -> "SAVING..."
                 isSlotLocked -> "🔒 RECORD SUBMITTED & LOCKED (ADMIN ONLY)"
                 canQualityWrite -> "SUBMIT QUALITY"
                 else -> "🔒 ENTRY LOCKED (VIEW ONLY)"
@@ -1362,7 +1531,7 @@ fun QualityEntryScreen(
               color = NflPrimaryBlue,
               modifier = Modifier
                 .clickable { onViewHistory() }
-                .padding(vertical = 4.dp)
+                .padding(vertical = 8.dp)
                 .testTag("view_quality_entries_link")
             )
           }
@@ -1394,7 +1563,7 @@ fun QualityEntryScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                   Text("${entry.hourSlot} • ${entry.styleNumber}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF263238))
                   Text("Checked: ${entry.checkedGarments} • Defective: ${entry.defectiveGarments}", fontSize = 11.sp, color = Color(0xFF78909C))
                 }
@@ -1410,3 +1579,4 @@ fun QualityEntryScreen(
     }
   }
 }
+

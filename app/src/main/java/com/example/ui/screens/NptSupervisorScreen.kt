@@ -12,17 +12,23 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,33 +36,42 @@ import com.example.data.NflRepository
 import com.example.model.*
 import kotlinx.coroutines.delay
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun NptSupervisorScreen(
   repository: NflRepository,
   onNavigateBack: () -> Unit
 ) {
+  val focusManager = LocalFocusManager.current
   val incidents by repository.incidents.collectAsState()
   val userName by repository.currentUserName.collectAsState()
   val currentUser by repository.currentUser.collectAsState()
   val canNptWrite = currentUser?.let { it.isAdmin || it.role == UserRole.IE || it.canNptWrite } ?: false
 
-  var selectedTab by remember { mutableIntStateOf(0) } // 0: Active NPT, 1: NPT History
-  var filterCategory by remember { mutableStateOf<String>("ALL") }
+  var selectedTab by rememberSaveable { mutableIntStateOf(0) } // 0: Active NPT, 1: NPT History
+  var filterCategory by rememberSaveable { mutableStateOf("ALL") }
   var showFilterDropdown by remember { mutableStateOf(false) }
 
-  var showReportNptDialog by remember { mutableStateOf(false) }
-  var resolvingIncidentId by remember { mutableStateOf<String?>(null) }
-  var resolutionNoteText by remember { mutableStateOf("") }
-  var attendingIncidentId by remember { mutableStateOf<String?>(null) }
-  var mechanicNameInput by remember { mutableStateOf(if (currentUser?.role == UserRole.MECHANIC) userName else "Jahangir (Mechanic)") }
+  var showReportNptDialog by rememberSaveable { mutableStateOf(false) }
+  var resolvingIncidentId by rememberSaveable { mutableStateOf<String?>(null) }
+  var resolutionNoteText by rememberSaveable { mutableStateOf("") }
+  var attendingIncidentId by rememberSaveable { mutableStateOf<String?>(null) }
+  var mechanicNameInput by rememberSaveable { mutableStateOf(if (currentUser?.role == UserRole.MECHANIC) userName else "Jahangir (Mechanic)") }
 
   // Form State for Report NPT
-  var formFloor by remember { mutableStateOf(FloorScope.SEW_2) }
+  var formFloorName by rememberSaveable { mutableStateOf(FloorScope.SEW_2.name) }
+  val formFloor = remember(formFloorName) {
+    FloorScope.entries.find { it.name == formFloorName } ?: FloorScope.SEW_2
+  }
   val floorLines = remember(formFloor) {
     repository.allLinesMaster.filter { it.floor == formFloor.apiValue }
   }
-  var formLineId by remember(formFloor) { mutableStateOf(floorLines.firstOrNull()?.id ?: "K1") }
+  var formLineId by rememberSaveable { mutableStateOf(floorLines.firstOrNull()?.id ?: "K1") }
+  LaunchedEffect(formFloor) {
+    if (floorLines.none { it.id == formLineId }) {
+      formLineId = floorLines.firstOrNull()?.id ?: "K1"
+    }
+  }
   var showLineDropdown by remember { mutableStateOf(false) }
 
   val commonNptTypes = listOf(
@@ -68,9 +83,9 @@ fun NptSupervisorScreen(
     "Pattern / Marker Issue",
     "Custom / Other"
   )
-  var formNptType by remember { mutableStateOf("Machine Breakdown") }
+  var formNptType by rememberSaveable { mutableStateOf("Machine Breakdown") }
   var showNptTypeDropdown by remember { mutableStateOf(false) }
-  var formCustomNptType by remember { mutableStateOf("") }
+  var formCustomNptType by rememberSaveable { mutableStateOf("") }
 
   val commonMachineTypes = listOf(
     "Single Needle Lockstitch (SNLS)",
@@ -83,12 +98,26 @@ fun NptSupervisorScreen(
     "Feed of the Arm",
     "Other / Custom"
   )
-  var formMachineType by remember { mutableStateOf("Single Needle Lockstitch (SNLS)") }
+  var formMachineType by rememberSaveable { mutableStateOf("Single Needle Lockstitch (SNLS)") }
   var showMachineTypeDropdown by remember { mutableStateOf(false) }
-  var formMachineRef by remember { mutableStateOf("SNLS-04") }
-  var formProcessName by remember { mutableStateOf("Collar Attach") }
-  var formDescription by remember { mutableStateOf("") }
-  var formReportedCause by remember { mutableStateOf("") }
+  var formMachineRef by rememberSaveable { mutableStateOf("SNLS-04") }
+  var formProcessName by rememberSaveable { mutableStateOf("Collar Attach") }
+  var formDescription by rememberSaveable { mutableStateOf("") }
+  var formReportedCause by rememberSaveable { mutableStateOf("") }
+  var isSubmittingNpt by remember { mutableStateOf(false) }
+
+  // Clear drafts on logout
+  LaunchedEffect(currentUser?.id) {
+    if (currentUser == null) {
+      showReportNptDialog = false
+      resolvingIncidentId = null
+      resolutionNoteText = ""
+      attendingIncidentId = null
+      formCustomNptType = ""
+      formDescription = ""
+      formReportedCause = ""
+    }
+  }
 
   // 1-second live countdown ticker
   var ticker by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -141,13 +170,19 @@ fun NptSupervisorScreen(
           }
         },
         navigationIcon = {
-          IconButton(onClick = onNavigateBack, modifier = Modifier.testTag("npt_back_btn")) {
+          IconButton(
+            onClick = onNavigateBack,
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).testTag("npt_back_btn")
+          ) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
           }
         },
         actions = {
           if (canNptWrite) {
-            IconButton(onClick = { showReportNptDialog = true }) {
+            IconButton(
+              onClick = { showReportNptDialog = true },
+              modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            ) {
               Icon(Icons.Default.AddAlert, contentDescription = "Report NPT", tint = Color(0xFFFDE047))
             }
           }
@@ -175,6 +210,8 @@ fun NptSupervisorScreen(
       modifier = Modifier
         .fillMaxSize()
         .padding(paddingValues)
+        .imePadding()
+        .navigationBarsPadding()
     ) {
       if (!canNptWrite) {
         Surface(
@@ -624,32 +661,39 @@ fun NptSupervisorScreen(
       },
       text = {
         Column(
-          modifier = Modifier.verticalScroll(rememberScrollState()),
+          modifier = Modifier
+            .imePadding()
+            .verticalScroll(rememberScrollState()),
           verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
           // Floor Selector
-          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+          FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+          ) {
             listOf(FloorScope.SEW_1, FloorScope.SEW_2, FloorScope.SEW_3, FloorScope.FINISHING).forEach { flr ->
               Surface(
-                onClick = { formFloor = flr },
+                onClick = { formFloorName = flr.name },
                 shape = RoundedCornerShape(6.dp),
                 color = if (formFloor == flr) Color(0xFF0F172A) else Color(0xFFF1F5F9),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).heightIn(min = 40.dp)
               ) {
-                Text(
-                  text = when (flr) {
-                    FloorScope.SEW_1 -> "Sew 1"
-                    FloorScope.SEW_2 -> "Sew 2"
-                    FloorScope.SEW_3 -> "Sew 3"
-                    FloorScope.FINISHING -> "Finish"
-                    else -> flr.displayName
-                  },
-                  fontSize = 10.sp,
-                  fontWeight = FontWeight.Bold,
-                  color = if (formFloor == flr) Color.White else Color(0xFF334155),
-                  textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                  modifier = Modifier.padding(vertical = 6.dp)
-                )
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp)) {
+                  Text(
+                    text = when (flr) {
+                      FloorScope.SEW_1 -> "Sew 1"
+                      FloorScope.SEW_2 -> "Sew 2"
+                      FloorScope.SEW_3 -> "Sew 3"
+                      FloorScope.FINISHING -> "Finish"
+                      else -> flr.displayName
+                    },
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (formFloor == flr) Color.White else Color(0xFF334155),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                  )
+                }
               }
             }
           }
@@ -659,7 +703,7 @@ fun NptSupervisorScreen(
             OutlinedCard(
               onClick = { showLineDropdown = true },
               shape = RoundedCornerShape(8.dp),
-              modifier = Modifier.fillMaxWidth()
+              modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
             ) {
               Row(
                 modifier = Modifier
@@ -669,7 +713,7 @@ fun NptSupervisorScreen(
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 Text("Line: $formLineId (${formFloor.displayName})", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                Icon(Icons.Default.ArrowDropDown, contentDescription = "Select line")
               }
             }
             DropdownMenu(expanded = showLineDropdown, onDismissRequest = { showLineDropdown = false }) {
@@ -690,7 +734,7 @@ fun NptSupervisorScreen(
             OutlinedCard(
               onClick = { showNptTypeDropdown = true },
               shape = RoundedCornerShape(8.dp),
-              modifier = Modifier.fillMaxWidth()
+              modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
             ) {
               Row(
                 modifier = Modifier
@@ -700,7 +744,7 @@ fun NptSupervisorScreen(
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 Text("NPT Type: $formNptType", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                Icon(Icons.Default.ArrowDropDown, contentDescription = "Select NPT type")
               }
             }
             DropdownMenu(expanded = showNptTypeDropdown, onDismissRequest = { showNptTypeDropdown = false }) {
@@ -724,6 +768,8 @@ fun NptSupervisorScreen(
               label = { Text("Enter Custom NPT Type *") },
               placeholder = { Text("e.g. Needle Breakage, Boiler Off") },
               singleLine = true,
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+              keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
               colors = com.example.ui.theme.nflInputColors(),
               textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
               modifier = Modifier.fillMaxWidth()
@@ -737,6 +783,8 @@ fun NptSupervisorScreen(
             label = { Text("Process Name") },
             placeholder = { Text("e.g. Collar Attach, Side Seam, Hemming") },
             singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
             colors = com.example.ui.theme.nflInputColors(),
             textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
             modifier = Modifier.fillMaxWidth()
@@ -748,7 +796,7 @@ fun NptSupervisorScreen(
               OutlinedCard(
                 onClick = { showMachineTypeDropdown = true },
                 shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
               ) {
                 Row(
                   modifier = Modifier
@@ -757,8 +805,8 @@ fun NptSupervisorScreen(
                   horizontalArrangement = Arrangement.SpaceBetween,
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Text(formMachineType, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                  Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                  Text(formMachineType, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                  Icon(Icons.Default.ArrowDropDown, contentDescription = "Select machine type")
                 }
               }
               DropdownMenu(expanded = showMachineTypeDropdown, onDismissRequest = { showMachineTypeDropdown = false }) {
@@ -780,6 +828,8 @@ fun NptSupervisorScreen(
               label = { Text("Machine Reference / Asset ID") },
               placeholder = { Text("e.g. SNLS-04") },
               singleLine = true,
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+              keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
               colors = com.example.ui.theme.nflInputColors(),
               textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
               modifier = Modifier.fillMaxWidth()
@@ -792,9 +842,11 @@ fun NptSupervisorScreen(
             onValueChange = { formDescription = it },
             label = { Text("NPT Description *") },
             placeholder = { Text("e.g. Motor heated, needle bar vibrating, stitch skipping") },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
             colors = com.example.ui.theme.nflInputColors(),
             textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth().testTag("npt_description_input")
           )
 
           // Reported Cause
@@ -803,16 +855,20 @@ fun NptSupervisorScreen(
             onValueChange = { formReportedCause = it },
             label = { Text("Reported Cause (Optional)") },
             placeholder = { Text("e.g. Bearing loose, belt cut") },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
             colors = com.example.ui.theme.nflInputColors(),
             textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth().testTag("npt_cause_input")
           )
         }
       },
       confirmButton = {
         Button(
           onClick = {
+            if (isSubmittingNpt) return@Button
             if (formDescription.isNotBlank()) {
+              isSubmittingNpt = true
               val resolvedNptType = if (formNptType == "Custom / Other" && formCustomNptType.isNotBlank()) formCustomNptType else formNptType
 
               repository.reportIncident(
@@ -838,18 +894,22 @@ fun NptSupervisorScreen(
                   isDemo = false
                 )
               )
+              isSubmittingNpt = false
               showReportNptDialog = false
               formDescription = ""
               formReportedCause = ""
+              formCustomNptType = ""
             }
           },
+          enabled = !isSubmittingNpt && formDescription.isNotBlank(),
+          modifier = Modifier.heightIn(min = 48.dp),
           colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
         ) {
           Text("Start NPT", fontWeight = FontWeight.Bold)
         }
       },
       dismissButton = {
-        TextButton(onClick = { showReportNptDialog = false }) {
+        TextButton(onClick = { showReportNptDialog = false }, modifier = Modifier.heightIn(min = 48.dp)) {
           Text("Cancel")
         }
       }
@@ -950,8 +1010,8 @@ fun NptIncidentCommentsSection(
   currentUserName: String,
   currentUserRole: String
 ) {
-  var isExpanded by remember(incident.id) { mutableStateOf(incident.comments.isNotEmpty()) }
-  var commentInput by remember(incident.id) { mutableStateOf("") }
+  var isExpanded by rememberSaveable(incident.id) { mutableStateOf(incident.comments.isNotEmpty()) }
+  var commentInput by rememberSaveable(incident.id) { mutableStateOf("") }
   val comments = incident.comments
 
   Column(
@@ -964,6 +1024,7 @@ fun NptIncidentCommentsSection(
     Row(
       modifier = Modifier
         .fillMaxWidth()
+        .heightIn(min = 40.dp)
         .clip(RoundedCornerShape(6.dp))
         .background(Color(0xFFF1F5F9))
         .clickable { isExpanded = !isExpanded }
@@ -982,7 +1043,7 @@ fun NptIncidentCommentsSection(
       }
       Icon(
         imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-        contentDescription = null,
+        contentDescription = if (isExpanded) "Collapse comments" else "Expand comments",
         tint = Color(0xFF0369A1),
         modifier = Modifier.size(16.dp)
       )
@@ -992,7 +1053,7 @@ fun NptIncidentCommentsSection(
       if (comments.isEmpty()) {
         Text(
           text = "No remarks yet. Anyone can write comments below.",
-          fontSize = 10.5.sp,
+          fontSize = 11.sp,
           color = Color(0xFF64748B),
           modifier = Modifier.padding(horizontal = 4.dp)
         )
@@ -1019,13 +1080,13 @@ fun NptIncidentCommentsSection(
                 )
                 Text(
                   text = formattedTime,
-                  fontSize = 9.sp,
+                  fontSize = 11.sp,
                   color = Color(0xFF64748B)
                 )
               }
               Text(
                 text = c.commentText,
-                fontSize = 11.5.sp,
+                fontSize = 12.sp,
                 color = Color(0xFF334155)
               )
             }
@@ -1045,6 +1106,7 @@ fun NptIncidentCommentsSection(
           placeholder = { Text("Comment as $currentUserName...", fontSize = 11.sp, color = Color(0xFF94A3B8)) },
           modifier = Modifier.weight(1f),
           singleLine = true,
+          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
           shape = RoundedCornerShape(6.dp),
           colors = com.example.ui.theme.nflInputColors(),
           textStyle = LocalTextStyle.current.copy(fontSize = 12.sp, color = Color(0xFF0F172A))
@@ -1058,10 +1120,11 @@ fun NptIncidentCommentsSection(
           },
           enabled = commentInput.isNotBlank(),
           shape = RoundedCornerShape(6.dp),
+          modifier = Modifier.heightIn(min = 48.dp),
           colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
           contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
         ) {
-          Text("Post", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+          Text("Post", fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
       }
     }

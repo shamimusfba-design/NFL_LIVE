@@ -8,14 +8,33 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
-import com.google.firebase.firestore.Source
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
+import java.util.TimeZone
+import java.util.concurrent.ConcurrentHashMap
+
+data class CollectionReadStats(
+  val collection: String,
+  val serverChangesReceived: Int = 0,
+  val cacheChangesReceived: Int = 0,
+  val snapshotEvents: Int = 0,
+  val lastIsFromCache: Boolean = false
+) {
+  val totalChangesReceived: Int
+    get() = serverChangesReceived + cacheChangesReceived
+}
 
 data class FirestoreFetchResult(
   val success: Boolean,
@@ -66,6 +85,96 @@ class FirebaseSyncService(private val context: Context) {
   var onRemoteMonthlyTargetsUpdated: ((List<MonthlyFactoryTarget>) -> Unit)? = null
   var onRemoteUsersUpdated: ((List<UserAccount>) -> Unit)? = null
   var onSyncStatusChanged: ((String) -> Unit)? = null
+
+  private val knownLegacyProductionDocIds = ConcurrentHashMap.newKeySet<String>()
+  private val knownLegacyQualityDocIds = ConcurrentHashMap.newKeySet<String>()
+  private val lastPushedProductionSignatures = ConcurrentHashMap<String, String>()
+  private val lastPushedQualitySignatures = ConcurrentHashMap<String, String>()
+
+  private val _sessionReadStats = MutableStateFlow<Map<String, CollectionReadStats>>(
+    mapOf(
+      "production_entries" to CollectionReadStats("production_entries"),
+      "quality_entries" to CollectionReadStats("quality_entries"),
+      "daily_setups" to CollectionReadStats("daily_setups"),
+      "factory_alerts" to CollectionReadStats("factory_alerts"),
+      "monthly_targets" to CollectionReadStats("monthly_targets"),
+      "users" to CollectionReadStats("users")
+    )
+  )
+  val sessionReadStats: StateFlow<Map<String, CollectionReadStats>> = _sessionReadStats.asStateFlow()
+
+  @Volatile
+  var lastListenerWindowStartIso: String = ""
+    private set
+
+  fun recordCollectionRead(collection: String, changesCount: Int, isFromCache: Boolean) {
+    val currentMap = _sessionReadStats.value.toMutableMap()
+    val prev = currentMap[collection] ?: CollectionReadStats(collection)
+    val updated = prev.copy(
+      serverChangesReceived = prev.serverChangesReceived + if (isFromCache) 0 else changesCount,
+      cacheChangesReceived = prev.cacheChangesReceived + if (isFromCache) changesCount else 0,
+      snapshotEvents = prev.snapshotEvents + 1,
+      lastIsFromCache = isFromCache
+    )
+    currentMap[collection] = updated
+    _sessionReadStats.value = currentMap
+    Log.d(
+      "FirestoreUsage",
+      "collection=$collection documentChanges=$changesCount isFromCache=$isFromCache totalDocs=${updated.totalChangesReceived} (server=${updated.serverChangesReceived}, cache=${updated.cacheChangesReceived})"
+    )
+  }
+
+  fun getBangladeshDateDaysAgoIso(daysAgo: Int): String {
+    val tz = TimeZone.getTimeZone("Asia/Dhaka")
+    val cal = Calendar.getInstance(tz)
+    if (daysAgo > 0) {
+      cal.add(Calendar.DAY_OF_YEAR, -daysAgo)
+    }
+    val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = tz }
+    return fmt.format(cal.time)
+  }
+
+  fun getBangladeshCurrentMonthStartIso(): String {
+    val tz = TimeZone.getTimeZone("Asia/Dhaka")
+    val cal = Calendar.getInstance(tz)
+    val fmt = SimpleDateFormat("yyyy-MM", Locale.US).apply { timeZone = tz }
+    return "${fmt.format(cal.time)}-01"
+  }
+
+  fun registerKnownLegacyProductionDocId(docId: String) {
+    if (docId.isNotBlank() && !docId.startsWith("PROD_")) {
+      knownLegacyProductionDocIds.add(docId)
+    }
+  }
+
+  fun registerKnownLegacyQualityDocId(docId: String) {
+    if (docId.isNotBlank() && !docId.startsWith("QA_")) {
+      knownLegacyQualityDocIds.add(docId)
+    }
+  }
+
+  fun shouldDeleteLegacyProductionDoc(record: ProductionRecord, canonicalDocId: String): Boolean {
+    return record.id.isNotBlank() &&
+        record.id != canonicalDocId &&
+        knownLegacyProductionDocIds.contains(record.id)
+  }
+
+  fun shouldDeleteLegacyQualityDoc(record: QualityRecord, canonicalDocId: String): Boolean {
+    return record.id.isNotBlank() &&
+        record.id != canonicalDocId &&
+        knownLegacyQualityDocIds.contains(record.id)
+  }
+
+  fun productionPayloadSignature(record: ProductionRecord): String {
+    val docId = canonicalProductionDocId(record)
+    return "$docId|${record.submissionId}|${record.lineId}|${record.floor}|${record.date}|${record.hourSlot}|${record.styleNumber}|${record.outputQty}|${record.remarks}|${record.modifiedBy}|${record.revision}|${record.isConfirmedZero}"
+  }
+
+  fun qualityPayloadSignature(record: QualityRecord): String {
+    val docId = canonicalQualityDocId(record)
+    val defectBreakdown = record.defects.joinToString(";") { "${it.defectType}:${it.count}" }
+    return "$docId|${record.submissionId}|${record.lineId}|${record.floor}|${record.date}|${record.hourSlot}|${record.styleNumber}|${record.checkedGarments}|${record.defectiveGarments}|${record.totalDefects}|$defectBreakdown|${record.remarks}|${record.defectSent}|${record.defectReceived}|${record.defectBalance}|${record.spotSent}|${record.spotReceived}|${record.spotBalance}|${record.modifiedBy}|${record.revision}|${record.isConfirmedZero}"
+  }
 
   fun isAvailable(): Boolean = firestore != null
 
@@ -126,13 +235,17 @@ class FirebaseSyncService(private val context: Context) {
       hasPermissionError = false
       lastErrorMessage = null
     }
+    val sevenDaysAgoIso = getBangladeshDateDaysAgoIso(7)
+    lastListenerWindowStartIso = sevenDaysAgoIso
     val db = firestore ?: return
     cleanupListeners()
 
     try {
-      // 1. Production entries listener
+      // 1. Production entries listener (bounded to last 7 days in Asia/Dhaka, ordered by date DESC, limit 2000)
       val prodReg = db.collection("production_entries")
-        .limit(500)
+        .whereGreaterThanOrEqualTo("date", sevenDaysAgoIso)
+        .orderBy("date", Query.Direction.DESCENDING)
+        .limit(2000)
         .addSnapshotListener { snapshot, error ->
           if (error != null) {
             handleListenerError("Production", error)
@@ -141,15 +254,23 @@ class FirebaseSyncService(private val context: Context) {
           if (snapshot != null) {
             hasPermissionError = false
             lastErrorMessage = null
+            recordCollectionRead(
+              collection = "production_entries",
+              changesCount = snapshot.documentChanges.size,
+              isFromCache = snapshot.metadata.isFromCache
+            )
             val removedKeys = mutableSetOf<String>()
             snapshot.documentChanges.forEach { change ->
-              if (change.type == DocumentChange.Type.REMOVED) {
-                val d = change.document
+              val d = change.document
+              val isDel = d.getBoolean("isDeleted") ?: false
+              val dt = d.getString("date")?.trim().orEmpty()
+              val isWithinWindow = dt.isEmpty() || dt >= sevenDaysAgoIso
+              // Only treat as deleted if explicitly marked isDeleted or deleted while within the 7-day window
+              if (isDel || (change.type == DocumentChange.Type.REMOVED && isWithinWindow)) {
                 removedKeys.add(d.id)
                 d.getString("id")?.let { removedKeys.add(it) }
                 d.getString("submissionId")?.let { removedKeys.add(it) }
                 val l = d.getString("lineId").orEmpty()
-                val dt = d.getString("date").orEmpty()
                 val hr = d.getString("hourSlot").orEmpty()
                 if (l.isNotEmpty() && dt.isNotEmpty() && hr.isNotEmpty()) {
                   removedKeys.add("${l}_${dt}_${hr}")
@@ -162,15 +283,17 @@ class FirebaseSyncService(private val context: Context) {
             val list = snapshot.documents.mapNotNull { doc -> parseProductionDoc(doc) }
             if (list.isNotEmpty()) {
               onRemoteProductionUpdated?.invoke(list)
-              onSyncStatusChanged?.invoke("✓ Cloud Firestore live: ${list.size} production records synced")
+              onSyncStatusChanged?.invoke("✓ Cloud Firestore live: ${list.size} recent production records active")
             }
           }
         }
       listeners.add(prodReg)
 
-      // 2. Quality entries listener
+      // 2. Quality entries listener (bounded to last 7 days in Asia/Dhaka, ordered by date DESC, limit 2000)
       val qaReg = db.collection("quality_entries")
-        .limit(1000)
+        .whereGreaterThanOrEqualTo("date", sevenDaysAgoIso)
+        .orderBy("date", Query.Direction.DESCENDING)
+        .limit(2000)
         .addSnapshotListener { snapshot, error ->
           if (error != null) {
             handleListenerError("Quality", error)
@@ -178,15 +301,22 @@ class FirebaseSyncService(private val context: Context) {
           }
           if (snapshot != null) {
             hasPermissionError = false
+            recordCollectionRead(
+              collection = "quality_entries",
+              changesCount = snapshot.documentChanges.size,
+              isFromCache = snapshot.metadata.isFromCache
+            )
             val removedKeys = mutableSetOf<String>()
             snapshot.documentChanges.forEach { change ->
-              if (change.type == DocumentChange.Type.REMOVED) {
-                val d = change.document
+              val d = change.document
+              val isDel = d.getBoolean("isDeleted") ?: false
+              val dt = d.getString("date")?.trim().orEmpty()
+              val isWithinWindow = dt.isEmpty() || dt >= sevenDaysAgoIso
+              if (isDel || (change.type == DocumentChange.Type.REMOVED && isWithinWindow)) {
                 removedKeys.add(d.id)
                 d.getString("id")?.let { removedKeys.add(it) }
                 d.getString("submissionId")?.let { removedKeys.add(it) }
                 val l = d.getString("lineId").orEmpty()
-                val dt = d.getString("date").orEmpty()
                 val hr = d.getString("hourSlot").orEmpty()
                 if (l.isNotEmpty() && dt.isNotEmpty() && hr.isNotEmpty()) {
                   removedKeys.add("${l}_${dt}_${hr}")
@@ -204,9 +334,10 @@ class FirebaseSyncService(private val context: Context) {
         }
       listeners.add(qaReg)
 
-      // 3. Factory alerts / incidents listener
+      // 3. Factory alerts / incidents listener (ordered by startTimeMillis DESC, limit 200)
       val alertReg = db.collection("factory_alerts")
-        .limit(500)
+        .orderBy("startTimeMillis", Query.Direction.DESCENDING)
+        .limit(200)
         .addSnapshotListener { snapshot, error ->
           if (error != null) {
             handleListenerError("Alerts", error)
@@ -214,6 +345,11 @@ class FirebaseSyncService(private val context: Context) {
           }
           if (snapshot != null) {
             hasPermissionError = false
+            recordCollectionRead(
+              collection = "factory_alerts",
+              changesCount = snapshot.documentChanges.size,
+              isFromCache = snapshot.metadata.isFromCache
+            )
             val list = snapshot.documents.mapNotNull { doc -> parseIncidentDoc(doc) }
             if (list.isNotEmpty()) {
               onRemoteIncidentsUpdated?.invoke(list)
@@ -222,9 +358,11 @@ class FirebaseSyncService(private val context: Context) {
         }
       listeners.add(alertReg)
 
-      // 4. Setups listener
+      // 4. Setups listener (bounded to last 7 days in Asia/Dhaka, ordered by date DESC, limit 2000)
       val setupReg = db.collection("daily_setups")
-        .limit(500)
+        .whereGreaterThanOrEqualTo("date", sevenDaysAgoIso)
+        .orderBy("date", Query.Direction.DESCENDING)
+        .limit(2000)
         .addSnapshotListener { snapshot, error ->
           if (error != null) {
             handleListenerError("Setups", error)
@@ -232,6 +370,11 @@ class FirebaseSyncService(private val context: Context) {
           }
           if (snapshot != null) {
             hasPermissionError = false
+            recordCollectionRead(
+              collection = "daily_setups",
+              changesCount = snapshot.documentChanges.size,
+              isFromCache = snapshot.metadata.isFromCache
+            )
             val list = snapshot.documents.mapNotNull { doc -> parseSetupDoc(doc) }
             if (list.isNotEmpty()) {
               onRemoteSetupsUpdated?.invoke(list)
@@ -240,7 +383,7 @@ class FirebaseSyncService(private val context: Context) {
         }
       listeners.add(setupReg)
 
-      // 5. Monthly targets listener
+      // 5. Monthly targets listener (small collection)
       val monthlyReg = db.collection("monthly_targets")
         .addSnapshotListener { snapshot, error ->
           if (error != null) {
@@ -249,6 +392,11 @@ class FirebaseSyncService(private val context: Context) {
           }
           if (snapshot != null) {
             hasPermissionError = false
+            recordCollectionRead(
+              collection = "monthly_targets",
+              changesCount = snapshot.documentChanges.size,
+              isFromCache = snapshot.metadata.isFromCache
+            )
             val list = snapshot.documents.mapNotNull { doc -> parseMonthlyTargetDoc(doc) }
             if (list.isNotEmpty()) {
               onRemoteMonthlyTargetsUpdated?.invoke(list)
@@ -257,7 +405,7 @@ class FirebaseSyncService(private val context: Context) {
         }
       listeners.add(monthlyReg)
 
-      // 6. User accounts listener
+      // 6. User accounts listener (small collection)
       val usersReg = db.collection("users")
         .addSnapshotListener { snapshot, error ->
           if (error != null) {
@@ -266,6 +414,11 @@ class FirebaseSyncService(private val context: Context) {
           }
           if (snapshot != null) {
             hasPermissionError = false
+            recordCollectionRead(
+              collection = "users",
+              changesCount = snapshot.documentChanges.size,
+              isFromCache = snapshot.metadata.isFromCache
+            )
             val list = snapshot.documents.mapNotNull { doc -> parseUserDoc(doc) }
             if (list.isNotEmpty()) {
               onRemoteUsersUpdated?.invoke(list)
@@ -286,7 +439,7 @@ class FirebaseSyncService(private val context: Context) {
       val date = doc.getString("date")?.trim().orEmpty()
       val hourSlot = doc.getString("hourSlot")?.trim().orEmpty()
       if (lineId.isEmpty() || date.isEmpty() || hourSlot.isEmpty()) return null
-      ProductionRecord(
+      val parsed = ProductionRecord(
         id = doc.getString("id") ?: doc.id,
         submissionId = doc.getString("submissionId") ?: doc.id,
         lineId = lineId,
@@ -303,6 +456,12 @@ class FirebaseSyncService(private val context: Context) {
         isConfirmedZero = doc.getBoolean("isConfirmedZero") ?: false,
         isDemo = false
       )
+      val canonicalId = canonicalProductionDocId(parsed)
+      if (doc.id != canonicalId) {
+        knownLegacyProductionDocIds.add(doc.id)
+      }
+      lastPushedProductionSignatures[canonicalId] = productionPayloadSignature(parsed)
+      parsed
     } catch (e: Exception) {
       null
     }
@@ -356,7 +515,7 @@ class FirebaseSyncService(private val context: Context) {
       val spotReceived = doc.getLong("spotReceived")?.toInt() ?: 0
       val spotBalance = doc.getLong("spotBalance")?.toInt() ?: (spotSent - spotReceived).coerceAtLeast(0)
 
-      QualityRecord(
+      val parsed = QualityRecord(
         id = doc.getString("id") ?: doc.id,
         submissionId = doc.getString("submissionId") ?: doc.id,
         lineId = lineId,
@@ -382,6 +541,12 @@ class FirebaseSyncService(private val context: Context) {
         isConfirmedZero = doc.getBoolean("isConfirmedZero") ?: false,
         isDemo = false
       )
+      val canonicalId = canonicalQualityDocId(parsed)
+      if (doc.id.isNotBlank() && doc.id != canonicalId) {
+        knownLegacyQualityDocIds.add(doc.id)
+      }
+      lastPushedQualitySignatures[canonicalId] = qualityPayloadSignature(parsed)
+      parsed
     } catch (e: Exception) {
       null
     }
@@ -597,40 +762,101 @@ class FirebaseSyncService(private val context: Context) {
     }
   }
 
-  suspend fun fetchAllFromFirestore(): FirestoreFetchResult = withContext(Dispatchers.IO) {
+  /**
+   * Bounded, cache-friendly month-level fetch for current month (`yyyy-MM-01` in Asia/Dhaka).
+   * Called at most once per hour when a Monthly screen or Monthly filter is opened.
+   */
+  suspend fun fetchCurrentMonthFromFirestore(
+    monthStartIso: String = getBangladeshCurrentMonthStartIso()
+  ): FirestoreFetchResult = withContext(Dispatchers.IO) {
     val db = firestore ?: return@withContext FirestoreFetchResult(false, "FirebaseFirestore not initialized")
     try {
       withTimeout(12000L) {
-        val prodSnap = try {
-          db.collection("production_entries").limit(1000).get(Source.SERVER).await()
-        } catch (_: Exception) {
-          db.collection("production_entries").limit(1000).get().await()
-        }
-        val qaSnap = try {
-          db.collection("quality_entries").limit(1000).get(Source.SERVER).await()
-        } catch (_: Exception) {
-          db.collection("quality_entries").limit(1000).get().await()
-        }
-        val incSnap = try {
-          db.collection("factory_alerts").limit(500).get(Source.SERVER).await()
-        } catch (_: Exception) {
-          db.collection("factory_alerts").limit(500).get().await()
-        }
-        val setupSnap = try {
-          db.collection("daily_setups").limit(500).get(Source.SERVER).await()
-        } catch (_: Exception) {
-          db.collection("daily_setups").limit(500).get().await()
-        }
-        val monthlySnap = try {
-          db.collection("monthly_targets").get(Source.SERVER).await()
-        } catch (_: Exception) {
-          db.collection("monthly_targets").get().await()
-        }
-        val usersSnap = try {
-          db.collection("users").get(Source.SERVER).await()
-        } catch (_: Exception) {
-          db.collection("users").get().await()
-        }
+        val prodSnap = db.collection("production_entries")
+          .whereGreaterThanOrEqualTo("date", monthStartIso)
+          .orderBy("date", Query.Direction.DESCENDING)
+          .limit(2000)
+          .get()
+          .await()
+        recordCollectionRead("production_entries", prodSnap.documentChanges.size, prodSnap.metadata.isFromCache)
+
+        val qaSnap = db.collection("quality_entries")
+          .whereGreaterThanOrEqualTo("date", monthStartIso)
+          .orderBy("date", Query.Direction.DESCENDING)
+          .limit(2000)
+          .get()
+          .await()
+        recordCollectionRead("quality_entries", qaSnap.documentChanges.size, qaSnap.metadata.isFromCache)
+
+        val setupSnap = db.collection("daily_setups")
+          .whereGreaterThanOrEqualTo("date", monthStartIso)
+          .orderBy("date", Query.Direction.DESCENDING)
+          .limit(2000)
+          .get()
+          .await()
+        recordCollectionRead("daily_setups", setupSnap.documentChanges.size, setupSnap.metadata.isFromCache)
+
+        hasPermissionError = false
+        lastErrorMessage = null
+
+        FirestoreFetchResult(
+          success = true,
+          production = prodSnap.documents.mapNotNull { parseProductionDoc(it) },
+          quality = qaSnap.documents.mapNotNull { parseQualityDoc(it) },
+          setups = setupSnap.documents.mapNotNull { parseSetupDoc(it) }
+        )
+      }
+    } catch (e: Exception) {
+      if (e is FirebaseFirestoreException && e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+        hasPermissionError = true
+      }
+      lastErrorMessage = e.message
+      Log.w("FirebaseSync", "Firestore monthly fetch notice: ${e.message}")
+      FirestoreFetchResult(false, e.message ?: "Firestore monthly fetch failed")
+    }
+  }
+
+  suspend fun fetchAllFromFirestore(): FirestoreFetchResult = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext FirestoreFetchResult(false, "FirebaseFirestore not initialized")
+    val sevenDaysAgoIso = getBangladeshDateDaysAgoIso(7)
+    try {
+      withTimeout(12000L) {
+        val prodSnap = db.collection("production_entries")
+          .whereGreaterThanOrEqualTo("date", sevenDaysAgoIso)
+          .orderBy("date", Query.Direction.DESCENDING)
+          .limit(2000)
+          .get()
+          .await()
+        recordCollectionRead("production_entries", prodSnap.documentChanges.size, prodSnap.metadata.isFromCache)
+
+        val qaSnap = db.collection("quality_entries")
+          .whereGreaterThanOrEqualTo("date", sevenDaysAgoIso)
+          .orderBy("date", Query.Direction.DESCENDING)
+          .limit(2000)
+          .get()
+          .await()
+        recordCollectionRead("quality_entries", qaSnap.documentChanges.size, qaSnap.metadata.isFromCache)
+
+        val incSnap = db.collection("factory_alerts")
+          .orderBy("startTimeMillis", Query.Direction.DESCENDING)
+          .limit(200)
+          .get()
+          .await()
+        recordCollectionRead("factory_alerts", incSnap.documentChanges.size, incSnap.metadata.isFromCache)
+
+        val setupSnap = db.collection("daily_setups")
+          .whereGreaterThanOrEqualTo("date", sevenDaysAgoIso)
+          .orderBy("date", Query.Direction.DESCENDING)
+          .limit(2000)
+          .get()
+          .await()
+        recordCollectionRead("daily_setups", setupSnap.documentChanges.size, setupSnap.metadata.isFromCache)
+
+        val monthlySnap = db.collection("monthly_targets").get().await()
+        recordCollectionRead("monthly_targets", monthlySnap.documentChanges.size, monthlySnap.metadata.isFromCache)
+
+        val usersSnap = db.collection("users").get().await()
+        recordCollectionRead("users", usersSnap.documentChanges.size, usersSnap.metadata.isFromCache)
 
         hasPermissionError = false
         lastErrorMessage = null
@@ -659,8 +885,12 @@ class FirebaseSyncService(private val context: Context) {
     val db = firestore ?: return@withContext false
     try {
       val docId = canonicalProductionDocId(record)
+      val sig = productionPayloadSignature(record)
+      if (lastPushedProductionSignatures[docId] == sig && !shouldDeleteLegacyProductionDoc(record, docId)) {
+        return@withContext true
+      }
       val map = hashMapOf(
-        "id" to record.id,
+        "id" to docId,
         "submissionId" to record.submissionId,
         "lineId" to record.lineId,
         "floor" to record.floor,
@@ -678,11 +908,13 @@ class FirebaseSyncService(private val context: Context) {
       )
       withTimeout(10000L) {
         db.collection("production_entries").document(docId).set(map, SetOptions.merge()).await()
-        if (record.id != docId && record.id.isNotBlank()) {
-          // Clean up any legacy non-canonical duplicate doc if it existed
+        if (shouldDeleteLegacyProductionDoc(record, docId)) {
+          // Only clean up a legacy non-canonical duplicate doc if it was actually observed in Firestore
+          knownLegacyProductionDocIds.remove(record.id)
           runCatching { db.collection("production_entries").document(record.id).delete().await() }
         }
       }
+      lastPushedProductionSignatures[docId] = sig
       hasPermissionError = false
       lastErrorMessage = null
       true
@@ -709,13 +941,12 @@ class FirebaseSyncService(private val context: Context) {
       val docId = canonicalProductionDocId(record)
       withTimeout(10000L) {
         db.collection("production_entries").document(docId).delete().await()
-        if (record.id.isNotBlank() && record.id != docId) {
+        if (shouldDeleteLegacyProductionDoc(record, docId)) {
+          knownLegacyProductionDocIds.remove(record.id)
           runCatching { db.collection("production_entries").document(record.id).delete().await() }
         }
-        if (record.submissionId.isNotBlank() && record.submissionId != docId) {
-          runCatching { db.collection("production_entries").document(record.submissionId).delete().await() }
-        }
       }
+      lastPushedProductionSignatures.remove(docId)
       true
     } catch (e: Exception) {
       if (e is FirebaseFirestoreException && e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
@@ -731,12 +962,16 @@ class FirebaseSyncService(private val context: Context) {
     val db = firestore ?: return@withContext false
     try {
       val docId = canonicalQualityDocId(record)
+      val sig = qualityPayloadSignature(record)
+      if (lastPushedQualitySignatures[docId] == sig && !shouldDeleteLegacyQualityDoc(record, docId)) {
+        return@withContext true
+      }
       val defectsList = record.defects.map {
         mapOf("defectType" to it.defectType, "count" to it.count)
       }
       val defectBreakdown = record.defects.joinToString(";") { "${it.defectType}:${it.count}" }
       val map = hashMapOf(
-        "id" to record.id,
+        "id" to docId,
         "submissionId" to record.submissionId,
         "lineId" to record.lineId,
         "floor" to record.floor,
@@ -764,10 +999,12 @@ class FirebaseSyncService(private val context: Context) {
       )
       withTimeout(10000L) {
         db.collection("quality_entries").document(docId).set(map, SetOptions.merge()).await()
-        if (record.id != docId && record.id.isNotBlank()) {
+        if (shouldDeleteLegacyQualityDoc(record, docId)) {
+          knownLegacyQualityDocIds.remove(record.id)
           runCatching { db.collection("quality_entries").document(record.id).delete().await() }
         }
       }
+      lastPushedQualitySignatures[docId] = sig
       hasPermissionError = false
       lastErrorMessage = null
       true
@@ -794,11 +1031,10 @@ class FirebaseSyncService(private val context: Context) {
       val docId = canonicalQualityDocId(record)
       withTimeout(10000L) {
         db.collection("quality_entries").document(docId).delete().await()
-        if (record.id.isNotBlank() && record.id != docId) {
+        lastPushedQualitySignatures.remove(docId)
+        if (shouldDeleteLegacyQualityDoc(record, docId)) {
           runCatching { db.collection("quality_entries").document(record.id).delete().await() }
-        }
-        if (record.submissionId.isNotBlank() && record.submissionId != docId) {
-          runCatching { db.collection("quality_entries").document(record.submissionId).delete().await() }
+          knownLegacyQualityDocIds.remove(record.id)
         }
       }
       true

@@ -975,3 +975,40 @@ data class TvDashboardData(
   val lastRefreshTime: String = "18:49",
   val isDemoMode: Boolean = true
 )
+
+enum class SaveUiState {
+  Idle,
+  Saving,
+  SavedLocally,
+  Synced,
+  SyncFailed
+}
+
+data class BatchSubmitSummary(
+  val savedCount: Int,
+  val skippedCount: Int
+)
+
+fun formatSaveFeedbackMessage(
+  state: SaveUiState,
+  batchSummary: BatchSubmitSummary? = null
+): String? {
+  val suffix = if (batchSummary != null) {
+    " (${batchSummary.savedCount} saved, ${batchSummary.skippedCount} skipped)"
+  } else {
+    ""
+  }
+  return when (state) {
+    SaveUiState.Idle -> null
+    SaveUiState.Saving,
+    SaveUiState.SavedLocally -> "Saved on this phone, syncing...$suffix"
+    SaveUiState.Synced -> "✓ Synced to cloud$suffix"
+    SaveUiState.SyncFailed -> "⚠ Saved on this phone, will retry$suffix"
+  }
+}
+
+fun findImplausibleProductionTarget(outputQty: Int, targetHourlyPcs: Int): Int? {
+  if (targetHourlyPcs <= 0) return null
+  return if (outputQty > targetHourlyPcs * 3) targetHourlyPcs else null
+}
+

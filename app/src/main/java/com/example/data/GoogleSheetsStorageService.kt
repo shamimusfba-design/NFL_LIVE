@@ -82,6 +82,8 @@ class GoogleSheetsStorageService(private val appContext: Context) {
     private const val KEY_SERVER_DEVICE_LEDGER = "ledger_server_devices_v1"
     private const val KEY_FIRST_ADMIN_PROVISIONED = "security_first_admin_1015198_provisioned"
     private const val KEY_ACTIVE_SESSION_ID = "security_active_session_id"
+    private const val KEY_ACTIVE_SESSION_USER_ID = "security_active_session_user_id"
+    private const val KEY_ACTIVE_SESSION_LOGIN_TIME = "security_active_session_login_time_ms"
 
     fun sha256(input: String): String {
       return try {
@@ -146,7 +148,33 @@ class GoogleSheetsStorageService(private val appContext: Context) {
     prefs.getString(KEY_ACTIVE_SESSION_ID, "").orEmpty()
 
   fun setLocalActiveSessionId(sessionId: String) {
-    prefs.edit().putString(KEY_ACTIVE_SESSION_ID, sessionId).apply()
+    if (sessionId.isBlank()) {
+      clearLocalActiveSession()
+    } else {
+      prefs.edit().putString(KEY_ACTIVE_SESSION_ID, sessionId).apply()
+    }
+  }
+
+  fun getLocalActiveSessionUserId(): String =
+    prefs.getString(KEY_ACTIVE_SESSION_USER_ID, "").orEmpty()
+
+  fun getLocalActiveSessionLoginTime(): Long =
+    prefs.getLong(KEY_ACTIVE_SESSION_LOGIN_TIME, 0L)
+
+  fun saveLocalActiveSession(employeeId: String, sessionId: String, loginTimeMillis: Long) {
+    prefs.edit()
+      .putString(KEY_ACTIVE_SESSION_USER_ID, employeeId.trim())
+      .putString(KEY_ACTIVE_SESSION_ID, sessionId.trim())
+      .putLong(KEY_ACTIVE_SESSION_LOGIN_TIME, loginTimeMillis)
+      .apply()
+  }
+
+  fun clearLocalActiveSession() {
+    prefs.edit()
+      .remove(KEY_ACTIVE_SESSION_USER_ID)
+      .remove(KEY_ACTIVE_SESSION_ID)
+      .remove(KEY_ACTIVE_SESSION_LOGIN_TIME)
+      .apply()
   }
 
   /**

@@ -213,26 +213,14 @@ fun HomeScreen(
               }
 
               IconButton(
-                onClick = { repository.refreshFromGoogleSheet() },
-                modifier = Modifier.size(26.dp).testTag("home_top_refresh_btn")
-              ) {
-                Icon(
-                  imageVector = Icons.Default.Refresh,
-                  contentDescription = "Refresh Google Sheet Data",
-                  tint = if (isSyncing) Color(0xFFFDE047) else Color(0xFF4ADE80),
-                  modifier = Modifier.size(16.dp)
-                )
-              }
-
-              IconButton(
                 onClick = onNavigateToNotificationCenter,
-                modifier = Modifier.size(26.dp).testTag("home_notification_bell_btn")
+                modifier = Modifier.sizeIn(minWidth = 40.dp, minHeight = 40.dp).testTag("home_notification_bell_btn")
               ) {
                 BadgedBox(
                   badge = {
                     if (openIncidents.isNotEmpty()) {
                       Badge(containerColor = Color(0xFFEF4444)) {
-                        Text(openIncidents.size.toString(), fontSize = 8.sp, color = Color.White)
+                        Text(openIncidents.size.toString(), fontSize = 9.sp, color = Color.White)
                       }
                     }
                   }
@@ -241,16 +229,16 @@ fun HomeScreen(
                     imageVector = Icons.Default.Notifications,
                     contentDescription = "Notification Center",
                     tint = if (openIncidents.isNotEmpty()) Color(0xFFFDE047) else Color.White,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(18.dp)
                   )
                 }
               }
 
               IconButton(
                 onClick = onNavigateToSettings,
-                modifier = Modifier.size(24.dp).testTag("home_settings_btn")
+                modifier = Modifier.sizeIn(minWidth = 40.dp, minHeight = 40.dp).testTag("home_settings_btn")
               ) {
-                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(15.dp))
+                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White, modifier = Modifier.size(17.dp))
               }
             }
           }
@@ -273,9 +261,9 @@ fun HomeScreen(
           ) {
             IconButton(
               onClick = onOpenDrawer,
-              modifier = Modifier.size(28.dp).testTag("home_hamburger_btn")
+              modifier = Modifier.sizeIn(minWidth = 40.dp, minHeight = 40.dp).testTag("home_hamburger_btn")
             ) {
-              Icon(Icons.Default.Menu, contentDescription = "Menu", tint = Color.White, modifier = Modifier.size(16.dp))
+              Icon(Icons.Default.Menu, contentDescription = "Open navigation menu", tint = Color.White, modifier = Modifier.size(18.dp))
             }
 
             Surface(
@@ -308,33 +296,6 @@ fun HomeScreen(
                     )
                   }
                 }
-              }
-            }
-
-            // Prominent Live Refresh Button in Sticky Header
-            Surface(
-              onClick = { repository.refreshFromGoogleSheet() },
-              color = if (isSyncing) Color(0xFF0284C7) else Color(0xFF059669),
-              shape = RoundedCornerShape(6.dp),
-              modifier = Modifier.testTag("home_refresh_btn")
-            ) {
-              Row(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
-              ) {
-                Icon(
-                  imageVector = Icons.Default.Refresh,
-                  contentDescription = "Refresh Live Data",
-                  tint = Color.White,
-                  modifier = Modifier.size(13.dp)
-                )
-                Text(
-                  text = if (isSyncing) "Syncing..." else "Refresh",
-                  color = Color.White,
-                  fontSize = 10.sp,
-                  fontWeight = FontWeight.Bold
-                )
               }
             }
           }
@@ -392,7 +353,7 @@ fun HomeScreen(
                 )
                 Text(
                   text = "Line ${topIncident.lineId} (${topIncident.category.displayName}) • $elapsedMinutes mins elapsed",
-                  fontSize = 10.sp,
+                  fontSize = 11.sp,
                   fontWeight = FontWeight.Medium,
                   color = Color(0xFFC2410C)
                 )
@@ -410,7 +371,7 @@ fun HomeScreen(
               ) {
                 Text(
                   text = if (commentCount > 0) "💬 $commentCount • Manage →" else "💬 Comment →",
-                  fontSize = 10.sp,
+                  fontSize = 11.sp,
                   fontWeight = FontWeight.Bold,
                   color = Color.White
                 )
@@ -426,7 +387,7 @@ fun HomeScreen(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
       ) {
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
           Text(
             text = "${currentFloor.displayName} — Executive Performance",
             fontSize = 14.sp,
@@ -435,7 +396,7 @@ fun HomeScreen(
           )
           Text(
             text = "Aggregated shift efficiency & quality metrics",
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             color = Color(0xFF64748B)
           )
         }
@@ -446,7 +407,7 @@ fun HomeScreen(
         ) {
           Text(
             text = "Role: ${currentRole.displayName}",
-            fontSize = 9.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF334E68),
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -678,7 +639,7 @@ fun HomeScreen(
                   shape = RoundedCornerShape(8.dp),
                   color = Color(0xFFEFF6FF),
                   border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDBEAFE)),
-                  modifier = Modifier.weight(1f)
+                  modifier = Modifier.weight(1f).heightIn(min = 60.dp)
                 ) {
                   Column(
                     modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
@@ -686,8 +647,8 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                   ) {
                     Icon(Icons.Default.AddCircle, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(20.dp))
-                    Text("Prod Entry", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E40AF), maxLines = 1, softWrap = false)
-                    Text("Hourly Pcs", fontSize = 8.sp, color = Color(0xFF60A5FA), maxLines = 1, softWrap = false)
+                    Text("Prod Entry", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E40AF), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Hourly Pcs", fontSize = 9.sp, color = Color(0xFF60A5FA), maxLines = 1, overflow = TextOverflow.Ellipsis)
                   }
                 }
               }
@@ -699,7 +660,7 @@ fun HomeScreen(
                   shape = RoundedCornerShape(8.dp),
                   color = Color(0xFFFFFBEB),
                   border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFEF3C7)),
-                  modifier = Modifier.weight(1f)
+                  modifier = Modifier.weight(1f).heightIn(min = 60.dp)
                 ) {
                   Column(
                     modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
@@ -707,8 +668,8 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                   ) {
                     Icon(Icons.Default.FactCheck, contentDescription = null, tint = Color(0xFFB45309), modifier = Modifier.size(20.dp))
-                    Text("QA Inspect", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF92400E), maxLines = 1, softWrap = false)
-                    Text("OQL & DHU", fontSize = 8.sp, color = Color(0xFFFBBF24), maxLines = 1, softWrap = false)
+                    Text("QA Inspect", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF92400E), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("OQL & DHU", fontSize = 9.sp, color = Color(0xFFFBBF24), maxLines = 1, overflow = TextOverflow.Ellipsis)
                   }
                 }
               }
@@ -720,7 +681,7 @@ fun HomeScreen(
                   shape = RoundedCornerShape(8.dp),
                   color = Color(0xFFF5F3FF),
                   border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDD6FE)),
-                  modifier = Modifier.weight(1f)
+                  modifier = Modifier.weight(1f).heightIn(min = 60.dp)
                 ) {
                   Column(
                     modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
@@ -728,8 +689,8 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                   ) {
                     Icon(Icons.Default.DateRange, contentDescription = null, tint = Color(0xFF7C3AED), modifier = Modifier.size(20.dp))
-                    Text("Monthly Data", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6D28D9), maxLines = 1, softWrap = false)
-                    Text("Targets & MTD", fontSize = 8.sp, color = Color(0xFFA78BFA), maxLines = 1, softWrap = false)
+                    Text("Monthly Data", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6D28D9), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Targets & MTD", fontSize = 9.sp, color = Color(0xFFA78BFA), maxLines = 1, overflow = TextOverflow.Ellipsis)
                   }
                 }
               }
@@ -741,7 +702,7 @@ fun HomeScreen(
                   shape = RoundedCornerShape(8.dp),
                   color = Color(0xFFF0FDF4),
                   border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDCFCE7)),
-                  modifier = Modifier.weight(1f)
+                  modifier = Modifier.weight(1f).heightIn(min = 60.dp)
                 ) {
                   Column(
                     modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
@@ -749,8 +710,8 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                   ) {
                     Icon(Icons.Default.Tune, contentDescription = null, tint = Color(0xFF15803D), modifier = Modifier.size(20.dp))
-                    Text("Target Setup", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF166534), maxLines = 1, softWrap = false)
-                    Text("Lines & SMV", fontSize = 8.sp, color = Color(0xFF4ADE80), maxLines = 1, softWrap = false)
+                    Text("Target Setup", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF166534), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Lines & SMV", fontSize = 9.sp, color = Color(0xFF4ADE80), maxLines = 1, overflow = TextOverflow.Ellipsis)
                   }
                 }
               }
@@ -762,7 +723,7 @@ fun HomeScreen(
                   shape = RoundedCornerShape(8.dp),
                   color = Color(0xFFFEF2F2),
                   border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECACA)),
-                  modifier = Modifier.weight(1f)
+                  modifier = Modifier.weight(1f).heightIn(min = 60.dp)
                 ) {
                   Column(
                     modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
@@ -770,8 +731,8 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                   ) {
                     Icon(Icons.Default.Build, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(20.dp))
-                    Text("NPT Log", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF991B1B), maxLines = 1, softWrap = false)
-                    Text("Downtime", fontSize = 8.sp, color = Color(0xFFF87171), maxLines = 1, softWrap = false)
+                    Text("NPT Log", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF991B1B), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Downtime", fontSize = 9.sp, color = Color(0xFFF87171), maxLines = 1, overflow = TextOverflow.Ellipsis)
                   }
                 }
               }

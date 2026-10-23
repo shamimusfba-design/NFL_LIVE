@@ -21,6 +21,9 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,6 +31,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,7 +45,7 @@ import com.example.model.UserRole
 import com.example.ui.theme.NflGreen
 import com.example.ui.theme.NflRoyalBlue
 
-private data class LineRowDraft(
+internal data class LineRowDraft(
   val lineId: String,
   val floor: String,
   val itemName: String,
@@ -49,19 +53,51 @@ private data class LineRowDraft(
   val targetText: String
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+internal val LineRowDraftMapSaver: Saver<SnapshotStateMap<String, LineRowDraft>, ArrayList<String>> = Saver(
+  save = { map ->
+    val list = ArrayList<String>(map.size * 5)
+    map.values.forEach { d ->
+      list.add(d.lineId)
+      list.add(d.floor)
+      list.add(d.itemName)
+      list.add(d.smvText)
+      list.add(d.targetText)
+    }
+    list
+  },
+  restore = { list ->
+    mutableStateMapOf<String, LineRowDraft>().apply {
+      var i = 0
+      while (i + 4 < list.size) {
+        val draft = LineRowDraft(
+          lineId = list[i],
+          floor = list[i + 1],
+          itemName = list[i + 2],
+          smvText = list[i + 3],
+          targetText = list[i + 4]
+        )
+        put(draft.lineId, draft)
+        i += 5
+      }
+    }
+  }
+)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SupervisorSetupScreen(
   repository: NflRepository,
   onNavigateBack: () -> Unit
 ) {
-  val allTargets by repository.targets.collectAsState()
   val currentUser by repository.currentUser.collectAsState()
   val canMorningTargetWrite = currentUser?.let { user ->
     user.isAdmin || user.role in setOf(UserRole.IE, UserRole.SUPERVISOR, UserRole.PRODUCTION_MANAGER, UserRole.PRODUCTION_REPORTER) || user.canMorningTargetWrite
   } ?: true
 
-  var selectedFloor by remember { mutableStateOf(FloorScope.SEW_2) }
+  var selectedFloorName by rememberSaveable { mutableStateOf(FloorScope.SEW_2.name) }
+  val selectedFloor = remember(selectedFloorName) {
+    FloorScope.entries.find { it.name == selectedFloorName } ?: FloorScope.SEW_2
+  }
   var saveSuccessMsg by remember { mutableStateOf<String?>(null) }
 
   // Filter lines by selected floor (Sewing lines for Sew-1/2/3/All, Iron/Packing for Finishing)
@@ -76,31 +112,41 @@ fun SupervisorSetupScreen(
     }
   }
 
-  // Mutable state map holding the 4-column editable row draft for every line on the floor:
-  // 1. Line
-  // 2. Item
-  // 3. SMV
-  // 4. Hourly Target (pcs/hr) — Daily Target calculated as Hourly * 8
-  val rowDrafts = remember(selectedFloor) {
-    mutableStateMapOf<String, LineRowDraft>().apply {
-      floorLines.forEach { lineInfo ->
-        val setup = repository.getLineSetup(lineInfo.id)
-        val hourlyTgt = if (setup.targetHourlyPcs > 0) {
-          setup.targetHourlyPcs
-        } else if (setup.targetDailyPcs > 0) {
-          (setup.targetDailyPcs / 8).coerceAtLeast(1)
-        } else 0
-        put(
-          lineInfo.id,
-          LineRowDraft(
-            lineId = lineInfo.id,
-            floor = lineInfo.floor,
-            itemName = setup.itemName,
-            smvText = if (setup.smv > 0) setup.smv.toString() else "",
-            targetText = if (hourlyTgt > 0) hourlyTgt.toString() else ""
-          )
-        )
-      }
+  val rowDrafts = rememberSaveable(saver = LineRowDraftMapSaver) {
+    mutableStateMapOf()
+  }
+  var lastSetupContextKey by rememberSaveable { mutableStateOf("") }
+
+  fun populateRowDrafts() {
+    floorLines.forEach { lineInfo ->
+      val setup = repository.getLineSetup(lineInfo.id)
+      val hourlyTgt = if (setup.targetHourlyPcs > 0) {
+        setup.targetHourlyPcs
+      } else if (setup.targetDailyPcs > 0) {
+        (setup.targetDailyPcs / 8).coerceAtLeast(1)
+      } else 0
+      rowDrafts[lineInfo.id] = LineRowDraft(
+        lineId = lineInfo.id,
+        floor = lineInfo.floor,
+        itemName = setup.itemName,
+        smvText = if (setup.smv > 0) setup.smv.toString() else "",
+        targetText = if (hourlyTgt > 0) hourlyTgt.toString() else ""
+      )
+    }
+  }
+
+  LaunchedEffect(selectedFloor.name) {
+    if (lastSetupContextKey != selectedFloor.name) {
+      populateRowDrafts()
+      lastSetupContextKey = selectedFloor.name
+    }
+  }
+
+  // Clear drafts on logout
+  LaunchedEffect(currentUser?.id) {
+    if (currentUser == null) {
+      rowDrafts.clear()
+      lastSetupContextKey = ""
     }
   }
 
@@ -127,6 +173,7 @@ fun SupervisorSetupScreen(
       rowDrafts[line.id]?.let { buildSetupFromDraft(it) }
     }
     repository.saveBatchLineSetups(setupsToSave)
+    populateRowDrafts()
     saveSuccessMsg = "✓ Saved all ${setupsToSave.size} lines for ${selectedFloor.displayName} (Synced to Cloud & TV Dashboard)"
   }
 
@@ -146,12 +193,15 @@ fun SupervisorSetupScreen(
             Text(
               text = "Line-wise Hourly Target (pcs/hr) • 8-Hour Shift (Daily = Hourly × 8)",
               color = Color(0xFFBAE6FD),
-              fontSize = 10.sp
+              fontSize = 11.sp
             )
           }
         },
         navigationIcon = {
-          IconButton(onClick = onNavigateBack, modifier = Modifier.testTag("setup_back_btn")) {
+          IconButton(
+            onClick = onNavigateBack,
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).testTag("setup_back_btn")
+          ) {
             Icon(
               imageVector = Icons.AutoMirrored.Filled.ArrowBack,
               contentDescription = "Back",
@@ -168,11 +218,12 @@ fun SupervisorSetupScreen(
               shape = RoundedCornerShape(8.dp),
               modifier = Modifier
                 .padding(end = 8.dp)
+                .heightIn(min = 40.dp)
                 .testTag("save_all_floor_targets_btn")
             ) {
               Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(15.dp))
               Spacer(modifier = Modifier.width(4.dp))
-              Text("Save All", fontSize = 11.5.sp, fontWeight = FontWeight.Black)
+              Text("Save All", fontSize = 12.sp, fontWeight = FontWeight.Black)
             }
           }
         },
@@ -185,14 +236,17 @@ fun SupervisorSetupScreen(
       modifier = Modifier
         .fillMaxWidth()
         .padding(paddingValues)
+        .imePadding()
+        .navigationBarsPadding()
         .verticalScroll(rememberScrollState())
         .padding(8.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
       // 1. Floor Selector Tabs (Sew-1 | Sew-2 | Sew-3 | All)
-      Row(
+      FlowRow(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
       ) {
         listOf(FloorScope.SEW_1, FloorScope.SEW_2, FloorScope.SEW_3, FloorScope.ALL).forEach { floor ->
           val isSelected = selectedFloor == floor
@@ -202,27 +256,28 @@ fun SupervisorSetupScreen(
           }
           Surface(
             onClick = {
-              selectedFloor = floor
+              selectedFloorName = floor.name
               saveSuccessMsg = null
             },
             shape = RoundedCornerShape(8.dp),
             color = if (isSelected) Color(0xFF0F172A) else Color.White,
             border = BorderStroke(1.dp, if (isSelected) Color(0xFF0F172A) else Color(0xFFCBD5E1)),
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f).heightIn(min = 48.dp)
           ) {
             Column(
               modifier = Modifier.padding(vertical = 7.dp, horizontal = 4.dp),
-              horizontalAlignment = Alignment.CenterHorizontally
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.Center
             ) {
               Text(
                 text = floor.displayName,
-                fontSize = 11.5.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 color = if (isSelected) Color.White else Color(0xFF334155)
               )
               Text(
                 text = "$lineCountForFloor Lines",
-                fontSize = 8.5.sp,
+                fontSize = 11.sp,
                 color = if (isSelected) Color(0xFF94A3B8) else Color(0xFF64748B)
               )
             }
@@ -244,8 +299,8 @@ fun SupervisorSetupScreen(
           ) {
             Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(18.dp))
             Column {
-              Text("View-Only Mode (Target Setup Locked)", color = Color(0xFF92400E), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-              Text("Only authorized IE and Production Reporter accounts can edit line targets and SMV.", color = Color(0xFFB45309), fontSize = 10.sp)
+              Text("View-Only Mode (Target Setup Locked)", color = Color(0xFF92400E), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              Text("Only authorized IE and Production Reporter accounts can edit line targets and SMV.", color = Color(0xFFB45309), fontSize = 11.sp)
             }
           }
         }
@@ -265,17 +320,13 @@ fun SupervisorSetupScreen(
               horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
               Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF15803D), modifier = Modifier.size(18.dp))
-              Text(msg, color = Color(0xFF166534), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+              Text(msg, color = Color(0xFF166534), fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
           }
         }
       }
 
-      // 2. Exactly 4-Column Morning Target Spreadsheet Card:
-      // Column 1: Line
-      // Column 2: Item
-      // Column 3: SMV
-      // Column 4: 8-Hr Target
+      // 2. 4-Column Morning Target Spreadsheet Card
       Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -309,7 +360,7 @@ fun SupervisorSetupScreen(
                 )
                 Text(
                   text = "Columns: 1. Line | 2. Item | 3. SMV | 4. 8-Hr Target (pcs)",
-                  fontSize = 9.5.sp,
+                  fontSize = 11.sp,
                   color = Color(0xFF64748B)
                 )
               }
@@ -337,7 +388,7 @@ fun SupervisorSetupScreen(
               TableHeaderCell("SMV", 68.dp, TextAlign.Center)
               TableHeaderCell("Hourly Target (pcs/hr)", 96.dp, TextAlign.Center)
               if (canMorningTargetWrite) {
-                TableHeaderCell("Save", 50.dp, TextAlign.Center)
+                TableHeaderCell("Save", 54.dp, TextAlign.Center)
               }
             }
 
@@ -361,7 +412,7 @@ fun SupervisorSetupScreen(
                 Surface(
                   color = Color(0xFF0A2558),
                   shape = RoundedCornerShape(5.dp),
-                  modifier = Modifier.width(54.dp).height(34.dp)
+                  modifier = Modifier.width(54.dp).heightIn(min = 36.dp)
                 ) {
                   Box(contentAlignment = Alignment.Center) {
                     Text(
@@ -398,6 +449,7 @@ fun SupervisorSetupScreen(
                   enabled = canMorningTargetWrite,
                   isDecimal = true,
                   placeholder = "SMV",
+                  imeAction = ImeAction.Next,
                   testTag = if (idx == 0) "setup_smv_input" else null
                 )
 
@@ -412,6 +464,7 @@ fun SupervisorSetupScreen(
                   enabled = canMorningTargetWrite,
                   isDecimal = false,
                   placeholder = "pcs/hr",
+                  imeAction = if (idx == floorLines.lastIndex) ImeAction.Done else ImeAction.Next,
                   testTag = if (idx == 0) "setup_target_pcs_input" else null
                 )
 
@@ -427,12 +480,12 @@ fun SupervisorSetupScreen(
                     shape = RoundedCornerShape(5.dp),
                     border = BorderStroke(1.dp, Color(0xFF86EFAC)),
                     modifier = Modifier
-                      .width(50.dp)
-                      .height(34.dp)
+                      .width(54.dp)
+                      .heightIn(min = 36.dp)
                       .testTag("setup_save_row_${lineInfo.id}")
                   ) {
                     Row(
-                      modifier = Modifier.fillMaxSize(),
+                      modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
                       horizontalArrangement = Arrangement.Center,
                       verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -443,7 +496,7 @@ fun SupervisorSetupScreen(
                         modifier = Modifier.size(13.dp)
                       )
                       Spacer(modifier = Modifier.width(2.dp))
-                      Text("Save", color = Color(0xFF15803D), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                      Text("Save", color = Color(0xFF15803D), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                   }
                 }
@@ -460,7 +513,7 @@ fun SupervisorSetupScreen(
               shape = RoundedCornerShape(10.dp),
               modifier = Modifier
                 .fillMaxWidth()
-                .height(46.dp)
+                .heightIn(min = 48.dp)
                 .testTag("setup_save_btn")
             ) {
               Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -512,6 +565,7 @@ private fun CompactTableTextField(
     onValueChange = onValueChange,
     enabled = enabled,
     singleLine = true,
+    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
     textStyle = TextStyle(
       color = if (enabled) Color(0xFF0A0F1D) else Color(0xFF1E293B),
       fontSize = 12.sp,
@@ -521,7 +575,7 @@ private fun CompactTableTextField(
     cursorBrush = SolidColor(Color(0xFF1D4ED8)),
     modifier = Modifier
       .width(width)
-      .height(34.dp)
+      .heightIn(min = 36.dp)
       .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
     decorationBox = { innerTextField ->
       Box(
@@ -536,7 +590,7 @@ private fun CompactTableTextField(
             if (enabled) Color(0xFF2563EB) else Color(0xFF64748B),
             RoundedCornerShape(6.dp)
           )
-          .padding(horizontal = 6.dp),
+          .padding(horizontal = 6.dp, vertical = 6.dp),
         contentAlignment = Alignment.CenterStart
       ) {
         if (value.isEmpty() && placeholder.isNotEmpty()) {
@@ -561,6 +615,7 @@ private fun CompactTableNumberField(
   enabled: Boolean,
   isDecimal: Boolean,
   placeholder: String = "",
+  imeAction: ImeAction = ImeAction.Next,
   testTag: String? = null
 ) {
   BasicTextField(
@@ -576,11 +631,12 @@ private fun CompactTableNumberField(
     ),
     cursorBrush = SolidColor(Color(0xFF1D4ED8)),
     keyboardOptions = KeyboardOptions(
-      keyboardType = if (isDecimal) KeyboardType.Decimal else KeyboardType.Number
+      keyboardType = if (isDecimal) KeyboardType.Decimal else KeyboardType.Number,
+      imeAction = imeAction
     ),
     modifier = Modifier
       .width(width)
-      .height(34.dp)
+      .heightIn(min = 36.dp)
       .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
     decorationBox = { innerTextField ->
       Box(
@@ -595,7 +651,7 @@ private fun CompactTableNumberField(
             if (enabled) Color(0xFF2563EB) else Color(0xFF64748B),
             RoundedCornerShape(6.dp)
           )
-          .padding(horizontal = 4.dp),
+          .padding(horizontal = 4.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center
       ) {
         if (value.isEmpty() && placeholder.isNotEmpty()) {
@@ -612,3 +668,4 @@ private fun CompactTableNumberField(
     }
   )
 }
+

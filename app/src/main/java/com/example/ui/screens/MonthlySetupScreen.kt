@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -15,43 +16,86 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
-import com.example.model.ProductionRecord
-import com.example.model.QualityRecord
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.NflRepository
 import com.example.model.FloorScope
 import com.example.model.MonthlyFactoryTarget
+import com.example.model.ProductionRecord
+import com.example.model.QualityRecord
 import com.example.ui.theme.NflRoyalBlue
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+internal val LineMonthlyDraftMapSaver: Saver<Map<String, LineMonthlyDraft>, ArrayList<String>> = Saver(
+  save = { map ->
+    val list = ArrayList<String>(map.size * 6)
+    map.forEach { (lineId, draft) ->
+      list.add(lineId)
+      list.add(draft.efficiency)
+      list.add(draft.monthlyTarget)
+      list.add(draft.achievement)
+      list.add(draft.dhu)
+      list.add(draft.oql)
+    }
+    list
+  },
+  restore = { list ->
+    val out = mutableMapOf<String, LineMonthlyDraft>()
+    var i = 0
+    while (i + 5 < list.size) {
+      out[list[i]] = LineMonthlyDraft(
+        efficiency = list[i + 1],
+        monthlyTarget = list[i + 2],
+        achievement = list[i + 3],
+        dhu = list[i + 4],
+        oql = list[i + 5]
+      )
+      i += 6
+    }
+    out
+  }
+)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MonthlySetupScreen(
   repository: NflRepository,
   onNavigateBack: () -> Unit
 ) {
+  val focusManager = LocalFocusManager.current
   val monthlyTargets by repository.monthlyTargets.collectAsState()
   val productionEntries by repository.productionEntries.collectAsState()
   val qualityEntries by repository.qualityEntries.collectAsState()
   val context = LocalContext.current
   val currentMonthKey = remember { SimpleDateFormat("yyyy-MM", Locale.US).format(Date()) }
   val monthlyPrefs = remember(context) { context.getSharedPreferences("nfl_monthly_data_settings", android.content.Context.MODE_PRIVATE) }
-  var autoMonthlyMode by remember(currentMonthKey) { mutableStateOf(monthlyPrefs.getBoolean("auto_$currentMonthKey", false)) }
+  var autoMonthlyMode by rememberSaveable(currentMonthKey) { mutableStateOf(monthlyPrefs.getBoolean("auto_$currentMonthKey", false)) }
   val userName by repository.currentUserName.collectAsState()
   val currentUser by repository.currentUser.collectAsState()
   val canMonthlyTargetWrite = currentUser?.let { it.isAdmin || it.role == com.example.model.UserRole.IE || it.canMonthlyTargetWrite } ?: false
   val canEditLineMonthlyData = currentUser?.let { it.isAdmin || it.role == com.example.model.UserRole.IE || it.canMonthlyTargetWrite } ?: false
-  var selectedFloor by remember { mutableStateOf(FloorScope.SEW_2) }
+
+  var selectedFloorEnumName by rememberSaveable { mutableStateOf(FloorScope.SEW_2.name) }
+  val selectedFloor = remember(selectedFloorEnumName) {
+    FloorScope.entries.find { it.name == selectedFloorEnumName } ?: FloorScope.SEW_2
+  }
+  LaunchedEffect(Unit) {
+    repository.ensureCurrentMonthDataLoaded()
+  }
   val selectedFloorName = if (selectedFloor == FloorScope.ALL) "All Floor" else selectedFloor.apiValue
   val autoFloorTarget = remember(selectedFloor, productionEntries, qualityEntries, currentMonthKey) {
     calculateAutoMonthlyTarget(repository, selectedFloor, null, currentMonthKey, productionEntries, qualityEntries)
@@ -64,31 +108,57 @@ fun MonthlySetupScreen(
   }
 
   val effectiveFloorTarget = if (autoMonthlyMode) autoFloorTarget else currentTarget
-  var updateEffText by remember(selectedFloor, autoMonthlyMode, effectiveFloorTarget.updateEfficiencyPct, effectiveFloorTarget.lastUpdatedMillis) { mutableStateOf(effectiveFloorTarget.updateEfficiencyPct.toString()) }
-  var floorTargetPcsText by remember(selectedFloor, autoMonthlyMode, effectiveFloorTarget.monthlyTargetPcs, effectiveFloorTarget.lastUpdatedMillis) { mutableStateOf(effectiveFloorTarget.monthlyTargetPcs.toString()) }
-  var floorAchievementPcsText by remember(selectedFloor, autoMonthlyMode, effectiveFloorTarget.monthlyAchievementPcs, effectiveFloorTarget.lastUpdatedMillis) { mutableStateOf(effectiveFloorTarget.monthlyAchievementPcs.toString()) }
-  var updateOqlText by remember(selectedFloor, autoMonthlyMode, effectiveFloorTarget.targetOqlPct, effectiveFloorTarget.lastUpdatedMillis) { mutableStateOf(effectiveFloorTarget.targetOqlPct.toString()) }
-  var updateDhuText by remember(selectedFloor, autoMonthlyMode, effectiveFloorTarget.targetDhuPct, effectiveFloorTarget.lastUpdatedMillis) { mutableStateOf(effectiveFloorTarget.targetDhuPct.toString()) }
-  var friPassText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.friPassRatePct.toString()) }
-  var bsOqlText by remember(selectedFloor, currentTarget.lastUpdatedMillis) { mutableStateOf(currentTarget.bsOqlPct.toString()) }
+  var updateEffText by rememberSaveable { mutableStateOf(effectiveFloorTarget.updateEfficiencyPct.toString()) }
+  var floorTargetPcsText by rememberSaveable { mutableStateOf(effectiveFloorTarget.monthlyTargetPcs.toString()) }
+  var floorAchievementPcsText by rememberSaveable { mutableStateOf(effectiveFloorTarget.monthlyAchievementPcs.toString()) }
+  var updateOqlText by rememberSaveable { mutableStateOf(effectiveFloorTarget.targetOqlPct.toString()) }
+  var updateDhuText by rememberSaveable { mutableStateOf(effectiveFloorTarget.targetDhuPct.toString()) }
+  var friPassText by rememberSaveable { mutableStateOf(currentTarget.friPassRatePct.toString()) }
+  var bsOqlText by rememberSaveable { mutableStateOf(currentTarget.bsOqlPct.toString()) }
+  var lastMonthlyContextKey by rememberSaveable { mutableStateOf("") }
 
   var saveSuccessMsg by remember { mutableStateOf<String?>(null) }
-  var lineDrafts by remember(selectedFloor, autoMonthlyMode, monthlyTargets) {
-    mutableStateOf(
-      floorLines.associate { line ->
-        val target = monthlyTargets.find {
-          it.lineId.equals(line.id, true) &&
-            it.floor.replace("-", " ").equals((if (selectedFloor == FloorScope.ALL) line.floor else selectedFloorName).replace("-", " "), true)
-        }
-        line.id to LineMonthlyDraft(
-          efficiency = target?.updateEfficiencyPct?.toString() ?: "",
-          monthlyTarget = target?.monthlyTargetPcs?.toString() ?: "",
-          achievement = target?.monthlyAchievementPcs?.toString() ?: "",
-          dhu = target?.targetDhuPct?.toString() ?: "",
-          oql = target?.targetOqlPct?.toString() ?: ""
-        )
+  var lineDrafts by rememberSaveable(stateSaver = LineMonthlyDraftMapSaver) {
+    mutableStateOf(emptyMap())
+  }
+
+  fun populateMonthlyDrafts() {
+    updateEffText = effectiveFloorTarget.updateEfficiencyPct.toString()
+    floorTargetPcsText = effectiveFloorTarget.monthlyTargetPcs.toString()
+    floorAchievementPcsText = effectiveFloorTarget.monthlyAchievementPcs.toString()
+    updateOqlText = effectiveFloorTarget.targetOqlPct.toString()
+    updateDhuText = effectiveFloorTarget.targetDhuPct.toString()
+    friPassText = currentTarget.friPassRatePct.toString()
+    bsOqlText = currentTarget.bsOqlPct.toString()
+    lineDrafts = floorLines.associate { line ->
+      val target = monthlyTargets.find {
+        it.lineId.equals(line.id, true) &&
+          it.floor.replace("-", " ").equals((if (selectedFloor == FloorScope.ALL) line.floor else selectedFloorName).replace("-", " "), true)
       }
-    )
+      line.id to LineMonthlyDraft(
+        efficiency = target?.updateEfficiencyPct?.toString() ?: "",
+        monthlyTarget = target?.monthlyTargetPcs?.toString() ?: "",
+        achievement = target?.monthlyAchievementPcs?.toString() ?: "",
+        dhu = target?.targetDhuPct?.toString() ?: "",
+        oql = target?.targetOqlPct?.toString() ?: ""
+      )
+    }
+  }
+
+  val currentMonthlyContextKey = "${selectedFloor.name}|$autoMonthlyMode|${effectiveFloorTarget.lastUpdatedMillis}"
+  LaunchedEffect(currentMonthlyContextKey) {
+    if (lastMonthlyContextKey != currentMonthlyContextKey) {
+      populateMonthlyDrafts()
+      lastMonthlyContextKey = currentMonthlyContextKey
+    }
+  }
+
+  // Clear drafts on logout
+  LaunchedEffect(currentUser?.id) {
+    if (currentUser == null) {
+      lineDrafts = emptyMap()
+      lastMonthlyContextKey = ""
+    }
   }
 
   Scaffold(
@@ -99,11 +169,14 @@ fun MonthlySetupScreen(
         title = {
           Column {
             Text("Monthly Achieved Data Setup", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
-            Text("Manual Entry for Monthly Achieved Efficiency, OQL & DHU", fontSize = 10.sp, color = Color(0xFFBAE6FD))
+            Text("Manual Entry for Monthly Achieved Efficiency, OQL & DHU", fontSize = 11.sp, color = Color(0xFFBAE6FD))
           }
         },
         navigationIcon = {
-          IconButton(onClick = onNavigateBack, modifier = Modifier.testTag("monthly_back_btn")) {
+          IconButton(
+            onClick = onNavigateBack,
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).testTag("monthly_back_btn")
+          ) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
           }
         },
@@ -116,6 +189,8 @@ fun MonthlySetupScreen(
       modifier = Modifier
         .fillMaxWidth()
         .padding(paddingValues)
+        .imePadding()
+        .navigationBarsPadding()
         .verticalScroll(rememberScrollState())
         .padding(8.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -127,35 +202,37 @@ fun MonthlySetupScreen(
         elevation = CardDefaults.cardElevation(2.dp)
       ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text("Select Factory Floor:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFF475569))
-          Row(
+          Text("Select Factory Floor:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF475569))
+          FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
           ) {
             listOf(FloorScope.ALL, FloorScope.SEW_1, FloorScope.SEW_2, FloorScope.SEW_3, FloorScope.FINISHING).forEach { floor ->
               val isSelected = selectedFloor == floor
               Surface(
-                onClick = { selectedFloor = floor },
+                onClick = { selectedFloorEnumName = floor.name },
                 shape = RoundedCornerShape(8.dp),
                 color = if (isSelected) Color(0xFF0F172A) else Color(0xFFF1F5F9),
                 border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Color(0xFF0F172A) else Color(0xFFCBD5E1)),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp)
               ) {
-                Text(
-                  text = when (floor) {
-                    FloorScope.ALL -> "All Floors"
-                    FloorScope.SEW_1 -> "Sew 1"
-                    FloorScope.SEW_2 -> "Sew 2"
-                    FloorScope.SEW_3 -> "Sew 3"
-                    FloorScope.FINISHING -> "Finish"
-                    else -> floor.displayName
-                  },
-                  fontSize = 11.sp,
-                  fontWeight = FontWeight.Bold,
-                  color = if (isSelected) Color.White else Color(0xFF334155),
-                  textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                  modifier = Modifier.padding(vertical = 8.dp)
-                )
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)) {
+                  Text(
+                    text = when (floor) {
+                      FloorScope.ALL -> "All Floors"
+                      FloorScope.SEW_1 -> "Sew 1"
+                      FloorScope.SEW_2 -> "Sew 2"
+                      FloorScope.SEW_3 -> "Sew 3"
+                      FloorScope.FINISHING -> "Finish"
+                      else -> floor.displayName
+                    },
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isSelected) Color.White else Color(0xFF334155),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                  )
+                }
               }
             }
           }
@@ -199,7 +276,7 @@ fun MonthlySetupScreen(
           ) {
             Text(
               text = if (autoMonthlyMode) "AUTO ON — calculated from actual daily production and quality entries." else "MANUAL MODE — enter monthly figures separately. Line-wise data is independent.",
-              fontSize = 10.sp,
+              fontSize = 11.sp,
               color = Color(0xFF166534),
               modifier = Modifier.padding(8.dp)
             )
@@ -211,15 +288,19 @@ fun MonthlySetupScreen(
             onValueChange = { updateEffText = it },
             label = { Text("Monthly Achieved Efficiency (%) — Up-to-Date", color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) },
             placeholder = { Text("e.g. 71.5", color = Color(0xFF475569)) },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().testTag("monthly_eff_input"),
             singleLine = true,
             enabled = canMonthlyTargetWrite && !autoMonthlyMode,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            keyboardOptions = KeyboardOptions(
+              keyboardType = KeyboardType.Decimal,
+              imeAction = ImeAction.Next
+            ),
+            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
             colors = com.example.ui.theme.nflInputColors(),
             textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Black, fontSize = 14.sp)
           )
 
-          // Floor-level Monthly Target and Achievement (entered separately from line data)
+          // Floor-level Monthly Target and Achievement
           Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(
               value = floorTargetPcsText,
@@ -228,7 +309,11 @@ fun MonthlySetupScreen(
               modifier = Modifier.weight(1f),
               singleLine = true,
               enabled = canMonthlyTargetWrite && !autoMonthlyMode,
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+              keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Decimal,
+                imeAction = ImeAction.Next
+              ),
+              keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Right) }),
               colors = com.example.ui.theme.nflInputColors(),
               textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Black, fontSize = 14.sp)
             )
@@ -239,7 +324,11 @@ fun MonthlySetupScreen(
               modifier = Modifier.weight(1f),
               singleLine = true,
               enabled = canMonthlyTargetWrite && !autoMonthlyMode,
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+              keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Decimal,
+                imeAction = ImeAction.Next
+              ),
+              keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
               colors = com.example.ui.theme.nflInputColors(),
               textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Black, fontSize = 14.sp)
             )
@@ -255,7 +344,11 @@ fun MonthlySetupScreen(
               modifier = Modifier.weight(1f),
               singleLine = true,
               enabled = canMonthlyTargetWrite && !autoMonthlyMode,
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+              keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Decimal,
+                imeAction = ImeAction.Next
+              ),
+              keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Right) }),
               colors = com.example.ui.theme.nflInputColors(),
               textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Black, fontSize = 14.sp)
             )
@@ -268,7 +361,11 @@ fun MonthlySetupScreen(
               modifier = Modifier.weight(1f),
               singleLine = true,
               enabled = canMonthlyTargetWrite && !autoMonthlyMode,
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+              keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Decimal,
+                imeAction = ImeAction.Next
+              ),
+              keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
               colors = com.example.ui.theme.nflInputColors(),
               textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Black, fontSize = 14.sp)
             )
@@ -287,7 +384,11 @@ fun MonthlySetupScreen(
               modifier = Modifier.weight(1f),
               singleLine = true,
               enabled = canMonthlyTargetWrite && !autoMonthlyMode,
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+              keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Decimal,
+                imeAction = ImeAction.Next
+              ),
+              keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Right) }),
               colors = com.example.ui.theme.nflInputColors(),
               textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Black, fontSize = 14.sp)
             )
@@ -300,7 +401,11 @@ fun MonthlySetupScreen(
               modifier = Modifier.weight(1f),
               singleLine = true,
               enabled = canMonthlyTargetWrite && !autoMonthlyMode,
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+              keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Decimal,
+                imeAction = ImeAction.Done
+              ),
+              keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
               colors = com.example.ui.theme.nflInputColors(),
               textStyle = LocalTextStyle.current.copy(color = Color(0xFF0A0F1D), fontWeight = FontWeight.Black, fontSize = 14.sp)
             )
@@ -317,7 +422,7 @@ fun MonthlySetupScreen(
                 text = saveSuccessMsg ?: "",
                 color = Color(0xFF166534),
                 fontWeight = FontWeight.Bold,
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 modifier = Modifier.padding(10.dp)
               )
             }
@@ -366,7 +471,8 @@ fun MonthlySetupScreen(
             enabled = canMonthlyTargetWrite && !autoMonthlyMode,
             modifier = Modifier
               .fillMaxWidth()
-              .height(48.dp),
+              .heightIn(min = 48.dp)
+              .testTag("save_monthly_floor_btn"),
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(
               containerColor = if (canMonthlyTargetWrite) NflRoyalBlue else Color(0xFF94A3B8)
@@ -383,10 +489,10 @@ fun MonthlySetupScreen(
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
           Column(modifier = Modifier.weight(1f)) {
             Text("Monthly Data Mode", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF0F172A))
-            Text(if (autoMonthlyMode) "Auto: actual daily entries" else "Manual: IE/Admin entry", fontSize = 10.sp, color = Color(0xFF64748B))
+            Text(if (autoMonthlyMode) "Auto: actual daily entries" else "Manual: IE/Admin entry", fontSize = 11.sp, color = Color(0xFF64748B))
           }
           Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (autoMonthlyMode) "AUTO" else "MANUAL", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (autoMonthlyMode) Color(0xFF15803D) else Color(0xFF1D4ED8))
+            Text(if (autoMonthlyMode) "AUTO" else "MANUAL", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (autoMonthlyMode) Color(0xFF15803D) else Color(0xFF1D4ED8))
             Switch(checked = autoMonthlyMode, onCheckedChange = { enabled ->
               autoMonthlyMode = enabled
               monthlyPrefs.edit().putBoolean("auto_$currentMonthKey", enabled).apply()
@@ -395,7 +501,7 @@ fun MonthlySetupScreen(
         }
       }
 
-      // Line-wise monthly data table: separate records for every line, not derived from floor totals.
+      // Line-wise monthly data table
       Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -482,7 +588,7 @@ fun MonthlySetupScreen(
               saveSuccessMsg = if (savedCount == floorLines.size) "Saved all $savedCount line records." else "Saved $savedCount of ${floorLines.size}. Complete all five fields per line and retry."
             },
             enabled = canEditLineMonthlyData && !autoMonthlyMode && floorLines.isNotEmpty(),
-            modifier = Modifier.fillMaxWidth().height(46.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF15803D))
           ) {
@@ -490,7 +596,7 @@ fun MonthlySetupScreen(
             Spacer(modifier = Modifier.width(6.dp))
             Text("Save All Line-wise Monthly Data", fontWeight = FontWeight.Bold)
           }
-          saveSuccessMsg?.let { Text(it, color = Color(0xFF166534), fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+          saveSuccessMsg?.let { Text(it, color = Color(0xFF166534), fontSize = 12.sp, fontWeight = FontWeight.Bold) }
           if (!canEditLineMonthlyData) {
             Text(
               text = "View only — only IE or Admin can enter or update line-wise monthly data.",
@@ -553,7 +659,7 @@ private fun calculateAutoMonthlyTarget(
   )
 }
 
-private data class LineMonthlyDraft(
+internal data class LineMonthlyDraft(
   val efficiency: String = "",
   val monthlyTarget: String = "",
   val achievement: String = "",
@@ -586,38 +692,39 @@ private fun LineMonthlyDataRow(
     }
     OutlinedTextField(
       value = draft.efficiency, onValueChange = { onDraftChange(draft.copy(efficiency = it)) },
-      label = { Text("Efficiency %", fontSize = 9.sp, color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) }, singleLine = true, enabled = canEdit,
-      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+      label = { Text("Efficiency %", fontSize = 10.sp, color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) }, singleLine = true, enabled = canEdit,
+      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
       colors = com.example.ui.theme.nflInputColors(),
       modifier = Modifier.width(120.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF0A0F1D))
     )
     OutlinedTextField(
       value = draft.monthlyTarget, onValueChange = { onDraftChange(draft.copy(monthlyTarget = it)) },
-      label = { Text("Target pcs", fontSize = 9.sp, color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) }, singleLine = true, enabled = canEdit,
-      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+      label = { Text("Target pcs", fontSize = 10.sp, color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) }, singleLine = true, enabled = canEdit,
+      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
       colors = com.example.ui.theme.nflInputColors(),
       modifier = Modifier.width(110.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF0A0F1D))
     )
     OutlinedTextField(
       value = draft.achievement, onValueChange = { onDraftChange(draft.copy(achievement = it)) },
-      label = { Text("Achieved pcs", fontSize = 9.sp, color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) }, singleLine = true, enabled = canEdit,
-      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+      label = { Text("Achieved pcs", fontSize = 10.sp, color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) }, singleLine = true, enabled = canEdit,
+      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
       colors = com.example.ui.theme.nflInputColors(),
       modifier = Modifier.width(130.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF0A0F1D))
     )
     OutlinedTextField(
       value = draft.dhu, onValueChange = { onDraftChange(draft.copy(dhu = it)) },
-      label = { Text("DHU %", fontSize = 9.sp, color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) }, singleLine = true, enabled = canEdit,
-      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+      label = { Text("DHU %", fontSize = 10.sp, color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) }, singleLine = true, enabled = canEdit,
+      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
       colors = com.example.ui.theme.nflInputColors(),
       modifier = Modifier.width(105.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF0A0F1D))
     )
     OutlinedTextField(
       value = draft.oql, onValueChange = { onDraftChange(draft.copy(oql = it)) },
-      label = { Text("OQL %", fontSize = 9.sp, color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) }, singleLine = true, enabled = canEdit,
-      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+      label = { Text("OQL %", fontSize = 10.sp, color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) }, singleLine = true, enabled = canEdit,
+      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
       colors = com.example.ui.theme.nflInputColors(),
       modifier = Modifier.width(105.dp), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF0A0F1D))
     )
   }
 }
+

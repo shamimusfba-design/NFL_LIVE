@@ -56,7 +56,6 @@ fun TvDashboardScreen(
   val lastRefreshTime by repository.lastRefreshTime.collectAsState()
   val refreshTrigger by repository.refreshTrigger.collectAsState()
 
-  var refreshCounter by remember { mutableIntStateOf(30) }
   var isScreenActive by remember { mutableStateOf(true) }
   var viewMode by remember { mutableStateOf(TvViewMode.ALL_GRAPHS) }
 
@@ -86,19 +85,10 @@ fun TvDashboardScreen(
     repository.getTvDashboardData(currentFloor, currentPeriod)
   }
 
-  // Isolated TV 30-second automatic data refresh + 30-second view mode Auto-Sliding loop
+  // 30-second view mode Auto-Sliding loop
   LaunchedEffect(isScreenActive, isAutoSlideEnabled, viewMode) {
     while (isScreenActive) {
       delay(1000)
-      if (refreshCounter > 1) {
-        refreshCounter -= 1
-      } else {
-        refreshCounter = 30
-        if (!repository.isSyncing.value) {
-          repository.refreshFromGoogleSheet()
-        }
-      }
-
       if (isAutoSlideEnabled && viewMode != TvViewMode.TABLE) {
         if (slideCountdown > 1) {
           slideCountdown -= 1
@@ -335,45 +325,6 @@ fun TvDashboardScreen(
                 )
                 Text(
                   text = if (isAutoSlideEnabled) "Auto Slide ${slideCountdown}s" else "Slide Paused",
-                  color = Color.White,
-                  fontSize = 8.sp,
-                  fontWeight = FontWeight.Bold
-                )
-              }
-            }
-
-            // Refresh button
-            var isRefreshFocused by remember { mutableStateOf(false) }
-            Surface(
-              onClick = {
-                refreshCounter = 30
-                repository.refreshFromGoogleSheet()
-              },
-              color = if (isSyncing) Color(0xFF0284C7) else Color(0xFF059669),
-              shape = RoundedCornerShape(4.dp),
-              modifier = Modifier
-                .testTag("tv_refresh_btn")
-                .onFocusChanged { isRefreshFocused = it.isFocused }
-                .border(
-                  width = if (isRefreshFocused) 1.5.dp else 0.dp,
-                  color = if (isRefreshFocused) Color(0xFFF59E0B) else Color.Transparent,
-                  shape = RoundedCornerShape(4.dp)
-                )
-                .focusable()
-            ) {
-              Row(
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
-              ) {
-                Icon(
-                  imageVector = Icons.Default.Refresh,
-                  contentDescription = "Refresh",
-                  tint = Color.White,
-                  modifier = Modifier.size(10.dp)
-                )
-                Text(
-                  text = if (isSyncing) "Sync" else "${refreshCounter}s",
                   color = Color.White,
                   fontSize = 8.sp,
                   fontWeight = FontWeight.Bold

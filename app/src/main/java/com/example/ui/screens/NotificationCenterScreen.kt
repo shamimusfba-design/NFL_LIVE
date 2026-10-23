@@ -5,11 +5,14 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -21,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.NflRepository
@@ -30,7 +34,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun NotificationCenterScreen(
   repository: NflRepository,
@@ -141,6 +145,8 @@ fun NotificationCenterScreen(
       modifier = Modifier
         .fillMaxSize()
         .padding(innerPadding)
+        .imePadding()
+        .navigationBarsPadding()
     ) {
       // 1. User Sound Controls Header (Sound ON, Mute, 15m, 1h, End of Shift, Silence)
       Surface(
@@ -264,10 +270,11 @@ fun NotificationCenterScreen(
             onValueChange = { searchQuery = it },
             placeholder = { Text("Filter by line (e.g. K1), machine, floor...", fontSize = 12.sp, color = Color(0xFF64748B)) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp)) },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             singleLine = true,
             modifier = Modifier
               .fillMaxWidth()
-              .height(48.dp),
+              .heightIn(min = 48.dp),
             shape = RoundedCornerShape(8.dp),
             colors = OutlinedTextFieldDefaults.colors(
               focusedContainerColor = Color(0xFF1E293B),
@@ -467,6 +474,7 @@ fun NotificationCenterScreen(
   }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AlertItemCard(
   incident: IncidentItem,
@@ -607,13 +615,13 @@ private fun AlertItemCard(
       ) {
         Text(
           text = "Reported at $reportedTime by ${incident.reportedBy}",
-          fontSize = 10.sp,
+          fontSize = 11.sp,
           color = Color(0xFF64748B)
         )
         if (incident.acknowledgedBy != null) {
           Text(
             text = "Ack: ${incident.acknowledgedBy}",
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             color = Color(0xFF38BDF8)
           )
         }
@@ -626,8 +634,8 @@ private fun AlertItemCard(
           modifier = Modifier.fillMaxWidth()
         ) {
           Column(modifier = Modifier.padding(8.dp)) {
-            Text("Resolution by ${incident.resolvedBy ?: "Staff"}:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
-            Text(incident.resolutionNote, fontSize = 11.sp, color = Color(0xFFE2E8F0))
+            Text("Resolution by ${incident.resolvedBy ?: "Staff"}:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+            Text(incident.resolutionNote, fontSize = 12.sp, color = Color(0xFFE2E8F0))
           }
         }
       }
@@ -639,38 +647,38 @@ private fun AlertItemCard(
           modifier = Modifier.fillMaxWidth()
         ) {
           Column(modifier = Modifier.padding(8.dp)) {
-            Text("Verified by ${incident.verifiedBy ?: "QA / Management"}:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
-            Text(incident.correctiveAction, fontSize = 11.sp, color = Color(0xFFD1FAE5))
+            Text("Verified by ${incident.verifiedBy ?: "QA / Management"}:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF34D399))
+            Text(incident.correctiveAction, fontSize = 12.sp, color = Color(0xFFD1FAE5))
           }
         }
       }
 
       // Action Buttons
       HorizontalDivider(color = Color(0xFF1E293B))
-      Row(
+      FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalArrangement = Arrangement.spacedBy(6.dp)
       ) {
         if (incident.severity == AlertSeverity.CRITICAL && incident.status != IncidentStatus.RESOLVED) {
           OutlinedButton(
             onClick = onSilence,
-            modifier = Modifier.height(34.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp),
+            modifier = Modifier.heightIn(min = 38.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
             border = BorderStroke(1.dp, Color(0xFFEF4444))
           ) {
             Icon(Icons.Default.VolumeMute, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(13.dp))
             Spacer(Modifier.width(4.dp))
-            Text("Silence", fontSize = 10.sp, color = Color(0xFFEF4444))
+            Text("Silence", fontSize = 11.sp, color = Color(0xFFEF4444))
           }
         }
 
         if (incident.status == IncidentStatus.OPEN || incident.status == IncidentStatus.REPORTED) {
           Button(
             onClick = onAcknowledge,
-            modifier = Modifier.height(34.dp),
+            modifier = Modifier.heightIn(min = 38.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
-            contentPadding = PaddingValues(horizontal = 10.dp)
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
           ) {
             Text("Acknowledge", fontSize = 11.sp, fontWeight = FontWeight.Bold)
           }
@@ -679,9 +687,9 @@ private fun AlertItemCard(
         if (incident.status == IncidentStatus.ACKNOWLEDGED && incident.category == IncidentCategory.MACHINE_BREAKDOWN) {
           Button(
             onClick = onStartProgress,
-            modifier = Modifier.height(34.dp),
+            modifier = Modifier.heightIn(min = 38.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
-            contentPadding = PaddingValues(horizontal = 10.dp)
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
           ) {
             Text("Start Repair", fontSize = 11.sp, fontWeight = FontWeight.Bold)
           }
@@ -690,9 +698,9 @@ private fun AlertItemCard(
         if (incident.status != IncidentStatus.RESOLVED && incident.status != IncidentStatus.VERIFIED) {
           Button(
             onClick = onResolve,
-            modifier = Modifier.height(34.dp),
+            modifier = Modifier.heightIn(min = 38.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-            contentPadding = PaddingValues(horizontal = 10.dp)
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
           ) {
             Text("Resolve", fontSize = 11.sp, fontWeight = FontWeight.Bold)
           }
@@ -700,19 +708,19 @@ private fun AlertItemCard(
           if (!incident.isEscalated && (currentRole == UserRole.ADMIN || currentRole == UserRole.PRODUCTION_MANAGER || currentRole == UserRole.SUPERVISOR)) {
             OutlinedButton(
               onClick = onEscalate,
-              modifier = Modifier.height(34.dp),
+              modifier = Modifier.heightIn(min = 38.dp),
               border = BorderStroke(1.dp, Color(0xFFEF4444)),
-              contentPadding = PaddingValues(horizontal = 8.dp)
+              contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
             ) {
-              Text("Escalate", fontSize = 10.sp, color = Color(0xFFEF4444))
+              Text("Escalate", fontSize = 11.sp, color = Color(0xFFEF4444))
             }
           }
         } else if (incident.status == IncidentStatus.RESOLVED && (currentRole == UserRole.ADMIN || currentRole == UserRole.QUALITY_MANAGER || currentRole == UserRole.AUDITOR || currentRole == UserRole.PRODUCTION_MANAGER)) {
           Button(
             onClick = onVerify,
-            modifier = Modifier.height(34.dp),
+            modifier = Modifier.heightIn(min = 38.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
-            contentPadding = PaddingValues(horizontal = 10.dp)
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
           ) {
             Text("Verify Corrective Action", fontSize = 11.sp, fontWeight = FontWeight.Bold)
           }
@@ -736,7 +744,7 @@ private fun AlertItemCard(
             .clip(RoundedCornerShape(6.dp))
             .background(Color(0xFF1E293B))
             .clickable { showComments = !showComments }
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 8.dp),
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically
         ) {
@@ -751,7 +759,7 @@ private fun AlertItemCard(
           }
           Icon(
             imageVector = if (showComments) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-            contentDescription = null,
+            contentDescription = if (showComments) "Collapse comments" else "Expand comments",
             tint = Color(0xFF38BDF8),
             modifier = Modifier.size(16.dp)
           )
@@ -761,7 +769,7 @@ private fun AlertItemCard(
           if (incident.comments.isEmpty()) {
             Text(
               text = "No remarks yet. Anyone can add remarks below.",
-              fontSize = 10.sp,
+              fontSize = 11.sp,
               color = Color(0xFF94A3B8),
               modifier = Modifier.padding(horizontal = 4.dp)
             )
@@ -782,19 +790,19 @@ private fun AlertItemCard(
                   ) {
                     Text(
                       text = "👤 ${c.userName} ${if (c.userRole.isNotBlank()) "(${c.userRole})" else ""}",
-                      fontSize = 10.5.sp,
+                      fontSize = 11.sp,
                       fontWeight = FontWeight.Bold,
                       color = Color(0xFFF1F5F9)
                     )
                     Text(
                       text = timeStr,
-                      fontSize = 9.sp,
+                      fontSize = 10.sp,
                       color = Color(0xFF64748B)
                     )
                   }
                   Text(
                     text = c.commentText,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     color = Color(0xFFCBD5E1)
                   )
                 }
@@ -811,6 +819,7 @@ private fun AlertItemCard(
               value = commentInput,
               onValueChange = { commentInput = it },
               placeholder = { Text("Comment as $authorName...", fontSize = 11.sp, color = Color(0xFF64748B)) },
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
               modifier = Modifier.weight(1f),
               singleLine = true,
               shape = RoundedCornerShape(6.dp),
@@ -822,7 +831,7 @@ private fun AlertItemCard(
                 focusedContainerColor = Color(0xFF0F172A),
                 unfocusedContainerColor = Color(0xFF0F172A)
               ),
-              textStyle = LocalTextStyle.current.copy(fontSize = 11.5.sp, color = Color.White)
+              textStyle = LocalTextStyle.current.copy(fontSize = 12.sp, color = Color.White)
             )
             Button(
               onClick = {
@@ -834,6 +843,7 @@ private fun AlertItemCard(
               enabled = commentInput.isNotBlank(),
               shape = RoundedCornerShape(6.dp),
               colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+              modifier = Modifier.heightIn(min = 48.dp),
               contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
               Text("Post", fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -862,7 +872,7 @@ private fun SummaryChip(
       modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
       horizontalAlignment = Alignment.CenterHorizontally
     ) {
-      Text(title, fontSize = 10.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.SemiBold)
+      Text(title, fontSize = 11.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.SemiBold)
       Text(count.toString(), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = color)
     }
   }
@@ -904,7 +914,7 @@ private fun FilterChipItem(
   ) {
     Text(
       text = label,
-      fontSize = 10.sp,
+      fontSize = 11.sp,
       fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
       color = if (isSelected) Color(0xFF93C5FD) else Color(0xFF94A3B8),
       modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)

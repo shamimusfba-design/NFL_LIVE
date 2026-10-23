@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -16,12 +17,18 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -31,7 +38,27 @@ import com.example.data.NflRepository
 import com.example.model.*
 import com.example.ui.theme.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+internal val StringMapSaver: Saver<SnapshotStateMap<String, String>, ArrayList<String>> = Saver(
+  save = { map ->
+    val list = ArrayList<String>(map.size * 2)
+    map.forEach { (k, v) ->
+      list.add(k)
+      list.add(v)
+    }
+    list
+  },
+  restore = { list ->
+    mutableStateMapOf<String, String>().apply {
+      var i = 0
+      while (i + 1 < list.size) {
+        this[list[i]] = list[i + 1]
+        i += 2
+      }
+    }
+  }
+)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ProductionEntryScreen(
   repository: NflRepository,
@@ -41,12 +68,11 @@ fun ProductionEntryScreen(
   onNavigateToMonthlySetup: () -> Unit = {},
   onNavigateToSetup: () -> Unit = {}
 ) {
+  val focusManager = LocalFocusManager.current
   val repoFloor by repository.currentFloor.collectAsState()
   val repoAssignedLine by repository.assignedLine.collectAsState()
-  val isOnline by repository.isOnline.collectAsState()
   val entries by repository.productionEntries.collectAsState()
   val allTargets by repository.targets.collectAsState()
-  val syncStatusBanner by repository.syncStatusBanner.collectAsState()
   val currentUser by repository.currentUser.collectAsState()
   val isAdminUser = currentUser?.isAdmin == true && currentUser?.role == com.example.model.UserRole.ADMIN
   val isIeUser = currentUser?.role == com.example.model.UserRole.IE
@@ -70,36 +96,35 @@ fun ProductionEntryScreen(
     )
   } ?: false)
 
-  var selectedFloor by remember { mutableStateOf(if (repoFloor == FloorScope.ALL) FloorScope.SEW_2 else repoFloor) }
+  var selectedFloorName by rememberSaveable {
+    mutableStateOf((if (repoFloor == FloorScope.ALL) FloorScope.SEW_2 else repoFloor).name)
+  }
+  val selectedFloor = remember(selectedFloorName) {
+    FloorScope.entries.find { it.name == selectedFloorName } ?: FloorScope.SEW_2
+  }
   val availableLines = remember(selectedFloor) {
     repository.allLinesMaster.filter { it.floor == selectedFloor.apiValue }
   }
 
   val currentBdDate = remember { repository.getCurrentBangladeshDateIso() }
-  var selectedDate by remember { mutableStateOf(currentBdDate) }
-  var selectedHour by remember { mutableStateOf("10:00 - 11:00") }
+  var selectedDate by rememberSaveable { mutableStateOf(currentBdDate) }
+  var selectedHour by rememberSaveable { mutableStateOf("10:00 - 11:00") }
   var showHourDropdown by remember { mutableStateOf(false) }
 
   // Batch vs Single Line Mode Toggle (Batch is default for faster floor entry)
-  var isBatchMode by remember { mutableStateOf(true) }
+  var isBatchMode by rememberSaveable { mutableStateOf(true) }
 
   // Map to hold batch outputs for each line: lineId -> pieces text (blank by default)
-  val batchOutputs = remember(selectedFloor, selectedDate, selectedHour) {
-    mutableStateMapOf<String, String>().apply {
-      availableLines.forEach { line ->
-        val existingReal = entries.find { !it.isDemo && it.lineId.equals(line.id, ignoreCase = true) && it.date == selectedDate && it.hourSlot == selectedHour }
-        if (existingReal != null && (existingReal.outputQty > 0 || existingReal.isConfirmedZero)) {
-          this[line.id] = existingReal.outputQty.toString()
-        } else {
-          this[line.id] = ""
-        }
-      }
-    }
+  val batchOutputs = rememberSaveable(saver = StringMapSaver) {
+    mutableStateMapOf()
   }
+  var lastBatchContextKey by rememberSaveable { mutableStateOf("") }
 
-  LaunchedEffect(entries, selectedFloor, selectedDate, selectedHour) {
+  fun populateBatchOutputsFromEntries() {
     availableLines.forEach { line ->
-      val existingReal = entries.find { !it.isDemo && it.lineId.equals(line.id, ignoreCase = true) && it.date == selectedDate && it.hourSlot == selectedHour }
+      val existingReal = entries.find {
+        !it.isDemo && it.lineId.equals(line.id, ignoreCase = true) && it.date == selectedDate && it.hourSlot == selectedHour
+      }
       if (existingReal != null && (existingReal.outputQty > 0 || existingReal.isConfirmedZero)) {
         batchOutputs[line.id] = existingReal.outputQty.toString()
       } else {
@@ -108,16 +133,31 @@ fun ProductionEntryScreen(
     }
   }
 
+  val currentBatchContextKey = "${selectedFloor.name}|$selectedDate|$selectedHour"
+  LaunchedEffect(currentBatchContextKey) {
+    if (lastBatchContextKey != currentBatchContextKey) {
+      populateBatchOutputsFromEntries()
+      lastBatchContextKey = currentBatchContextKey
+    }
+  }
+
   // Single line mode states
-  var selectedSingleLine by remember(selectedFloor) {
+  var selectedSingleLine by rememberSaveable {
     mutableStateOf(
       if (availableLines.any { it.id == repoAssignedLine }) repoAssignedLine
       else availableLines.firstOrNull()?.id ?: "K1"
     )
   }
+  LaunchedEffect(selectedFloor) {
+    if (availableLines.none { it.id == selectedSingleLine }) {
+      selectedSingleLine = if (availableLines.any { it.id == repoAssignedLine }) repoAssignedLine
+      else availableLines.firstOrNull()?.id ?: "K1"
+    }
+  }
   var showLineDropdown by remember { mutableStateOf(false) }
-  var singleOutputQtyText by remember { mutableStateOf("") }
-  var singleRemarksText by remember { mutableStateOf("") }
+  var singleOutputQtyText by rememberSaveable { mutableStateOf("") }
+  var singleRemarksText by rememberSaveable { mutableStateOf("") }
+  var lastSingleContextKey by rememberSaveable { mutableStateOf("") }
 
   val existingSingleReal = remember(entries, selectedSingleLine, selectedDate, selectedHour) {
     entries.find {
@@ -128,20 +168,134 @@ fun ProductionEntryScreen(
     }
   }
 
-  LaunchedEffect(selectedSingleLine, selectedDate, selectedHour, existingSingleReal?.timestamp, existingSingleReal?.revision) {
-    if (existingSingleReal != null) {
-      singleOutputQtyText = if (existingSingleReal.outputQty > 0 || existingSingleReal.isConfirmedZero) existingSingleReal.outputQty.toString() else ""
-      singleRemarksText = existingSingleReal.remarks
-    } else {
-      singleOutputQtyText = ""
-      singleRemarksText = ""
+  val currentSingleContextKey = "$selectedSingleLine|$selectedDate|$selectedHour|${existingSingleReal?.timestamp ?: 0L}|${existingSingleReal?.revision ?: 0}"
+  LaunchedEffect(currentSingleContextKey) {
+    if (lastSingleContextKey != currentSingleContextKey) {
+      if (existingSingleReal != null) {
+        singleOutputQtyText = if (existingSingleReal.outputQty > 0 || existingSingleReal.isConfirmedZero) existingSingleReal.outputQty.toString() else ""
+        singleRemarksText = existingSingleReal.remarks
+      } else {
+        singleOutputQtyText = ""
+        singleRemarksText = ""
+      }
+      lastSingleContextKey = currentSingleContextKey
     }
   }
 
-  var submissionSuccessMsg by remember { mutableStateOf<String?>(null) }
+  // Clear drafts on logout
+  LaunchedEffect(currentUser?.id) {
+    if (currentUser == null) {
+      batchOutputs.clear()
+      singleOutputQtyText = ""
+      singleRemarksText = ""
+      lastBatchContextKey = ""
+      lastSingleContextKey = ""
+    }
+  }
+
+  var saveUiState by remember { mutableStateOf(SaveUiState.Idle) }
+  var batchSubmitSummary by remember { mutableStateOf<BatchSubmitSummary?>(null) }
+  var isSubmitting by remember { mutableStateOf(false) }
   var validationError by remember { mutableStateOf<String?>(null) }
+  var plausibilityPromptTarget by remember { mutableStateOf<Int?>(null) }
+  var pendingConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
   val singleLineSetup = remember(selectedSingleLine, allTargets) { repository.getLineSetup(selectedSingleLine) }
+
+  fun executeSingleSubmission(record: ProductionRecord) {
+    isSubmitting = true
+    saveUiState = SaveUiState.Saving
+    batchSubmitSummary = null
+    validationError = null
+    var localSucceeded = false
+    repository.submitProduction(
+      entry = record,
+      onLocalSaved = {
+        localSucceeded = true
+        saveUiState = SaveUiState.SavedLocally
+        singleOutputQtyText = ""
+        singleRemarksText = ""
+      },
+      onCloudResult = { synced ->
+        isSubmitting = false
+        saveUiState = if (synced) SaveUiState.Synced else SaveUiState.SyncFailed
+      }
+    )
+    if (!localSucceeded) {
+      isSubmitting = false
+      saveUiState = SaveUiState.Idle
+      validationError = repository.lastSecurityMessage.value ?: repository.syncStatusBanner.value ?: "Could not save production entry."
+    }
+  }
+
+  fun executeBatchSubmission(records: List<ProductionRecord>, skippedCount: Int) {
+    isSubmitting = true
+    saveUiState = SaveUiState.Saving
+    batchSubmitSummary = null
+    validationError = null
+    var localSucceeded = false
+    repository.submitBatchProduction(
+      entries = records,
+      skippedFromCaller = skippedCount,
+      onLocalSaved = { summary ->
+        localSucceeded = true
+        batchSubmitSummary = summary
+        saveUiState = SaveUiState.SavedLocally
+        populateBatchOutputsFromEntries()
+      },
+      onCloudResult = { synced, summary ->
+        isSubmitting = false
+        batchSubmitSummary = summary
+        saveUiState = if (synced) SaveUiState.Synced else SaveUiState.SyncFailed
+      }
+    )
+    if (!localSucceeded) {
+      isSubmitting = false
+      saveUiState = SaveUiState.Idle
+      validationError = repository.lastSecurityMessage.value ?: repository.syncStatusBanner.value ?: "Could not save batch production."
+    }
+  }
+
+  if (plausibilityPromptTarget != null) {
+    val targetVal = plausibilityPromptTarget ?: 0
+    AlertDialog(
+      onDismissRequest = {
+        plausibilityPromptTarget = null
+        pendingConfirmAction = null
+      },
+      title = { Text("Confirm High Output", fontWeight = FontWeight.Bold) },
+      text = {
+        Text(
+          "This is much higher than the hourly target ($targetVal). Save anyway?",
+          modifier = Modifier.testTag("plausibility_dialog_message")
+        )
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            val action = pendingConfirmAction
+            plausibilityPromptTarget = null
+            pendingConfirmAction = null
+            action?.invoke()
+          },
+          modifier = Modifier.testTag("plausibility_confirm_btn")
+        ) {
+          Text("Save anyway")
+        }
+      },
+      dismissButton = {
+        TextButton(
+          onClick = {
+            plausibilityPromptTarget = null
+            pendingConfirmAction = null
+          },
+          modifier = Modifier.testTag("plausibility_cancel_btn")
+        ) {
+          Text("Cancel")
+        }
+      }
+    )
+  }
 
   Scaffold(
     contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -159,12 +313,15 @@ fun ProductionEntryScreen(
             Text(
               text = "Hourly Production Output Data Entry",
               color = Color(0xFFBAE6FD),
-              fontSize = 10.sp
+              fontSize = 11.sp
             )
           }
         },
         navigationIcon = {
-          IconButton(onClick = onNavigateBack, modifier = Modifier.testTag("prod_back_btn")) {
+          IconButton(
+            onClick = onNavigateBack,
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).testTag("prod_back_btn")
+          ) {
             Icon(
               imageVector = Icons.AutoMirrored.Filled.ArrowBack,
               contentDescription = "Back",
@@ -173,7 +330,10 @@ fun ProductionEntryScreen(
           }
         },
         actions = {
-          IconButton(onClick = onViewHistory) {
+          IconButton(
+            onClick = onViewHistory,
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+          ) {
             Icon(Icons.Default.History, contentDescription = "History", tint = Color.White)
           }
         },
@@ -188,33 +348,38 @@ fun ProductionEntryScreen(
       modifier = Modifier
         .fillMaxWidth()
         .padding(paddingValues)
+        .imePadding()
+        .navigationBarsPadding()
         .verticalScroll(rememberScrollState())
         .padding(8.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
       // 1. TOP MODULE NAVIGATION TABS (Strictly gated by user write permissions)
-      Row(
+      FlowRow(
         modifier = Modifier
           .fillMaxWidth()
           .background(Color.White, RoundedCornerShape(10.dp))
           .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
       ) {
         // Tab 1: Hourly Production (Active)
         Surface(
           shape = RoundedCornerShape(8.dp),
           color = Color(0xFF0F172A),
-          modifier = Modifier.weight(1f)
+          modifier = Modifier.weight(1f).heightIn(min = 40.dp)
         ) {
-          Text(
-            text = "🧵 Production",
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(vertical = 7.dp),
-            maxLines = 1
-          )
+          Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp, vertical = 7.dp)) {
+            Text(
+              text = "🧵 Production",
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              color = Color.White,
+              textAlign = TextAlign.Center,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
+            )
+          }
         }
 
         // Tab 2: Quality Entry (Only if permitted)
@@ -223,17 +388,19 @@ fun ProductionEntryScreen(
             onClick = onNavigateToQuality,
             shape = RoundedCornerShape(8.dp),
             color = Color(0xFFF1F5F9),
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f).heightIn(min = 40.dp)
           ) {
-            Text(
-              text = "🔍 Quality",
-              fontSize = 10.sp,
-              fontWeight = FontWeight.SemiBold,
-              color = Color(0xFF475569),
-              textAlign = TextAlign.Center,
-              modifier = Modifier.padding(vertical = 7.dp),
-              maxLines = 1
-            )
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp, vertical = 7.dp)) {
+              Text(
+                text = "🔍 Quality",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF475569),
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
           }
         }
 
@@ -243,17 +410,19 @@ fun ProductionEntryScreen(
             onClick = onNavigateToMonthlySetup,
             shape = RoundedCornerShape(8.dp),
             color = Color(0xFFF1F5F9),
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f).heightIn(min = 40.dp)
           ) {
-            Text(
-              text = "📅 Monthly",
-              fontSize = 10.sp,
-              fontWeight = FontWeight.SemiBold,
-              color = Color(0xFF475569),
-              textAlign = TextAlign.Center,
-              modifier = Modifier.padding(vertical = 7.dp),
-              maxLines = 1
-            )
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp, vertical = 7.dp)) {
+              Text(
+                text = "📅 Monthly",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF475569),
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
           }
         }
 
@@ -263,22 +432,24 @@ fun ProductionEntryScreen(
             onClick = onNavigateToSetup,
             shape = RoundedCornerShape(8.dp),
             color = Color(0xFFF1F5F9),
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f).heightIn(min = 40.dp)
           ) {
-            Text(
-              text = "🌅 Targets",
-              fontSize = 10.sp,
-              fontWeight = FontWeight.SemiBold,
-              color = Color(0xFF475569),
-              textAlign = TextAlign.Center,
-              modifier = Modifier.padding(vertical = 7.dp),
-              maxLines = 1
-            )
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp, vertical = 7.dp)) {
+              Text(
+                text = "🌅 Targets",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF475569),
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
           }
         }
       }
 
-      // 2. Floor Selector Chips (Sew 1, Sew 2, Sew 3, Finishing)
+      // 2. Floor Selector Chips (Sew 1, Sew 2, Sew 3)
       Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(10.dp),
@@ -293,48 +464,51 @@ fun ProductionEntryScreen(
           ) {
             Text(
               text = "Select Factory Floor / Section:",
-              fontSize = 11.sp,
+              fontSize = 12.sp,
               fontWeight = FontWeight.Bold,
               color = Color(0xFF475569)
             )
             Text(
               text = "${availableLines.size} Lines Available",
-              fontSize = 10.sp,
+              fontSize = 11.sp,
               fontWeight = FontWeight.Bold,
               color = Color(0xFF0284C7)
             )
           }
 
-          Row(
+          FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
           ) {
             listOf(FloorScope.SEW_1, FloorScope.SEW_2, FloorScope.SEW_3).forEach { floor ->
               val isSelected = selectedFloor == floor
               Surface(
                 onClick = {
-                  selectedFloor = floor
-                  submissionSuccessMsg = null
+                  selectedFloorName = floor.name
+                  saveUiState = SaveUiState.Idle
+                  batchSubmitSummary = null
                   validationError = null
                 },
                 shape = RoundedCornerShape(8.dp),
                 color = if (isSelected) Color(0xFF0F172A) else Color(0xFFF1F5F9),
                 border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Color(0xFF0F172A) else Color(0xFFCBD5E1)),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp)
               ) {
-                Text(
-                  text = when (floor) {
-                    FloorScope.SEW_1 -> "Sew-1"
-                    FloorScope.SEW_2 -> "Sew-2"
-                    FloorScope.SEW_3 -> "Sew-3"
-                    else -> floor.displayName
-                  },
-                  fontSize = 11.5.sp,
-                  fontWeight = FontWeight.Bold,
-                  color = if (isSelected) Color.White else Color(0xFF334155),
-                  textAlign = TextAlign.Center,
-                  modifier = Modifier.padding(vertical = 8.dp)
-                )
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp)) {
+                  Text(
+                    text = when (floor) {
+                      FloorScope.SEW_1 -> "Sew-1"
+                      FloorScope.SEW_2 -> "Sew-2"
+                      FloorScope.SEW_3 -> "Sew-3"
+                      else -> floor.displayName
+                    },
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isSelected) Color.White else Color(0xFF334155),
+                    textAlign = TextAlign.Center
+                  )
+                }
               }
             }
           }
@@ -353,8 +527,8 @@ fun ProductionEntryScreen(
               ) {
                 Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(18.dp))
                 Column {
-                  Text("View-Only Mode (Data Entry Locked)", color = Color(0xFF92400E), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                  Text("You have read-only access. Only authorized production reporters can enter records. (Management has view-only access).", color = Color(0xFFB45309), fontSize = 10.sp)
+                  Text("View-Only Mode (Data Entry Locked)", color = Color(0xFF92400E), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                  Text("You have read-only access. Only authorized production reporters can enter records. (Management has view-only access).", color = Color(0xFFB45309), fontSize = 11.sp)
                 }
               }
             }
@@ -382,7 +556,7 @@ fun ProductionEntryScreen(
               shape = RoundedCornerShape(8.dp),
               color = Color(0xFFF8FAFC),
               border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)),
-              modifier = Modifier.fillMaxWidth()
+              modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
             ) {
               Row(
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
@@ -404,18 +578,18 @@ fun ProductionEntryScreen(
                 shape = RoundedCornerShape(8.dp),
                 color = Color(0xFFEFF6FF),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF93C5FD)),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
               ) {
                 Row(
                   modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
                   verticalAlignment = Alignment.CenterVertically,
                   horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.Schedule, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(15.dp))
-                    Text(selectedHour, fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF1E3A8A))
+                    Text(selectedHour, fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF1E3A8A), maxLines = 1, overflow = TextOverflow.Ellipsis)
                   }
-                  Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(16.dp))
+                  Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Select hour slot", tint = Color(0xFF1D4ED8), modifier = Modifier.size(16.dp))
                 }
               }
 
@@ -430,7 +604,8 @@ fun ProductionEntryScreen(
                     onClick = {
                       selectedHour = slot
                       showHourDropdown = false
-                      submissionSuccessMsg = null
+                      saveUiState = SaveUiState.Idle
+                      batchSubmitSummary = null
                     }
                   )
                 }
@@ -452,40 +627,42 @@ fun ProductionEntryScreen(
           onClick = { isBatchMode = true },
           shape = RoundedCornerShape(6.dp),
           color = if (isBatchMode) Color(0xFF0F172A) else Color.Transparent,
-          modifier = Modifier.weight(1f)
+          modifier = Modifier.weight(1f).heightIn(min = 44.dp)
         ) {
-          Text(
-            text = "⚡ Batch All Lines (${availableLines.size} Lines)",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (isBatchMode) Color.White else Color(0xFF475569),
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(vertical = 7.dp)
-          )
+          Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 7.dp, horizontal = 4.dp)) {
+            Text(
+              text = "⚡ Batch All Lines (${availableLines.size} Lines)",
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              color = if (isBatchMode) Color.White else Color(0xFF475569),
+              textAlign = TextAlign.Center
+            )
+          }
         }
 
         Surface(
           onClick = { isBatchMode = false },
           shape = RoundedCornerShape(6.dp),
           color = if (!isBatchMode) Color(0xFF0F172A) else Color.Transparent,
-          modifier = Modifier.weight(1f)
+          modifier = Modifier.weight(1f).heightIn(min = 44.dp)
         ) {
-          Text(
-            text = "✏️ Single Line Entry",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (!isBatchMode) Color.White else Color(0xFF475569),
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(vertical = 7.dp)
-          )
+          Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 7.dp, horizontal = 4.dp)) {
+            Text(
+              text = "✏️ Single Line Entry",
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              color = if (!isBatchMode) Color.White else Color(0xFF475569),
+              textAlign = TextAlign.Center
+            )
+          }
         }
       }
 
-      // Success / Sync Status Feedback Banner
-      AnimatedVisibility(visible = submissionSuccessMsg != null) {
-        val activeMsg = (syncStatusBanner ?: "").ifBlank { submissionSuccessMsg ?: "" }
-        val isWarning = activeMsg.startsWith("⚠️") || activeMsg.startsWith("🔒")
-        val isSaving = activeMsg.startsWith("⏳") || activeMsg.startsWith("🔄")
+      // Honest Save / Sync Status Feedback Banner
+      val saveFeedbackMsg = formatSaveFeedbackMessage(saveUiState, batchSubmitSummary)
+      AnimatedVisibility(visible = saveFeedbackMsg != null) {
+        val isWarning = saveUiState == SaveUiState.SyncFailed
+        val isSaving = saveUiState == SaveUiState.Saving || saveUiState == SaveUiState.SavedLocally
         Surface(
           shape = RoundedCornerShape(8.dp),
           color = when {
@@ -501,11 +678,15 @@ fun ProductionEntryScreen(
               else -> Color(0xFF86EFAC)
             }
           ),
-          modifier = Modifier.fillMaxWidth()
+          modifier = Modifier.fillMaxWidth().testTag("production_save_status_banner")
         ) {
           Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(
-              imageVector = if (isWarning) Icons.Default.Warning else Icons.Default.CheckCircle,
+              imageVector = when {
+                isWarning -> Icons.Default.Warning
+                isSaving -> Icons.Default.Sync
+                else -> Icons.Default.CheckCircle
+              },
               contentDescription = null,
               tint = when {
                 isWarning -> Color(0xFFD97706)
@@ -515,13 +696,13 @@ fun ProductionEntryScreen(
               modifier = Modifier.size(18.dp)
             )
             Text(
-              text = activeMsg,
+              text = saveFeedbackMsg ?: "",
               color = when {
                 isWarning -> Color(0xFF92400E)
                 isSaving -> Color(0xFF0369A1)
                 else -> Color(0xFF166534)
               },
-              fontSize = 11.sp,
+              fontSize = 12.sp,
               fontWeight = FontWeight.Bold
             )
           }
@@ -533,17 +714,17 @@ fun ProductionEntryScreen(
           shape = RoundedCornerShape(8.dp),
           color = Color(0xFFFEE2E2),
           border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5)),
-          modifier = Modifier.fillMaxWidth()
+          modifier = Modifier.fillMaxWidth().testTag("production_validation_error_banner")
         ) {
           Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(Icons.Default.Error, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(18.dp))
-            Text(validationError ?: "", color = Color(0xFF991B1B), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(validationError ?: "", color = Color(0xFF991B1B), fontSize = 12.sp, fontWeight = FontWeight.Bold)
           }
         }
       }
 
       // =========================================================================
-      // MODE A: BATCH ALL LINES FOR THE FLOOR (Solved Item 2: no 14x line switching)
+      // MODE A: BATCH ALL LINES FOR THE FLOOR
       // =========================================================================
       if (isBatchMode) {
         Card(
@@ -559,7 +740,7 @@ fun ProductionEntryScreen(
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically
             ) {
-              Column {
+              Column(modifier = Modifier.weight(1f)) {
                 Text(
                   text = "${selectedFloor.displayName} — All Lines Production",
                   fontSize = 13.sp,
@@ -568,14 +749,14 @@ fun ProductionEntryScreen(
                 )
                 Text(
                   text = "Enter pieces produced during slot $selectedHour",
-                  fontSize = 10.sp,
+                  fontSize = 11.sp,
                   color = Color(0xFF64748B)
                 )
               }
               Surface(color = Color(0xFFE0F2FE), shape = RoundedCornerShape(4.dp)) {
                 Text(
-                  text = "$selectedHour",
-                  fontSize = 10.sp,
+                  text = selectedHour,
+                  fontSize = 11.sp,
                   fontWeight = FontWeight.ExtraBold,
                   color = Color(0xFF0369A1),
                   modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
@@ -590,6 +771,7 @@ fun ProductionEntryScreen(
               val isSlotLocked = !isAdminUser && entries.any {
                 !it.isDemo && it.lineId == line.id && it.date == selectedDate && it.hourSlot == selectedHour
               }
+              val isLastLine = index == availableLines.lastIndex
 
               Surface(
                 shape = RoundedCornerShape(8.dp),
@@ -603,7 +785,7 @@ fun ProductionEntryScreen(
                   horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                   // Line & Style Info
-                  Column(modifier = Modifier.weight(1.3f)) {
+                  Column(modifier = Modifier.weight(1.3f).padding(end = 8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                       Surface(color = Color(0xFF1E3A8A), shape = RoundedCornerShape(4.dp)) {
                         Text(
@@ -616,7 +798,7 @@ fun ProductionEntryScreen(
                       }
                       Text(
                         text = setup.itemName,
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF0F172A),
                         maxLines = 1,
@@ -625,7 +807,7 @@ fun ProductionEntryScreen(
                       if (isSlotLocked) {
                         Text(
                           text = "🔒 Locked",
-                          fontSize = 9.sp,
+                          fontSize = 11.sp,
                           fontWeight = FontWeight.Bold,
                           color = Color(0xFFB45309)
                         )
@@ -633,7 +815,7 @@ fun ProductionEntryScreen(
                     }
                     Text(
                       text = "Tgt: ${setup.targetHourlyPcs} pcs/hr • SMV: ${String.format("%.2f", setup.smv)}",
-                      fontSize = 9.sp,
+                      fontSize = 11.sp,
                       color = Color(0xFF64748B)
                     )
                   }
@@ -647,7 +829,7 @@ fun ProductionEntryScreen(
                         validationError = null
                       }
                     },
-                    enabled = canWrite && !isSlotLocked,
+                    enabled = canWrite && !isSlotLocked && !isSubmitting,
                     placeholder = { Text(if (isSlotLocked) "Locked" else "Pcs", fontSize = 12.sp, color = Color(0xFF94A3B8)) },
                     singleLine = true,
                     colors = com.example.ui.theme.nflInputColors(),
@@ -657,8 +839,17 @@ fun ProductionEntryScreen(
                       textAlign = TextAlign.Center,
                       color = Color(0xFF0F172A)
                     ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.width(105.dp),
+                    keyboardOptions = KeyboardOptions(
+                      keyboardType = KeyboardType.Number,
+                      imeAction = if (isLastLine) ImeAction.Done else ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                      onNext = { focusManager.moveFocus(FocusDirection.Down) },
+                      onDone = { focusManager.clearFocus() }
+                    ),
+                    modifier = Modifier
+                      .widthIn(min = 76.dp, max = 105.dp)
+                      .testTag("batch_input_${line.id}"),
                     shape = RoundedCornerShape(6.dp)
                   )
                 }
@@ -668,6 +859,7 @@ fun ProductionEntryScreen(
             // ONE BUTTON SUBMISSION FOR ALL LINES
             Button(
               onClick = {
+                if (isSubmitting) return@Button
                 if (!canWrite) {
                   validationError = if (!isWithinTimeWindow) {
                     "Daily entry is only allowed between 06:00 AM and midnight Bangladesh time."
@@ -676,13 +868,22 @@ fun ProductionEntryScreen(
                   }
                   return@Button
                 }
+                var skipped = 0
+                var implausibleTarget: Int? = null
                 val records = availableLines.mapNotNull { line ->
                   val isLocked = !isAdminUser && entries.any {
                     !it.isDemo && it.lineId == line.id && it.date == selectedDate && it.hourSlot == selectedHour
                   }
-                  val qty = batchOutputs[line.id]?.toIntOrNull()
-                  if (!isLocked && qty != null && qty >= 0) {
+                  val rawText = batchOutputs[line.id]?.trim().orEmpty()
+                  val qty = rawText.toIntOrNull()
+                  if (isLocked) {
+                    if (rawText.isNotEmpty()) skipped++
+                    null
+                  } else if (qty != null && qty >= 0) {
                     val setup = repository.getLineSetup(line.id)
+                    if (implausibleTarget == null) {
+                      implausibleTarget = findImplausibleProductionTarget(qty, setup.targetHourlyPcs)
+                    }
                     ProductionRecord(
                       lineId = line.id,
                       floor = selectedFloor.apiValue,
@@ -693,30 +894,42 @@ fun ProductionEntryScreen(
                       remarks = "Batch reporter entry",
                       isConfirmedZero = (qty == 0)
                     )
-                  } else null
+                  } else {
+                    skipped++
+                    null
+                  }
                 }
 
                 if (records.isEmpty()) {
                   validationError = "Please enter output quantity for at least one unlocked line."
+                } else if (implausibleTarget != null) {
+                  plausibilityPromptTarget = implausibleTarget
+                  pendingConfirmAction = { executeBatchSubmission(records, skipped) }
                 } else {
-                  repository.submitBatchProduction(records)
-                  submissionSuccessMsg = "✓ Successfully saved hourly production for ${records.size} lines in ${selectedFloor.displayName} ($selectedHour)!"
-                  validationError = null
+                  executeBatchSubmission(records, skipped)
                 }
               },
               modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp)
+                .heightIn(min = 48.dp)
                 .testTag("submit_all_lines_button"),
-              enabled = canWrite,
+              enabled = canWrite && !isSubmitting,
               shape = RoundedCornerShape(8.dp),
               colors = ButtonDefaults.buttonColors(
-                containerColor = if (canWrite) NflRoyalBlue else Color(0xFF94A3B8)
+                containerColor = if (canWrite && !isSubmitting) NflRoyalBlue else Color(0xFF94A3B8)
               )
             ) {
               Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
               Spacer(modifier = Modifier.width(6.dp))
-              Text(if (canWrite) "Submit All ${availableLines.size} Lines Production ($selectedHour)" else "🔒 Entry Locked (View Only)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+              Text(
+                when {
+                  isSubmitting -> "Saving..."
+                  canWrite -> "Submit All ${availableLines.size} Lines Production ($selectedHour)"
+                  else -> "🔒 Entry Locked (View Only)"
+                },
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp
+              )
             }
           }
         }
@@ -743,10 +956,11 @@ fun ProductionEntryScreen(
                   onClick = { showLineDropdown = true },
                   shape = RoundedCornerShape(8.dp),
                   colors = CardDefaults.outlinedCardColors(containerColor = Color(0xFFF0FDF4)),
-                  border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF86EFAC))
+                  border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF86EFAC)),
+                  modifier = Modifier.heightIn(min = 48.dp)
                 ) {
                   Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                   ) {
@@ -756,7 +970,7 @@ fun ProductionEntryScreen(
                       fontWeight = FontWeight.Black,
                       color = Color(0xFF14532D)
                     )
-                    Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = null, tint = Color(0xFF14532D))
+                    Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = "Select line", tint = Color(0xFF14532D))
                   }
                 }
 
@@ -780,7 +994,7 @@ fun ProductionEntryScreen(
               Surface(color = Color(0xFFEFF6FF), shape = RoundedCornerShape(4.dp)) {
                 Text(
                   text = "Target: ${singleLineSetup.targetHourlyPcs} pcs",
-                  fontSize = 10.sp,
+                  fontSize = 11.sp,
                   fontWeight = FontWeight.Bold,
                   color = Color(0xFF1D4ED8),
                   modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
@@ -802,7 +1016,7 @@ fun ProductionEntryScreen(
               ) {
                 Column {
                   Text(text = "Running: ${singleLineSetup.itemName}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
-                  Text(text = "SMV: ${singleLineSetup.smv} • Target Eff: ${singleLineSetup.targetEfficiencyPct.toInt()}%", fontSize = 10.sp, color = Color(0xFF64748B))
+                  Text(text = "SMV: ${singleLineSetup.smv} • Target Eff: ${singleLineSetup.targetEfficiencyPct.toInt()}%", fontSize = 11.sp, color = Color(0xFF64748B))
                 }
               }
             }
@@ -822,9 +1036,15 @@ fun ProductionEntryScreen(
                     validationError = null
                   }
                 },
-                enabled = canWrite && !isSingleSlotLocked,
+                enabled = canWrite && !isSingleSlotLocked && !isSubmitting,
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(
+                  keyboardType = KeyboardType.Number,
+                  imeAction = ImeAction.Next
+                ),
+                keyboardActions = KeyboardActions(
+                  onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                ),
                 modifier = Modifier.fillMaxWidth().testTag("single_hourly_output_input"),
                 colors = com.example.ui.theme.nflInputColors(),
                 textStyle = LocalTextStyle.current.copy(fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A)),
@@ -836,18 +1056,23 @@ fun ProductionEntryScreen(
             OutlinedTextField(
               value = singleRemarksText,
               onValueChange = { if (canWrite && !isSingleSlotLocked) singleRemarksText = it },
-              enabled = canWrite && !isSingleSlotLocked,
+              enabled = canWrite && !isSingleSlotLocked && !isSubmitting,
               placeholder = { Text("Downtime / Remarks (Optional)", fontSize = 12.sp, color = Color(0xFF64748B)) },
-              modifier = Modifier.fillMaxWidth(),
+              modifier = Modifier.fillMaxWidth().testTag("single_remarks_input"),
               colors = com.example.ui.theme.nflInputColors(),
               textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFF0F172A)),
               singleLine = true,
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+              keyboardActions = KeyboardActions(
+                onDone = { focusManager.clearFocus() }
+              ),
               shape = RoundedCornerShape(8.dp)
             )
 
             // Submit Button
             Button(
               onClick = {
+                if (isSubmitting) return@Button
                 if (!canWrite || isSingleSlotLocked) {
                   validationError = if (isSingleSlotLocked) {
                     "🔒 Line $selectedSingleLine ($selectedHour) is already submitted. Only Admin can modify submitted records with a reason."
@@ -872,19 +1097,27 @@ fun ProductionEntryScreen(
                   remarks = singleRemarksText,
                   isConfirmedZero = (qty == 0)
                 )
-                repository.submitProduction(record)
-                submissionSuccessMsg = "✓ Output saved for Line $selectedSingleLine ($selectedHour: $qty pcs)!"
-                validationError = null
+                val implausibleTarget = findImplausibleProductionTarget(qty, singleLineSetup.targetHourlyPcs)
+                if (implausibleTarget != null) {
+                  plausibilityPromptTarget = implausibleTarget
+                  pendingConfirmAction = { executeSingleSubmission(record) }
+                } else {
+                  executeSingleSubmission(record)
+                }
               },
-              modifier = Modifier.fillMaxWidth().height(48.dp),
-              enabled = canWrite && !isSingleSlotLocked,
+              modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .testTag("submit_single_production_button"),
+              enabled = canWrite && !isSingleSlotLocked && !isSubmitting,
               shape = RoundedCornerShape(8.dp),
               colors = ButtonDefaults.buttonColors(
-                containerColor = if (canWrite && !isSingleSlotLocked) NflRoyalBlue else Color(0xFF94A3B8)
+                containerColor = if (canWrite && !isSingleSlotLocked && !isSubmitting) NflRoyalBlue else Color(0xFF94A3B8)
               )
             ) {
               Text(
                 when {
+                  isSubmitting -> "SAVING..."
                   isSingleSlotLocked -> "🔒 RECORD SUBMITTED & LOCKED (ADMIN ONLY)"
                   canWrite -> "SUBMIT PRODUCTION"
                   else -> "🔒 ENTRY LOCKED (VIEW ONLY)"
@@ -899,3 +1132,4 @@ fun ProductionEntryScreen(
     }
   }
 }
+

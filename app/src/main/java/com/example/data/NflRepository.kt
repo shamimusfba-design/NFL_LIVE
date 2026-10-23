@@ -602,6 +602,39 @@ class NflRepository(private val context: Context) {
         canMorningTargetWrite = false,
         canMonthlyTargetWrite = false,
         canTargetRevisionWrite = false
+      ),
+      UserAccount(
+        id = TV_DISPLAY_ACCOUNT_ID,
+        employeeId = TV_DISPLAY_ACCOUNT_ID,
+        name = "Smart TV Display",
+        password = "",
+        passwordHash = "",
+        designation = "TV Display (View-Only)",
+        department = "Management",
+        role = UserRole.MANAGEMENT_VIEW,
+        floor = FloorScope.ALL,
+        authorizedFloorScope = FloorScope.ALL,
+        assignedLine = "All",
+        isAdmin = false,
+        mustChangePassword = false,
+        isActive = true,
+        accountStatus = AccountStatus.APPROVED,
+        canViewDashboard = true,
+        canViewTvDashboard = true,
+        canViewMonthlyEfficiency = false,
+        canViewMonthlyDhu = false,
+        canViewMonthlyOql = false,
+        canViewLineDeepDive = false,
+        canViewAuditLogs = false,
+        canExportReports = false,
+        canProductionWrite = false,
+        canFinishingWrite = false,
+        canQualityWrite = false,
+        canOqlWrite = false,
+        canNptWrite = false,
+        canMorningTargetWrite = false,
+        canMonthlyTargetWrite = false,
+        canTargetRevisionWrite = false
       )
     )
   )
@@ -670,6 +703,9 @@ class NflRepository(private val context: Context) {
   private val _lastSecurityMessage = MutableStateFlow<String?>(null)
   val lastSecurityMessage: StateFlow<String?> = _lastSecurityMessage.asStateFlow()
 
+  val firestoreReadStats: StateFlow<Map<String, CollectionReadStats>> = firebaseSync.sessionReadStats
+  @Volatile private var lastMonthlyFirestoreFetchMillis: Long = 0L
+
   init {
     // 0. Load persisted UserAccount list and RBAC policies
     val savedUsers = sheetsStorage.loadLocalUsers()
@@ -679,6 +715,7 @@ class NflRepository(private val context: Context) {
         val saved = savedById[defUser.id.lowercase(Locale.US)]
         if (saved != null) {
           when {
+            defUser.id.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) -> enforceTvDisplayPermissions(saved)
             defUser.id.lowercase(Locale.US) == "ie" || saved.role == UserRole.IE -> saved.copy(
               canProductionWrite = true,
               canFinishingWrite = true,
@@ -702,14 +739,12 @@ class NflRepository(private val context: Context) {
       if (_users.value.any { it.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) && it.isAdmin }) {
         sheetsStorage.setFirstAdminBootstrapLocked(true)
       }
-      _currentUser.value?.let { cur ->
-        _users.value.find { it.id.equals(cur.id, ignoreCase = true) }?.let { fresh ->
-          _currentUser.value = fresh
-        }
-      }
     } else {
       sheetsStorage.saveLocalUsers(_users.value)
     }
+
+    // 0a. Restore persisted session if valid (APPROVED, active, bound device matches, not mustChangePassword)
+    restorePersistedSessionOnInit()
 
     // 0b. Load persisted device approval requests & audit logs
     _deviceApprovalRequests.value = sheetsStorage.loadDeviceApprovalRequests()
@@ -767,13 +802,85 @@ class NflRepository(private val context: Context) {
       }
       firebaseSync.startRealtimeListeners()
     }
-
-    // 4. Perform initial shared backend refresh on startup
-    refreshFromGoogleSheet()
   }
 
   fun cleanup() {
     firebaseSync.cleanupListeners()
+  }
+
+  private fun restorePersistedSessionOnInit() {
+    val savedUserId = sheetsStorage.getLocalActiveSessionUserId().trim()
+    val savedSessionId = sheetsStorage.getLocalActiveSessionId().trim()
+    if (savedUserId.isEmpty() || savedSessionId.isEmpty()) {
+      if (savedUserId.isNotEmpty() || savedSessionId.isNotEmpty()) {
+        sheetsStorage.clearLocalActiveSession()
+      }
+      return
+    }
+    val myDeviceId = sheetsStorage.getDeviceId()
+    val savedUser = _users.value.find {
+      it.id.equals(savedUserId, ignoreCase = true) ||
+          it.employeeId.equals(savedUserId, ignoreCase = true)
+    }
+
+    // If the user record is not yet present in _users.value, restore provisionally from the saved session
+    // and re-validate if/when a newer user record arrives.
+    if (savedUser == null) {
+      val isTvAccount = savedUserId.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true)
+      val provisionalUser = UserAccount(
+        id = savedUserId,
+        employeeId = savedUserId,
+        name = if (isTvAccount) "Smart TV Display" else savedUserId,
+        password = "",
+        role = if (isTvAccount) UserRole.MANAGEMENT_VIEW else UserRole.SUPERVISOR,
+        floor = if (isTvAccount) FloorScope.ALL else FloorScope.SEW_2,
+        authorizedFloorScope = if (isTvAccount) FloorScope.ALL else FloorScope.SEW_2,
+        authorizedDeviceId = myDeviceId,
+        activeSessionId = savedSessionId,
+        accountStatus = AccountStatus.APPROVED,
+        isActive = true,
+        updatedAtMillis = sheetsStorage.getLocalActiveSessionLoginTime()
+      ).let { if (isTvAccount) enforceTvDisplayPermissions(it) else it }
+      _currentUser.value = provisionalUser
+      _currentRole.value = provisionalUser.role
+      _currentUserName.value = provisionalUser.name
+      _currentFloor.value = provisionalUser.authorizedFloorScope
+      _assignedLine.value = provisionalUser.assignedLine
+      return
+    }
+
+    val boundDevice = savedUser.authorizedDeviceId.ifBlank {
+      savedUser.approvedDevices.firstOrNull()?.deviceId.orEmpty()
+    }
+    val sessionMatches = !savedSessionId.startsWith("REVOKED-") &&
+        !savedUser.activeSessionId.startsWith("REVOKED-") &&
+        (savedUser.activeSessionId.isBlank() || savedUser.activeSessionId == savedSessionId)
+    val canRestore = savedUser.accountStatus == AccountStatus.APPROVED &&
+        savedUser.isActive &&
+        !savedUser.mustChangePassword &&
+        (boundDevice.isBlank() || boundDevice == myDeviceId) &&
+        sessionMatches
+
+    if (canRestore) {
+      val effectiveUser = if (savedUser.id.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true)) {
+        val withDevice = if (savedUser.authorizedDeviceId.isBlank()) {
+          savedUser.copy(authorizedDeviceId = myDeviceId, activeSessionId = savedSessionId)
+        } else {
+          savedUser
+        }
+        enforceTvDisplayPermissions(withDevice)
+      } else {
+        savedUser
+      }
+      _currentUser.value = effectiveUser
+      _currentRole.value = effectiveUser.role
+      _currentUserName.value = effectiveUser.name
+      _currentFloor.value = effectiveUser.authorizedFloorScope
+      _assignedLine.value = effectiveUser.assignedLine
+    } else {
+      sheetsStorage.clearLocalActiveSession()
+      _currentUser.value = null
+    }
   }
 
   private fun productionSlotKey(lineId: String, date: String, hourSlot: String): String {
@@ -1048,44 +1155,170 @@ class NflRepository(private val context: Context) {
     }
   }
 
-  fun upsertRemoteUsers(remoteList: List<UserAccount>) {
+  fun upsertRemoteUsers(remoteList: List<UserAccount>, isFromGoogleSheets: Boolean = false) {
     if (remoteList.isEmpty()) return
     val current = _users.value
     val byId = LinkedHashMap<String, UserAccount>()
     current.forEach { byId[it.id.trim().lowercase(Locale.US)] = it }
 
-    var changed = false
-    remoteList.forEach { remote ->
-      val key = remote.id.trim().lowercase(Locale.US)
-      val prev = byId[key]
-      if (prev == null || prev != remote) {
-        val merged = if (prev != null && remote.approvedDevices.isEmpty() && prev.approvedDevices.isNotEmpty() && remote.authorizedDeviceId.isNotBlank()) {
-          remote.copy(approvedDevices = prev.approvedDevices.take(MAX_APPROVED_DEVICES_PER_USER))
-        } else {
-          remote
+    // Deduplicate incoming records by employee ID, keeping the newest (highest updatedAtMillis)
+    val newestRemoteById = LinkedHashMap<String, UserAccount>()
+    remoteList.forEach { candidate ->
+      val key = candidate.id.trim().lowercase(Locale.US)
+      if (key.isNotEmpty()) {
+        val existingRemote = newestRemoteById[key]
+        if (existingRemote == null || candidate.updatedAtMillis > existingRemote.updatedAtMillis) {
+          newestRemoteById[key] = candidate
         }
-        byId[key] = merged
-        changed = true
       }
     }
-    if (changed) {
+
+    val activeBefore = _currentUser.value
+    val myDeviceId = sheetsStorage.getDeviceId()
+    val savedSessionId = sheetsStorage.getLocalActiveSessionId().trim().ifBlank {
+      activeBefore?.activeSessionId?.trim().orEmpty()
+    }
+    var forceLogoutActiveUser = false
+    var changed = false
+
+    newestRemoteById.values.forEach { remote ->
+      val key = remote.id.trim().lowercase(Locale.US)
+      val prev = byId[key]
+      val isTargetActiveUser = activeBefore != null && (
+          activeBefore.id.equals(remote.id, ignoreCase = true) ||
+          activeBefore.employeeId.equals(remote.id, ignoreCase = true)
+      )
+
+      val localTs = maxOf(
+        prev?.updatedAtMillis ?: 0L,
+        if (isTargetActiveUser) (activeBefore?.updatedAtMillis ?: 0L) else 0L
+      )
+
+      // Ignore older records (updatedAtMillis <= local) and never let an older record overwrite a newer one
+      val isOlderOrEqualToTimestampedLocal = (prev != null || isTargetActiveUser) && (
+          remote.updatedAtMillis < localTs ||
+          (localTs > 0L && remote.updatedAtMillis <= localTs)
+      )
+      if (isOlderOrEqualToTimestampedLocal) {
+        return@forEach
+      }
+
+      // Google Sheets-sourced user rows must NEVER log the user out or downgrade active local status/device bindings
+      if (isFromGoogleSheets) {
+        if (prev == null) {
+          byId[key] = remote
+          changed = true
+        }
+        return@forEach
+      }
+
+      val isNewerThanLocal = remote.updatedAtMillis > localTs
+      val remoteBoundDevice = remote.authorizedDeviceId.ifBlank {
+        remote.approvedDevices.firstOrNull()?.deviceId.orEmpty()
+      }
+      val localSessionId = prev?.activeSessionId?.trim().orEmpty().ifBlank {
+        if (isTargetActiveUser) savedSessionId else ""
+      }
+      val isSessionChanged = remote.activeSessionId.isNotBlank() &&
+          localSessionId.isNotBlank() &&
+          remote.activeSessionId != localSessionId
+
+      if (isTargetActiveUser && isNewerThanLocal) {
+        val statusRevoked = remote.accountStatus != AccountStatus.APPROVED || !remote.isActive
+        val deviceRevoked = remoteBoundDevice.isNotBlank() && remoteBoundDevice != myDeviceId
+        val sessionRevoked = remote.activeSessionId.isNotBlank() &&
+            savedSessionId.isNotBlank() &&
+            remote.activeSessionId != savedSessionId
+        if (statusRevoked || deviceRevoked || sessionRevoked) {
+          forceLogoutActiveUser = true
+        }
+      }
+
+      if (prev == null || prev != remote) {
+        val rawMerged = when {
+          prev != null && !isSessionChanged && remote.authorizedDeviceId.isBlank() && prev.authorizedDeviceId.isNotBlank() &&
+              remote.accountStatus == AccountStatus.APPROVED && remote.isActive -> {
+            remote.copy(
+              authorizedDeviceId = prev.authorizedDeviceId,
+              authorizedDeviceName = prev.authorizedDeviceName,
+              approvedDevices = if (remote.approvedDevices.isEmpty()) prev.approvedDevices else remote.approvedDevices,
+              activeSessionId = remote.activeSessionId.ifBlank { prev.activeSessionId }
+            )
+          }
+          prev != null && !isSessionChanged && remote.activeSessionId.isBlank() && prev.activeSessionId.isNotBlank() &&
+              remote.accountStatus == AccountStatus.APPROVED && remote.isActive -> {
+            remote.copy(activeSessionId = prev.activeSessionId)
+          }
+          prev != null && !isSessionChanged && remote.approvedDevices.isEmpty() && prev.approvedDevices.isNotEmpty() && remote.authorizedDeviceId.isNotBlank() -> {
+            remote.copy(approvedDevices = prev.approvedDevices.take(MAX_APPROVED_DEVICES_PER_USER))
+          }
+          else -> remote
+        }
+        val merged = if (key == TV_DISPLAY_ACCOUNT_ID) enforceTvDisplayPermissions(rawMerged) else rawMerged
+        byId[key] = merged
+        changed = true
+
+        // Handle TV Display pending setup marker or remote approval activation
+        if (key == TV_DISPLAY_ACCOUNT_ID && !isFromGoogleSheets) {
+          if (merged.rejectionReason.startsWith("TV_PENDING:")) {
+            val parts = merged.rejectionReason.split(":")
+            if (parts.size >= 5) {
+              val reqId = parts[1]
+              val reqDevId = parts[2]
+              val reqDevName = parts[3]
+              val reqShortCode = parts[4]
+              val existingReq = _deviceApprovalRequests.value.find {
+                it.requestId == reqId || (it.userId.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) && it.deviceId == reqDevId && it.status == "PENDING")
+              }
+              if (existingReq == null) {
+                val newReq = DeviceApprovalRequest(
+                  requestId = reqId,
+                  userId = TV_DISPLAY_ACCOUNT_ID,
+                  userName = "Smart TV Display",
+                  role = UserRole.MANAGEMENT_VIEW,
+                  designation = "TV Display (View-Only)",
+                  department = "Management",
+                  requestedFloor = FloorScope.ALL.displayName,
+                  deviceId = reqDevId,
+                  deviceName = reqDevName,
+                  requestedAtMillis = merged.updatedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis(),
+                  status = "PENDING",
+                  requestType = "TV_DISPLAY_SETUP",
+                  reason = "TV Display Setup (Code: $reqShortCode)"
+                )
+                _deviceApprovalRequests.value = listOf(newReq) + _deviceApprovalRequests.value
+                sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
+              }
+            }
+          }
+          val isApprovedForThisTv = merged.accountStatus == AccountStatus.APPROVED &&
+              merged.isActive &&
+              !merged.activeSessionId.startsWith("REVOKED-") &&
+              (merged.authorizedDeviceId == myDeviceId || merged.approvedDevices.any { it.deviceId == myDeviceId })
+          val hasPendingLocalTvReq = _deviceApprovalRequests.value.any {
+            it.userId.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) && it.deviceId == myDeviceId && it.status == "PENDING"
+          }
+          if (isApprovedForThisTv && (hasPendingLocalTvReq || _currentUser.value?.id.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true))) {
+            activateTvDisplaySession(merged)
+          }
+        }
+      }
+    }
+
+    if (changed || forceLogoutActiveUser) {
       _users.value = byId.values.toList()
       if (_users.value.any { it.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) && it.isAdmin }) {
         sheetsStorage.setFirstAdminBootstrapLocked(true)
       }
       sheetsStorage.saveLocalUsers(_users.value)
-      _currentUser.value?.let { active ->
-        val updatedActive = _users.value.find { it.id.equals(active.id, ignoreCase = true) }
-        if (updatedActive != null) {
-          val myDeviceId = sheetsStorage.getDeviceId()
-          val boundDevice = updatedActive.authorizedDeviceId.ifBlank { updatedActive.approvedDevices.firstOrNull()?.deviceId.orEmpty() }
-          if (!updatedActive.isActive ||
-            updatedActive.accountStatus != AccountStatus.APPROVED ||
-            (boundDevice.isNotBlank() && boundDevice != myDeviceId)
-          ) {
-            _currentUser.value = null
-            _syncStatusBanner.value = "Session ended: Account status or authorized device changed by Administrator."
-          } else {
+      if (activeBefore != null) {
+        if (forceLogoutActiveUser) {
+          sheetsStorage.clearLocalActiveSession()
+          _currentUser.value = null
+          _syncStatusBanner.value = "Session ended: Account status or authorized device changed by Administrator."
+        } else {
+          val updatedActive = _users.value.find { it.id.equals(activeBefore.id, ignoreCase = true) }
+          if (updatedActive != null) {
             _currentUser.value = updatedActive
             _currentRole.value = updatedActive.role
             _currentUserName.value = updatedActive.name
@@ -1104,7 +1337,6 @@ class NflRepository(private val context: Context) {
     _webAppUrl.value = newWebAppUrl.trim()
     _autoRefreshEnabled.value = autoRefresh
     addAuditLog("GOOGLE_SHEETS", cleanId, "UPDATE_SHEET_CONFIG", _currentUserName.value, "Configured Google Sheet ID: $cleanId")
-    refreshFromGoogleSheet()
   }
 
   private fun touchDataUpdated() {
@@ -1116,123 +1348,84 @@ class NflRepository(private val context: Context) {
   }
 
   /**
-   * Pulls live changes from Cloud Firestore (nfl-live-72213) and Google Sheets,
-   * and pushes any pending local submissions to the shared backend.
+   * Manual Sync Now / Retry Pending action:
+   * (a) Restarts bounded Firestore real-time listeners if they are stopped,
+   * (b) Pushes ONLY records whose syncStatus != SYNCED,
+   * (c) Does NOT call fetchAllFromFirestore and does NOT pull/merge Google Sheets rows into live state.
    */
   fun refreshFromGoogleSheet(onComplete: ((Boolean, String) -> Unit)? = null) {
     if (_isSyncing.value) return
     _isSyncing.value = true
-    _syncStatusBanner.value = "🔄 Syncing live data with Cloud Firestore & Google Sheet..."
+    _syncStatusBanner.value = "🔄 Syncing pending records & checking live connection..."
 
     repoScope.launch {
       try {
-        // 1. Re-ensure Firestore real-time listeners are active if not already running
+        // (a) Restart Firestore real-time listeners if stopped
         if (firebaseSync.isAvailable() && (!firebaseSync.hasActiveListeners() || firebaseSync.hasPermissionError)) {
           firebaseSync.startRealtimeListeners(forceRetry = true)
         }
 
+        // (b) Push ONLY records whose syncStatus != SYNCED
         val pendingProds = _productionEntries.value.filter { !it.isDemo && it.syncStatus != SyncStatus.SYNCED }
         val pendingQas = _qualityEntries.value.filter { !it.isDemo && it.syncStatus != SyncStatus.SYNCED }
 
-        // 2. Push pending records to Cloud Firestore
         val syncedProdIds = mutableSetOf<String>()
         val syncedQaIds = mutableSetOf<String>()
-        if (firebaseSync.isAvailable()) {
-          pendingProds.forEach { prod ->
-            if (firebaseSync.pushProductionRecordAwait(prod)) {
-              syncedProdIds.add(prod.submissionId)
-            }
-          }
-          pendingQas.forEach { qa ->
-            if (firebaseSync.pushQualityRecordAwait(qa)) {
-              syncedQaIds.add(qa.submissionId)
-            }
-          }
-        }
-
-        // 3. Fetch latest documents from Cloud Firestore
-        val firestoreRes = if (firebaseSync.isAvailable()) {
-          firebaseSync.fetchAllFromFirestore()
-        } else {
-          FirestoreFetchResult(false, "Firestore unavailable")
-        }
-
-        // 4. Sync with Google Sheet (also pushes pending records if Apps Script Web App URL is configured)
         val hasWebApp = sheetsStorage.hasValidWebAppUrl()
-        val sheetRes = sheetsStorage.syncWithGoogleSheet(
-          pendingProduction = pendingProds,
-          pendingQuality = pendingQas,
-          lineFloorResolver = { lineId ->
-            allLinesMaster.find { it.matches(lineId) }?.floor ?: "Sew 2"
+
+        pendingProds.forEach { prod ->
+          val fOk = if (firebaseSync.isAvailable()) firebaseSync.pushProductionRecordAwait(prod) else false
+          val sOk = if (hasWebApp) sheetsStorage.pushProductionRow(prod) else false
+          if (fOk || sOk) {
+            syncedProdIds.add(prod.submissionId)
           }
-        )
-        if (hasWebApp && sheetRes.pushedCount > 0) {
-          pendingProds.forEach { syncedProdIds.add(it.submissionId) }
-          pendingQas.forEach { syncedQaIds.add(it.submissionId) }
+        }
+        pendingQas.forEach { qa ->
+          val fOk = if (firebaseSync.isAvailable()) firebaseSync.pushQualityRecordAwait(qa) else false
+          val sOk = if (hasWebApp) sheetsStorage.pushQualityRow(qa) else false
+          if (fOk || sOk) {
+            syncedQaIds.add(qa.submissionId)
+          }
         }
 
-        // 5. Mark ONLY genuinely synced pending records as SYNCED
+        // Mark genuinely synced pending records as SYNCED
         if (syncedProdIds.isNotEmpty()) {
           _productionEntries.value = _productionEntries.value.map {
             if (!it.isDemo && it.submissionId in syncedProdIds) it.copy(syncStatus = SyncStatus.SYNCED) else it
           }
+          sheetsStorage.saveLocalProductionEntries(_productionEntries.value)
         }
         if (syncedQaIds.isNotEmpty()) {
           _qualityEntries.value = _qualityEntries.value.map {
             if (!it.isDemo && it.submissionId in syncedQaIds) it.copy(syncStatus = SyncStatus.SYNCED) else it
           }
+          sheetsStorage.saveLocalQualityEntries(_qualityEntries.value)
         }
 
-        // 6. Upsert remote records from both Cloud Firestore and Google Sheets
-        val combinedProds = firestoreRes.production + sheetRes.fetchedProduction
-        if (combinedProds.isNotEmpty()) {
-          upsertRemoteProductionRecords(combinedProds)
-        }
-        val combinedQas = firestoreRes.quality + sheetRes.fetchedQuality
-        if (combinedQas.isNotEmpty()) {
-          upsertRemoteQualityRecords(combinedQas)
-        }
-        val combinedSetups = firestoreRes.setups + sheetRes.fetchedSetups
-        if (combinedSetups.isNotEmpty()) {
-          upsertRemoteSetups(combinedSetups)
-        }
-        val combinedIncs = firestoreRes.incidents + sheetRes.fetchedIncidents
-        if (combinedIncs.isNotEmpty()) {
-          upsertRemoteIncidents(combinedIncs)
-        }
-        val combinedMonthly = firestoreRes.monthlyTargets + sheetRes.fetchedMonthlyTargets
-        if (combinedMonthly.isNotEmpty()) {
-          upsertRemoteMonthlyTargets(combinedMonthly)
-        }
-        val combinedUsers = firestoreRes.users + sheetRes.fetchedUsers
-        if (combinedUsers.isNotEmpty()) {
-          upsertRemoteUsers(combinedUsers)
-        }
-
-        // 7. Persist updated non-demo records locally
-        sheetsStorage.saveLocalProductionEntries(_productionEntries.value)
-        sheetsStorage.saveLocalQualityEntries(_qualityEntries.value)
-        sheetsStorage.saveLocalSetups(_targets.value)
-        sheetsStorage.saveLocalIncidents(_incidents.value)
-        sheetsStorage.saveLocalMonthlyTargets(_monthlyTargets.value)
-
-        val nowTime = sheetRes.timestamp
+        val nowTime = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         _lastRefreshTime.value = nowTime
         _lastDataUpdate.value = SimpleDateFormat("hh:mm:ss a", Locale.US).format(Date())
 
-        val totalCloudRecords = firestoreRes.production.size + firestoreRes.quality.size + sheetRes.pulledCount
+        val totalPending = pendingProds.size + pendingQas.size
+        val totalPushed = syncedProdIds.size + syncedQaIds.size
+        val currentBanner = _syncStatusBanner.value
+        val ok = !firebaseSync.hasPermissionError && (totalPending == 0 || totalPushed > 0 || firebaseSync.hasActiveListeners())
         val finalMsg = when {
-          firestoreRes.success ->
-            "✓ Cloud Firestore & Sheet synced ($totalCloudRecords records) at $nowTime"
+          currentBanner != null && currentBanner.startsWith("Session ended:") ->
+            currentBanner
           firebaseSync.hasPermissionError ->
-            "⚠️ Firestore rules restricted on nfl-live-72213 (deploy firestore.rules) • ${sheetRes.message}"
+            "⚠️ Firestore rules restricted on nfl-live-72213 (deploy firestore.rules) • Pending records saved locally"
+          totalPending == 0 ->
+            "✓ Live listeners active • All local records already synced ($nowTime)"
+          totalPushed == totalPending ->
+            "✓ Pushed $totalPushed pending record(s) to Cloud ($nowTime)"
           else ->
-            sheetRes.message
+            "⚠️ Pushed $totalPushed/$totalPending pending record(s) ($nowTime)"
         }
         _syncStatusBanner.value = finalMsg
         _refreshTrigger.value = _refreshTrigger.value + 1
         _isSyncing.value = false
-        onComplete?.invoke(firestoreRes.success || sheetRes.success, finalMsg)
+        onComplete?.invoke(ok, finalMsg)
       } catch (e: Throwable) {
         val nowTime = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
         _lastRefreshTime.value = nowTime
@@ -1250,52 +1443,32 @@ class NflRepository(private val context: Context) {
   }
 
   fun pushAllLocalToGoogleSheet(onComplete: ((Boolean, String) -> Unit)? = null) {
-    if (_isSyncing.value) return
-    _isSyncing.value = true
-    _syncStatusBanner.value = "☁️ Pushing local records to Cloud Firestore & Google Sheet..."
+    refreshFromGoogleSheet(onComplete)
+  }
+
+  /**
+   * Performs at most one bounded current-month Firestore fetch per hour when a Monthly screen
+   * or MONTH period filter is opened, merging with local history.
+   */
+  fun ensureCurrentMonthDataLoaded(force: Boolean = false) {
+    val now = System.currentTimeMillis()
+    if (!force && lastMonthlyFirestoreFetchMillis > 0L && (now - lastMonthlyFirestoreFetchMillis) < 3_600_000L) {
+      return
+    }
+    if (!firebaseSync.isAvailable()) return
+    lastMonthlyFirestoreFetchMillis = now
     repoScope.launch {
-      val nonDemoProds = _productionEntries.value.filter { !it.isDemo }
-      val nonDemoQas = _qualityEntries.value.filter { !it.isDemo }
-      val nonDemoSetups = _targets.value.filter { !it.isDemo }
-      val nonDemoIncs = _incidents.value.filter { !it.isDemo }
-
-      var pushed = 0
-      nonDemoProds.forEach {
-        val fOk = firebaseSync.pushProductionRecordAwait(it)
-        val sOk = sheetsStorage.pushProductionRow(it)
-        if (fOk || sOk) pushed++
+      val monthStartIso = firebaseSync.getBangladeshCurrentMonthStartIso()
+      val res = firebaseSync.fetchCurrentMonthFromFirestore(monthStartIso)
+      if (res.production.isNotEmpty()) {
+        upsertRemoteProductionRecords(res.production)
       }
-      nonDemoQas.forEach {
-        val fOk = firebaseSync.pushQualityRecordAwait(it)
-        val sOk = sheetsStorage.pushQualityRow(it)
-        if (fOk || sOk) pushed++
+      if (res.quality.isNotEmpty()) {
+        upsertRemoteQualityRecords(res.quality)
       }
-      nonDemoSetups.forEach {
-        val fOk = firebaseSync.pushLineSetupAwait(it)
-        val sOk = sheetsStorage.pushLineSetupRow(it)
-        if (fOk || sOk) pushed++
+      if (res.setups.isNotEmpty()) {
+        upsertRemoteSetups(res.setups)
       }
-      nonDemoIncs.forEach {
-        val fOk = firebaseSync.pushIncidentAwait(it)
-        val sOk = sheetsStorage.pushIncidentRow(it)
-        if (fOk || sOk) pushed++
-      }
-      _monthlyTargets.value.forEach {
-        val fOk = firebaseSync.pushMonthlyTargetAwait(it)
-        val sOk = sheetsStorage.pushMonthlyTargetRow(it)
-        if (fOk || sOk) pushed++
-      }
-
-      touchDataUpdated()
-      val ok = pushed > 0 || (nonDemoProds.isEmpty() && nonDemoQas.isEmpty())
-      val msg = if (ok) {
-        "✓ Synced $pushed records to Shared Cloud & Sheet at ${_lastRefreshTime.value}"
-      } else {
-        "⚠️ Could not push records to Cloud (${firebaseSync.lastErrorMessage ?: "Check network / firestore.rules"})"
-      }
-      _syncStatusBanner.value = msg
-      _isSyncing.value = false
-      onComplete?.invoke(ok, msg)
     }
   }
 
@@ -1306,6 +1479,9 @@ class NflRepository(private val context: Context) {
 
   fun setPeriod(period: PeriodScope) {
     _currentPeriod.value = period
+    if (period == PeriodScope.MONTH) {
+      ensureCurrentMonthDataLoaded()
+    }
     _refreshTrigger.value = _refreshTrigger.value + 1
   }
 
@@ -1404,12 +1580,14 @@ class NflRepository(private val context: Context) {
    */
   fun getAuthoritativeCurrentUser(): UserAccount? {
     val cur = _currentUser.value ?: return null
-    val fresh = _users.value.find { it.id.equals(cur.id, ignoreCase = true) } ?: return null
-    if (fresh != cur) {
+    val fresh = _users.value.find {
+      it.id.equals(cur.id, ignoreCase = true) || it.employeeId.equals(cur.id, ignoreCase = true)
+    }
+    if (fresh != null && fresh != cur) {
       _currentUser.value = fresh
       _currentRole.value = fresh.role
     }
-    return fresh
+    return fresh ?: cur
   }
 
   /**
@@ -1837,7 +2015,11 @@ class NflRepository(private val context: Context) {
   }
 
   // Submissions (Saved to Cloud Firestore + Google Sheet Storage + Local Persistent Ledger)
-  fun submitProduction(entry: ProductionRecord): ProductionRecord {
+  fun submitProduction(
+    entry: ProductionRecord,
+    onLocalSaved: ((ProductionRecord) -> Unit)? = null,
+    onCloudResult: ((Boolean) -> Unit)? = null
+  ): ProductionRecord {
     val u = getAuthoritativeCurrentUser()
     val normDate = sheetsStorage.normalizeToIsoDate(entry.date)
     val isFinishing = entry.lineId.startsWith("Iron", ignoreCase = true) || entry.lineId.startsWith("Packing", ignoreCase = true)
@@ -1884,11 +2066,26 @@ class NflRepository(private val context: Context) {
       }
     }
     val targetKey = productionSlotKey(entry.lineId, normDate, entry.hourSlot)
-    val existingSubId = _productionEntries.value.find {
+    val existingRec = _productionEntries.value.find {
       !it.isDemo && productionSlotKey(it.lineId, it.date, it.hourSlot) == targetKey
-    }?.submissionId ?: entry.submissionId
+    }
+    if (existingRec != null &&
+        existingRec.syncStatus == SyncStatus.SYNCED &&
+        existingRec.outputQty == entry.outputQty &&
+        existingRec.styleNumber == entry.styleNumber &&
+        existingRec.remarks == entry.remarks &&
+        existingRec.isConfirmedZero == entry.isConfirmedZero &&
+        existingRec.floor == entry.floor
+    ) {
+      onLocalSaved?.invoke(existingRec)
+      onCloudResult?.invoke(true)
+      return existingRec
+    }
+    val existingSubId = existingRec?.submissionId ?: entry.submissionId
+    val canonicalDocId = firebaseSync.canonicalProductionDocId(entry.copy(date = normDate))
 
     val liveEntry = entry.copy(
+      id = existingRec?.id?.takeIf { it.isNotBlank() } ?: canonicalDocId,
       submissionId = existingSubId,
       date = normDate,
       modifiedBy = u?.let { "${it.name} (${it.id})" } ?: entry.modifiedBy,
@@ -1903,7 +2100,8 @@ class NflRepository(private val context: Context) {
     sheetsStorage.saveLocalProductionEntries(_productionEntries.value)
     touchDataUpdated()
     _lastSecurityMessage.value = null
-    _syncStatusBanner.value = "⏳ Saving Line ${liveEntry.lineId} (${liveEntry.outputQty} pcs) to Shared Cloud..."
+    _syncStatusBanner.value = "Saved on this phone, syncing..."
+    onLocalSaved?.invoke(liveEntry)
     addAuditLog("PRODUCTION", liveEntry.lineId, "ADD_OUTPUT", liveEntry.modifiedBy, "Date: ${liveEntry.date}, Hour: ${liveEntry.hourSlot}, Qty: ${liveEntry.outputQty} (Cloud Firestore & Google Sheet)")
     repoScope.launch {
       val firestoreOk = firebaseSync.pushProductionRecordAwait(liveEntry)
@@ -1915,41 +2113,49 @@ class NflRepository(private val context: Context) {
         } else it
       }
       sheetsStorage.saveLocalProductionEntries(_productionEntries.value)
-      _syncStatusBanner.value = if (synced) {
-        "✓ Saved Line ${liveEntry.lineId} (${liveEntry.outputQty} pcs) to Shared Cloud • ${_lastRefreshTime.value}"
+      _syncStatusBanner.value = if (firestoreOk) {
+        "✓ Synced to cloud • Line ${liveEntry.lineId} (${liveEntry.outputQty} pcs)"
       } else {
-        "⚠️ Saved locally (Pending Cloud Sync): Line ${liveEntry.lineId} (${liveEntry.outputQty} pcs) • ${firebaseSync.lastErrorMessage ?: "Will auto-sync when online"}"
+        "⚠ Saved on this phone, will retry • Line ${liveEntry.lineId} (${liveEntry.outputQty} pcs)"
       }
+      onCloudResult?.invoke(firestoreOk)
     }
     return liveEntry
   }
 
-  fun submitBatchProduction(entries: List<ProductionRecord>) {
-    if (entries.isEmpty()) return
+  fun submitBatchProduction(
+    entries: List<ProductionRecord>,
+    skippedFromCaller: Int = 0,
+    onLocalSaved: ((BatchSubmitSummary) -> Unit)? = null,
+    onCloudResult: ((Boolean, BatchSubmitSummary) -> Unit)? = null
+  ): BatchSubmitSummary {
+    if (entries.isEmpty()) return BatchSubmitSummary(0, skippedFromCaller)
     val u = getAuthoritativeCurrentUser()
-    if (u != null) {
-      if (!u.isActive || u.accountStatus != AccountStatus.APPROVED) {
-        _syncStatusBanner.value = "⚠️ Access Denied: Account is not active or approved."
-        return
+    if (u == null || !u.isActive || u.accountStatus != AccountStatus.APPROVED) {
+      val msg = "⚠️ Access Denied: Account is not active or approved."
+      _syncStatusBanner.value = msg
+      _lastSecurityMessage.value = msg
+      return BatchSubmitSummary(0, entries.size + skippedFromCaller)
+    }
+    if (!u.isAdmin && u.role != UserRole.IE) {
+      val rolePermitted = u.role in setOf(UserRole.SUPERVISOR, UserRole.PRODUCTION_REPORTER, UserRole.IE)
+      if ((!u.canProductionWrite && !u.canFinishingWrite) || !rolePermitted) {
+        val msg = "⚠️ Access Denied: You do not have permission for Batch Production Entry"
+        _syncStatusBanner.value = msg
+        _lastSecurityMessage.value = msg
+        addAuditLog("SECURITY", entries.first().lineId, "UNAUTHORIZED_BATCH_PROD", u.id, "Blocked batch production submission")
+        return BatchSubmitSummary(0, entries.size + skippedFromCaller)
       }
-      if (!u.isAdmin && u.role != UserRole.IE) {
-        val rolePermitted = u.role in setOf(UserRole.SUPERVISOR, UserRole.PRODUCTION_REPORTER, UserRole.IE)
-        if ((!u.canProductionWrite && !u.canFinishingWrite) || !rolePermitted) {
-          _syncStatusBanner.value = "⚠️ Access Denied: You do not have permission for Batch Production Entry"
-          addAuditLog("SECURITY", entries.first().lineId, "UNAUTHORIZED_BATCH_PROD", u.id, "Blocked batch production submission")
-          return
-        }
-        val firstDate = sheetsStorage.normalizeToIsoDate(entries.first().date)
-        val windowCheck = validateDailyEntryWindowAndDate(firstDate, isAdminOverride = false)
-        if (!windowCheck.success) {
-          _syncStatusBanner.value = windowCheck.message
-          _lastSecurityMessage.value = windowCheck.message
-          return
-        }
+      val firstDate = sheetsStorage.normalizeToIsoDate(entries.first().date)
+      val windowCheck = validateDailyEntryWindowAndDate(firstDate, isAdminOverride = false)
+      if (!windowCheck.success) {
+        _syncStatusBanner.value = windowCheck.message
+        _lastSecurityMessage.value = windowCheck.message
+        return BatchSubmitSummary(0, entries.size + skippedFromCaller)
       }
     }
     // Filter out slots that are already locked for non-Admin / non-IE users
-    val permittedEntries = if (u != null && !u.isAdmin && u.role != UserRole.IE) {
+    val permittedEntries = if (!u.isAdmin && u.role != UserRole.IE) {
       entries.filter { candidate ->
         !isProductionSlotLocked(candidate.lineId, sheetsStorage.normalizeToIsoDate(candidate.date), candidate.hourSlot)
       }
@@ -1960,22 +2166,43 @@ class NflRepository(private val context: Context) {
       val msg = "🔒 All selected hourly slots are already submitted and locked. Only Admin can modify submitted records with a reason."
       _syncStatusBanner.value = msg
       _lastSecurityMessage.value = msg
-      return
+      return BatchSubmitSummary(0, entries.size + skippedFromCaller)
     }
-    val liveEntries = permittedEntries.map {
+    val liveEntries = permittedEntries.mapNotNull {
       val normDate = sheetsStorage.normalizeToIsoDate(it.date)
       val key = productionSlotKey(it.lineId, normDate, it.hourSlot)
-      val existingSubId = _productionEntries.value.find { ex ->
+      val existingRec = _productionEntries.value.find { ex ->
         !ex.isDemo && productionSlotKey(ex.lineId, ex.date, ex.hourSlot) == key
-      }?.submissionId ?: it.submissionId
-      it.copy(
-        submissionId = existingSubId,
-        date = normDate,
-        modifiedBy = u?.let { usr -> "${usr.name} (${usr.id})" } ?: it.modifiedBy,
-        syncStatus = SyncStatus.PENDING,
-        timestamp = System.currentTimeMillis(),
-        isDemo = false
-      )
+      }
+      if (existingRec != null &&
+          existingRec.syncStatus == SyncStatus.SYNCED &&
+          existingRec.outputQty == it.outputQty &&
+          existingRec.styleNumber == it.styleNumber &&
+          existingRec.remarks == it.remarks &&
+          existingRec.isConfirmedZero == it.isConfirmedZero &&
+          existingRec.floor == it.floor
+      ) {
+        null
+      } else {
+        val existingSubId = existingRec?.submissionId ?: it.submissionId
+        val canonicalDocId = firebaseSync.canonicalProductionDocId(it.copy(date = normDate))
+        it.copy(
+          id = existingRec?.id?.takeIf { idStr -> idStr.isNotBlank() } ?: canonicalDocId,
+          submissionId = existingSubId,
+          date = normDate,
+          modifiedBy = u?.let { usr -> "${usr.name} (${usr.id})" } ?: it.modifiedBy,
+          syncStatus = SyncStatus.PENDING,
+          timestamp = System.currentTimeMillis(),
+          isDemo = false
+        )
+      }
+    }
+    val totalSkipped = (entries.size - liveEntries.size) + skippedFromCaller
+    val summary = BatchSubmitSummary(savedCount = liveEntries.size, skippedCount = totalSkipped)
+    if (liveEntries.isEmpty()) {
+      onLocalSaved?.invoke(summary)
+      onCloudResult?.invoke(true, summary)
+      return summary
     }
     val slotKeys = liveEntries.map { productionSlotKey(it.lineId, it.date, it.hourSlot) }.toSet()
     val filtered = _productionEntries.value.filterNot { productionSlotKey(it.lineId, it.date, it.hourSlot) in slotKeys }
@@ -1983,78 +2210,107 @@ class NflRepository(private val context: Context) {
     sheetsStorage.saveLocalProductionEntries(_productionEntries.value)
     touchDataUpdated()
     _lastSecurityMessage.value = null
-    _syncStatusBanner.value = "⏳ Saving ${liveEntries.size} hourly slots to Shared Cloud..."
+    _syncStatusBanner.value = "Saved on this phone, syncing... (${summary.savedCount} saved, ${summary.skippedCount} skipped)"
+    onLocalSaved?.invoke(summary)
     liveEntries.forEach { entry ->
       addAuditLog("PRODUCTION", entry.lineId, "ADD_OUTPUT_BATCH", entry.modifiedBy, "Date: ${entry.date}, Hour: ${entry.hourSlot}, Qty: ${entry.outputQty} (Cloud Firestore & Google Sheet)")
     }
     repoScope.launch {
+      val firestoreSyncedIds = mutableSetOf<String>()
       val syncedIds = mutableSetOf<String>()
       liveEntries.forEach { entry ->
         val fOk = firebaseSync.pushProductionRecordAwait(entry)
         val sOk = sheetsStorage.pushProductionRow(entry)
+        if (fOk) firestoreSyncedIds.add(entry.submissionId)
         if (fOk || sOk) syncedIds.add(entry.submissionId)
       }
       _productionEntries.value = _productionEntries.value.map {
         if (it.submissionId in syncedIds) it.copy(syncStatus = SyncStatus.SYNCED) else it
       }
       sheetsStorage.saveLocalProductionEntries(_productionEntries.value)
-      _syncStatusBanner.value = if (syncedIds.size == liveEntries.size) {
-        "✓ Batch saved ${liveEntries.size} hourly slots to Shared Cloud • ${_lastRefreshTime.value}"
+      val allFirestoreOk = firestoreSyncedIds.size == liveEntries.size
+      _syncStatusBanner.value = if (allFirestoreOk) {
+        "✓ Synced to cloud (${summary.savedCount} saved, ${summary.skippedCount} skipped)"
       } else {
-        "⚠️ Batch saved locally (${syncedIds.size}/${liveEntries.size} synced to Cloud; pending slots will retry)"
+        "⚠ Saved on this phone, will retry (${summary.savedCount} saved, ${summary.skippedCount} skipped)"
       }
+      onCloudResult?.invoke(allFirestoreOk, summary)
     }
+    return summary
   }
 
-  fun submitQuality(entry: QualityRecord): QualityRecord {
+  fun submitQuality(
+    entry: QualityRecord,
+    onLocalSaved: ((QualityRecord) -> Unit)? = null,
+    onCloudResult: ((Boolean) -> Unit)? = null
+  ): QualityRecord {
     val u = getAuthoritativeCurrentUser()
     val normDate = sheetsStorage.normalizeToIsoDate(entry.date)
-    if (u != null) {
-      if (!u.isActive || u.accountStatus != AccountStatus.APPROVED) {
-        val msg = "⚠️ Access Denied: Account ${u.id} is not active or approved."
+    if (u == null || !u.isActive || u.accountStatus != AccountStatus.APPROVED) {
+      val msg = "⚠️ Access Denied: Account ${u?.id ?: "unauthenticated"} is not active or approved."
+      _syncStatusBanner.value = msg
+      _lastSecurityMessage.value = msg
+      return entry
+    }
+    if (!u.isAdmin && u.role != UserRole.IE) {
+      val rolePermitted = u.role in setOf(UserRole.QUALITY_REPORTER, UserRole.AUDITOR, UserRole.IE)
+      if ((!u.canQualityWrite && !u.canOqlWrite) || !rolePermitted) {
+        val msg = "⚠️ Access Denied: Role '${u.role.displayName}' cannot enter Quality data."
         _syncStatusBanner.value = msg
         _lastSecurityMessage.value = msg
+        addAuditLog("SECURITY", entry.lineId, "UNAUTHORIZED_QUALITY_WRITE", u.id, "Blocked quality submission by ${u.role.displayName}")
         return entry
       }
-      if (!u.isAdmin && u.role != UserRole.IE) {
-        val rolePermitted = u.role in setOf(UserRole.QUALITY_REPORTER, UserRole.AUDITOR, UserRole.IE)
-        if ((!u.canQualityWrite && !u.canOqlWrite) || !rolePermitted) {
-          val msg = "⚠️ Access Denied: Role '${u.role.displayName}' cannot enter Quality data."
-          _syncStatusBanner.value = msg
-          _lastSecurityMessage.value = msg
-          addAuditLog("SECURITY", entry.lineId, "UNAUTHORIZED_QUALITY_WRITE", u.id, "Blocked quality submission by ${u.role.displayName}")
-          return entry
-        }
-        // Daily Entry Restriction: Current Bangladesh Date & 06:00 AM - 24:00 Window
-        val windowCheck = validateDailyEntryWindowAndDate(normDate, isAdminOverride = false)
-        if (!windowCheck.success) {
-          _syncStatusBanner.value = windowCheck.message
-          _lastSecurityMessage.value = windowCheck.message
-          addAuditLog("SECURITY", entry.lineId, "OUTSIDE_WINDOW_QUALITY", u.id, windowCheck.message)
-          return entry
-        }
-        // Immutability check: Ordinary users cannot edit or overwrite submitted Quality records
-        val alreadySubmitted = _qualityEntries.value.any {
-          !it.isDemo &&
-              it.lineId.equals(entry.lineId, ignoreCase = true) &&
-              sheetsStorage.normalizeToIsoDate(it.date) == normDate &&
-              it.hourSlot.equals(entry.hourSlot, ignoreCase = true)
-        }
-        if (alreadySubmitted) {
-          val msg = "🔒 Record Locked: Quality record for Line ${entry.lineId} (${entry.hourSlot} on $normDate) is already submitted. Only Admin/IE can correct submitted records."
-          _syncStatusBanner.value = msg
-          _lastSecurityMessage.value = msg
-          addAuditLog("SECURITY", entry.lineId, "BLOCKED_EDIT_SUBMITTED_QA", u.id, "Attempted overwrite of QA ${entry.hourSlot} on $normDate")
-          return entry
-        }
+      // Daily Entry Restriction: Current Bangladesh Date & 06:00 AM - 24:00 Window
+      val windowCheck = validateDailyEntryWindowAndDate(normDate, isAdminOverride = false)
+      if (!windowCheck.success) {
+        _syncStatusBanner.value = windowCheck.message
+        _lastSecurityMessage.value = windowCheck.message
+        addAuditLog("SECURITY", entry.lineId, "OUTSIDE_WINDOW_QUALITY", u.id, windowCheck.message)
+        return entry
+      }
+      // Immutability check: Ordinary users cannot edit or overwrite submitted Quality records
+      val alreadySubmitted = _qualityEntries.value.any {
+        !it.isDemo &&
+            it.lineId.equals(entry.lineId, ignoreCase = true) &&
+            sheetsStorage.normalizeToIsoDate(it.date) == normDate &&
+            it.hourSlot.equals(entry.hourSlot, ignoreCase = true)
+      }
+      if (alreadySubmitted) {
+        val msg = "🔒 Record Locked: Quality record for Line ${entry.lineId} (${entry.hourSlot} on $normDate) is already submitted. Only Admin/IE can correct submitted records."
+        _syncStatusBanner.value = msg
+        _lastSecurityMessage.value = msg
+        addAuditLog("SECURITY", entry.lineId, "BLOCKED_EDIT_SUBMITTED_QA", u.id, "Attempted overwrite of QA ${entry.hourSlot} on $normDate")
+        return entry
       }
     }
     val targetKey = qualitySlotKey(entry.lineId, normDate, entry.hourSlot)
-    val existingSubId = _qualityEntries.value.find {
+    val existingRec = _qualityEntries.value.find {
       !it.isDemo && qualitySlotKey(it.lineId, it.date, it.hourSlot) == targetKey
-    }?.submissionId ?: entry.submissionId
+    }
+    if (existingRec != null &&
+        existingRec.syncStatus == SyncStatus.SYNCED &&
+        existingRec.checkedGarments == entry.checkedGarments &&
+        existingRec.defectiveGarments == entry.defectiveGarments &&
+        existingRec.totalDefects == entry.totalDefects &&
+        existingRec.defectSent == entry.defectSent &&
+        existingRec.defectReceived == entry.defectReceived &&
+        existingRec.spotSent == entry.spotSent &&
+        existingRec.spotReceived == entry.spotReceived &&
+        existingRec.defects == entry.defects &&
+        existingRec.styleNumber == entry.styleNumber &&
+        existingRec.remarks == entry.remarks &&
+        existingRec.isConfirmedZero == entry.isConfirmedZero
+    ) {
+      onLocalSaved?.invoke(existingRec)
+      onCloudResult?.invoke(true)
+      return existingRec
+    }
+    val existingSubId = existingRec?.submissionId ?: entry.submissionId
+    val canonicalDocId = firebaseSync.canonicalQualityDocId(entry.copy(date = normDate))
 
     val liveEntry = entry.copy(
+      id = existingRec?.id?.takeIf { it.isNotBlank() } ?: canonicalDocId,
       submissionId = existingSubId,
       date = normDate,
       modifiedBy = u?.let { "${it.name} (${it.id})" } ?: entry.modifiedBy,
@@ -2069,7 +2325,8 @@ class NflRepository(private val context: Context) {
     sheetsStorage.saveLocalQualityEntries(_qualityEntries.value)
     touchDataUpdated()
     _lastSecurityMessage.value = null
-    _syncStatusBanner.value = "⏳ Saving Line ${liveEntry.lineId} QA Inspection to Shared Cloud..."
+    _syncStatusBanner.value = "Saved on this phone, syncing..."
+    onLocalSaved?.invoke(liveEntry)
 
     // Automated Quality & DHU Alert System (Section 9.B)
     val dhu = if (liveEntry.checkedGarments > 0) {
@@ -2108,11 +2365,12 @@ class NflRepository(private val context: Context) {
         } else it
       }
       sheetsStorage.saveLocalQualityEntries(_qualityEntries.value)
-      _syncStatusBanner.value = if (synced) {
-        "✓ Saved Line ${liveEntry.lineId} QA Inspection to Shared Cloud • ${_lastRefreshTime.value}"
+      _syncStatusBanner.value = if (firestoreOk) {
+        "✓ Synced to cloud • Line ${liveEntry.lineId} QA Inspection"
       } else {
-        "⚠️ Saved locally (Pending Cloud Sync): Line ${liveEntry.lineId} QA Inspection • ${firebaseSync.lastErrorMessage ?: "Will auto-sync when online"}"
+        "⚠ Saved on this phone, will retry • Line ${liveEntry.lineId} QA Inspection"
       }
+      onCloudResult?.invoke(firestoreOk)
     }
     return liveEntry
   }
@@ -2333,18 +2591,25 @@ class NflRepository(private val context: Context) {
 
   fun saveLineSetup(setup: SupervisorLineSetup) {
     val u = getAuthoritativeCurrentUser()
-    val allowedRole = u == null || u.isAdmin || u.role in setOf(UserRole.IE, UserRole.PRODUCTION_REPORTER, UserRole.SUPERVISOR, UserRole.PRODUCTION_MANAGER) || u.canMorningTargetWrite
+    val allowedRole = u != null && (u.isAdmin || u.role in setOf(UserRole.IE, UserRole.PRODUCTION_REPORTER, UserRole.SUPERVISOR, UserRole.PRODUCTION_MANAGER) || u.canMorningTargetWrite)
     if (!allowedRole) {
       _syncStatusBanner.value = "⚠️ Access Denied: Daily line targets and manpower can only be edited by authorized IE, Supervisor, or Production accounts."
       return
     }
     val normDate = sheetsStorage.normalizeToIsoDate(setup.date)
+    val key = setupSlotKey(setup.lineId, normDate)
+    val existingSetup = _targets.value.find { !it.isDemo && setupSlotKey(it.lineId, it.date) == key }
+    if (existingSetup != null &&
+        existingSetup.copy(id = "", snapshotTimestamp = 0L, isDemo = false, date = normDate) ==
+        setup.copy(id = "", snapshotTimestamp = 0L, isDemo = false, date = normDate)
+    ) {
+      return
+    }
     val liveSetup = setup.copy(
       date = normDate,
       snapshotTimestamp = System.currentTimeMillis(),
       isDemo = false
     )
-    val key = setupSlotKey(liveSetup.lineId, liveSetup.date)
     val filtered = _targets.value.filterNot { setupSlotKey(it.lineId, it.date) == key }
     _targets.value = listOf(liveSetup) + filtered
     sheetsStorage.saveLocalSetups(_targets.value)
@@ -2364,19 +2629,30 @@ class NflRepository(private val context: Context) {
   fun saveBatchLineSetups(setups: List<SupervisorLineSetup>) {
     if (setups.isEmpty()) return
     val u = getAuthoritativeCurrentUser()
-    val allowedRole = u == null || u.isAdmin || u.role in setOf(UserRole.IE, UserRole.PRODUCTION_REPORTER, UserRole.SUPERVISOR, UserRole.PRODUCTION_MANAGER) || u.canMorningTargetWrite
+    val allowedRole = u != null && (u.isAdmin || u.role in setOf(UserRole.IE, UserRole.PRODUCTION_REPORTER, UserRole.SUPERVISOR, UserRole.PRODUCTION_MANAGER) || u.canMorningTargetWrite)
     if (!allowedRole) {
       _syncStatusBanner.value = "⚠️ Access Denied: Daily line targets and manpower can only be edited by authorized IE, Supervisor, or Production accounts."
       return
     }
     val nowTs = System.currentTimeMillis()
-    val liveSetups = setups.map { s ->
-      s.copy(
-        date = sheetsStorage.normalizeToIsoDate(s.date),
-        snapshotTimestamp = nowTs,
-        isDemo = false
-      )
+    val liveSetups = setups.mapNotNull { s ->
+      val normDate = sheetsStorage.normalizeToIsoDate(s.date)
+      val key = setupSlotKey(s.lineId, normDate)
+      val existingSetup = _targets.value.find { !it.isDemo && setupSlotKey(it.lineId, it.date) == key }
+      if (existingSetup != null &&
+          existingSetup.copy(id = "", snapshotTimestamp = 0L, isDemo = false, date = normDate) ==
+          s.copy(id = "", snapshotTimestamp = 0L, isDemo = false, date = normDate)
+      ) {
+        null
+      } else {
+        s.copy(
+          date = normDate,
+          snapshotTimestamp = nowTs,
+          isDemo = false
+        )
+      }
     }
+    if (liveSetups.isEmpty()) return
     val keys = liveSetups.map { setupSlotKey(it.lineId, it.date) }.toSet()
     val filtered = _targets.value.filterNot { setupSlotKey(it.lineId, it.date) in keys }
     _targets.value = liveSetups + filtered
@@ -2837,22 +3113,27 @@ class NflRepository(private val context: Context) {
       )
     }
 
+    val loginTimeMillis = System.currentTimeMillis()
     val newSessionId = UUID.randomUUID().toString()
     val approvedDeviceEntry = ApprovedDevice(
       deviceId = currentDeviceId,
       deviceName = currentDeviceName,
-      approvedAtMillis = System.currentTimeMillis(),
+      approvedAtMillis = loginTimeMillis,
       approvedBy = matchedUser.approvedBy.ifBlank { INITIAL_ADMIN_EMPLOYEE_ID },
-      lastActiveMillis = System.currentTimeMillis()
+      lastActiveMillis = loginTimeMillis
     )
     val finalUser = matchedUser.copy(
       authorizedDeviceId = currentDeviceId,
       authorizedDeviceName = currentDeviceName,
       activeSessionId = newSessionId,
       approvedDevices = listOf(approvedDeviceEntry),
-      updatedAtMillis = System.currentTimeMillis()
+      updatedAtMillis = loginTimeMillis
     )
-    sheetsStorage.setLocalActiveSessionId(newSessionId)
+    sheetsStorage.saveLocalActiveSession(
+      employeeId = finalUser.id,
+      sessionId = newSessionId,
+      loginTimeMillis = loginTimeMillis
+    )
     updateUserInternal(finalUser)
 
     _currentUser.value = finalUser
@@ -3070,15 +3351,15 @@ class NflRepository(private val context: Context) {
    */
   fun adminApproveDeviceOrAccountRequest(requestId: String): SecurityActionResult {
     val admin = getAuthoritativeCurrentUser()
-    if (admin != null && !admin.isAdmin) {
+    if (admin?.isAdmin != true) {
       return SecurityActionResult(false, "Access Denied: Only an Administrator can approve requests.")
     }
-    return approvePendingRequestInternal(requestId, approvedBy = admin?.name ?: "Admin ($INITIAL_ADMIN_EMPLOYEE_ID)", targetDeviceId = null)
+    return approvePendingRequestInternal(requestId, approvedBy = admin.name.ifBlank { "Admin ($INITIAL_ADMIN_EMPLOYEE_ID)" }, targetDeviceId = null)
   }
 
   fun adminRejectDeviceOrAccountRequest(requestId: String): SecurityActionResult {
     val admin = getAuthoritativeCurrentUser()
-    if (admin != null && !admin.isAdmin) {
+    if (admin?.isAdmin != true) {
       return SecurityActionResult(false, "Access Denied: Only an Administrator can reject requests.")
     }
     val req = _deviceApprovalRequests.value.find { it.requestId == requestId }
@@ -3088,7 +3369,7 @@ class NflRepository(private val context: Context) {
       if (it.requestId == requestId) rejected else it
     }
     sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
-    addAuditLog("DEVICE_SECURITY", req.userId, "REJECT_DEVICE_REQUEST", admin?.name ?: "Admin", "Rejected device ${req.deviceName} (${req.deviceId})")
+    addAuditLog("DEVICE_SECURITY", req.userId, "REJECT_DEVICE_REQUEST", admin.name.ifBlank { "Admin" }, "Rejected device ${req.deviceName} (${req.deviceId})")
     return SecurityActionResult(true, "Device request rejected.")
   }
 
@@ -3112,17 +3393,23 @@ class NflRepository(private val context: Context) {
       lastActiveMillis = now
     )
     // Atomically replace old device and invalidate old session ID
-    val updatedUser = user.copy(
+    val rawUpdatedUser = user.copy(
       accountStatus = AccountStatus.APPROVED,
       isActive = true,
       authorizedDeviceId = devIdToApprove,
       authorizedDeviceName = req.deviceName,
       activeSessionId = UUID.randomUUID().toString(),
       approvedDevices = listOf(singleApprovedDevice),
+      rejectionReason = "",
       approvedBy = approvedBy,
       approvedAtMillis = now,
       updatedAtMillis = now
     )
+    val updatedUser = if (rawUpdatedUser.id.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true)) {
+      enforceTvDisplayPermissions(rawUpdatedUser)
+    } else {
+      rawUpdatedUser
+    }
     updateUserInternal(updatedUser)
 
     val approvedReq = req.copy(status = "APPROVED", otpUsed = true)
@@ -3130,6 +3417,11 @@ class NflRepository(private val context: Context) {
       if (it.requestId == requestId) approvedReq else it
     }
     sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
+
+    if (updatedUser.id.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) && devIdToApprove == sheetsStorage.getDeviceId()) {
+      activateTvDisplaySession(updatedUser)
+    }
+
     addAuditLog(
       type = "DEVICE_SECURITY",
       id = updatedUser.id,
@@ -3150,7 +3442,7 @@ class NflRepository(private val context: Context) {
     overrideAuthorizedScope: FloorScope? = null
   ): SecurityActionResult {
     val admin = getAuthoritativeCurrentUser()
-    if (admin != null && !admin.isAdmin) {
+    if (admin?.isAdmin != true) {
       return SecurityActionResult(false, "Access Denied: Only an Administrator can approve employee registrations.")
     }
     val user = _users.value.find { it.id.equals(employeeId.trim(), ignoreCase = true) }
@@ -3167,7 +3459,7 @@ class NflRepository(private val context: Context) {
       overrideScope = overrideAuthorizedScope
     )
     val now = System.currentTimeMillis()
-    val adminLabel = admin?.let { "${it.name} (${it.id})" } ?: "Admin ($INITIAL_ADMIN_EMPLOYEE_ID)"
+    val adminLabel = "${admin.name} (${admin.id})"
 
     val approvedUser = DesignationPolicy.applyDesignationTemplate(
       base = user,
@@ -3202,7 +3494,7 @@ class NflRepository(private val context: Context) {
    */
   fun adminRejectUserRegistration(employeeId: String, reason: String = "Rejected by Administrator"): SecurityActionResult {
     val admin = getAuthoritativeCurrentUser()
-    if (admin != null && !admin.isAdmin) {
+    if (admin?.isAdmin != true) {
       return SecurityActionResult(false, "Access Denied: Only an Administrator can reject registrations.")
     }
     val user = _users.value.find { it.id.equals(employeeId.trim(), ignoreCase = true) }
@@ -3221,7 +3513,7 @@ class NflRepository(private val context: Context) {
       type = "USER_MGMT",
       id = rejectedUser.id,
       action = "REJECT_REGISTRATION",
-      by = admin?.name ?: "Admin",
+      by = admin.name.ifBlank { "Admin" },
       details = "Rejected registration for ${rejectedUser.name} (${rejectedUser.id}): $cleanReason"
     )
     return SecurityActionResult(true, "Registration for ${rejectedUser.name} (ID: ${rejectedUser.id}) has been rejected.")
@@ -3232,12 +3524,12 @@ class NflRepository(private val context: Context) {
    */
   fun adminSuspendUser(employeeId: String, reason: String = "Suspended by Administrator"): SecurityActionResult {
     val admin = getAuthoritativeCurrentUser()
-    if (admin != null && !admin.isAdmin) {
+    if (admin?.isAdmin != true) {
       return SecurityActionResult(false, "Access Denied: Only an Administrator can suspend accounts.")
     }
     val user = _users.value.find { it.id.equals(employeeId.trim(), ignoreCase = true) }
       ?: return SecurityActionResult(false, "Employee account '$employeeId' not found.")
-    if (user.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) && admin?.id?.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) == true) {
+    if (user.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) && admin.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true)) {
       return SecurityActionResult(false, "Initial Admin cannot suspend their own primary account.")
     }
 
@@ -3253,7 +3545,7 @@ class NflRepository(private val context: Context) {
       type = "USER_MGMT",
       id = suspendedUser.id,
       action = "SUSPEND_USER",
-      by = admin?.name ?: "Admin",
+      by = admin.name.ifBlank { "Admin" },
       details = "Suspended account ${suspendedUser.name} (${suspendedUser.id})"
     )
     return SecurityActionResult(true, "Account ${suspendedUser.name} (ID: ${suspendedUser.id}) has been suspended.")
@@ -3264,7 +3556,7 @@ class NflRepository(private val context: Context) {
    */
   fun adminReactivateUser(employeeId: String): SecurityActionResult {
     val admin = getAuthoritativeCurrentUser()
-    if (admin != null && !admin.isAdmin) {
+    if (admin?.isAdmin != true) {
       return SecurityActionResult(false, "Access Denied: Only an Administrator can reactivate accounts.")
     }
     val user = _users.value.find { it.id.equals(employeeId.trim(), ignoreCase = true) }
@@ -3281,7 +3573,7 @@ class NflRepository(private val context: Context) {
       type = "USER_MGMT",
       id = reactivated.id,
       action = "REACTIVATE_USER",
-      by = admin?.name ?: "Admin",
+      by = admin.name.ifBlank { "Admin" },
       details = "Reactivated account ${reactivated.name} (${reactivated.id})"
     )
     return SecurityActionResult(true, "Account ${reactivated.name} (ID: ${reactivated.id}) has been reactivated.")
@@ -3298,7 +3590,7 @@ class NflRepository(private val context: Context) {
     assignedLine: String = "K1"
   ): SecurityActionResult {
     val admin = getAuthoritativeCurrentUser()
-    if (admin != null && !admin.isAdmin) {
+    if (admin?.isAdmin != true) {
       return SecurityActionResult(false, "Access Denied: Only an Administrator can modify user roles and scopes.")
     }
     val user = _users.value.find { it.id.equals(employeeId.trim(), ignoreCase = true) }
@@ -3320,7 +3612,7 @@ class NflRepository(private val context: Context) {
       type = "USER_MGMT",
       id = updated.id,
       action = "UPDATE_ROLE_AND_SCOPE",
-      by = admin?.name ?: "Admin",
+      by = admin.name.ifBlank { "Admin" },
       details = "Updated ${updated.name} (${updated.id}) -> Designation: ${updated.designation}, Physical Floor: ${updated.floor.displayName}, Scope: ${updated.authorizedFloorScope.displayName}"
     )
     return SecurityActionResult(
@@ -3334,7 +3626,7 @@ class NflRepository(private val context: Context) {
    */
   fun adminRevokeUserDevice(userId: String, deviceId: String = ""): SecurityActionResult {
     val admin = getAuthoritativeCurrentUser()
-    if (admin != null && !admin.isAdmin) {
+    if (admin?.isAdmin != true) {
       return SecurityActionResult(false, "Access Denied: Only an Administrator can revoke devices.")
     }
     val user = _users.value.find { it.id.equals(userId, ignoreCase = true) }
@@ -3349,19 +3641,24 @@ class NflRepository(private val context: Context) {
     } else {
       user.approvedDevices.filterNot { it.deviceId == deviceId }
     }
+    val nowTs = maxOf(System.currentTimeMillis(), user.updatedAtMillis + 1L)
     val updatedUser = user.copy(
       approvedDevices = remainingDevices,
       authorizedDeviceId = remainingDevices.firstOrNull()?.deviceId.orEmpty(),
       authorizedDeviceName = remainingDevices.firstOrNull()?.deviceName.orEmpty(),
-      activeSessionId = "",
-      updatedAtMillis = System.currentTimeMillis()
+      activeSessionId = "REVOKED-${UUID.randomUUID()}",
+      updatedAtMillis = nowTs
     )
     updateUserInternal(updatedUser)
+    if (_currentUser.value?.id?.equals(updatedUser.id, ignoreCase = true) == true && updatedUser.authorizedDeviceId.isBlank()) {
+      sheetsStorage.clearLocalActiveSession()
+      _currentUser.value = null
+    }
     addAuditLog(
       type = "DEVICE_SECURITY",
       id = user.id,
       action = "REVOKE_DEVICE",
-      by = admin?.name ?: "Admin",
+      by = admin.name.ifBlank { "Admin" },
       details = "Revoked device ${targetDev?.deviceName ?: deviceId.ifBlank { user.authorizedDeviceName }} for Employee ID ${user.id}"
     )
     return SecurityActionResult(
@@ -3380,9 +3677,25 @@ class NflRepository(private val context: Context) {
     }
     sheetsStorage.saveLocalUsers(_users.value)
     if (_currentUser.value?.id?.equals(sanitized.id, ignoreCase = true) == true) {
-      _currentUser.value = sanitized
-      _currentRole.value = sanitized.role
-      _currentUserName.value = sanitized.name
+      val myDeviceId = sheetsStorage.getDeviceId()
+      val savedSessionId = sheetsStorage.getLocalActiveSessionId().trim()
+      val boundDevice = sanitized.authorizedDeviceId.ifBlank {
+        sanitized.approvedDevices.firstOrNull()?.deviceId.orEmpty()
+      }
+      val sessionRevoked = sanitized.activeSessionId.startsWith("REVOKED-") ||
+          (sanitized.activeSessionId.isNotBlank() && savedSessionId.isNotBlank() && sanitized.activeSessionId != savedSessionId)
+      if (!sanitized.isActive ||
+        sanitized.accountStatus != AccountStatus.APPROVED ||
+        (boundDevice.isNotBlank() && boundDevice != myDeviceId) ||
+        sessionRevoked
+      ) {
+        sheetsStorage.clearLocalActiveSession()
+        _currentUser.value = null
+      } else {
+        _currentUser.value = sanitized
+        _currentRole.value = sanitized.role
+        _currentUserName.value = sanitized.name
+      }
     }
     touchDataUpdated()
     repoScope.launch {
@@ -3401,7 +3714,7 @@ class NflRepository(private val context: Context) {
       updateUserInternal(clearedSessionUser)
       addAuditLog("AUTH", user.id, "LOGOUT", user.name, "Session ended")
     }
-    sheetsStorage.setLocalActiveSessionId("")
+    sheetsStorage.clearLocalActiveSession()
     _currentUser.value = null
   }
 
@@ -3509,6 +3822,11 @@ class NflRepository(private val context: Context) {
     canMonthlyTargetWrite: Boolean,
     canTargetRevisionWrite: Boolean
   ) {
+    val admin = getAuthoritativeCurrentUser()
+    if (admin?.isAdmin != true) {
+      _syncStatusBanner.value = "⚠️ Access Denied: Only an Administrator can update role policies."
+      return
+    }
     val updatedForSheet = mutableListOf<UserAccount>()
     _users.value = _users.value.map { u ->
       if (u.role == role && !u.isAdmin) {
@@ -3545,10 +3863,15 @@ class NflRepository(private val context: Context) {
         sheetsStorage.pushUserAccountToSheet(it)
       }
     }
-    addAuditLog("RBAC_POLICY", role.name, "UPDATE_ROLE_POLICY", "Admin", "Updated all permissions for role ${role.displayName}")
+    addAuditLog("RBAC_POLICY", role.name, "UPDATE_ROLE_POLICY", admin.name.ifBlank { "Admin" }, "Updated all permissions for role ${role.displayName}")
   }
 
   fun applyManagementStrictPolicy() {
+    val admin = getAuthoritativeCurrentUser()
+    if (admin?.isAdmin != true) {
+      _syncStatusBanner.value = "⚠️ Access Denied: Only an Administrator can enforce management policies."
+      return
+    }
     val managementRoles = setOf(UserRole.MANAGEMENT_VIEW, UserRole.PRODUCTION_MANAGER, UserRole.QUALITY_MANAGER)
     val updatedForSheet = mutableListOf<UserAccount>()
     _users.value = _users.value.map { u ->
@@ -3586,17 +3909,26 @@ class NflRepository(private val context: Context) {
         sheetsStorage.pushUserAccountToSheet(it)
       }
     }
-    addAuditLog("RBAC_POLICY", "MANAGEMENT", "STRICT_VIEW_ONLY", "Admin", "Enforced view-only mode on all Management accounts")
+    addAuditLog("RBAC_POLICY", "MANAGEMENT", "STRICT_VIEW_ONLY", admin.name.ifBlank { "Admin" }, "Enforced view-only mode on all Management accounts")
   }
 
   fun deleteUser(userId: String) {
+    val admin = getAuthoritativeCurrentUser()
+    if (admin?.isAdmin != true) {
+      _syncStatusBanner.value = "⚠️ Access Denied: Only an Administrator can delete user accounts."
+      return
+    }
+    if (userId.trim().equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true)) {
+      _syncStatusBanner.value = "⚠️ Access Denied: Primary Initial Admin ($INITIAL_ADMIN_EMPLOYEE_ID) cannot be deleted."
+      return
+    }
     _users.value = _users.value.filterNot { it.id.equals(userId, ignoreCase = true) }
     sheetsStorage.saveLocalUsers(_users.value)
     touchDataUpdated()
     repoScope.launch {
       firebaseSync.deleteUserAccountAwait(userId)
     }
-    addAuditLog("USER_MGMT", userId, "DELETE_USER", "Admin", "Removed account")
+    addAuditLog("USER_MGMT", userId, "DELETE_USER", admin.name.ifBlank { "Admin" }, "Removed account")
   }
 
   // Monthly Target Methods
@@ -3646,14 +3978,21 @@ class NflRepository(private val context: Context) {
 
   fun saveMonthlyTarget(target: MonthlyFactoryTarget) {
     val u = getAuthoritativeCurrentUser()
-    if (u != null && !u.isAdmin) {
-      val rolePermitted = u.role == UserRole.IE
-      if (!rolePermitted || !u.canMonthlyTargetWrite) {
-        _syncStatusBanner.value = "⚠️ Access Denied: Only authorized IE can edit Monthly Data"
-        return
-      }
+    if (u == null || (!u.isAdmin && (u.role != UserRole.IE || !u.canMonthlyTargetWrite))) {
+      _syncStatusBanner.value = "⚠️ Access Denied: Only authorized IE can edit Monthly Data"
+      return
     }
     val norm = target.floor.trim().replace("-", " ").replace("  ", " ")
+    val existingTarget = _monthlyTargets.value.find {
+      val itNorm = it.floor.trim().replace("-", " ").replace("  ", " ")
+      val sameFloor = itNorm.equals(norm, ignoreCase = true) || it.floor.equals(target.floor, ignoreCase = true)
+      sameFloor && it.lineId.equals(target.lineId, ignoreCase = true)
+    }
+    if (existingTarget != null &&
+        existingTarget.copy(lastUpdatedMillis = 0L) == target.copy(lastUpdatedMillis = 0L)
+    ) {
+      return
+    }
     val filtered = _monthlyTargets.value.filter {
       val itNorm = it.floor.trim().replace("-", " ").replace("  ", " ")
       val sameFloor = itNorm.equals(norm, ignoreCase = true) || it.floor.equals(target.floor, ignoreCase = true)
@@ -3662,7 +4001,7 @@ class NflRepository(private val context: Context) {
     _monthlyTargets.value = filtered + target
     sheetsStorage.saveLocalMonthlyTargets(_monthlyTargets.value)
     touchDataUpdated()
-    addAuditLog("MONTHLY_SETUP", if (target.lineId.isBlank()) target.floor else "${target.floor}/${target.lineId}", "SAVE_MONTHLY_TARGET", u?.name ?: target.lastUpdatedBy, "Monthly Eff: ${target.updateEfficiencyPct}%, Target Pcs: ${target.monthlyTargetPcs}, Achieved Pcs: ${target.monthlyAchievementPcs}, OQL: ${target.targetOqlPct}%, DHU: ${target.targetDhuPct}% (Cloud Firestore & Google Sheet)")
+    addAuditLog("MONTHLY_SETUP", if (target.lineId.isBlank()) target.floor else "${target.floor}/${target.lineId}", "SAVE_MONTHLY_TARGET", u.name.ifBlank { target.lastUpdatedBy }, "Monthly Eff: ${target.updateEfficiencyPct}%, Target Pcs: ${target.monthlyTargetPcs}, Achieved Pcs: ${target.monthlyAchievementPcs}, OQL: ${target.targetOqlPct}%, DHU: ${target.targetDhuPct}% (Cloud Firestore & Google Sheet)")
     repoScope.launch {
       val fOk = firebaseSync.pushMonthlyTargetAwait(target)
       val sOk = sheetsStorage.pushMonthlyTargetRow(target)
@@ -3704,8 +4043,8 @@ class NflRepository(private val context: Context) {
   }
 
   fun startMaintenanceIncident(id: String, mechanicName: String) {
-    val u = _currentUser.value
-    if (u != null && !u.isAdmin && !u.canNptWrite) {
+    val u = getAuthoritativeCurrentUser()
+    if (u == null || (!u.isAdmin && !u.canNptWrite)) {
       _syncStatusBanner.value = "⚠️ Access Denied: You do not have permission to update NPT incidents"
       return
     }
@@ -4744,7 +5083,203 @@ class NflRepository(private val context: Context) {
     }.sortedByDescending { it.minutes }
   }
 
+  // =========================================================================
+  // SMART TV DISPLAY SETUP & VIEW-ONLY SESSION HELPERS (STEP 6)
+  // =========================================================================
+
+  private fun enforceTvDisplayPermissions(user: UserAccount): UserAccount {
+    return user.copy(
+      id = TV_DISPLAY_ACCOUNT_ID,
+      employeeId = TV_DISPLAY_ACCOUNT_ID,
+      name = user.name.ifBlank { "Smart TV Display" },
+      password = "",
+      passwordHash = "",
+      passwordSalt = "",
+      designation = "TV Display (View-Only)",
+      department = "Management",
+      role = UserRole.MANAGEMENT_VIEW,
+      floor = FloorScope.ALL,
+      authorizedFloorScope = FloorScope.ALL,
+      assignedLine = "All",
+      isAdmin = false,
+      mustChangePassword = false,
+      canViewDashboard = true,
+      canViewTvDashboard = true,
+      canViewMonthlyEfficiency = false,
+      canViewMonthlyDhu = false,
+      canViewMonthlyOql = false,
+      canViewLineDeepDive = false,
+      canViewAuditLogs = false,
+      canExportReports = false,
+      canProductionWrite = false,
+      canFinishingWrite = false,
+      canQualityWrite = false,
+      canOqlWrite = false,
+      canNptWrite = false,
+      canMorningTargetWrite = false,
+      canMonthlyTargetWrite = false,
+      canTargetRevisionWrite = false
+    )
+  }
+
+  fun getTvShortDeviceCode(): String {
+    val raw = sheetsStorage.getDeviceId().uppercase(Locale.US).filter { it.isLetterOrDigit() }
+    return if (raw.length >= 6) raw.takeLast(6) else raw.padEnd(6, '0')
+  }
+
+  fun hasValidTvSession(): Boolean {
+    val cur = getAuthoritativeCurrentUser()
+    val myDeviceId = sheetsStorage.getDeviceId()
+    if (cur != null) {
+      if (cur.accountStatus != AccountStatus.APPROVED || !cur.isActive || cur.mustChangePassword) return false
+      if (cur.activeSessionId.startsWith("REVOKED-")) return false
+      val boundDevice = cur.authorizedDeviceId.ifBlank {
+        cur.approvedDevices.firstOrNull()?.deviceId.orEmpty()
+      }
+      if (cur.id.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true)) {
+        return boundDevice == myDeviceId || cur.approvedDevices.any { it.deviceId == myDeviceId }
+      }
+      return boundDevice.isBlank() || boundDevice == myDeviceId || cur.approvedDevices.any { it.deviceId == myDeviceId }
+    }
+    return false
+  }
+
+  private fun activateTvDisplaySession(tvUser: UserAccount) {
+    val sanitized = enforceTvDisplayPermissions(tvUser)
+    val now = System.currentTimeMillis()
+    val sessionId = sanitized.activeSessionId.takeIf { it.isNotBlank() && !it.startsWith("REVOKED-") }
+      ?: UUID.randomUUID().toString()
+    val myDeviceId = sheetsStorage.getDeviceId()
+    val activeTvUser = sanitized.copy(
+      authorizedDeviceId = sanitized.authorizedDeviceId.ifBlank { myDeviceId },
+      authorizedDeviceName = sanitized.authorizedDeviceName.ifBlank { sheetsStorage.getDeviceName() },
+      activeSessionId = sessionId,
+      updatedAtMillis = now
+    )
+    _users.value = _users.value.map {
+      if (it.id.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true)) activeTvUser else it
+    }
+    sheetsStorage.saveLocalUsers(_users.value)
+    sheetsStorage.saveLocalActiveSession(TV_DISPLAY_ACCOUNT_ID, sessionId, now)
+    _currentUser.value = activeTvUser
+    _currentRole.value = activeTvUser.role
+    _currentUserName.value = activeTvUser.name
+    _currentFloor.value = FloorScope.ALL
+    _assignedLine.value = "All"
+
+    // Mark any local pending TV requests for this device as APPROVED
+    val updatedReqs = _deviceApprovalRequests.value.map { req ->
+      if (req.userId.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) && req.deviceId == myDeviceId && req.status == "PENDING") {
+        req.copy(status = "APPROVED", otpUsed = true)
+      } else req
+    }
+    if (updatedReqs != _deviceApprovalRequests.value) {
+      _deviceApprovalRequests.value = updatedReqs
+      sheetsStorage.saveDeviceApprovalRequests(updatedReqs)
+    }
+  }
+
+  /**
+   * Ensures a pending TV Display setup approval request exists for this TV device (without any password),
+   * or activates the TV Display session immediately if an Administrator has already approved this device.
+   */
+  fun ensureTvDisplaySetupRequest(): DeviceApprovalRequest {
+    val myDeviceId = sheetsStorage.getDeviceId()
+    val myDeviceName = sheetsStorage.getDeviceName()
+    val shortCode = getTvShortDeviceCode()
+
+    val existingTvUser = _users.value.find { it.id.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) }
+    val isAlreadyApprovedForThisTv = existingTvUser != null &&
+        existingTvUser.accountStatus == AccountStatus.APPROVED &&
+        existingTvUser.isActive &&
+        !existingTvUser.activeSessionId.startsWith("REVOKED-") &&
+        (existingTvUser.authorizedDeviceId == myDeviceId || existingTvUser.approvedDevices.any { it.deviceId == myDeviceId })
+
+    if (isAlreadyApprovedForThisTv && existingTvUser != null) {
+      activateTvDisplaySession(existingTvUser)
+      return _deviceApprovalRequests.value.find {
+        it.userId.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) && it.deviceId == myDeviceId
+      } ?: DeviceApprovalRequest(
+        requestId = "TV-REQ-$shortCode",
+        userId = TV_DISPLAY_ACCOUNT_ID,
+        userName = "Smart TV Display",
+        role = UserRole.MANAGEMENT_VIEW,
+        designation = "TV Display (View-Only)",
+        department = "Management",
+        requestedFloor = FloorScope.ALL.displayName,
+        deviceId = myDeviceId,
+        deviceName = myDeviceName,
+        status = "APPROVED",
+        requestType = "TV_DISPLAY_SETUP",
+        reason = "TV Display Setup (Code: $shortCode)"
+      )
+    }
+
+    val existingPending = _deviceApprovalRequests.value.find {
+      it.userId.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) &&
+          it.deviceId == myDeviceId &&
+          it.status == "PENDING"
+    }
+    if (existingPending != null) {
+      return existingPending
+    }
+
+    val now = System.currentTimeMillis()
+    val req = DeviceApprovalRequest(
+      requestId = "TV-REQ-$shortCode-$now",
+      userId = TV_DISPLAY_ACCOUNT_ID,
+      userName = "Smart TV Display",
+      role = UserRole.MANAGEMENT_VIEW,
+      designation = "TV Display (View-Only)",
+      department = "Management",
+      requestedFloor = FloorScope.ALL.displayName,
+      deviceId = myDeviceId,
+      deviceName = myDeviceName,
+      requestedAtMillis = now,
+      status = "PENDING",
+      requestType = "TV_DISPLAY_SETUP",
+      reason = "TV Display Setup (Code: $shortCode)"
+    )
+    _deviceApprovalRequests.value = listOf(req) + _deviceApprovalRequests.value.filterNot {
+      it.userId.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) && it.deviceId == myDeviceId && it.status == "PENDING"
+    }
+    sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
+
+    // Publish the pending request marker on tv_display once so Admin devices receive it via the users listener
+    val baseTvUser = existingTvUser ?: UserAccount(
+      id = TV_DISPLAY_ACCOUNT_ID,
+      employeeId = TV_DISPLAY_ACCOUNT_ID,
+      name = "Smart TV Display",
+      role = UserRole.MANAGEMENT_VIEW,
+      floor = FloorScope.ALL,
+      authorizedFloorScope = FloorScope.ALL
+    )
+    val tvUserWithMarker = enforceTvDisplayPermissions(baseTvUser).copy(
+      rejectionReason = "TV_PENDING:${req.requestId}:$myDeviceId:$myDeviceName:$shortCode",
+      updatedAtMillis = now
+    )
+    _users.value = _users.value.map {
+      if (it.id.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true)) tvUserWithMarker else it
+    }
+    sheetsStorage.saveLocalUsers(_users.value)
+    repoScope.launch {
+      firebaseSync.pushUserAccountAwait(tvUserWithMarker)
+    }
+    addAuditLog(
+      type = "DEVICE_SECURITY",
+      id = TV_DISPLAY_ACCOUNT_ID,
+      action = "TV_SETUP_REQUESTED",
+      by = myDeviceName,
+      details = "Smart TV requested display approval (Device Code: $shortCode, ID: $myDeviceId)"
+    )
+    return req
+  }
+
   fun shutdown() {
     firebaseSync.cleanupListeners()
+  }
+
+  companion object {
+    const val TV_DISPLAY_ACCOUNT_ID = "tv_display"
   }
 }

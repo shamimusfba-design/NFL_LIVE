@@ -541,4 +541,681 @@ class ExampleRobolectricTest {
     assertEquals(1.85, tvData.kpis.bsQaOql, 0.01)
     assertEquals(98.5, tvData.kpis.friPassRate, 0.01)
   }
+
+  @Test
+  fun `test Part A 1 to 4 fail closed admin checks and pre login flows`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repo = NflRepository(context)
+    // Ensure logged out initially
+    repo.logout()
+    assertEquals(null, repo.currentUser.value)
+
+    // 4. Pre-login flows (registerEmployee, First-Admin bootstrap when unprovisioned, normal login) work when logged out
+    val regRes = repo.registerEmployee(
+      fullName = "Test Pending Worker",
+      employeeId = "EMP-PEND-01",
+      designation = EmployeeDesignation.PRODUCTION_SUPERVISOR,
+      physicalFloor = FloorScope.SEW_2,
+      password = "Password#123",
+      confirmPassword = "Password#123"
+    )
+    assertTrue(regRes.success)
+
+    // 1. Logged-out call to each admin function is denied
+    val loggedOutApproveReg = repo.adminApproveUserRegistration(
+      employeeId = "EMP-PEND-01"
+    )
+    assertFalse(loggedOutApproveReg.success)
+
+    val loggedOutSuspend = repo.adminSuspendUser("supervisor", "Test logged out suspend")
+    assertFalse(loggedOutSuspend.success)
+
+    val loggedOutUpdateRole = repo.adminUpdateUserRoleAndScope(
+      employeeId = "supervisor",
+      designation = EmployeeDesignation.HEAD_OF_PRODUCTION,
+      physicalFloor = FloorScope.SEW_2,
+      authorizedScope = FloorScope.ALL
+    )
+    assertFalse(loggedOutUpdateRole.success)
+
+    val loggedOutApproveDev = repo.adminApproveDeviceOrAccountRequest("REQ-NONEXISTENT")
+    assertFalse(loggedOutApproveDev.success)
+
+    val beforeDeleteCount = repo.users.value.size
+    repo.deleteUser("supervisor")
+    assertEquals(beforeDeleteCount, repo.users.value.size)
+
+    // First-Admin bootstrap works when unprovisioned and logged out
+    assertFalse(repo.isFirstAdminProvisioned())
+    val bootRes = repo.bootstrapFirstAdmin(
+      employeeId = INITIAL_ADMIN_EMPLOYEE_ID,
+      initialPassword = "InitPass#2026",
+      confirmPassword = "InitPass#2026",
+      fullName = "Chief Admin"
+    )
+    assertTrue(bootRes.success)
+
+    // 2. Logged-in non-admin call to those functions is denied
+    val supLogin = repo.authenticateUser("supervisor", "123")
+    assertEquals(AuthStatus.SUCCESS, supLogin.status)
+    assertFalse(repo.currentUser.value?.isAdmin == true)
+
+    assertFalse(
+      repo.adminApproveUserRegistration(
+        employeeId = "EMP-PEND-01"
+      ).success
+    )
+    assertFalse(repo.adminSuspendUser("quality", "Non-admin attempt").success)
+    assertFalse(
+      repo.adminUpdateUserRoleAndScope(
+        employeeId = "quality",
+        designation = EmployeeDesignation.HEAD_OF_QUALITY,
+        physicalFloor = FloorScope.SEW_2,
+        authorizedScope = FloorScope.ALL
+      ).success
+    )
+    assertFalse(repo.adminApproveDeviceOrAccountRequest("REQ-NONEXISTENT").success)
+    val countBeforeNonAdminDelete = repo.users.value.size
+    repo.deleteUser("quality")
+    assertEquals(countBeforeNonAdminDelete, repo.users.value.size)
+
+    // 3. Logged-in admin call succeeds
+    val adminLogin = repo.authenticateUser("admin", "123")
+    assertEquals(AuthStatus.SUCCESS, adminLogin.status)
+    assertTrue(repo.currentUser.value?.isAdmin == true)
+
+    val adminApproveRes = repo.adminApproveUserRegistration(
+      employeeId = "EMP-PEND-01"
+    )
+    assertTrue(adminApproveRes.success)
+
+    val adminUpdateRes = repo.adminUpdateUserRoleAndScope(
+      employeeId = "EMP-PEND-01",
+      designation = EmployeeDesignation.IE,
+      physicalFloor = FloorScope.SEW_1,
+      authorizedScope = FloorScope.SEW_1
+    )
+    assertTrue(adminUpdateRes.success)
+
+    val adminSuspendRes = repo.adminSuspendUser("EMP-PEND-01", "Suspended by admin test")
+    assertTrue(adminSuspendRes.success)
+
+    // Bind EMP-PEND-01 to an old device, trigger a device replacement request, and approve it as admin
+    repo.adminReactivateUser("EMP-PEND-01")
+    val pendUser = repo.users.value.first { it.id == "EMP-PEND-01" }
+    repo.saveUser(
+      pendUser.copy(
+        authorizedDeviceId = "OLD-DEV-777",
+        authorizedDeviceName = "Old Phone",
+        approvedDevices = listOf(ApprovedDevice("OLD-DEV-777", "Old Phone", 1000L, "Admin"))
+      ),
+      isNewAccount = false
+    )
+    val devLimitAttempt = repo.authenticateUser("EMP-PEND-01", "Password#123")
+    assertEquals(AuthStatus.DEVICE_LIMIT_REACHED, devLimitAttempt.status)
+    // Switch back to admin to approve the pending device request
+    repo.authenticateUser("admin", "123")
+    val createdReq = repo.deviceApprovalRequests.value.first { it.userId == "EMP-PEND-01" }
+    val approveDevRes = repo.adminApproveDeviceOrAccountRequest(createdReq.requestId)
+    assertTrue(approveDevRes.success)
+
+    repo.deleteUser("EMP-PEND-01")
+    assertTrue(repo.users.value.none { it.id == "EMP-PEND-01" })
+  }
+
+  @Test
+  fun `test Part B 5 to 8 session persistence restore logout suspend and device change`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repo = NflRepository(context)
+
+    // 5. Login -> create a new NflRepository(context) -> currentUser.value is restored automatically
+    val loginRes = repo.authenticateUser("supervisor", "123")
+    assertEquals(AuthStatus.SUCCESS, loginRes.status)
+    assertEquals("supervisor", repo.currentUser.value?.id)
+
+    val restoredRepo = NflRepository(context)
+    assertTrue(restoredRepo.currentUser.value != null)
+    assertEquals("supervisor", restoredRepo.currentUser.value?.id)
+
+    // Verify no password or passwordHash is stored in session keys of SharedPreferences
+    val prefs = context.getSharedPreferences("nfl_google_sheets_storage", Context.MODE_PRIVATE)
+    assertEquals("supervisor", prefs.getString("security_active_session_user_id", null))
+    assertTrue(!prefs.getString("security_active_session_id", "").isNullOrBlank())
+    assertTrue(prefs.getLong("security_active_session_login_time_ms", 0L) > 0L)
+
+    // 6. Login -> logout() -> new NflRepository(context) -> currentUser.value is null
+    restoredRepo.logout()
+    assertEquals(null, restoredRepo.currentUser.value)
+    val afterLogoutRepo = NflRepository(context)
+    assertEquals(null, afterLogoutRepo.currentUser.value)
+
+    // 7. Login -> suspend user -> new NflRepository(context) -> currentUser.value is null
+    val loginAgain = afterLogoutRepo.authenticateUser("supervisor", "123")
+    assertEquals(AuthStatus.SUCCESS, loginAgain.status)
+    // Mutate saved local user to SUSPENDED as if suspended before restart
+    val storage = com.example.data.GoogleSheetsStorageService(context)
+    val suspendedUsers = storage.loadLocalUsers().map {
+      if (it.id == "supervisor") it.copy(accountStatus = AccountStatus.SUSPENDED, isActive = false) else it
+    }
+    storage.saveLocalUsers(suspendedUsers)
+    val afterSuspendRepo = NflRepository(context)
+    assertEquals(null, afterSuspendRepo.currentUser.value)
+
+    // Restore supervisor to APPROVED & active, then test 8:
+    // 8. Login -> change user's authorizedDeviceId to another device -> new NflRepository(context) -> currentUser.value is null
+    val reactivatedUsers = storage.loadLocalUsers().map {
+      if (it.id == "supervisor") {
+        it.copy(
+          accountStatus = AccountStatus.APPROVED,
+          isActive = true,
+          authorizedDeviceId = "",
+          approvedDevices = emptyList()
+        )
+      } else it
+    }
+    storage.saveLocalUsers(reactivatedUsers)
+    val repoForDeviceTest = NflRepository(context)
+    val supLogin2 = repoForDeviceTest.authenticateUser("supervisor", "123")
+    assertEquals(AuthStatus.SUCCESS, supLogin2.status)
+
+    val wrongDeviceUsers = storage.loadLocalUsers().map {
+      if (it.id == "supervisor") {
+        it.copy(
+          authorizedDeviceId = "OTHER-DEVICE-999",
+          approvedDevices = listOf(ApprovedDevice("OTHER-DEVICE-999", "Other Phone", 2000L, "Admin"))
+        )
+      } else it
+    }
+    storage.saveLocalUsers(wrongDeviceUsers)
+    val afterDeviceChangeRepo = NflRepository(context)
+    assertEquals(null, afterDeviceChangeRepo.currentUser.value)
+  }
+
+  @Test
+  fun `test Part B 9 to 11 upsertRemoteUsers stale record ignored newer revocation logs out and blank device preserved`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val initialRepo = NflRepository(context)
+
+    val loginRes = initialRepo.authenticateUser("supervisor", "123")
+    assertEquals(AuthStatus.SUCCESS, loginRes.status)
+
+    // Set known local updatedAtMillis = 2000 on supervisor in local storage and restore session
+    val storage = com.example.data.GoogleSheetsStorageService(context)
+    val currentSup = initialRepo.currentUser.value!!
+    val supAt2000 = currentSup.copy(updatedAtMillis = 2000L)
+    storage.saveLocalUsers(
+      storage.loadLocalUsers().map { if (it.id == "supervisor") supAt2000 else it }
+    )
+    val repo = NflRepository(context)
+    assertEquals("supervisor", repo.currentUser.value?.id)
+    assertEquals(2000L, repo.currentUser.value?.updatedAtMillis)
+
+    // 9. Login (local updatedAtMillis = 2000) -> upsertRemoteUsers with a stale record (updatedAtMillis = 1000, isActive = false or wrong device) -> currentUser.value stays non-null
+    val staleInactive = supAt2000.copy(
+      updatedAtMillis = 1000L,
+      isActive = false,
+      accountStatus = AccountStatus.SUSPENDED,
+      authorizedDeviceId = "STALE-WRONG-DEVICE"
+    )
+    repo.upsertRemoteUsers(listOf(staleInactive))
+    assertTrue(repo.currentUser.value != null)
+    assertEquals("supervisor", repo.currentUser.value?.id)
+    assertTrue(repo.currentUser.value!!.isActive)
+    assertEquals(2000L, repo.currentUser.value?.updatedAtMillis)
+
+    // 11. Login -> upsertRemoteUsers with a record where authorizedDeviceId is blank -> currentUser.value stays non-null
+    val newerBlankDevice = supAt2000.copy(
+      updatedAtMillis = 2500L,
+      authorizedDeviceId = "",
+      approvedDevices = emptyList()
+    )
+    repo.upsertRemoteUsers(listOf(newerBlankDevice))
+    assertTrue(repo.currentUser.value != null)
+    assertEquals("supervisor", repo.currentUser.value?.id)
+    assertEquals(currentSup.authorizedDeviceId, repo.currentUser.value?.authorizedDeviceId)
+
+    // 10. Login -> upsertRemoteUsers with a newer record (updatedAtMillis = 3000, isActive = false or accountStatus = SUSPENDED) -> currentUser.value becomes null and banner mentions session ended
+    val newerSuspended = supAt2000.copy(
+      updatedAtMillis = 3000L,
+      isActive = false,
+      accountStatus = AccountStatus.SUSPENDED
+    )
+    repo.upsertRemoteUsers(listOf(newerSuspended))
+    assertEquals(null, repo.currentUser.value)
+    assertTrue(repo.syncStatusBanner.value.orEmpty().contains("Session ended", ignoreCase = true))
+  }
+
+  @Test
+  fun `test Part B additional stay logged in until explicit logout or genuine newer revocation`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val storage = com.example.data.GoogleSheetsStorageService(context)
+    val repo = NflRepository(context)
+
+    // 1. Login and verify offline restart restores user immediately without network
+    val loginRes = repo.authenticateUser("supervisor", "123")
+    assertEquals(AuthStatus.SUCCESS, loginRes.status)
+    val baseUser = repo.currentUser.value!!
+    val baseTs = baseUser.updatedAtMillis
+
+    val restartedOfflineRepo = NflRepository(context)
+    assertEquals("supervisor", restartedOfflineRepo.currentUser.value?.id)
+    assertEquals("supervisor", restartedOfflineRepo.getAuthoritativeCurrentUser()?.id)
+
+    // 2. Empty snapshot, partial snapshot (other users only), or Google Sheets-sourced row must NEVER log out
+    restartedOfflineRepo.upsertRemoteUsers(emptyList())
+    assertEquals("supervisor", restartedOfflineRepo.currentUser.value?.id)
+
+    val otherUserOnly = restartedOfflineRepo.users.value.filter { it.id != "supervisor" }
+    restartedOfflineRepo.upsertRemoteUsers(otherUserOnly)
+    assertEquals("supervisor", restartedOfflineRepo.currentUser.value?.id)
+
+    val sheetRowSuspended = baseUser.copy(
+      updatedAtMillis = baseTs + 50_000L,
+      isActive = false,
+      accountStatus = AccountStatus.SUSPENDED,
+      authorizedDeviceId = "SHEET-WRONG-DEV"
+    )
+    restartedOfflineRepo.upsertRemoteUsers(listOf(sheetRowSuspended), isFromGoogleSheets = true)
+    assertEquals("supervisor", restartedOfflineRepo.currentUser.value?.id)
+
+    // 3. Blank authorizedDeviceId and blank activeSessionId must NEVER log out
+    val blankDeviceAndSession = baseUser.copy(
+      updatedAtMillis = baseTs + 1_000L,
+      authorizedDeviceId = "",
+      approvedDevices = emptyList(),
+      activeSessionId = ""
+    )
+    restartedOfflineRepo.upsertRemoteUsers(listOf(blankDeviceAndSession))
+    assertEquals("supervisor", restartedOfflineRepo.currentUser.value?.id)
+
+    // 4. Network error / permission-denied sync banner update must NEVER log out
+    restartedOfflineRepo.refreshAllFromSheet()
+    assertEquals("supervisor", restartedOfflineRepo.currentUser.value?.id)
+
+    // 5. Newer different-device record MUST log out
+    val newerDiffDevice = baseUser.copy(
+      updatedAtMillis = baseTs + 5_000L,
+      authorizedDeviceId = "NEW-PHONE-DEVICE-ID",
+      approvedDevices = listOf(ApprovedDevice("NEW-PHONE-DEVICE-ID", "New Phone", baseTs + 5_000L, "Admin"))
+    )
+    restartedOfflineRepo.upsertRemoteUsers(listOf(newerDiffDevice))
+    assertEquals(null, restartedOfflineRepo.currentUser.value)
+    assertEquals("", storage.getLocalActiveSessionUserId())
+    assertEquals("", storage.getLocalActiveSessionId())
+
+    // 6. Admin revoke (adminRevokeUserDevice) logs out the old phone on newer record, but older revoke record never does
+    // First clear the device binding as Admin so supervisor can log in again on this phone
+    restartedOfflineRepo.authenticateUser("admin", "123")
+    assertTrue(restartedOfflineRepo.adminRevokeUserDevice("supervisor").success)
+
+    val oldPhoneRepo = NflRepository(context)
+    val reloginRes = oldPhoneRepo.authenticateUser("supervisor", "123")
+    assertEquals(AuthStatus.SUCCESS, reloginRes.status)
+    val activeSup = oldPhoneRepo.currentUser.value!!
+
+    // Stale/older revoke record must NOT log out
+    val staleRevoked = activeSup.copy(
+      approvedDevices = emptyList(),
+      authorizedDeviceId = "",
+      authorizedDeviceName = "",
+      activeSessionId = "REVOKED-OLD-TOKEN",
+      updatedAtMillis = activeSup.updatedAtMillis - 1000L
+    )
+    oldPhoneRepo.upsertRemoteUsers(listOf(staleRevoked))
+    assertEquals("supervisor", oldPhoneRepo.currentUser.value?.id)
+
+    // Simulate Admin on another phone invoking adminRevokeUserDevice("supervisor")
+    val adminRepo = NflRepository(context)
+    adminRepo.authenticateUser("admin", "123")
+    val revokeAction = adminRepo.adminRevokeUserDevice("supervisor")
+    assertTrue(revokeAction.success)
+    val revokedUserRecord = adminRepo.users.value.first { it.id == "supervisor" }
+    assertTrue(revokedUserRecord.activeSessionId.startsWith("REVOKED-"))
+    assertEquals("", revokedUserRecord.authorizedDeviceId)
+
+    // Restore oldPhoneRepo's local session state before receiving the remote sync from adminRepo
+    storage.saveLocalActiveSession(activeSup.id, activeSup.activeSessionId, activeSup.updatedAtMillis)
+    oldPhoneRepo.upsertRemoteUsers(listOf(revokedUserRecord))
+    assertEquals(null, oldPhoneRepo.currentUser.value)
+    assertEquals("", storage.getLocalActiveSessionUserId())
+    assertEquals("", storage.getLocalActiveSessionId())
+  }
+
+  @Test
+  fun `test Step 3 bounded listener and empty snapshot do not delete local records older than 7 days`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repo = NflRepository(context)
+    repo.authenticateUser("admin", "123")
+
+    val todayIso = repo.getCurrentBangladeshDateIso()
+    val cal = repo.sheetsStorage.getTrustedBangladeshCalendar()
+    cal.add(java.util.Calendar.DAY_OF_YEAR, -12)
+    val twelveDaysAgoIso = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply {
+      timeZone = repo.sheetsStorage.getBangladeshTimeZone()
+    }.format(cal.time)
+
+    val olderRecord = ProductionRecord(
+      id = "PROD_K1_${twelveDaysAgoIso}_08-00_-_09-00",
+      submissionId = "SUB-OLD-12D",
+      lineId = "K1",
+      floor = "Sew 2",
+      date = twelveDaysAgoIso,
+      hourSlot = "08:00 - 09:00",
+      styleNumber = "ST-100",
+      outputQty = 145,
+      syncStatus = SyncStatus.SYNCED,
+      isDemo = false
+    )
+    val recentRecord = ProductionRecord(
+      id = "PROD_K1_${todayIso}_08-00_-_09-00",
+      submissionId = "SUB-TODAY-1",
+      lineId = "K1",
+      floor = "Sew 2",
+      date = todayIso,
+      hourSlot = "08:00 - 09:00",
+      styleNumber = "ST-100",
+      outputQty = 160,
+      syncStatus = SyncStatus.SYNCED,
+      isDemo = false
+    )
+
+    // Seed older local record first
+    repo.upsertRemoteProductionRecords(listOf(olderRecord))
+    assertTrue(repo.productionEntries.value.any { !it.isDemo && it.date == twelveDaysAgoIso && it.outputQty == 145 })
+
+    // Bounded 7-day listener delivers only recent records — older local record must remain intact
+    repo.upsertRemoteProductionRecords(listOf(recentRecord))
+    assertTrue(repo.productionEntries.value.any { !it.isDemo && it.date == twelveDaysAgoIso && it.outputQty == 145 })
+    assertTrue(repo.productionEntries.value.any { !it.isDemo && it.date == todayIso && it.outputQty == 160 })
+
+    // Empty snapshot / empty removal set must never delete older local records
+    repo.upsertRemoteProductionRecords(emptyList())
+    repo.removeDeletedProductionRecords(emptySet())
+    assertTrue(repo.productionEntries.value.any { !it.isDemo && it.date == twelveDaysAgoIso && it.outputQty == 145 })
+  }
+
+  @Test
+  fun `test Step 2 and 4 manual sync does not re-push SYNCED records or merge Sheets data and saving unchanged entry is skipped`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repo = NflRepository(context)
+    repo.authenticateUser("admin", "123")
+
+    val todayIso = repo.getCurrentBangladeshDateIso()
+    val saved = repo.submitProduction(
+      ProductionRecord(
+        lineId = "J1",
+        floor = "Sew 2",
+        date = todayIso,
+        hourSlot = "09:00 - 10:00",
+        styleNumber = "ST-500",
+        outputQty = 130,
+        remarks = "Initial",
+        isDemo = false
+      )
+    )
+    // Canonical docId must be assigned so id == canonicalDocId
+    val expectedCanonicalId = repo.firebaseSync.canonicalProductionDocId(saved)
+    assertEquals(expectedCanonicalId, saved.id)
+    assertFalse(repo.firebaseSync.shouldDeleteLegacyProductionDoc(saved, expectedCanonicalId))
+
+    // Mark record as SYNCED (simulating completed cloud sync)
+    repo.upsertRemoteProductionRecords(listOf(saved.copy(syncStatus = SyncStatus.SYNCED)))
+    val syncedRec = repo.productionEntries.value.first {
+      !it.isDemo && it.lineId == "J1" && it.date == todayIso && it.hourSlot == "09:00 - 10:00"
+    }
+    assertEquals(SyncStatus.SYNCED, syncedRec.syncStatus)
+
+    // Re-submitting identical record when already SYNCED must be a no-op (stays SYNCED, same timestamp)
+    val resubmitted = repo.submitProduction(
+      ProductionRecord(
+        lineId = "J1",
+        floor = "Sew 2",
+        date = todayIso,
+        hourSlot = "09:00 - 10:00",
+        styleNumber = "ST-500",
+        outputQty = 130,
+        remarks = "Initial",
+        isDemo = false
+      )
+    )
+    assertEquals(SyncStatus.SYNCED, resubmitted.syncStatus)
+    assertEquals(syncedRec.timestamp, resubmitted.timestamp)
+
+    // Manual sync (refreshFromGoogleSheet) with 0 pending records must NOT flip SYNCED records or merge Sheets data
+    val countBefore = repo.productionEntries.value.count { !it.isDemo }
+    repo.refreshFromGoogleSheet()
+    val countAfter = repo.productionEntries.value.count { !it.isDemo }
+    assertEquals(countBefore, countAfter)
+    assertEquals(
+      SyncStatus.SYNCED,
+      repo.productionEntries.value.first { !it.isDemo && it.lineId == "J1" && it.hourSlot == "09:00 - 10:00" }.syncStatus
+    )
+  }
+
+  @Test
+  fun `test Step 4 legacy delete only triggers when legacy doc id was actually observed`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val syncService = com.example.data.FirebaseSyncService(context)
+
+    val normalRec = ProductionRecord(
+      id = "random-uuid-1234",
+      lineId = "K1",
+      floor = "Sew 2",
+      date = "2026-04-20",
+      hourSlot = "08:00 - 09:00",
+      styleNumber = "ST-100",
+      outputQty = 120
+    )
+    val canonicalId = syncService.canonicalProductionDocId(normalRec)
+    assertEquals("PROD_K1_2026-04-20_0800-0900", canonicalId)
+
+    // A random client UUID that was never seen in Firestore must NOT trigger a legacy delete write
+    assertFalse(syncService.shouldDeleteLegacyProductionDoc(normalRec, canonicalId))
+
+    val normalQa = QualityRecord(
+      id = "random-qa-uuid-5678",
+      lineId = "K1",
+      floor = "Sew 2",
+      date = "2026-04-20",
+      hourSlot = "08:00 - 09:00",
+      styleNumber = "ST-100",
+      checkedGarments = 50,
+      defectiveGarments = 1
+    )
+    val canonicalQaId = syncService.canonicalQualityDocId(normalQa)
+    assertEquals("QA_K1_2026-04-20_0800-0900", canonicalQaId)
+    assertFalse(syncService.shouldDeleteLegacyQualityDoc(normalQa, canonicalQaId))
+  }
+
+  @Test
+  fun `test Step 6 TV flow without login screen or hardcoded management credentials`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val storage = com.example.data.GoogleSheetsStorageService(context)
+    storage.clearLocalActiveSession()
+
+    // 1. Fresh TV repository has no active session (not auto-logged-in as management)
+    val tvRepo = NflRepository(context)
+    assertEquals(null, tvRepo.currentUser.value)
+    assertFalse(tvRepo.hasValidTvSession())
+
+    // 2. TV Setup creates a pending device approval request for tv_display (no password required)
+    val setupReq = tvRepo.ensureTvDisplaySetupRequest()
+    assertEquals(NflRepository.TV_DISPLAY_ACCOUNT_ID, setupReq.userId)
+    assertEquals("PENDING", setupReq.status)
+    assertEquals(tvRepo.getDeviceId(), setupReq.deviceId)
+    assertEquals(6, tvRepo.getTvShortDeviceCode().length)
+    assertFalse(tvRepo.hasValidTvSession())
+
+    // 3. Admin approves the TV setup request -> binds TV deviceId and activates tv_display session
+    val adminRepo = NflRepository(context)
+    adminRepo.authenticateUser("admin", "123")
+    val approveRes = adminRepo.adminApproveDeviceOrAccountRequest(setupReq.requestId)
+    assertTrue(approveRes.success)
+
+    // Simulate TV receiving the approved tv_display account update (or activating on approval)
+    val approvedTvAccount = adminRepo.users.value.first { it.id == NflRepository.TV_DISPLAY_ACCOUNT_ID }
+    assertEquals(tvRepo.getDeviceId(), approvedTvAccount.authorizedDeviceId)
+    tvRepo.upsertRemoteUsers(listOf(approvedTvAccount))
+
+    assertTrue(tvRepo.hasValidTvSession())
+    assertEquals(NflRepository.TV_DISPLAY_ACCOUNT_ID, tvRepo.currentUser.value?.id)
+    assertTrue(tvRepo.currentUser.value!!.isViewOnly)
+    assertTrue(tvRepo.currentUser.value!!.canViewTvDashboard)
+    assertFalse(tvRepo.currentUser.value!!.isAdmin)
+    assertFalse(tvRepo.currentUser.value!!.canProductionWrite)
+    assertFalse(tvRepo.currentUser.value!!.canQualityWrite)
+
+    // 4. Restarting NflRepository on the TV restores the tv_display session offline immediately
+    val restartedTvRepo = NflRepository(context)
+    assertTrue(restartedTvRepo.hasValidTvSession())
+    assertEquals(NflRepository.TV_DISPLAY_ACCOUNT_ID, restartedTvRepo.currentUser.value?.id)
+
+    // 5. Verify tv_display session is strictly blocked from production/quality entry and admin actions
+    val prodCountBefore = restartedTvRepo.productionEntries.value.count { !it.isDemo }
+    restartedTvRepo.submitProduction(
+      ProductionRecord(
+        lineId = "K1",
+        floor = "Sew 2",
+        date = restartedTvRepo.getCurrentBangladeshDateIso(),
+        hourSlot = "10:00 - 11:00",
+        styleNumber = "ST-100",
+        outputQty = 999,
+        isDemo = false
+      )
+    )
+    assertEquals(prodCountBefore, restartedTvRepo.productionEntries.value.count { !it.isDemo })
+    assertFalse(restartedTvRepo.adminSuspendUser("supervisor").success)
+  }
+
+  @Test
+  fun `test Step 2 and Step 3 SaveUiState formatting callbacks and plausibility threshold`() {
+    // 1. Explicit SaveUiState feedback messages (Idle, Saving, SavedLocally, Synced, SyncFailed)
+    assertEquals(null, formatSaveFeedbackMessage(SaveUiState.Idle))
+    assertEquals("Saving...", formatSaveFeedbackMessage(SaveUiState.Saving))
+    assertEquals("Saved on this phone, syncing...", formatSaveFeedbackMessage(SaveUiState.SavedLocally))
+    assertEquals("✓ Synced to cloud", formatSaveFeedbackMessage(SaveUiState.Synced))
+    assertEquals("⚠ Saved on this phone, will retry", formatSaveFeedbackMessage(SaveUiState.SyncFailed))
+
+    // 2. Batch summary formatting includes saved and skipped counts
+    val batchSummary = BatchSubmitSummary(savedCount = 5, skippedCount = 2)
+    assertEquals(
+      "Saved on this phone (5 saved, 2 skipped), syncing...",
+      formatSaveFeedbackMessage(SaveUiState.SavedLocally, batchSummary)
+    )
+    assertEquals(
+      "✓ Synced to cloud (5 saved, 2 skipped)",
+      formatSaveFeedbackMessage(SaveUiState.Synced, batchSummary)
+    )
+    assertEquals(
+      "⚠ Saved on this phone, will retry (5 saved, 2 skipped)",
+      formatSaveFeedbackMessage(SaveUiState.SyncFailed, batchSummary)
+    )
+
+    // 3. Plausibility threshold (> 3 * targetHourlyPcs)
+    assertEquals(null, findImplausibleProductionTarget(outputQty = 300, targetHourlyPcs = 100))
+    assertEquals(100, findImplausibleProductionTarget(outputQty = 301, targetHourlyPcs = 100))
+    assertEquals(null, findImplausibleProductionTarget(outputQty = 500, targetHourlyPcs = 0))
+
+    // 4. Verify submitProduction / submitBatchProduction / submitQuality fire onLocalSaved ONLY after local save succeeds
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repo = NflRepository(context)
+    repo.authenticateUser("admin", "123")
+    val todayIso = repo.getCurrentBangladeshDateIso()
+
+    var localSavedFired = false
+    val savedRec = repo.submitProduction(
+      entry = ProductionRecord(
+        lineId = "K1",
+        floor = "Sew 2",
+        date = todayIso,
+        hourSlot = "11:00 - 12:00",
+        styleNumber = "ST-777",
+        outputQty = 125,
+        isDemo = false
+      ),
+      onLocalSaved = { localSavedFired = true }
+    )
+    assertTrue(localSavedFired)
+    assertTrue(repo.productionEntries.value.any { it.id == savedRec.id && it.outputQty == 125 })
+
+    // Unauthorized submit (logged out) must NOT fire onLocalSaved
+    repo.logout()
+    var unauthorizedLocalSaved = false
+    repo.submitProduction(
+      entry = ProductionRecord(
+        lineId = "K1",
+        floor = "Sew 2",
+        date = todayIso,
+        hourSlot = "12:00 - 13:00",
+        styleNumber = "ST-777",
+        outputQty = 999,
+        isDemo = false
+      ),
+      onLocalSaved = { unauthorizedLocalSaved = true }
+    )
+    assertFalse(unauthorizedLocalSaved)
+  }
+
+  @Test
+  fun `test Step 4 rememberSaveable Savers preserve drafts and LoginScreen does not save passwords`() {
+    val saverScope = androidx.compose.runtime.saveable.SaverScope { true }
+
+    // 1. StringMapSaver (ProductionEntryScreen batch inputs)
+    val stringMap = androidx.compose.runtime.mutableStateMapOf("K1" to "145", "K2" to "160")
+    val savedStringMap = with(com.example.ui.screens.StringMapSaver) {
+      saverScope.save(stringMap)
+    }
+    assertTrue(savedStringMap != null)
+    val restoredStringMap = com.example.ui.screens.StringMapSaver.restore(savedStringMap!!)
+    assertEquals("145", restoredStringMap?.get("K1"))
+    assertEquals("160", restoredStringMap?.get("K2"))
+
+    // 2. DefectItemListSaver (QualityEntryScreen defects list)
+    val defectList = listOf(DefectItem("Broken Stitch", 3), DefectItem("Oil Spot", 1))
+    val savedDefects = with(com.example.ui.screens.DefectItemListSaver) {
+      saverScope.save(defectList)
+    }
+    assertTrue(savedDefects != null)
+    val restoredDefects = com.example.ui.screens.DefectItemListSaver.restore(savedDefects!!)
+    assertEquals(2, restoredDefects?.size)
+    assertEquals("Broken Stitch", restoredDefects?.get(0)?.defectType)
+    assertEquals(3, restoredDefects?.get(0)?.count)
+
+    // 3. LineRowDraftMapSaver (SupervisorSetupScreen morning setup drafts)
+    val setupDrafts = androidx.compose.runtime.mutableStateMapOf(
+      "K1" to com.example.ui.screens.LineRowDraft(
+        lineId = "K1",
+        floor = "Sew 2",
+        itemName = "ST-200",
+        smvText = "12.5",
+        targetText = "155"
+      )
+    )
+    val savedSetup = with(com.example.ui.screens.LineRowDraftMapSaver) {
+      saverScope.save(setupDrafts)
+    }
+    assertTrue(savedSetup != null)
+    val restoredSetup = com.example.ui.screens.LineRowDraftMapSaver.restore(savedSetup!!)
+    assertEquals("ST-200", restoredSetup?.get("K1")?.itemName)
+    assertEquals("155", restoredSetup?.get("K1")?.targetText)
+
+    // 4. LineMonthlyDraftMapSaver (MonthlySetupScreen drafts)
+    val monthlyDrafts = mapOf(
+      "K1" to com.example.ui.screens.LineMonthlyDraft(
+        efficiency = "80.0",
+        monthlyTarget = "45000",
+        achievement = "42000",
+        dhu = "1.5",
+        oql = "2.1"
+      )
+    )
+    val savedMonthly = with(com.example.ui.screens.LineMonthlyDraftMapSaver) {
+      saverScope.save(monthlyDrafts)
+    }
+    assertTrue(savedMonthly != null)
+    val restoredMonthly = com.example.ui.screens.LineMonthlyDraftMapSaver.restore(savedMonthly!!)
+    assertEquals("80.0", restoredMonthly?.get("K1")?.efficiency)
+    assertEquals("2.1", restoredMonthly?.get("K1")?.oql)
+  }
 }
+

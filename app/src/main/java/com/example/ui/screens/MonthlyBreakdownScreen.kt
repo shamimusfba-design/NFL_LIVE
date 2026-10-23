@@ -76,6 +76,10 @@ fun MonthlyBreakdownScreen(
 
   val horizontalScrollState = rememberScrollState()
 
+  LaunchedEffect(Unit) {
+    repository.ensureCurrentMonthDataLoaded()
+  }
+
   Scaffold(
     contentWindowInsets = WindowInsets(0, 0, 0, 0),
     topBar = {
@@ -119,17 +123,6 @@ fun MonthlyBreakdownScreen(
                 color = Color(0xFF90CAF9),
                 fontSize = 10.5.sp,
                 maxLines = 1
-              )
-            }
-
-            IconButton(
-              onClick = { repository.refreshFromGoogleSheet() },
-              modifier = Modifier.size(36.dp).testTag("monthly_refresh_btn")
-            ) {
-              Icon(
-                imageVector = Icons.Default.Refresh,
-                contentDescription = "Refresh Google Sheet",
-                tint = if (isSyncing) Color(0xFFFDE047) else Color(0xFF4ADE80)
               )
             }
           }

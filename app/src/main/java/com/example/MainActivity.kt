@@ -69,29 +69,32 @@ class MainActivity : ComponentActivity() {
         val currentUserName by repository.currentUserName.collectAsState()
         val incidents by repository.incidents.collectAsState()
 
+        val users by repository.users.collectAsState()
+        val deviceApprovalRequests by repository.deviceApprovalRequests.collectAsState()
+
         val isTelevisionDevice = remember {
           packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
               (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) ==
               android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
         }
 
-        LaunchedEffect(isTelevisionDevice) {
-          if (isTelevisionDevice && repository.currentUser.value == null) {
-            repository.login("management", "123")
+        val hasValidTvSession = remember(currentUser, users, deviceApprovalRequests) {
+          repository.hasValidTvSession()
+        }
+
+        LaunchedEffect(isTelevisionDevice, hasValidTvSession) {
+          if (isTelevisionDevice && !hasValidTvSession) {
+            repository.ensureTvDisplaySetupRequest()
           }
         }
 
         var currentScreen by remember {
+          val initialUser = currentUser ?: repository.currentUser.value
           mutableStateOf(
             when {
-              isTelevisionDevice -> {
-                if (repository.currentUser.value == null) {
-                  repository.login("management", "123")
-                }
-                AppScreen.TV_DASHBOARD
-              }
-              currentUser == null -> AppScreen.LOGIN
-              currentUser?.id == "management" -> AppScreen.TV_DASHBOARD
+              isTelevisionDevice -> AppScreen.TV_DASHBOARD
+              initialUser == null -> AppScreen.LOGIN
+              initialUser.id == "management" || initialUser.id.equals(NflRepository.TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) -> AppScreen.TV_DASHBOARD
               else -> AppScreen.HOME
             }
           )
@@ -102,8 +105,18 @@ class MainActivity : ComponentActivity() {
         val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
         val scope = rememberCoroutineScope()
 
+        val effectiveUser = currentUser ?: repository.currentUser.value
+        val isTvDisplayAccount = effectiveUser?.id?.equals(NflRepository.TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) == true
+
+        // Prevent TV device or tv_display session from ever entering entry, admin, or settings screens
+        LaunchedEffect(currentScreen, isTelevisionDevice, isTvDisplayAccount) {
+          if ((isTelevisionDevice || isTvDisplayAccount) && currentScreen != AppScreen.TV_DASHBOARD) {
+            currentScreen = AppScreen.TV_DASHBOARD
+          }
+        }
+
         // Handle Back Navigation cleanly
-        if (currentScreen != AppScreen.HOME && currentScreen != AppScreen.LOGIN) {
+        if (!isTelevisionDevice && !isTvDisplayAccount && currentScreen != AppScreen.HOME && currentScreen != AppScreen.LOGIN) {
           BackHandler {
             if (drawerState.isOpen) {
               scope.launch { drawerState.close() }
@@ -113,13 +126,21 @@ class MainActivity : ComponentActivity() {
           }
         }
 
-        // If user logged out or is null, gate into LoginScreen
-        if (currentUser == null || currentScreen == AppScreen.LOGIN) {
+        if (isTelevisionDevice) {
+          if (hasValidTvSession) {
+            TvDashboardScreen(
+              repository = repository,
+              onNavigateBack = { /* Smart TV stays on TV_DASHBOARD */ }
+            )
+          } else {
+            TvSetupScreen(repository = repository)
+          }
+        } else if (effectiveUser == null || currentScreen == AppScreen.LOGIN) {
           LoginScreen(
             repository = repository,
             onLoginSuccess = {
               val loggedIn = repository.currentUser.value
-              currentScreen = if (isTelevisionDevice || loggedIn?.id == "management") {
+              currentScreen = if (loggedIn?.id == "management" || loggedIn?.id?.equals(NflRepository.TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) == true) {
                 AppScreen.TV_DASHBOARD
               } else {
                 AppScreen.HOME
@@ -803,16 +824,28 @@ class MainActivity : ComponentActivity() {
                   )
                   AppScreen.TV_DASHBOARD -> TvDashboardScreen(
                     repository = repository,
-                    onNavigateBack = { currentScreen = AppScreen.HOME }
+                    onNavigateBack = {
+                      if (!isTelevisionDevice && !isTvDisplayAccount) {
+                        currentScreen = AppScreen.HOME
+                      }
+                    }
                   )
-                  AppScreen.HISTORY_SYNC -> HistorySyncScreen(
-                    repository = repository,
-                    onNavigateBack = { currentScreen = AppScreen.HOME }
-                  )
-                  AppScreen.SETTINGS -> SettingsScreen(
-                    repository = repository,
-                    onNavigateBack = { currentScreen = AppScreen.HOME }
-                  )
+                  AppScreen.HISTORY_SYNC -> if (!isTvDisplayAccount) {
+                    HistorySyncScreen(
+                      repository = repository,
+                      onNavigateBack = { currentScreen = AppScreen.HOME }
+                    )
+                  } else {
+                    LaunchedEffect(Unit) { currentScreen = AppScreen.TV_DASHBOARD }
+                  }
+                  AppScreen.SETTINGS -> if (!isTvDisplayAccount) {
+                    SettingsScreen(
+                      repository = repository,
+                      onNavigateBack = { currentScreen = AppScreen.HOME }
+                    )
+                  } else {
+                    LaunchedEffect(Unit) { currentScreen = AppScreen.TV_DASHBOARD }
+                  }
                   AppScreen.NOTIFICATION_CENTER -> NotificationCenterScreen(
                     repository = repository,
                     onNavigateBack = { currentScreen = AppScreen.HOME }
@@ -831,5 +864,109 @@ class MainActivity : ComponentActivity() {
       repository.shutdown()
     }
     super.onDestroy()
+  }
+}
+
+@Composable
+fun TvSetupScreen(repository: NflRepository) {
+  val deviceName = remember { repository.getDeviceName() }
+  val shortCode = remember { repository.getTvShortDeviceCode() }
+  val deviceId = remember { repository.getDeviceId() }
+
+  LaunchedEffect(Unit) {
+    repository.ensureTvDisplaySetupRequest()
+  }
+
+  Surface(
+    color = Color(0xFF061126),
+    modifier = Modifier
+      .fillMaxSize()
+      .testTag("tv_setup_screen")
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(32.dp),
+      contentAlignment = Alignment.Center
+    ) {
+      Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+        border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF1E3A8A)),
+        modifier = Modifier.widthIn(max = 520.dp)
+      ) {
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(28.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+          Icon(
+            imageVector = Icons.Default.Tv,
+            contentDescription = "TV Setup",
+            tint = Color(0xFF38BDF8),
+            modifier = Modifier.size(44.dp)
+          )
+          Text(
+            text = "NFL LIVE — TV Setup",
+            color = Color.White,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Black
+          )
+          Text(
+            text = "Waiting for administrator approval",
+            color = Color(0xFFFDE047),
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.testTag("tv_setup_waiting_text")
+          )
+          Surface(
+            color = Color(0xFF1E293B),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+              Text(
+                text = "DEVICE CODE",
+                color = Color(0xFF94A3B8),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+              )
+              Text(
+                text = shortCode,
+                color = Color(0xFF4ADE80),
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Black,
+                modifier = Modifier.testTag("tv_setup_device_code")
+              )
+              Text(
+                text = "Device Name: $deviceName",
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.testTag("tv_setup_device_name")
+              )
+              Text(
+                text = "Account: Smart TV Display (tv_display) • ID: $deviceId",
+                color = Color(0xFF64748B),
+                fontSize = 11.sp
+              )
+            }
+          }
+          Text(
+            text = "Approve this TV in Admin Users & Access → Devices tab to activate the live factory display.",
+            color = Color(0xFF94A3B8),
+            fontSize = 12.sp
+          )
+        }
+      }
+    }
   }
 }
