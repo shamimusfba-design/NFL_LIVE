@@ -7,12 +7,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
@@ -50,9 +53,10 @@ class EntryScreensResponsiveAndDraftTest {
     restorationTester.emulateSavedInstanceStateRestore()
 
     // Employee ID must be preserved, password must be cleared (never persisted)
-    composeTestRule.onNodeWithTag("login_employee_id_input", useUnmergedTree = true)
-      .assertIsDisplayed()
-    composeTestRule.onNodeWithTag("login_password_input").assertTextEquals("Password", "Enter your account password")
+    composeTestRule.onNodeWithTag("login_employee_id_input")
+      .assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("1015198")))
+    composeTestRule.onNodeWithTag("login_password_input")
+      .assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
   }
 
   @Test

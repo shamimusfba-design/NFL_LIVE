@@ -1138,8 +1138,8 @@ class ExampleRobolectricTest {
     assertTrue(localSavedFired)
     assertTrue(repo.productionEntries.value.any { it.id == savedRec.id && it.outputQty == 125 })
 
-    // Unauthorized submit (logged out) must NOT fire onLocalSaved
-    repo.logout()
+    // Unauthorized submit (view-only role without production write permission) must NOT fire onLocalSaved
+    repo.authenticateUser("management", "123")
     var unauthorizedLocalSaved = false
     repo.submitProduction(
       entry = ProductionRecord(

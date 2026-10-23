@@ -1000,8 +1000,8 @@ fun formatSaveFeedbackMessage(
   }
   return when (state) {
     SaveUiState.Idle -> null
-    SaveUiState.Saving,
-    SaveUiState.SavedLocally -> "Saved on this phone, syncing...$suffix"
+    SaveUiState.Saving -> "Saving..."
+    SaveUiState.SavedLocally -> "Saved on this phone$suffix, syncing..."
     SaveUiState.Synced -> "✓ Synced to cloud$suffix"
     SaveUiState.SyncFailed -> "⚠ Saved on this phone, will retry$suffix"
   }
