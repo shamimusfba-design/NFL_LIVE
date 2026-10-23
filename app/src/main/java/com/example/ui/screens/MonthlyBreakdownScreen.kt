@@ -26,8 +26,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import android.os.SystemClock
+import android.util.Log
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.BuildConfig
 import com.example.data.NflRepository
 import com.example.model.FloorScope
 import com.example.model.LinePerformancePoint
@@ -46,24 +50,33 @@ fun MonthlyBreakdownScreen(
   BackHandler { onNavigateBack() }
 
   var activeMetric by remember { mutableStateOf(initialMetric) }
-  val currentFloorRepo by repository.currentFloor.collectAsState()
+  val currentFloorRepo by repository.currentFloor.collectAsStateWithLifecycle()
   var selectedFloor by remember { mutableStateOf(currentFloorRepo) }
   var searchQuery by remember { mutableStateOf("") }
 
-  val refreshTrigger by repository.refreshTrigger.collectAsState()
-  val isSyncing by repository.isSyncing.collectAsState()
-  val lastRefreshTime by repository.lastRefreshTime.collectAsState()
-  val productionEntries by repository.productionEntries.collectAsState()
-  val qualityEntries by repository.qualityEntries.collectAsState()
-  val targets by repository.targets.collectAsState()
-  val monthlyTargets by repository.monthlyTargets.collectAsState()
+  val refreshTrigger by repository.refreshTrigger.collectAsStateWithLifecycle()
+  val isSyncing by repository.isSyncing.collectAsStateWithLifecycle()
+  val lastRefreshTime by repository.lastRefreshTime.collectAsStateWithLifecycle()
+  val productionEntries by repository.productionEntries.collectAsStateWithLifecycle()
+  val qualityEntries by repository.qualityEntries.collectAsStateWithLifecycle()
+  val targets by repository.targets.collectAsStateWithLifecycle()
+  val monthlyTargets by repository.monthlyTargets.collectAsStateWithLifecycle()
 
   val tvData = remember(selectedFloor, productionEntries, qualityEntries, targets, monthlyTargets, refreshTrigger) {
-    repository.getTvDashboardData(floorScope = selectedFloor, periodScope = PeriodScope.MONTH)
+    val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+    val computed = repository.getTvDashboardData(floorScope = selectedFloor, periodScope = PeriodScope.MONTH)
+    if (BuildConfig.DEBUG) {
+      Log.d(
+        "NflPerf",
+        "MonthlyBreakdownScreen.tvData floor=${selectedFloor.apiValue} lines=${computed.linePerformance.size} took=${SystemClock.elapsedRealtime() - startMs}ms"
+      )
+    }
+    computed
   }
 
   val filteredLines = remember(tvData.linePerformance, searchQuery) {
-    if (searchQuery.isBlank()) {
+    val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+    val result = if (searchQuery.isBlank()) {
       tvData.linePerformance
     } else {
       tvData.linePerformance.filter {
@@ -72,6 +85,13 @@ fun MonthlyBreakdownScreen(
           it.styleNumber.contains(searchQuery, ignoreCase = true)
       }
     }
+    if (BuildConfig.DEBUG) {
+      Log.d(
+        "NflPerf",
+        "MonthlyBreakdownScreen.filteredLines query='$searchQuery' count=${result.size} took=${SystemClock.elapsedRealtime() - startMs}ms"
+      )
+    }
+    result
   }
 
   val horizontalScrollState = rememberScrollState()
@@ -384,7 +404,24 @@ private fun FloorMetricSummaryCard(
   lines: List<LinePerformancePoint>,
   repository: NflRepository
 ) {
-  val monthlyTarget = repository.getMonthlyTarget(floor.apiValue)
+  val monthlyTargets by repository.monthlyTargets.collectAsStateWithLifecycle()
+  val refreshTrigger by repository.refreshTrigger.collectAsStateWithLifecycle()
+  val monthlyTarget = remember(floor, monthlyTargets, lines, refreshTrigger) {
+    repository.getMonthlyTarget(floor.apiValue)
+  }
+  val (avgEff, totalOutputPcs) = remember(lines, monthlyTarget.updateEfficiencyPct) {
+    val eff = if (lines.isNotEmpty()) lines.map { it.monthlyEfficiencyPct }.average() else monthlyTarget.updateEfficiencyPct
+    val outPcs = lines.sumOf { it.achievementPcs ?: 0 }
+    eff to outPcs
+  }
+  val (avgDhu, totalDefectsPcs) = remember(lines, monthlyTarget.targetDhuPct) {
+    val dhu = if (lines.isNotEmpty()) lines.map { it.monthlyDhuPct }.average() else monthlyTarget.targetDhuPct
+    val defPcs = lines.sumOf { (it.monthlyDhuPct * 12).toInt() }
+    dhu to defPcs
+  }
+  val avgOql = remember(lines, monthlyTarget.targetOqlPct) {
+    if (lines.isNotEmpty()) lines.map { it.monthlyOqlPct }.average() else monthlyTarget.targetOqlPct
+  }
   Card(
     shape = RoundedCornerShape(12.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -432,7 +469,6 @@ private fun FloorMetricSummaryCard(
       ) {
         when (metric) {
           MonthlyMetricType.EFFICIENCY -> {
-            val avgEff = if (lines.isNotEmpty()) lines.map { it.monthlyEfficiencyPct }.average() else monthlyTarget.updateEfficiencyPct
             val targetEff = monthlyTarget.targetEfficiencyPct
             SummaryKpiTile(
               label = "Avg Efficiency",
@@ -450,14 +486,13 @@ private fun FloorMetricSummaryCard(
             )
             SummaryKpiTile(
               label = "Total Output",
-              value = "${lines.sumOf { it.achievementPcs ?: 0 }} pcs",
+              value = "$totalOutputPcs pcs",
               subtext = "Month cumulative",
               color = Color(0xFF7C3AED),
               modifier = Modifier.weight(1f)
             )
           }
           MonthlyMetricType.DHU -> {
-            val avgDhu = if (lines.isNotEmpty()) lines.map { it.monthlyDhuPct }.average() else monthlyTarget.targetDhuPct
             SummaryKpiTile(
               label = "Monthly DHU",
               value = String.format(java.util.Locale.US, "%.2f", avgDhu),
@@ -474,14 +509,13 @@ private fun FloorMetricSummaryCard(
             )
             SummaryKpiTile(
               label = "Total Defects",
-              value = "${lines.sumOf { (it.monthlyDhuPct * 12).toInt() }} pcs",
+              value = "$totalDefectsPcs pcs",
               subtext = "Identified on floor",
               color = Color(0xFFD97706),
               modifier = Modifier.weight(1f)
             )
           }
           MonthlyMetricType.OQL -> {
-            val avgOql = if (lines.isNotEmpty()) lines.map { it.monthlyOqlPct }.average() else monthlyTarget.targetOqlPct
             SummaryKpiTile(
               label = "Up-to-Date OQL",
               value = String.format(java.util.Locale.US, "%.2f%%", avgOql),

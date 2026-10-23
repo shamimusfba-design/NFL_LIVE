@@ -31,6 +31,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.os.SystemClock
+import android.util.Log
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.BuildConfig
 import com.example.data.NflRepository
 import com.example.model.*
 import com.example.ui.components.*
@@ -54,22 +58,22 @@ fun HomeScreen(
   onNavigateToNotificationCenter: () -> Unit = {},
   onNavigateToLogin: () -> Unit = {}
 ) {
-  val currentFloor by repository.currentFloor.collectAsState()
-  val currentPeriod by repository.currentPeriod.collectAsState()
-  val isDemoMode by repository.isDemoMode.collectAsState()
-  val currentRole by repository.currentRole.collectAsState()
-  val userName by repository.currentUserName.collectAsState()
-  val currentUser by repository.currentUser.collectAsState()
-  val incidents by repository.incidents.collectAsState()
-  val productionEntries by repository.productionEntries.collectAsState()
-  val qualityEntries by repository.qualityEntries.collectAsState()
-  val targets by repository.targets.collectAsState()
-  val monthlyTargets by repository.monthlyTargets.collectAsState()
-  val isSyncing by repository.isSyncing.collectAsState()
-  val lastRefreshTime by repository.lastRefreshTime.collectAsState()
-  val syncStatusBanner by repository.syncStatusBanner.collectAsState()
-  val sheetId by repository.sheetId.collectAsState()
-  val refreshTrigger by repository.refreshTrigger.collectAsState()
+  val currentFloor by repository.currentFloor.collectAsStateWithLifecycle()
+  val currentPeriod by repository.currentPeriod.collectAsStateWithLifecycle()
+  val isDemoMode by repository.isDemoMode.collectAsStateWithLifecycle()
+  val currentRole by repository.currentRole.collectAsStateWithLifecycle()
+  val userName by repository.currentUserName.collectAsStateWithLifecycle()
+  val currentUser by repository.currentUser.collectAsStateWithLifecycle()
+  val incidents by repository.incidents.collectAsStateWithLifecycle()
+  val productionEntries by repository.productionEntries.collectAsStateWithLifecycle()
+  val qualityEntries by repository.qualityEntries.collectAsStateWithLifecycle()
+  val targets by repository.targets.collectAsStateWithLifecycle()
+  val monthlyTargets by repository.monthlyTargets.collectAsStateWithLifecycle()
+  val isSyncing by repository.isSyncing.collectAsStateWithLifecycle()
+  val lastRefreshTime by repository.lastRefreshTime.collectAsStateWithLifecycle()
+  val syncStatusBanner by repository.syncStatusBanner.collectAsStateWithLifecycle()
+  val sheetId by repository.sheetId.collectAsStateWithLifecycle()
+  val refreshTrigger by repository.refreshTrigger.collectAsStateWithLifecycle()
 
   val tvData = remember(
     currentFloor,
@@ -82,7 +86,15 @@ fun HomeScreen(
     monthlyTargets,
     refreshTrigger
   ) {
-    repository.getTvDashboardData(currentFloor, currentPeriod)
+    val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+    val computed = repository.getTvDashboardData(currentFloor, currentPeriod)
+    if (BuildConfig.DEBUG) {
+      Log.d(
+        "NflPerf",
+        "HomeScreen.tvData floor=${currentFloor.apiValue} period=${currentPeriod.name} lines=${computed.linePerformance.size} took=${SystemClock.elapsedRealtime() - startMs}ms"
+      )
+    }
+    computed
   }
 
   var selectedChartTab by remember { mutableStateOf("SPEEDOMETER") } // SPEEDOMETER | COLUMN | DONUT | PARETO
@@ -90,7 +102,9 @@ fun HomeScreen(
   var showClearSampleDataDialog by remember { mutableStateOf(false) }
   var showBsOqlDialog by remember { mutableStateOf(false) }
 
-  val openIncidents = incidents.filter { it.status != IncidentStatus.RESOLVED }
+  val openIncidents = remember(incidents) {
+    incidents.filter { it.status != IncidentStatus.RESOLVED }
+  }
 
   val isAdminUser = currentUser?.isAdmin == true || currentRole == UserRole.ADMIN
   val isIeUser = currentUser?.role == UserRole.IE || currentRole == UserRole.IE
@@ -434,7 +448,9 @@ fun HomeScreen(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
       ) {
-        val monthlyObj = repository.getMonthlyTarget(currentFloor.apiValue)
+        val monthlyObj = remember(currentFloor, monthlyTargets, productionEntries, qualityEntries, refreshTrigger) {
+          repository.getMonthlyTarget(currentFloor.apiValue)
+        }
         val monthAchEff = monthlyObj.updateEfficiencyPct
         val monthDhu = monthlyObj.targetDhuPct
         val bsOqlVal = monthlyObj.bsOqlPct
@@ -880,9 +896,12 @@ fun HomeScreen(
         )
 
         // 8b. NPT Downtime & Non-Productive Lost Time Distribution Pie Chart
-        val floorTotalNptMins = tvData.nptBreakdown.sumOf { it.minutes }
-        val floorHourlyTarget = if (tvData.kpis.todayTargetPcs > 0) (tvData.kpis.todayTargetPcs.toDouble() / 8.0) else 525.0
-        val floorLostPcs = Math.round((floorHourlyTarget / 60.0) * floorTotalNptMins).toInt()
+        val (floorTotalNptMins, floorLostPcs) = remember(tvData.nptBreakdown, tvData.kpis.todayTargetPcs) {
+          val totalMins = tvData.nptBreakdown.sumOf { it.minutes }
+          val hourlyTarget = if (tvData.kpis.todayTargetPcs > 0) (tvData.kpis.todayTargetPcs.toDouble() / 8.0) else 525.0
+          val lostPcs = Math.round((hourlyTarget / 60.0) * totalMins).toInt()
+          totalMins to lostPcs
+        }
 
         NptPieChartCard(
           title = "${currentFloor.displayName} — NPT Downtime Distribution (Lost Time)",

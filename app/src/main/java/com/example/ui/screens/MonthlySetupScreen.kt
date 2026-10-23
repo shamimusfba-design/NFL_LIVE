@@ -28,8 +28,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.NflRepository
 import com.example.model.FloorScope
 import com.example.model.MonthlyFactoryTarget
@@ -77,15 +80,15 @@ fun MonthlySetupScreen(
   onNavigateBack: () -> Unit
 ) {
   val focusManager = LocalFocusManager.current
-  val monthlyTargets by repository.monthlyTargets.collectAsState()
-  val productionEntries by repository.productionEntries.collectAsState()
-  val qualityEntries by repository.qualityEntries.collectAsState()
+  val monthlyTargets by repository.monthlyTargets.collectAsStateWithLifecycle()
+  val productionEntries by repository.productionEntries.collectAsStateWithLifecycle()
+  val qualityEntries by repository.qualityEntries.collectAsStateWithLifecycle()
   val context = LocalContext.current
   val currentMonthKey = remember { SimpleDateFormat("yyyy-MM", Locale.US).format(Date()) }
   val monthlyPrefs = remember(context) { context.getSharedPreferences("nfl_monthly_data_settings", android.content.Context.MODE_PRIVATE) }
   var autoMonthlyMode by rememberSaveable(currentMonthKey) { mutableStateOf(monthlyPrefs.getBoolean("auto_$currentMonthKey", false)) }
-  val userName by repository.currentUserName.collectAsState()
-  val currentUser by repository.currentUser.collectAsState()
+  val userName by repository.currentUserName.collectAsStateWithLifecycle()
+  val currentUser by repository.currentUser.collectAsStateWithLifecycle()
   val canMonthlyTargetWrite = currentUser?.let { it.isAdmin || it.role == com.example.model.UserRole.IE || it.canMonthlyTargetWrite } ?: false
   val canEditLineMonthlyData = currentUser?.let { it.isAdmin || it.role == com.example.model.UserRole.IE || it.canMonthlyTargetWrite } ?: false
 
@@ -106,6 +109,21 @@ fun MonthlySetupScreen(
   val currentTarget = remember(selectedFloor, monthlyTargets) {
     repository.getMonthlyTarget(selectedFloorName)
   }
+  val manualLineTargetsByLineId = remember(floorLines, monthlyTargets, selectedFloor, selectedFloorName) {
+    floorLines.associate { line ->
+      line.id to monthlyTargets.find {
+        it.lineId.equals(line.id, ignoreCase = true) &&
+          it.floor.replace("-", " ").equals((if (selectedFloor == FloorScope.ALL) line.floor else selectedFloorName).replace("-", " "), ignoreCase = true)
+      }
+    }
+  }
+  val autoLineTargetsByLineId = remember(autoMonthlyMode, floorLines, selectedFloor, productionEntries, qualityEntries, currentMonthKey) {
+    if (!autoMonthlyMode) emptyMap()
+    else floorLines.associate { line ->
+      line.id to calculateAutoMonthlyTarget(repository, selectedFloor, line.id, currentMonthKey, productionEntries, qualityEntries)
+    }
+  }
+  val lineTableHorizontalScrollState = rememberScrollState()
 
   val effectiveFloorTarget = if (autoMonthlyMode) autoFloorTarget else currentTarget
   var updateEffText by rememberSaveable { mutableStateOf(effectiveFloorTarget.updateEfficiencyPct.toString()) }
@@ -185,17 +203,18 @@ fun MonthlySetupScreen(
     },
     containerColor = Color(0xFFF8FAFC)
   ) { paddingValues ->
-    Column(
+    LazyColumn(
       modifier = Modifier
-        .fillMaxWidth()
+        .fillMaxSize()
         .padding(paddingValues)
         .imePadding()
-        .navigationBarsPadding()
-        .verticalScroll(rememberScrollState())
-        .padding(8.dp),
+        .navigationBarsPadding(),
+      contentPadding = PaddingValues(8.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
       // 1. Floor Selector Chips
+      item(key = "floor_selector_and_floor_card") {
+      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
       Card(
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -524,7 +543,7 @@ fun MonthlySetupScreen(
             color = Color(0xFF64748B)
           )
           Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            modifier = Modifier.horizontalScroll(lineTableHorizontalScrollState),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
           ) {
@@ -536,13 +555,21 @@ fun MonthlySetupScreen(
             TableHeaderCell("Monthly OQL %", 105.dp)
           }
           Divider(color = Color(0xFFE2E8F0))
-          floorLines.forEach { line ->
-            val manualLineTarget = monthlyTargets.find {
-              it.lineId.equals(line.id, ignoreCase = true) &&
-                it.floor.replace("-", " ").equals((if (selectedFloor == FloorScope.ALL) line.floor else selectedFloorName).replace("-", " "), ignoreCase = true)
-            }
-            val lineTarget = if (autoMonthlyMode) calculateAutoMonthlyTarget(repository, selectedFloor, line.id, currentMonthKey, productionEntries, qualityEntries) else manualLineTarget
-            val draft = lineDrafts[line.id] ?: LineMonthlyDraft()
+        }
+      }
+      }
+      }
+
+      // Lazy line-wise monthly rows with stable keys
+      items(floorLines, key = { line -> "monthly_row_${line.id}" }) { line ->
+        val lineTarget = if (autoMonthlyMode) autoLineTargetsByLineId[line.id] else manualLineTargetsByLineId[line.id]
+        val draft = lineDrafts[line.id] ?: LineMonthlyDraft()
+        Surface(
+          color = Color.White,
+          shape = RoundedCornerShape(8.dp),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
             LineMonthlyDataRow(
               lineId = line.id,
               draft = if (autoMonthlyMode) LineMonthlyDraft(
@@ -553,56 +580,72 @@ fun MonthlySetupScreen(
                 oql = lineTarget?.targetOqlPct?.toString() ?: ""
               ) else draft,
               canEdit = canEditLineMonthlyData && !autoMonthlyMode,
+              horizontalScrollState = lineTableHorizontalScrollState,
               onDraftChange = { updated -> lineDrafts = lineDrafts + (line.id to updated) }
             )
             Divider(color = Color(0xFFF1F5F9))
           }
-          Button(
-            onClick = {
-              var savedCount = 0
-              floorLines.forEach { line ->
-                val draft = lineDrafts[line.id] ?: LineMonthlyDraft()
-                val eff = draft.efficiency.toDoubleOrNull()
-                val targetPcs = draft.monthlyTarget.toDoubleOrNull()
-                val achievedPcs = draft.achievement.toDoubleOrNull()
-                val dhuPct = draft.dhu.toDoubleOrNull()
-                val oqlPct = draft.oql.toDoubleOrNull()
-                if (eff != null && targetPcs != null && achievedPcs != null && dhuPct != null && oqlPct != null) {
-                  repository.saveMonthlyTarget(
-                    MonthlyFactoryTarget(
-                      floor = if (selectedFloor == FloorScope.ALL) line.floor else selectedFloorName,
-                      lineId = line.id,
-                      monthYear = currentMonthKey,
-                      updateEfficiencyPct = eff,
-                      targetEfficiencyPct = eff,
-                      monthlyTargetPcs = targetPcs,
-                      monthlyAchievementPcs = achievedPcs,
-                      targetDhuPct = dhuPct,
-                      targetOqlPct = oqlPct,
-                      lastUpdatedBy = userName
-                    )
-                  )
-                  savedCount++
-                }
-              }
-              saveSuccessMsg = if (savedCount == floorLines.size) "Saved all $savedCount line records." else "Saved $savedCount of ${floorLines.size}. Complete all five fields per line and retry."
-            },
-            enabled = canEditLineMonthlyData && !autoMonthlyMode && floorLines.isNotEmpty(),
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            shape = RoundedCornerShape(8.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF15803D))
+        }
+      }
+
+      item(key = "save_all_line_monthly_footer") {
+        Card(
+          shape = RoundedCornerShape(12.dp),
+          colors = CardDefaults.cardColors(containerColor = Color.White),
+          elevation = CardDefaults.cardElevation(2.dp),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Column(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
           ) {
-            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Save All Line-wise Monthly Data", fontWeight = FontWeight.Bold)
-          }
-          saveSuccessMsg?.let { Text(it, color = Color(0xFF166534), fontSize = 12.sp, fontWeight = FontWeight.Bold) }
-          if (!canEditLineMonthlyData) {
-            Text(
-              text = "View only — only IE or Admin can enter or update line-wise monthly data.",
-              color = Color(0xFF92400E),
-              fontSize = 11.sp
-            )
+            Button(
+              onClick = {
+                var savedCount = 0
+                floorLines.forEach { line ->
+                  val draft = lineDrafts[line.id] ?: LineMonthlyDraft()
+                  val eff = draft.efficiency.toDoubleOrNull()
+                  val targetPcs = draft.monthlyTarget.toDoubleOrNull()
+                  val achievedPcs = draft.achievement.toDoubleOrNull()
+                  val dhuPct = draft.dhu.toDoubleOrNull()
+                  val oqlPct = draft.oql.toDoubleOrNull()
+                  if (eff != null && targetPcs != null && achievedPcs != null && dhuPct != null && oqlPct != null) {
+                    repository.saveMonthlyTarget(
+                      MonthlyFactoryTarget(
+                        floor = if (selectedFloor == FloorScope.ALL) line.floor else selectedFloorName,
+                        lineId = line.id,
+                        monthYear = currentMonthKey,
+                        updateEfficiencyPct = eff,
+                        targetEfficiencyPct = eff,
+                        monthlyTargetPcs = targetPcs,
+                        monthlyAchievementPcs = achievedPcs,
+                        targetDhuPct = dhuPct,
+                        targetOqlPct = oqlPct,
+                        lastUpdatedBy = userName
+                      )
+                    )
+                    savedCount++
+                  }
+                }
+                saveSuccessMsg = if (savedCount == floorLines.size) "Saved all $savedCount line records." else "Saved $savedCount of ${floorLines.size}. Complete all five fields per line and retry."
+              },
+              enabled = canEditLineMonthlyData && !autoMonthlyMode && floorLines.isNotEmpty(),
+              modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+              shape = RoundedCornerShape(8.dp),
+              colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF15803D))
+            ) {
+              Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("Save All Line-wise Monthly Data", fontWeight = FontWeight.Bold)
+            }
+            saveSuccessMsg?.let { Text(it, color = Color(0xFF166534), fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+            if (!canEditLineMonthlyData) {
+              Text(
+                text = "View only — only IE or Admin can enter or update line-wise monthly data.",
+                color = Color(0xFF92400E),
+                fontSize = 11.sp
+              )
+            }
           }
         }
       }
@@ -672,10 +715,11 @@ private fun LineMonthlyDataRow(
   lineId: String,
   draft: LineMonthlyDraft,
   canEdit: Boolean,
+  horizontalScrollState: androidx.compose.foundation.ScrollState,
   onDraftChange: (LineMonthlyDraft) -> Unit
 ) {
   Row(
-    modifier = Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 2.dp),
+    modifier = Modifier.horizontalScroll(horizontalScrollState).padding(vertical = 2.dp),
     horizontalArrangement = Arrangement.spacedBy(6.dp),
     verticalAlignment = Alignment.CenterVertically
   ) {

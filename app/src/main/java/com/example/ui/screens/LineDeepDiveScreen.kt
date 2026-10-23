@@ -27,8 +27,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import android.os.SystemClock
+import android.util.Log
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.BuildConfig
 import com.example.data.NflRepository
 import com.example.model.PeriodScope
 import com.example.ui.components.NptPieChartCard
@@ -47,27 +53,38 @@ fun LineDeepDiveScreen(
   var showLineSwitcher by remember { mutableStateOf(false) }
   var selectedQualityChartTab by remember { mutableStateOf("DHU") }
 
-  val refreshTrigger by repository.refreshTrigger.collectAsState()
-  val isSyncing by repository.isSyncing.collectAsState()
-  val lastRefreshTime by repository.lastRefreshTime.collectAsState()
-  val productionEntries by repository.productionEntries.collectAsState()
-  val qualityEntries by repository.qualityEntries.collectAsState()
-  val targets by repository.targets.collectAsState()
-  val monthlyTargets by repository.monthlyTargets.collectAsState()
-  val incidents by repository.incidents.collectAsState()
+  val refreshTrigger by repository.refreshTrigger.collectAsStateWithLifecycle()
+  val isSyncing by repository.isSyncing.collectAsStateWithLifecycle()
+  val lastRefreshTime by repository.lastRefreshTime.collectAsStateWithLifecycle()
+  val productionEntries by repository.productionEntries.collectAsStateWithLifecycle()
+  val qualityEntries by repository.qualityEntries.collectAsStateWithLifecycle()
+  val targets by repository.targets.collectAsStateWithLifecycle()
+  val monthlyTargets by repository.monthlyTargets.collectAsStateWithLifecycle()
+  val incidents by repository.incidents.collectAsStateWithLifecycle()
 
   val lineSetup = remember(selectedLineId, targets, refreshTrigger) { repository.getLineSetup(selectedLineId) }
   val lineObj = remember(selectedLineId) { repository.allLinesMaster.find { it.id == selectedLineId } }
   val floorName = lineObj?.floor ?: lineSetup.floor
+  val floorLinesForDropdown = remember(floorName) { repository.allLinesMaster.filter { it.floor == floorName } }
 
   val monthlyTarget = remember(floorName, monthlyTargets, refreshTrigger) { repository.getMonthlyTarget(floorName) }
 
   val hourlyProd = remember(selectedLineId, selectedPeriod, productionEntries, targets, refreshTrigger) {
-    repository.getHourlyProductionData(selectedLineId, selectedPeriod)
+    val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+    val rows = repository.getHourlyProductionData(selectedLineId, selectedPeriod)
+    if (BuildConfig.DEBUG) {
+      Log.d("NflPerf", "LineDeepDiveScreen.hourlyProd line=$selectedLineId period=${selectedPeriod.name} rows=${rows.size} took=${SystemClock.elapsedRealtime() - startMs}ms")
+    }
+    rows
   }
 
   val hourlyQuality = remember(selectedLineId, selectedPeriod, qualityEntries, refreshTrigger) {
-    repository.getHourlyQualityData(selectedLineId, selectedPeriod)
+    val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+    val rows = repository.getHourlyQualityData(selectedLineId, selectedPeriod)
+    if (BuildConfig.DEBUG) {
+      Log.d("NflPerf", "LineDeepDiveScreen.hourlyQuality line=$selectedLineId period=${selectedPeriod.name} rows=${rows.size} took=${SystemClock.elapsedRealtime() - startMs}ms")
+    }
+    rows
   }
 
   val paretoDefects = remember(selectedLineId, qualityEntries, refreshTrigger) {
@@ -75,26 +92,45 @@ fun LineDeepDiveScreen(
   }
 
   val linePerformancePoint = remember(selectedLineId, selectedPeriod, productionEntries, qualityEntries, targets, incidents, refreshTrigger) {
-    repository.getLinePerformancePoint(selectedLineId, periodScope = selectedPeriod)
+    val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+    val pt = repository.getLinePerformancePoint(selectedLineId, periodScope = selectedPeriod)
+    if (BuildConfig.DEBUG) {
+      Log.d("NflPerf", "LineDeepDiveScreen.linePerformancePoint line=$selectedLineId period=${selectedPeriod.name} took=${SystemClock.elapsedRealtime() - startMs}ms")
+    }
+    pt
   }
 
   val lineHourlyDefects = remember(selectedLineId, selectedPeriod, qualityEntries, refreshTrigger) {
     repository.getLineHourlyDefectBreakdown(selectedLineId, selectedPeriod)
   }
 
-  // Summary Metrics
-  val totalTarget = hourlyProd.lastOrNull()?.totalTarget ?: lineSetup.targetDailyPcs
-  val totalAchieve = hourlyProd.lastOrNull()?.totalAchieve ?: 420
-  val overallAchievePct = if (totalTarget > 0) Math.round((totalAchieve.toDouble() / totalTarget) * 1000.0) / 10.0 else 0.0
-  val todayEffPct = if (hourlyProd.isNotEmpty()) hourlyProd.filter { it.efficiencyPct > 0 }.map { it.efficiencyPct }.average().let { if (it.isNaN()) 68.5 else Math.round(it * 10.0) / 10.0 } else 68.5
-  val avgOee = hourlyProd.filter { it.oeePct > 0 }.map { it.oeePct }.average().let { if (it.isNaN()) 72.8 else Math.round(it * 10.0) / 10.0 }
-
-  val avgDhu = hourlyQuality.map { it.dhuPct }.average().let { if (it.isNaN()) 1.85 else Math.round(it * 100.0) / 100.0 }
-  val avgOql = hourlyQuality.map { it.oqlPct }.average().let { if (it.isNaN()) 3.55 else Math.round(it * 100.0) / 100.0 }
-
   val lineIssues = remember(selectedLineId, incidents, refreshTrigger) { repository.getLineIssues(selectedLineId) }
-  val totalNptMins = lineIssues.sumOf { it.durationMins }
-  val totalLostPcs = lineIssues.sumOf { it.outputImpactPcs }
+  val lineNptBreakdown = remember(selectedLineId, incidents, refreshTrigger) { repository.getLineNptBreakdown(selectedLineId) }
+
+  // Summary Metrics (memoized on hourlyProd, hourlyQuality, lineSetup, lineIssues)
+  val totalTarget = remember(hourlyProd, lineSetup.targetDailyPcs) {
+    hourlyProd.lastOrNull()?.totalTarget ?: lineSetup.targetDailyPcs
+  }
+  val totalAchieve = remember(hourlyProd) {
+    hourlyProd.lastOrNull()?.totalAchieve ?: 420
+  }
+  val overallAchievePct = remember(totalTarget, totalAchieve) {
+    if (totalTarget > 0) Math.round((totalAchieve.toDouble() / totalTarget) * 1000.0) / 10.0 else 0.0
+  }
+  val todayEffPct = remember(hourlyProd) {
+    if (hourlyProd.isNotEmpty()) hourlyProd.filter { it.efficiencyPct > 0 }.map { it.efficiencyPct }.average().let { if (it.isNaN()) 68.5 else Math.round(it * 10.0) / 10.0 } else 68.5
+  }
+  val avgOee = remember(hourlyProd) {
+    hourlyProd.filter { it.oeePct > 0 }.map { it.oeePct }.average().let { if (it.isNaN()) 72.8 else Math.round(it * 10.0) / 10.0 }
+  }
+  val avgDhu = remember(hourlyQuality) {
+    hourlyQuality.map { it.dhuPct }.average().let { if (it.isNaN()) 1.85 else Math.round(it * 100.0) / 100.0 }
+  }
+  val avgOql = remember(hourlyQuality) {
+    hourlyQuality.map { it.oqlPct }.average().let { if (it.isNaN()) 3.55 else Math.round(it * 100.0) / 100.0 }
+  }
+  val totalNptMins = remember(lineIssues) { lineIssues.sumOf { it.durationMins } }
+  val totalLostPcs = remember(lineIssues) { lineIssues.sumOf { it.outputImpactPcs } }
 
   Scaffold(
     contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -127,7 +163,7 @@ fun LineDeepDiveScreen(
               Text("Switch Line", color = Color(0xFFFDE047), fontWeight = FontWeight.Bold, fontSize = 11.sp)
             }
             DropdownMenu(expanded = showLineSwitcher, onDismissRequest = { showLineSwitcher = false }) {
-              repository.allLinesMaster.filter { it.floor == floorName }.forEach { line ->
+              floorLinesForDropdown.forEach { line ->
                 DropdownMenuItem(
                   text = { Text("Line ${line.id}") },
                   onClick = {
@@ -144,15 +180,15 @@ fun LineDeepDiveScreen(
     },
     containerColor = Color(0xFFF8FAFC)
   ) { paddingValues ->
-    Column(
+    LazyColumn(
       modifier = Modifier
-        .fillMaxWidth()
-        .padding(paddingValues)
-        .verticalScroll(rememberScrollState())
-        .padding(8.dp),
+        .fillMaxSize()
+        .padding(paddingValues),
+      contentPadding = PaddingValues(8.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
       // 1. Time Horizon Filter Chips (Today, Yesterday, Weekly, Monthly)
+      item(key = "time_horizon_chips") {
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -190,10 +226,12 @@ fun LineDeepDiveScreen(
           }
         }
       }
+      }
 
       // ==========================================
       // SECTION A: PRODUCTION PERFORMANCE & HOURLY
       // ==========================================
+      item(key = "section_a_production") {
       Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -282,10 +320,12 @@ fun LineDeepDiveScreen(
           HourlyTargetVsOutputChart(hourlyProd)
         }
       }
+      }
 
       // ==========================================
       // SECTION B: QUALITY & INSPECTION ANALYTICS
       // ==========================================
+      item(key = "section_b_quality") {
       Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -417,30 +457,36 @@ fun LineDeepDiveScreen(
           }
         }
       }
+      }
 
       // =========================================================================
       // LINE-WISE DUAL DEFECT RECTIFICATION INTELLIGENCE (SEWING & SPOT DEFECTS)
       // Requested by user: Line-wise Sewing Defect & Spot Defect Sent, Recv, Balance
       // =========================================================================
-      DualDefectTrackingCard(
-        sewingSent = linePerformancePoint.defectSent,
-        sewingReceived = linePerformancePoint.defectReceived,
-        sewingBalance = linePerformancePoint.defectBalance,
-        spotSent = linePerformancePoint.spotSent,
-        spotReceived = linePerformancePoint.spotReceived,
-        spotBalance = linePerformancePoint.spotBalance,
-        floorName = "Line $selectedLineId ($floorName)"
-      )
+      item(key = "dual_defect_tracking") {
+        DualDefectTrackingCard(
+          sewingSent = linePerformancePoint.defectSent,
+          sewingReceived = linePerformancePoint.defectReceived,
+          sewingBalance = linePerformancePoint.defectBalance,
+          spotSent = linePerformancePoint.spotSent,
+          spotReceived = linePerformancePoint.spotReceived,
+          spotBalance = linePerformancePoint.spotBalance,
+          floorName = "Line $selectedLineId ($floorName)"
+        )
+      }
 
       // Line-wise Hourly Alter & Spot Flow Detail Breakdown Table
-      LineHourlyDefectTableCard(
-        lineId = selectedLineId,
-        hourlyRecords = lineHourlyDefects
-      )
+      item(key = "hourly_defect_table") {
+        LineHourlyDefectTableCard(
+          lineId = selectedLineId,
+          hourlyRecords = lineHourlyDefects
+        )
+      }
 
       // ==========================================
       // SECTION C: TODAY'S LINE ISSUES & NPT SUMMARY
       // ==========================================
+      item(key = "section_c_npt") {
       Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -493,7 +539,6 @@ fun LineDeepDiveScreen(
           }
 
           // Line NPT Category Distribution Pie Chart
-          val lineNptBreakdown = repository.getLineNptBreakdown(selectedLineId)
           NptPieChartCard(
             title = "Line $selectedLineId — NPT Downtime Pie Chart",
             subtitle = "Root causes for non-productive hours on this line",
@@ -588,6 +633,7 @@ fun LineDeepDiveScreen(
             }
           }
         }
+      }
       }
     }
   }
@@ -920,12 +966,20 @@ private fun LineHourlyDefectTableCard(
   hourlyRecords: List<com.example.model.LineHourlyDefectRecord>
 ) {
   var isExpanded by remember { mutableStateOf(true) }
-  val totalSewSent = hourlyRecords.sumOf { it.sewingSent }
-  val totalSewRecv = hourlyRecords.sumOf { it.sewingReceived }
-  val totalSewBal = hourlyRecords.sumOf { it.sewingBalance }
-  val totalSpotSent = hourlyRecords.sumOf { it.spotSent }
-  val totalSpotRecv = hourlyRecords.sumOf { it.spotReceived }
-  val totalSpotBal = hourlyRecords.sumOf { it.spotBalance }
+  val (totalSewSent, totalSewRecv, totalSewBal) = remember(hourlyRecords) {
+    Triple(
+      hourlyRecords.sumOf { it.sewingSent },
+      hourlyRecords.sumOf { it.sewingReceived },
+      hourlyRecords.sumOf { it.sewingBalance }
+    )
+  }
+  val (totalSpotSent, totalSpotRecv, totalSpotBal) = remember(hourlyRecords) {
+    Triple(
+      hourlyRecords.sumOf { it.spotSent },
+      hourlyRecords.sumOf { it.spotReceived },
+      hourlyRecords.sumOf { it.spotBalance }
+    )
+  }
   val totalPending = totalSewBal + totalSpotBal
 
   Card(

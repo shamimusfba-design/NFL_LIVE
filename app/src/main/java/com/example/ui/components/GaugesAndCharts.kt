@@ -494,8 +494,10 @@ fun TargetVsOutputBarChart(
         }
       }
 
-      val maxTarget = (displayLines.maxOfOrNull { maxOf(it.targetPcs, it.achievementPcs ?: 0) } ?: 600).coerceAtLeast(100)
-      val maxVal = (Math.ceil(maxTarget / 100.0) * 100).toFloat()
+      val (maxTarget, maxVal) = remember(displayLines) {
+        val mt = (displayLines.maxOfOrNull { maxOf(it.targetPcs, it.achievementPcs ?: 0) } ?: 600).coerceAtLeast(100)
+        mt to (Math.ceil(mt / 100.0) * 100).toFloat()
+      }
 
       BoxWithConstraints(
         modifier = if (compactMode) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth().height(135.dp)
@@ -1136,17 +1138,18 @@ fun TopDefectsBarChart(
         Color(0xFF64748B)
       )
 
-      val defaultDefects = if (defects.isNotEmpty()) defects else listOf(
-        DefectSummary("Broken stitch", 45, 0.42),
-        DefectSummary("Puckering", 34, 0.31),
-        DefectSummary("Needle mark", 28, 0.25),
-        DefectSummary("Open seam", 22, 0.19),
-        DefectSummary("Oil spot / dirt", 16, 0.14)
-      )
+      val (topDefectsList, maxCount) = remember(defects) {
+        val list = if (defects.isNotEmpty()) defects.take(5) else listOf(
+          DefectSummary("Broken stitch", 45, 0.42),
+          DefectSummary("Puckering", 34, 0.31),
+          DefectSummary("Needle mark", 28, 0.25),
+          DefectSummary("Open seam", 22, 0.19),
+          DefectSummary("Oil spot / dirt", 16, 0.14)
+        )
+        list to (list.firstOrNull()?.count ?: 50)
+      }
 
-      val maxCount = defaultDefects.firstOrNull()?.count ?: 50
-
-      defaultDefects.take(5).forEachIndexed { index, defect ->
+      topDefectsList.forEachIndexed { index, defect ->
         val barColor = colors[index % colors.size]
         val fraction = (defect.count.toFloat() / maxCount.toFloat()).coerceIn(0.12f, 1f)
 
@@ -1676,8 +1679,9 @@ fun ParetoDonutDefectsCard(
     Color(0xFF64748B)  // Slate
   )
 
-  val totalDefects = defects.sumOf { it.count }.coerceAtLeast(1)
-  val sampleChecked = defects.firstOrNull()?.checkedGarments ?: 1200
+  val (totalDefects, sampleChecked) = remember(defects) {
+    defects.sumOf { it.count }.coerceAtLeast(1) to (defects.firstOrNull()?.checkedGarments ?: 1200)
+  }
 
   Card(
     shape = RoundedCornerShape(12.dp),
@@ -1850,8 +1854,11 @@ fun Top5DhuLinesCard(
   modifier: Modifier = Modifier,
   compactMode: Boolean = false
 ) {
-  val top5Lines = lines.sortedByDescending { it.dhu ?: 0.0 }.take(if (compactMode) 4 else 5)
-  val maxDhu = (top5Lines.maxOfOrNull { it.dhu ?: 0.0 } ?: 3.0).coerceAtLeast(2.5).toFloat()
+  val (top5Lines, maxDhu) = remember(lines, compactMode) {
+    val top = lines.sortedByDescending { it.dhu ?: 0.0 }.take(if (compactMode) 4 else 5)
+    val max = (top.maxOfOrNull { it.dhu ?: 0.0 } ?: 3.0).coerceAtLeast(2.5).toFloat()
+    top to max
+  }
 
   Card(
     shape = RoundedCornerShape(if (compactMode) 8.dp else 12.dp),
@@ -2023,8 +2030,10 @@ fun Top5DefectsPieChartCard(
     Color(0xFF7C3AED)  // Needle Cut - Purple
   )
 
-  val top5 = defects.take(if (compactMode) 4 else 5)
-  val totalCount = top5.sumOf { it.count }.coerceAtLeast(1)
+  val (top5, totalCount) = remember(defects, compactMode) {
+    val top = defects.take(if (compactMode) 4 else 5)
+    top to top.sumOf { it.count }.coerceAtLeast(1)
+  }
 
   Card(
     shape = RoundedCornerShape(if (compactMode) 8.dp else 12.dp),
@@ -2516,7 +2525,7 @@ fun LowestEfficiencyRankingCard(
   modifier: Modifier = Modifier,
   compactMode: Boolean = false
 ) {
-  val rankingLines = lines.take(if (compactMode) 3 else 5)
+  val rankingLines = remember(lines, compactMode) { lines.take(if (compactMode) 3 else 5) }
   Card(
     shape = RoundedCornerShape(if (compactMode) 8.dp else 12.dp),
     colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -2644,9 +2653,12 @@ fun LineWiseDhuBarChart(
   modifier: Modifier = Modifier,
   compactMode: Boolean = false
 ) {
-  val displayLines = lines.filter { it.targetPcs > 0 }
-  val lineCount = displayLines.size.coerceAtLeast(1)
-  val maxDhu = (displayLines.maxOfOrNull { it.dhu ?: 0.0 } ?: 3.0).coerceAtLeast(3.0).toFloat()
+  val (displayLines, lineCount, maxDhu) = remember(lines) {
+    val filtered = lines.filter { it.targetPcs > 0 }
+    val count = filtered.size.coerceAtLeast(1)
+    val max = (filtered.maxOfOrNull { it.dhu ?: 0.0 } ?: 3.0).coerceAtLeast(3.0).toFloat()
+    Triple(filtered, count, max)
+  }
 
   val valFontSize = when {
     lineCount <= 10 -> if (compactMode) 7.sp else 8.5.sp
@@ -2794,7 +2806,9 @@ fun LineWiseOqlBarChart(
 ) {
   val displayLines = lines
   val lineCount = displayLines.size.coerceAtLeast(1)
-  val maxOql = (displayLines.maxOfOrNull { it.todayOqlPct ?: 0.0 } ?: 6.0).coerceAtLeast(6.0).toFloat()
+  val maxOql = remember(displayLines) {
+    (displayLines.maxOfOrNull { it.todayOqlPct ?: 0.0 } ?: 6.0).coerceAtLeast(6.0).toFloat()
+  }
 
   val valFontSize = when {
     lineCount <= 10 -> if (compactMode) 7.sp else 8.5.sp
@@ -2940,8 +2954,10 @@ fun DefectParetoBarAndLineChart(
   modifier: Modifier = Modifier,
   compactMode: Boolean = false
 ) {
-  val data = paretoData.take(if (compactMode) 5 else 8)
-  val maxCount = (data.maxOfOrNull { it.count } ?: 10).coerceAtLeast(10)
+  val (data, maxCount) = remember(paretoData, compactMode) {
+    val d = paretoData.take(if (compactMode) 5 else 8)
+    d to (d.maxOfOrNull { it.count } ?: 10).coerceAtLeast(10)
+  }
 
   Card(
     shape = RoundedCornerShape(if (compactMode) 8.dp else 12.dp),

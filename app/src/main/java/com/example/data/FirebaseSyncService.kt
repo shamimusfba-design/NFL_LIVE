@@ -10,11 +10,15 @@ import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
+import android.os.SystemClock
+import com.example.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -66,7 +70,8 @@ class FirebaseSyncService(private val context: Context) {
   }
 
   private val listeners = mutableListOf<ListenerRegistration>()
-  private val serviceScope = CoroutineScope(Dispatchers.IO)
+  private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+  private val snapshotScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
 
   @Volatile
   var hasPermissionError: Boolean = false
@@ -108,19 +113,23 @@ class FirebaseSyncService(private val context: Context) {
     private set
 
   fun recordCollectionRead(collection: String, changesCount: Int, isFromCache: Boolean) {
-    val currentMap = _sessionReadStats.value.toMutableMap()
-    val prev = currentMap[collection] ?: CollectionReadStats(collection)
-    val updated = prev.copy(
-      serverChangesReceived = prev.serverChangesReceived + if (isFromCache) 0 else changesCount,
-      cacheChangesReceived = prev.cacheChangesReceived + if (isFromCache) changesCount else 0,
-      snapshotEvents = prev.snapshotEvents + 1,
-      lastIsFromCache = isFromCache
-    )
-    currentMap[collection] = updated
-    _sessionReadStats.value = currentMap
+    var updatedStats = CollectionReadStats(collection)
+    _sessionReadStats.update { current ->
+      val currentMap = current.toMutableMap()
+      val prev = currentMap[collection] ?: CollectionReadStats(collection)
+      val updated = prev.copy(
+        serverChangesReceived = prev.serverChangesReceived + if (isFromCache) 0 else changesCount,
+        cacheChangesReceived = prev.cacheChangesReceived + if (isFromCache) changesCount else 0,
+        snapshotEvents = prev.snapshotEvents + 1,
+        lastIsFromCache = isFromCache
+      )
+      updatedStats = updated
+      currentMap[collection] = updated
+      currentMap
+    }
     Log.d(
       "FirestoreUsage",
-      "collection=$collection documentChanges=$changesCount isFromCache=$isFromCache totalDocs=${updated.totalChangesReceived} (server=${updated.serverChangesReceived}, cache=${updated.cacheChangesReceived})"
+      "collection=$collection documentChanges=$changesCount isFromCache=$isFromCache totalDocs=${updatedStats.totalChangesReceived} (server=${updatedStats.serverChangesReceived}, cache=${updatedStats.cacheChangesReceived})"
     )
   }
 
@@ -254,36 +263,46 @@ class FirebaseSyncService(private val context: Context) {
           if (snapshot != null) {
             hasPermissionError = false
             lastErrorMessage = null
-            recordCollectionRead(
-              collection = "production_entries",
-              changesCount = snapshot.documentChanges.size,
-              isFromCache = snapshot.metadata.isFromCache
-            )
-            val removedKeys = mutableSetOf<String>()
-            snapshot.documentChanges.forEach { change ->
-              val d = change.document
-              val isDel = d.getBoolean("isDeleted") ?: false
-              val dt = d.getString("date")?.trim().orEmpty()
-              val isWithinWindow = dt.isEmpty() || dt >= sevenDaysAgoIso
-              // Only treat as deleted if explicitly marked isDeleted or deleted while within the 7-day window
-              if (isDel || (change.type == DocumentChange.Type.REMOVED && isWithinWindow)) {
-                removedKeys.add(d.id)
-                d.getString("id")?.let { removedKeys.add(it) }
-                d.getString("submissionId")?.let { removedKeys.add(it) }
-                val l = d.getString("lineId").orEmpty()
-                val hr = d.getString("hourSlot").orEmpty()
-                if (l.isNotEmpty() && dt.isNotEmpty() && hr.isNotEmpty()) {
-                  removedKeys.add("${l}_${dt}_${hr}")
+            val docChanges = snapshot.documentChanges
+            val docs = snapshot.documents
+            val isFromCache = snapshot.metadata.isFromCache
+            snapshotScope.launch {
+              val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+              recordCollectionRead(
+                collection = "production_entries",
+                changesCount = docChanges.size,
+                isFromCache = isFromCache
+              )
+              val removedKeys = mutableSetOf<String>()
+              docChanges.forEach { change ->
+                val d = change.document
+                val isDel = d.getBoolean("isDeleted") ?: false
+                val dt = d.getString("date")?.trim().orEmpty()
+                val isWithinWindow = dt.isEmpty() || dt >= sevenDaysAgoIso
+                // Only treat as deleted if explicitly marked isDeleted or deleted while within the 7-day window
+                if (isDel || (change.type == DocumentChange.Type.REMOVED && isWithinWindow)) {
+                  removedKeys.add(d.id)
+                  d.getString("id")?.let { removedKeys.add(it) }
+                  d.getString("submissionId")?.let { removedKeys.add(it) }
+                  val l = d.getString("lineId").orEmpty()
+                  val hr = d.getString("hourSlot").orEmpty()
+                  if (l.isNotEmpty() && dt.isNotEmpty() && hr.isNotEmpty()) {
+                    removedKeys.add("${l}_${dt}_${hr}")
+                  }
                 }
               }
-            }
-            if (removedKeys.isNotEmpty()) {
-              onRemoteProductionDeleted?.invoke(removedKeys)
-            }
-            val list = snapshot.documents.mapNotNull { doc -> parseProductionDoc(doc) }
-            if (list.isNotEmpty()) {
-              onRemoteProductionUpdated?.invoke(list)
-              onSyncStatusChanged?.invoke("✓ Cloud Firestore live: ${list.size} recent production records active")
+              if (removedKeys.isNotEmpty()) {
+                onRemoteProductionDeleted?.invoke(removedKeys)
+              }
+              val list = docs.mapNotNull { doc -> parseProductionDoc(doc) }
+              if (list.isNotEmpty()) {
+                onRemoteProductionUpdated?.invoke(list)
+                onSyncStatusChanged?.invoke("✓ Cloud Firestore live: ${list.size} recent production records active")
+              }
+              if (BuildConfig.DEBUG) {
+                val elapsedMs = SystemClock.elapsedRealtime() - startMs
+                Log.d("NflPerf", "snapshotCallback[production_entries] docs=${docs.size} changes=${docChanges.size} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
+              }
             }
           }
         }
@@ -301,34 +320,44 @@ class FirebaseSyncService(private val context: Context) {
           }
           if (snapshot != null) {
             hasPermissionError = false
-            recordCollectionRead(
-              collection = "quality_entries",
-              changesCount = snapshot.documentChanges.size,
-              isFromCache = snapshot.metadata.isFromCache
-            )
-            val removedKeys = mutableSetOf<String>()
-            snapshot.documentChanges.forEach { change ->
-              val d = change.document
-              val isDel = d.getBoolean("isDeleted") ?: false
-              val dt = d.getString("date")?.trim().orEmpty()
-              val isWithinWindow = dt.isEmpty() || dt >= sevenDaysAgoIso
-              if (isDel || (change.type == DocumentChange.Type.REMOVED && isWithinWindow)) {
-                removedKeys.add(d.id)
-                d.getString("id")?.let { removedKeys.add(it) }
-                d.getString("submissionId")?.let { removedKeys.add(it) }
-                val l = d.getString("lineId").orEmpty()
-                val hr = d.getString("hourSlot").orEmpty()
-                if (l.isNotEmpty() && dt.isNotEmpty() && hr.isNotEmpty()) {
-                  removedKeys.add("${l}_${dt}_${hr}")
+            val docChanges = snapshot.documentChanges
+            val docs = snapshot.documents
+            val isFromCache = snapshot.metadata.isFromCache
+            snapshotScope.launch {
+              val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+              recordCollectionRead(
+                collection = "quality_entries",
+                changesCount = docChanges.size,
+                isFromCache = isFromCache
+              )
+              val removedKeys = mutableSetOf<String>()
+              docChanges.forEach { change ->
+                val d = change.document
+                val isDel = d.getBoolean("isDeleted") ?: false
+                val dt = d.getString("date")?.trim().orEmpty()
+                val isWithinWindow = dt.isEmpty() || dt >= sevenDaysAgoIso
+                if (isDel || (change.type == DocumentChange.Type.REMOVED && isWithinWindow)) {
+                  removedKeys.add(d.id)
+                  d.getString("id")?.let { removedKeys.add(it) }
+                  d.getString("submissionId")?.let { removedKeys.add(it) }
+                  val l = d.getString("lineId").orEmpty()
+                  val hr = d.getString("hourSlot").orEmpty()
+                  if (l.isNotEmpty() && dt.isNotEmpty() && hr.isNotEmpty()) {
+                    removedKeys.add("${l}_${dt}_${hr}")
+                  }
                 }
               }
-            }
-            if (removedKeys.isNotEmpty()) {
-              onRemoteQualityDeleted?.invoke(removedKeys)
-            }
-            val list = snapshot.documents.mapNotNull { doc -> parseQualityDoc(doc) }
-            if (list.isNotEmpty()) {
-              onRemoteQualityUpdated?.invoke(list)
+              if (removedKeys.isNotEmpty()) {
+                onRemoteQualityDeleted?.invoke(removedKeys)
+              }
+              val list = docs.mapNotNull { doc -> parseQualityDoc(doc) }
+              if (list.isNotEmpty()) {
+                onRemoteQualityUpdated?.invoke(list)
+              }
+              if (BuildConfig.DEBUG) {
+                val elapsedMs = SystemClock.elapsedRealtime() - startMs
+                Log.d("NflPerf", "snapshotCallback[quality_entries] docs=${docs.size} changes=${docChanges.size} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
+              }
             }
           }
         }
@@ -345,14 +374,24 @@ class FirebaseSyncService(private val context: Context) {
           }
           if (snapshot != null) {
             hasPermissionError = false
-            recordCollectionRead(
-              collection = "factory_alerts",
-              changesCount = snapshot.documentChanges.size,
-              isFromCache = snapshot.metadata.isFromCache
-            )
-            val list = snapshot.documents.mapNotNull { doc -> parseIncidentDoc(doc) }
-            if (list.isNotEmpty()) {
-              onRemoteIncidentsUpdated?.invoke(list)
+            val docChanges = snapshot.documentChanges
+            val docs = snapshot.documents
+            val isFromCache = snapshot.metadata.isFromCache
+            snapshotScope.launch {
+              val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+              recordCollectionRead(
+                collection = "factory_alerts",
+                changesCount = docChanges.size,
+                isFromCache = isFromCache
+              )
+              val list = docs.mapNotNull { doc -> parseIncidentDoc(doc) }
+              if (list.isNotEmpty()) {
+                onRemoteIncidentsUpdated?.invoke(list)
+              }
+              if (BuildConfig.DEBUG) {
+                val elapsedMs = SystemClock.elapsedRealtime() - startMs
+                Log.d("NflPerf", "snapshotCallback[factory_alerts] docs=${docs.size} changes=${docChanges.size} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
+              }
             }
           }
         }
@@ -370,14 +409,24 @@ class FirebaseSyncService(private val context: Context) {
           }
           if (snapshot != null) {
             hasPermissionError = false
-            recordCollectionRead(
-              collection = "daily_setups",
-              changesCount = snapshot.documentChanges.size,
-              isFromCache = snapshot.metadata.isFromCache
-            )
-            val list = snapshot.documents.mapNotNull { doc -> parseSetupDoc(doc) }
-            if (list.isNotEmpty()) {
-              onRemoteSetupsUpdated?.invoke(list)
+            val docChanges = snapshot.documentChanges
+            val docs = snapshot.documents
+            val isFromCache = snapshot.metadata.isFromCache
+            snapshotScope.launch {
+              val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+              recordCollectionRead(
+                collection = "daily_setups",
+                changesCount = docChanges.size,
+                isFromCache = isFromCache
+              )
+              val list = docs.mapNotNull { doc -> parseSetupDoc(doc) }
+              if (list.isNotEmpty()) {
+                onRemoteSetupsUpdated?.invoke(list)
+              }
+              if (BuildConfig.DEBUG) {
+                val elapsedMs = SystemClock.elapsedRealtime() - startMs
+                Log.d("NflPerf", "snapshotCallback[daily_setups] docs=${docs.size} changes=${docChanges.size} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
+              }
             }
           }
         }
@@ -392,14 +441,24 @@ class FirebaseSyncService(private val context: Context) {
           }
           if (snapshot != null) {
             hasPermissionError = false
-            recordCollectionRead(
-              collection = "monthly_targets",
-              changesCount = snapshot.documentChanges.size,
-              isFromCache = snapshot.metadata.isFromCache
-            )
-            val list = snapshot.documents.mapNotNull { doc -> parseMonthlyTargetDoc(doc) }
-            if (list.isNotEmpty()) {
-              onRemoteMonthlyTargetsUpdated?.invoke(list)
+            val docChanges = snapshot.documentChanges
+            val docs = snapshot.documents
+            val isFromCache = snapshot.metadata.isFromCache
+            snapshotScope.launch {
+              val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+              recordCollectionRead(
+                collection = "monthly_targets",
+                changesCount = docChanges.size,
+                isFromCache = isFromCache
+              )
+              val list = docs.mapNotNull { doc -> parseMonthlyTargetDoc(doc) }
+              if (list.isNotEmpty()) {
+                onRemoteMonthlyTargetsUpdated?.invoke(list)
+              }
+              if (BuildConfig.DEBUG) {
+                val elapsedMs = SystemClock.elapsedRealtime() - startMs
+                Log.d("NflPerf", "snapshotCallback[monthly_targets] docs=${docs.size} changes=${docChanges.size} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
+              }
             }
           }
         }
@@ -414,14 +473,24 @@ class FirebaseSyncService(private val context: Context) {
           }
           if (snapshot != null) {
             hasPermissionError = false
-            recordCollectionRead(
-              collection = "users",
-              changesCount = snapshot.documentChanges.size,
-              isFromCache = snapshot.metadata.isFromCache
-            )
-            val list = snapshot.documents.mapNotNull { doc -> parseUserDoc(doc) }
-            if (list.isNotEmpty()) {
-              onRemoteUsersUpdated?.invoke(list)
+            val docChanges = snapshot.documentChanges
+            val docs = snapshot.documents
+            val isFromCache = snapshot.metadata.isFromCache
+            snapshotScope.launch {
+              val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+              recordCollectionRead(
+                collection = "users",
+                changesCount = docChanges.size,
+                isFromCache = isFromCache
+              )
+              val list = docs.mapNotNull { doc -> parseUserDoc(doc) }
+              if (list.isNotEmpty()) {
+                onRemoteUsersUpdated?.invoke(list)
+              }
+              if (BuildConfig.DEBUG) {
+                val elapsedMs = SystemClock.elapsedRealtime() - startMs
+                Log.d("NflPerf", "snapshotCallback[users] docs=${docs.size} changes=${docChanges.size} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
+              }
             }
           }
         }

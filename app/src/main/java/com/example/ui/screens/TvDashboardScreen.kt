@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.NflRepository
 import com.example.model.*
 import com.example.ui.components.*
@@ -44,17 +45,17 @@ fun TvDashboardScreen(
   repository: NflRepository,
   onNavigateBack: () -> Unit
 ) {
-  val currentFloor by repository.currentFloor.collectAsState()
-  val currentPeriod by repository.currentPeriod.collectAsState()
-  val isDemoMode by repository.isDemoMode.collectAsState()
-  val incidents by repository.incidents.collectAsState()
-  val productionEntries by repository.productionEntries.collectAsState()
-  val qualityEntries by repository.qualityEntries.collectAsState()
-  val targets by repository.targets.collectAsState()
-  val monthlyTargets by repository.monthlyTargets.collectAsState()
-  val isSyncing by repository.isSyncing.collectAsState()
-  val lastRefreshTime by repository.lastRefreshTime.collectAsState()
-  val refreshTrigger by repository.refreshTrigger.collectAsState()
+  val currentFloor by repository.currentFloor.collectAsStateWithLifecycle()
+  val currentPeriod by repository.currentPeriod.collectAsStateWithLifecycle()
+  val isDemoMode by repository.isDemoMode.collectAsStateWithLifecycle()
+  val incidents by repository.incidents.collectAsStateWithLifecycle()
+  val productionEntries by repository.productionEntries.collectAsStateWithLifecycle()
+  val qualityEntries by repository.qualityEntries.collectAsStateWithLifecycle()
+  val targets by repository.targets.collectAsStateWithLifecycle()
+  val monthlyTargets by repository.monthlyTargets.collectAsStateWithLifecycle()
+  val isSyncing by repository.isSyncing.collectAsStateWithLifecycle()
+  val lastRefreshTime by repository.lastRefreshTime.collectAsStateWithLifecycle()
+  val refreshTrigger by repository.refreshTrigger.collectAsStateWithLifecycle()
 
   var isScreenActive by remember { mutableStateOf(true) }
   var viewMode by remember { mutableStateOf(TvViewMode.ALL_GRAPHS) }

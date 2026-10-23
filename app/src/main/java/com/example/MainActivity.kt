@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,13 +65,13 @@ class MainActivity : ComponentActivity() {
 
     setContent {
       MyApplicationTheme(darkTheme = false) {
-        val currentUser by repository.currentUser.collectAsState()
-        val currentRole by repository.currentRole.collectAsState()
-        val currentUserName by repository.currentUserName.collectAsState()
-        val incidents by repository.incidents.collectAsState()
+        val currentUser by repository.currentUser.collectAsStateWithLifecycle()
+        val currentRole by repository.currentRole.collectAsStateWithLifecycle()
+        val currentUserName by repository.currentUserName.collectAsStateWithLifecycle()
+        val incidents by repository.incidents.collectAsStateWithLifecycle()
 
-        val users by repository.users.collectAsState()
-        val deviceApprovalRequests by repository.deviceApprovalRequests.collectAsState()
+        val users by repository.users.collectAsStateWithLifecycle()
+        val deviceApprovalRequests by repository.deviceApprovalRequests.collectAsStateWithLifecycle()
 
         val isTelevisionDevice = remember {
           packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK) ||
@@ -857,6 +858,13 @@ class MainActivity : ComponentActivity() {
         }
       }
     }
+  }
+
+  override fun onStop() {
+    if (::repository.isInitialized) {
+      repository.flushPendingPersistenceOnIo()
+    }
+    super.onStop()
   }
 
   override fun onDestroy() {

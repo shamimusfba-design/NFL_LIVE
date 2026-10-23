@@ -21,8 +21,11 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import android.os.SystemClock
+import android.util.Log
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 data class SheetSyncResult(
   val success: Boolean,
@@ -42,6 +45,26 @@ class GoogleSheetsStorageService(private val appContext: Context) {
 
   private val prefs: SharedPreferences =
     appContext.getSharedPreferences("nfl_google_sheets_storage", Context.MODE_PRIVATE)
+
+  val productionSaveCallCount = AtomicInteger(0)
+  val qualitySaveCallCount = AtomicInteger(0)
+  val setupsSaveCallCount = AtomicInteger(0)
+  val incidentsSaveCallCount = AtomicInteger(0)
+  val monthlyTargetsSaveCallCount = AtomicInteger(0)
+  val usersSaveCallCount = AtomicInteger(0)
+  val deviceRequestsSaveCallCount = AtomicInteger(0)
+  val auditLogsSaveCallCount = AtomicInteger(0)
+
+  fun resetSaveCallCounts() {
+    productionSaveCallCount.set(0)
+    qualitySaveCallCount.set(0)
+    setupsSaveCallCount.set(0)
+    incidentsSaveCallCount.set(0)
+    monthlyTargetsSaveCallCount.set(0)
+    usersSaveCallCount.set(0)
+    deviceRequestsSaveCallCount.set(0)
+    auditLogsSaveCallCount.set(0)
+  }
 
   // Trusted backend time offset relative to local clock (updated from server responses)
   @Volatile
@@ -350,6 +373,8 @@ class GoogleSheetsStorageService(private val appContext: Context) {
   // =========================================================================
 
   fun saveLocalProductionEntries(entries: List<ProductionRecord>) {
+    val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+    productionSaveCallCount.incrementAndGet()
     val nonDemo = entries.filter { !it.isDemo }
     val arr = JSONArray()
     nonDemo.forEach { item ->
@@ -370,7 +395,12 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         put("isConfirmedZero", item.isConfirmedZero)
       })
     }
-    prefs.edit().putString(KEY_SAVED_PRODUCTION, arr.toString()).apply()
+    val json = arr.toString()
+    prefs.edit().putString(KEY_SAVED_PRODUCTION, json).apply()
+    if (BuildConfig.DEBUG) {
+      val elapsedMs = SystemClock.elapsedRealtime() - startMs
+      Log.d("NflPerf", "saveLocalProductionEntries rows=${nonDemo.size} chars=${json.length} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
+    }
   }
 
   fun loadLocalProductionEntries(): List<ProductionRecord> {
@@ -403,6 +433,8 @@ class GoogleSheetsStorageService(private val appContext: Context) {
   }
 
   fun saveLocalQualityEntries(entries: List<QualityRecord>) {
+    val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+    qualitySaveCallCount.incrementAndGet()
     val nonDemo = entries.filter { !it.isDemo }
     val arr = JSONArray()
     nonDemo.forEach { item ->
@@ -439,7 +471,12 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         put("isConfirmedZero", item.isConfirmedZero)
       })
     }
-    prefs.edit().putString(KEY_SAVED_QUALITY, arr.toString()).apply()
+    val json = arr.toString()
+    prefs.edit().putString(KEY_SAVED_QUALITY, json).apply()
+    if (BuildConfig.DEBUG) {
+      val elapsedMs = SystemClock.elapsedRealtime() - startMs
+      Log.d("NflPerf", "saveLocalQualityEntries rows=${nonDemo.size} chars=${json.length} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
+    }
   }
 
   fun loadLocalQualityEntries(): List<QualityRecord> {
@@ -486,6 +523,8 @@ class GoogleSheetsStorageService(private val appContext: Context) {
   }
 
   fun saveLocalSetups(setups: List<SupervisorLineSetup>) {
+    val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+    setupsSaveCallCount.incrementAndGet()
     val nonDemo = setups.filter { !it.isDemo }
     val arr = JSONArray()
     nonDemo.forEach { s ->
@@ -512,7 +551,12 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         put("snapshotTimestamp", s.snapshotTimestamp)
       })
     }
-    prefs.edit().putString(KEY_SAVED_SETUPS, arr.toString()).apply()
+    val json = arr.toString()
+    prefs.edit().putString(KEY_SAVED_SETUPS, json).apply()
+    if (BuildConfig.DEBUG) {
+      val elapsedMs = SystemClock.elapsedRealtime() - startMs
+      Log.d("NflPerf", "saveLocalSetups rows=${nonDemo.size} chars=${json.length} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
+    }
   }
 
   fun loadLocalSetups(): List<SupervisorLineSetup> {
@@ -551,6 +595,8 @@ class GoogleSheetsStorageService(private val appContext: Context) {
   }
 
   fun saveLocalIncidents(incidents: List<IncidentItem>) {
+    val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+    incidentsSaveCallCount.incrementAndGet()
     val nonDemo = incidents.filter { !it.isDemo }
     val arr = JSONArray()
     nonDemo.forEach { inc ->
@@ -596,7 +642,12 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         put("comments", commentsArr)
       })
     }
-    prefs.edit().putString(KEY_SAVED_INCIDENTS, arr.toString()).apply()
+    val json = arr.toString()
+    prefs.edit().putString(KEY_SAVED_INCIDENTS, json).apply()
+    if (BuildConfig.DEBUG) {
+      val elapsedMs = SystemClock.elapsedRealtime() - startMs
+      Log.d("NflPerf", "saveLocalIncidents rows=${nonDemo.size} chars=${json.length} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
+    }
   }
 
   fun loadLocalIncidents(): List<IncidentItem> {
@@ -661,6 +712,8 @@ class GoogleSheetsStorageService(private val appContext: Context) {
   }
 
   fun saveLocalMonthlyTargets(targets: List<MonthlyFactoryTarget>) {
+    val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+    monthlyTargetsSaveCallCount.incrementAndGet()
     val arr = JSONArray()
     targets.forEach { t ->
       arr.put(JSONObject().apply {
@@ -679,7 +732,12 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         put("monthlyAchievementPcs", t.monthlyAchievementPcs)
       })
     }
-    prefs.edit().putString(KEY_SAVED_MONTHLY, arr.toString()).apply()
+    val json = arr.toString()
+    prefs.edit().putString(KEY_SAVED_MONTHLY, json).apply()
+    if (BuildConfig.DEBUG) {
+      val elapsedMs = SystemClock.elapsedRealtime() - startMs
+      Log.d("NflPerf", "saveLocalMonthlyTargets rows=${targets.size} chars=${json.length} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
+    }
   }
 
   fun loadLocalMonthlyTargets(): List<MonthlyFactoryTarget> {
@@ -710,6 +768,8 @@ class GoogleSheetsStorageService(private val appContext: Context) {
   }
 
   fun saveLocalUsers(users: List<UserAccount>) {
+    val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+    usersSaveCallCount.incrementAndGet()
     val arr = JSONArray()
     val serverDevicesMap = loadServerDeviceMap().toMutableMap()
     users.forEach { u ->
@@ -779,7 +839,12 @@ class GoogleSheetsStorageService(private val appContext: Context) {
       })
     }
     saveServerDeviceMap(serverDevicesMap)
-    prefs.edit().putString(KEY_SAVED_USERS, arr.toString()).apply()
+    val json = arr.toString()
+    prefs.edit().putString(KEY_SAVED_USERS, json).apply()
+    if (BuildConfig.DEBUG) {
+      val elapsedMs = SystemClock.elapsedRealtime() - startMs
+      Log.d("NflPerf", "saveLocalUsers rows=${users.size} chars=${json.length} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
+    }
   }
 
   fun loadLocalUsers(): List<UserAccount> {
@@ -916,6 +981,8 @@ class GoogleSheetsStorageService(private val appContext: Context) {
   }
 
   fun saveLocalDeviceRequests(requests: List<DeviceApprovalRequest>) {
+    val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+    deviceRequestsSaveCallCount.incrementAndGet()
     val arr = JSONArray()
     requests.forEach { r ->
       arr.put(JSONObject().apply {
@@ -951,7 +1018,12 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         put("reason", r.reason)
       })
     }
-    prefs.edit().putString(KEY_SAVED_DEVICE_REQUESTS, arr.toString()).apply()
+    val json = arr.toString()
+    prefs.edit().putString(KEY_SAVED_DEVICE_REQUESTS, json).apply()
+    if (BuildConfig.DEBUG) {
+      val elapsedMs = SystemClock.elapsedRealtime() - startMs
+      Log.d("NflPerf", "saveLocalDeviceRequests rows=${requests.size} chars=${json.length} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
+    }
   }
 
   fun saveDeviceApprovalRequests(requests: List<DeviceApprovalRequest>) =
@@ -1011,6 +1083,8 @@ class GoogleSheetsStorageService(private val appContext: Context) {
     loadLocalDeviceRequests()
 
   fun saveLocalAuditLogs(logs: List<AuditLogEntry>) {
+    val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
+    auditLogsSaveCallCount.incrementAndGet()
     val arr = JSONArray()
     logs.take(500).forEach { log ->
       arr.put(JSONObject().apply {
@@ -1026,7 +1100,12 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         put("bangladeshTime", log.bangladeshTime)
       })
     }
-    prefs.edit().putString(KEY_SAVED_AUDIT, arr.toString()).apply()
+    val json = arr.toString()
+    prefs.edit().putString(KEY_SAVED_AUDIT, json).apply()
+    if (BuildConfig.DEBUG) {
+      val elapsedMs = SystemClock.elapsedRealtime() - startMs
+      Log.d("NflPerf", "saveLocalAuditLogs rows=${logs.size.coerceAtMost(500)} chars=${json.length} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
+    }
   }
 
   fun loadLocalAuditLogs(): List<AuditLogEntry> {

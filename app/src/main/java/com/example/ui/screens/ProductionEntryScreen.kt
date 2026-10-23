@@ -6,6 +6,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.NflRepository
 import com.example.model.*
 import com.example.ui.theme.*
@@ -69,11 +72,11 @@ fun ProductionEntryScreen(
   onNavigateToSetup: () -> Unit = {}
 ) {
   val focusManager = LocalFocusManager.current
-  val repoFloor by repository.currentFloor.collectAsState()
-  val repoAssignedLine by repository.assignedLine.collectAsState()
-  val entries by repository.productionEntries.collectAsState()
-  val allTargets by repository.targets.collectAsState()
-  val currentUser by repository.currentUser.collectAsState()
+  val repoFloor by repository.currentFloor.collectAsStateWithLifecycle()
+  val repoAssignedLine by repository.assignedLine.collectAsStateWithLifecycle()
+  val entries by repository.productionEntries.collectAsStateWithLifecycle()
+  val allTargets by repository.targets.collectAsStateWithLifecycle()
+  val currentUser by repository.currentUser.collectAsStateWithLifecycle()
   val isAdminUser = currentUser?.isAdmin == true && currentUser?.role == com.example.model.UserRole.ADMIN
   val isIeUser = currentUser?.role == com.example.model.UserRole.IE
   val isWithinTimeWindow = isAdminUser || isIeUser || repository.isWithinDailyEntryWindow()
@@ -110,6 +113,19 @@ fun ProductionEntryScreen(
   var selectedDate by rememberSaveable { mutableStateOf(currentBdDate) }
   var selectedHour by rememberSaveable { mutableStateOf("10:00 - 11:00") }
   var showHourDropdown by remember { mutableStateOf(false) }
+
+  val setupsByLineId = remember(availableLines, allTargets) {
+    availableLines.associate { line -> line.id to repository.getLineSetup(line.id) }
+  }
+  val lockedLineIds = remember(availableLines, entries, selectedDate, selectedHour, isAdminUser) {
+    if (isAdminUser) emptySet()
+    else availableLines.mapNotNull { line ->
+      val locked = entries.any {
+        !it.isDemo && it.lineId == line.id && it.date == selectedDate && it.hourSlot == selectedHour
+      }
+      if (locked) line.id else null
+    }.toSet()
+  }
 
   // Batch vs Single Line Mode Toggle (Batch is default for faster floor entry)
   var isBatchMode by rememberSaveable { mutableStateOf(true) }
@@ -344,17 +360,18 @@ fun ProductionEntryScreen(
     },
     containerColor = Color(0xFFF0F4F8)
   ) { paddingValues ->
-    Column(
+    LazyColumn(
       modifier = Modifier
-        .fillMaxWidth()
+        .fillMaxSize()
         .padding(paddingValues)
         .imePadding()
-        .navigationBarsPadding()
-        .verticalScroll(rememberScrollState())
-        .padding(8.dp),
+        .navigationBarsPadding(),
+      contentPadding = PaddingValues(8.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
       // 1. TOP MODULE NAVIGATION TABS (Strictly gated by user write permissions)
+      item(key = "top_controls_and_banners") {
+      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
       FlowRow(
         modifier = Modifier
           .fillMaxWidth()
@@ -722,21 +739,25 @@ fun ProductionEntryScreen(
           }
         }
       }
+      }
+      }
 
       // =========================================================================
       // MODE A: BATCH ALL LINES FOR THE FLOOR
       // =========================================================================
       if (isBatchMode) {
-        Card(
-          shape = RoundedCornerShape(12.dp),
-          colors = CardDefaults.cardColors(containerColor = Color.White),
-          elevation = CardDefaults.cardElevation(2.dp),
-          border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
-          modifier = Modifier.fillMaxWidth()
-        ) {
-          Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item(key = "batch_header_${selectedFloor.name}") {
+          Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(2.dp),
+            border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFE2E8F0))),
+            modifier = Modifier.fillMaxWidth()
+          ) {
             Row(
-              modifier = Modifier.fillMaxWidth(),
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically
             ) {
@@ -763,180 +784,179 @@ fun ProductionEntryScreen(
                 )
               }
             }
+          }
+        }
 
-            // Lines Entry List
-            availableLines.forEachIndexed { index, line ->
-              val setup = repository.getLineSetup(line.id)
-              val isEven = index % 2 == 0
-              val isSlotLocked = !isAdminUser && entries.any {
-                !it.isDemo && it.lineId == line.id && it.date == selectedDate && it.hourSlot == selectedHour
-              }
-              val isLastLine = index == availableLines.lastIndex
+        // Lazy Lines Entry List with stable keys
+        itemsIndexed(availableLines, key = { _, line -> "batch_line_${line.id}" }) { index, line ->
+          val setup = setupsByLineId[line.id] ?: remember(line.id) { repository.getLineSetup(line.id) }
+          val isEven = index % 2 == 0
+          val isSlotLocked = line.id in lockedLineIds
+          val isLastLine = index == availableLines.lastIndex
 
-              Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = if (isSlotLocked) Color(0xFFF1F5F9) else if (isEven) Color(0xFFF8FAFC) else Color.White,
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                modifier = Modifier.fillMaxWidth()
-              ) {
-                Row(
-                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                  // Line & Style Info
-                  Column(modifier = Modifier.weight(1.3f).padding(end = 8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                      Surface(color = Color(0xFF1E3A8A), shape = RoundedCornerShape(4.dp)) {
-                        Text(
-                          text = "Line ${line.id}",
-                          color = Color.White,
-                          fontWeight = FontWeight.Black,
-                          fontSize = 11.sp,
-                          modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                      }
-                      Text(
-                        text = setup.itemName,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF0F172A),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                      )
-                      if (isSlotLocked) {
-                        Text(
-                          text = "🔒 Locked",
-                          fontSize = 11.sp,
-                          fontWeight = FontWeight.Bold,
-                          color = Color(0xFFB45309)
-                        )
-                      }
-                    }
-                    Text(
-                      text = "Tgt: ${setup.targetHourlyPcs} pcs/hr • SMV: ${String.format("%.2f", setup.smv)}",
-                      fontSize = 11.sp,
-                      color = Color(0xFF64748B)
-                    )
-                  }
-
-                  // Direct Output Input Field for this Line
-                  OutlinedTextField(
-                    value = batchOutputs[line.id] ?: "",
-                    onValueChange = { input ->
-                      if (canWrite && !isSlotLocked && input.all { it.isDigit() }) {
-                        batchOutputs[line.id] = input
-                        validationError = null
-                      }
-                    },
-                    enabled = canWrite && !isSlotLocked && !isSubmitting,
-                    placeholder = { Text(if (isSlotLocked) "Locked" else "Pcs", fontSize = 12.sp, color = Color(0xFF94A3B8)) },
-                    singleLine = true,
-                    colors = com.example.ui.theme.nflInputColors(),
-                    textStyle = LocalTextStyle.current.copy(
-                      fontSize = 15.sp,
-                      fontWeight = FontWeight.Black,
-                      textAlign = TextAlign.Center,
-                      color = Color(0xFF0F172A)
-                    ),
-                    keyboardOptions = KeyboardOptions(
-                      keyboardType = KeyboardType.Number,
-                      imeAction = if (isLastLine) ImeAction.Done else ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(
-                      onNext = { focusManager.moveFocus(FocusDirection.Down) },
-                      onDone = { focusManager.clearFocus() }
-                    ),
-                    modifier = Modifier
-                      .widthIn(min = 76.dp, max = 105.dp)
-                      .testTag("batch_input_${line.id}"),
-                    shape = RoundedCornerShape(6.dp)
-                  )
-                }
-              }
-            }
-
-            // ONE BUTTON SUBMISSION FOR ALL LINES
-            Button(
-              onClick = {
-                if (isSubmitting) return@Button
-                if (!canWrite) {
-                  validationError = if (!isWithinTimeWindow) {
-                    "Daily entry is only allowed between 06:00 AM and midnight Bangladesh time."
-                  } else {
-                    "You do not have permission for Production Entry."
-                  }
-                  return@Button
-                }
-                var skipped = 0
-                var implausibleTarget: Int? = null
-                val records = availableLines.mapNotNull { line ->
-                  val isLocked = !isAdminUser && entries.any {
-                    !it.isDemo && it.lineId == line.id && it.date == selectedDate && it.hourSlot == selectedHour
-                  }
-                  val rawText = batchOutputs[line.id]?.trim().orEmpty()
-                  val qty = rawText.toIntOrNull()
-                  if (isLocked) {
-                    if (rawText.isNotEmpty()) skipped++
-                    null
-                  } else if (qty != null && qty >= 0) {
-                    val setup = repository.getLineSetup(line.id)
-                    if (implausibleTarget == null) {
-                      implausibleTarget = findImplausibleProductionTarget(qty, setup.targetHourlyPcs)
-                    }
-                    ProductionRecord(
-                      lineId = line.id,
-                      floor = selectedFloor.apiValue,
-                      date = selectedDate,
-                      hourSlot = selectedHour,
-                      styleNumber = setup.itemName,
-                      outputQty = qty,
-                      remarks = "Batch reporter entry",
-                      isConfirmedZero = (qty == 0)
-                    )
-                  } else {
-                    skipped++
-                    null
-                  }
-                }
-
-                if (records.isEmpty()) {
-                  validationError = "Please enter output quantity for at least one unlocked line."
-                } else if (implausibleTarget != null) {
-                  plausibilityPromptTarget = implausibleTarget
-                  pendingConfirmAction = { executeBatchSubmission(records, skipped) }
-                } else {
-                  executeBatchSubmission(records, skipped)
-                }
-              },
-              modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .testTag("submit_all_lines_button"),
-              enabled = canWrite && !isSubmitting,
-              shape = RoundedCornerShape(8.dp),
-              colors = ButtonDefaults.buttonColors(
-                containerColor = if (canWrite && !isSubmitting) NflRoyalBlue else Color(0xFF94A3B8)
-              )
+          Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = if (isSlotLocked) Color(0xFFF1F5F9) else if (isEven) Color(0xFFF8FAFC) else Color.White,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween
             ) {
-              Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text(
-                when {
-                  isSubmitting -> "Saving..."
-                  canWrite -> "Submit All ${availableLines.size} Lines Production ($selectedHour)"
-                  else -> "🔒 Entry Locked (View Only)"
+              // Line & Style Info
+              Column(modifier = Modifier.weight(1.3f).padding(end = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                  Surface(color = Color(0xFF1E3A8A), shape = RoundedCornerShape(4.dp)) {
+                    Text(
+                      text = "Line ${line.id}",
+                      color = Color.White,
+                      fontWeight = FontWeight.Black,
+                      fontSize = 11.sp,
+                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                  }
+                  Text(
+                    text = setup.itemName,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF0F172A),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                  )
+                  if (isSlotLocked) {
+                    Text(
+                      text = "🔒 Locked",
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = Color(0xFFB45309)
+                    )
+                  }
+                }
+                Text(
+                  text = "Tgt: ${setup.targetHourlyPcs} pcs/hr • SMV: ${String.format("%.2f", setup.smv)}",
+                  fontSize = 11.sp,
+                  color = Color(0xFF64748B)
+                )
+              }
+
+              // Direct Output Input Field for this Line
+              OutlinedTextField(
+                value = batchOutputs[line.id] ?: "",
+                onValueChange = { input ->
+                  if (canWrite && !isSlotLocked && input.all { it.isDigit() }) {
+                    batchOutputs[line.id] = input
+                    validationError = null
+                  }
                 },
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp
+                enabled = canWrite && !isSlotLocked && !isSubmitting,
+                placeholder = { Text(if (isSlotLocked) "Locked" else "Pcs", fontSize = 12.sp, color = Color(0xFF94A3B8)) },
+                singleLine = true,
+                colors = com.example.ui.theme.nflInputColors(),
+                textStyle = LocalTextStyle.current.copy(
+                  fontSize = 15.sp,
+                  fontWeight = FontWeight.Black,
+                  textAlign = TextAlign.Center,
+                  color = Color(0xFF0F172A)
+                ),
+                keyboardOptions = KeyboardOptions(
+                  keyboardType = KeyboardType.Number,
+                  imeAction = if (isLastLine) ImeAction.Done else ImeAction.Next
+                ),
+                keyboardActions = KeyboardActions(
+                  onNext = { focusManager.moveFocus(FocusDirection.Down) },
+                  onDone = { focusManager.clearFocus() }
+                ),
+                modifier = Modifier
+                  .widthIn(min = 76.dp, max = 105.dp)
+                  .testTag("batch_input_${line.id}"),
+                shape = RoundedCornerShape(6.dp)
               )
             }
+          }
+        }
+
+        // ONE BUTTON SUBMISSION FOR ALL LINES
+        item(key = "batch_submit_footer") {
+          Button(
+            onClick = {
+              if (isSubmitting) return@Button
+              if (!canWrite) {
+                validationError = if (!isWithinTimeWindow) {
+                  "Daily entry is only allowed between 06:00 AM and midnight Bangladesh time."
+                } else {
+                  "You do not have permission for Production Entry."
+                }
+                return@Button
+              }
+              var skipped = 0
+              var implausibleTarget: Int? = null
+              val records = availableLines.mapNotNull { line ->
+                val isLocked = line.id in lockedLineIds
+                val rawText = batchOutputs[line.id]?.trim().orEmpty()
+                val qty = rawText.toIntOrNull()
+                if (isLocked) {
+                  if (rawText.isNotEmpty()) skipped++
+                  null
+                } else if (qty != null && qty >= 0) {
+                  val setup = setupsByLineId[line.id] ?: repository.getLineSetup(line.id)
+                  if (implausibleTarget == null) {
+                    implausibleTarget = findImplausibleProductionTarget(qty, setup.targetHourlyPcs)
+                  }
+                  ProductionRecord(
+                    lineId = line.id,
+                    floor = selectedFloor.apiValue,
+                    date = selectedDate,
+                    hourSlot = selectedHour,
+                    styleNumber = setup.itemName,
+                    outputQty = qty,
+                    remarks = "Batch reporter entry",
+                    isConfirmedZero = (qty == 0)
+                  )
+                } else {
+                  skipped++
+                  null
+                }
+              }
+
+              if (records.isEmpty()) {
+                validationError = "Please enter output quantity for at least one unlocked line."
+              } else if (implausibleTarget != null) {
+                plausibilityPromptTarget = implausibleTarget
+                pendingConfirmAction = { executeBatchSubmission(records, skipped) }
+              } else {
+                executeBatchSubmission(records, skipped)
+              }
+            },
+            modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(min = 48.dp)
+              .testTag("submit_all_lines_button"),
+            enabled = canWrite && !isSubmitting,
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(
+              containerColor = if (canWrite && !isSubmitting) NflRoyalBlue else Color(0xFF94A3B8)
+            )
+          ) {
+            Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+              when {
+                isSubmitting -> "Saving..."
+                canWrite -> "Submit All ${availableLines.size} Lines Production ($selectedHour)"
+                else -> "🔒 Entry Locked (View Only)"
+              },
+              fontWeight = FontWeight.Bold,
+              fontSize = 13.sp
+            )
           }
         }
       } else {
         // =========================================================================
         // MODE B: SINGLE LINE ENTRY (Traditional Fallback)
         // =========================================================================
+        item(key = "single_line_mode_card") {
         Card(
           shape = RoundedCornerShape(12.dp),
           colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -1127,6 +1147,7 @@ fun ProductionEntryScreen(
               )
             }
           }
+        }
         }
       }
     }

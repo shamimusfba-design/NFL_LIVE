@@ -32,6 +32,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.NflRepository
 import com.example.model.*
 import kotlinx.coroutines.delay
@@ -43,9 +46,9 @@ fun NptSupervisorScreen(
   onNavigateBack: () -> Unit
 ) {
   val focusManager = LocalFocusManager.current
-  val incidents by repository.incidents.collectAsState()
-  val userName by repository.currentUserName.collectAsState()
-  val currentUser by repository.currentUser.collectAsState()
+  val incidents by repository.incidents.collectAsStateWithLifecycle()
+  val userName by repository.currentUserName.collectAsStateWithLifecycle()
+  val currentUser by repository.currentUser.collectAsStateWithLifecycle()
   val canNptWrite = currentUser?.let { it.isAdmin || it.role == UserRole.IE || it.canNptWrite } ?: false
 
   var selectedTab by rememberSaveable { mutableIntStateOf(0) } // 0: Active NPT, 1: NPT History
@@ -119,15 +122,6 @@ fun NptSupervisorScreen(
     }
   }
 
-  // 1-second live countdown ticker
-  var ticker by remember { mutableLongStateOf(System.currentTimeMillis()) }
-  LaunchedEffect(Unit) {
-    while (true) {
-      delay(1000)
-      ticker = System.currentTimeMillis()
-    }
-  }
-
   val activeIncidents = remember(incidents, filterCategory) {
     incidents.filter { it.status != IncidentStatus.RESOLVED }.filter {
       filterCategory == "ALL" || it.nptType.equals(filterCategory, ignoreCase = true) || it.category.displayName.equals(filterCategory, ignoreCase = true)
@@ -137,6 +131,25 @@ fun NptSupervisorScreen(
   val resolvedIncidents = remember(incidents, filterCategory) {
     incidents.filter { it.status == IncidentStatus.RESOLVED }.filter {
       filterCategory == "ALL" || it.nptType.equals(filterCategory, ignoreCase = true) || it.category.displayName.equals(filterCategory, ignoreCase = true)
+    }
+  }
+
+  // 1-second live countdown ticker (pauses when screen is backgrounded or no active incidents are visible)
+  var isScreenResumed by remember { mutableStateOf(true) }
+  LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+    isScreenResumed = true
+  }
+  LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) {
+    isScreenResumed = false
+  }
+  var ticker by remember { mutableLongStateOf(System.currentTimeMillis()) }
+  val shouldRunLiveTicker = isScreenResumed && selectedTab == 0 && activeIncidents.isNotEmpty()
+  LaunchedEffect(shouldRunLiveTicker) {
+    if (!shouldRunLiveTicker) return@LaunchedEffect
+    ticker = System.currentTimeMillis()
+    while (true) {
+      delay(1000)
+      ticker = System.currentTimeMillis()
     }
   }
 

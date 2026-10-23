@@ -1217,5 +1217,197 @@ class ExampleRobolectricTest {
     assertEquals("80.0", restoredMonthly?.get("K1")?.efficiency)
     assertEquals("2.1", restoredMonthly?.get("K1")?.oql)
   }
+
+  @Test
+  fun `test Step 2 debounced persistence writes once after burst and flushes immediately on logout`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repo = NflRepository(context)
+    repo.persistenceDebounceMs = 300L
+    repo.authenticateUser("admin", "123")
+    val todayBd = repo.getCurrentBangladeshDateIso()
+
+    // Flush any initial seed writes and reset counters
+    repo.flushPendingPersistence()
+    repo.sheetsStorage.resetSaveCallCounts()
+
+    // Burst of 5 rapid upserts within a few milliseconds
+    for (i in 1..5) {
+      repo.upsertRemoteProductionRecords(
+        listOf(
+          ProductionRecord(
+            submissionId = "BURST-K$i",
+            lineId = "K$i",
+            floor = "Sew 2",
+            date = todayBd,
+            hourSlot = "10:00 - 11:00",
+            styleNumber = "Burst-Style",
+            outputQty = 100 + i,
+            isDemo = false,
+            timestamp = 1_700_000_000_000L + i
+          )
+        )
+      )
+    }
+
+    // Immediately after the burst (before 300ms debounce window expires), no disk write has fired yet
+    assertEquals(0, repo.sheetsStorage.productionSaveCallCount.get())
+
+    // Wait for debounce window to elapse (450ms > 300ms)
+    kotlinx.coroutines.delay(450L)
+
+    // Exactly 1 coalesced write should have occurred for the 5-item burst
+    assertEquals(1, repo.sheetsStorage.productionSaveCallCount.get())
+
+    // Now trigger another change and immediately call logout() before the 300ms timer expires
+    repo.sheetsStorage.resetSaveCallCounts()
+    repo.upsertRemoteProductionRecords(
+      listOf(
+        ProductionRecord(
+          submissionId = "LOGOUT-FLUSH-K6",
+          lineId = "K6",
+          floor = "Sew 2",
+          date = todayBd,
+          hourSlot = "11:00 - 12:00",
+          styleNumber = "Flush-Style",
+          outputQty = 155,
+          isDemo = false,
+          timestamp = 1_700_000_010_000L
+        )
+      )
+    )
+    assertEquals(0, repo.sheetsStorage.productionSaveCallCount.get())
+
+    // Logout must flush pending debounced writes synchronously
+    repo.logout()
+    assertEquals(1, repo.sheetsStorage.productionSaveCallCount.get())
+
+    // Reopening a new repository instance must see the flushed record
+    val reopened = NflRepository(context)
+    assertTrue(reopened.productionEntries.value.any { it.submissionId == "LOGOUT-FLUSH-K6" && it.outputQty == 155 })
+  }
+
+  @Test
+  fun `test Step 2 concurrent upserts from multiple coroutines do not lose records`() = kotlinx.coroutines.runBlocking {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repo = NflRepository(context)
+    repo.persistenceDebounceMs = 500L
+    val todayBd = repo.getCurrentBangladeshDateIso()
+
+    val threadA = Thread {
+      for (i in 1..25) {
+        repo.upsertRemoteProductionRecords(
+          listOf(
+            ProductionRecord(
+              submissionId = "CONC-A-$i",
+              lineId = "K1",
+              floor = "Sew 2",
+              date = todayBd,
+              hourSlot = "Slot-A-$i",
+              styleNumber = "Style-A",
+              outputQty = 50 + i,
+              isDemo = false,
+              timestamp = 1_700_100_000_000L + i
+            )
+          )
+        )
+      }
+    }
+
+    val threadB = Thread {
+      for (i in 1..25) {
+        repo.upsertRemoteProductionRecords(
+          listOf(
+            ProductionRecord(
+              submissionId = "CONC-B-$i",
+              lineId = "K2",
+              floor = "Sew 2",
+              date = todayBd,
+              hourSlot = "Slot-B-$i",
+              styleNumber = "Style-B",
+              outputQty = 80 + i,
+              isDemo = false,
+              timestamp = 1_700_200_000_000L + i
+            )
+          )
+        )
+      }
+    }
+
+    threadA.start()
+    threadB.start()
+    threadA.join()
+    threadB.join()
+    repo.flushPendingPersistence()
+
+    val entries = repo.productionEntries.value
+    val countA = entries.count { it.submissionId.startsWith("CONC-A-") }
+    val countB = entries.count { it.submissionId.startsWith("CONC-B-") }
+    assertEquals(25, countA)
+    assertEquals(25, countB)
+  }
+
+  @Test
+  fun `test Step 2 upsert results are deterministic and identical for same input`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repo1 = NflRepository(context)
+    val todayBd = repo1.getCurrentBangladeshDateIso()
+
+    val inputBatch = listOf(
+      ProductionRecord(
+        submissionId = "DET-1",
+        lineId = "K1",
+        floor = "Sew 2",
+        date = todayBd,
+        hourSlot = "09:00 - 10:00",
+        styleNumber = "Polo-101",
+        outputQty = 120,
+        isDemo = false,
+        timestamp = 1_700_500_001_000L,
+        syncStatus = SyncStatus.SYNCED
+      ),
+      ProductionRecord(
+        submissionId = "DET-2",
+        lineId = "K2",
+        floor = "Sew 2",
+        date = todayBd,
+        hourSlot = "10:00 - 11:00",
+        styleNumber = "Polo-102",
+        outputQty = 135,
+        isDemo = false,
+        timestamp = 1_700_500_002_000L,
+        syncStatus = SyncStatus.SYNCED
+      ),
+      // Duplicate slot with newer timestamp for K1 09:00 - 10:00
+      ProductionRecord(
+        submissionId = "DET-1",
+        lineId = "K1",
+        floor = "Sew 2",
+        date = todayBd,
+        hourSlot = "09:00 - 10:00",
+        styleNumber = "Polo-101",
+        outputQty = 142,
+        isDemo = false,
+        timestamp = 1_700_500_005_000L,
+        syncStatus = SyncStatus.SYNCED
+      )
+    )
+
+    repo1.upsertRemoteProductionRecords(inputBatch)
+    val result1 = repo1.productionEntries.value.filter { it.submissionId.startsWith("DET-") }
+
+    // Reference legacy in-memory merge & sort algorithm
+    val mapById = linkedMapOf<String, ProductionRecord>()
+    for (remote in inputBatch) {
+      val existing = mapById[remote.submissionId]
+      if (existing == null || remote.timestamp >= existing.timestamp) {
+        mapById[remote.submissionId] = remote.copy(syncStatus = SyncStatus.SYNCED)
+      }
+    }
+    val expected = mapById.values.sortedByDescending { it.timestamp }
+
+    assertEquals(expected.size, result1.size)
+    assertEquals(expected.map { it.submissionId to it.outputQty }, result1.map { it.submissionId to it.outputQty })
+    assertEquals(142, result1.first { it.submissionId == "DET-1" }.outputQty)
+  }
 }
 
