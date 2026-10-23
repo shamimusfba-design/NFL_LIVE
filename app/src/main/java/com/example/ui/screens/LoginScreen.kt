@@ -691,6 +691,7 @@ fun LoginScreen(
 
               AuthScreenMode.REGISTER -> {
                 val isFinishingRole = DesignationPolicy.isFinishingDesignation(regDesignation)
+                val isAllFloorRole = regDesignation.defaultAuthorizedScope == FloorScope.ALL
                 val effectivePhysicalFloor = if (isFinishingRole) FloorScope.FINISHING else regPhysicalFloor
                 val previewAuthorizedScope = DesignationPolicy.resolveAuthorizedScope(regDesignation, effectivePhysicalFloor)
 
@@ -832,51 +833,75 @@ fun LoginScreen(
                   }
                 }
 
-                // Physical Floor Selection (Sew-1, Sew-2, Sew-3, or Finishing for Finishing roles; never All Floor)
+                // All-floor designations do not require selecting a single physical floor.
                 Column(
                   modifier = Modifier.fillMaxWidth(),
                   verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                   Text(
-                    text = if (isFinishingRole) "Assigned Section (Auto-mapped)" else "Assigned Physical Floor",
+                    text = when {
+                      isAllFloorRole -> "Assigned Floor / Department Scope (Auto-mapped)"
+                      isFinishingRole -> "Assigned Section (Auto-mapped)"
+                      else -> "Assigned Physical Floor"
+                    },
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF334155)
                   )
-                  if (isFinishingRole) {
-                    FilterChip(
-                      selected = true,
-                      onClick = {},
-                      label = { Text("Finishing Section", fontWeight = FontWeight.Bold) },
-                      leadingIcon = { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                    )
-                  } else {
-                    Row(
-                      modifier = Modifier.fillMaxWidth(),
-                      horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                      DesignationPolicy.validPhysicalSewingFloors.forEach { floorOption ->
-                        val isSelected = regPhysicalFloor == floorOption
-                        FilterChip(
-                          selected = isSelected,
-                          onClick = { regPhysicalFloor = floorOption },
-                          colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFFDBEAFE),
-                            selectedLabelColor = Color(0xFF1E3A8A),
-                            containerColor = Color(0xFFF8FAFC),
-                            labelColor = Color(0xFF475569)
-                          ),
-                          label = {
-                            Text(
-                              text = floorOption.displayName,
-                              fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium,
-                              maxLines = 1
-                            )
-                          },
-                          modifier = Modifier
-                            .weight(1f)
-                            .testTag("register_floor_${floorOption.name.lowercase()}")
+                  when {
+                    isAllFloorRole -> {
+                      FilterChip(
+                        selected = true,
+                        onClick = {},
+                        label = { Text("All Floor • All Departments", fontWeight = FontWeight.Bold) },
+                        leadingIcon = { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                        colors = FilterChipDefaults.filterChipColors(
+                          selectedContainerColor = Color(0xFFDBEAFE),
+                          selectedLabelColor = Color(0xFF1E3A8A)
                         )
+                      )
+                      Text(
+                        text = "You can view all authorized factory areas. Data-entry permissions remain controlled by your approved role.",
+                        fontSize = 11.sp,
+                        color = Color(0xFF64748B)
+                      )
+                    }
+                    isFinishingRole -> {
+                      FilterChip(
+                        selected = true,
+                        onClick = {},
+                        label = { Text("Finishing Section", fontWeight = FontWeight.Bold) },
+                        leadingIcon = { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                      )
+                    }
+                    else -> {
+                      Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                      ) {
+                        DesignationPolicy.validPhysicalSewingFloors.forEach { floorOption ->
+                          val isSelected = regPhysicalFloor == floorOption
+                          FilterChip(
+                            selected = isSelected,
+                            onClick = { regPhysicalFloor = floorOption },
+                            colors = FilterChipDefaults.filterChipColors(
+                              selectedContainerColor = Color(0xFFDBEAFE),
+                              selectedLabelColor = Color(0xFF1E3A8A),
+                              containerColor = Color(0xFFF8FAFC),
+                              labelColor = Color(0xFF475569)
+                            ),
+                            label = {
+                              Text(
+                                text = floorOption.displayName,
+                                fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium,
+                                maxLines = 1
+                              )
+                            },
+                            modifier = Modifier
+                              .weight(1f)
+                              .testTag("register_floor_${floorOption.name.lowercase()}")
+                          )
+                        }
                       }
                     }
                   }
