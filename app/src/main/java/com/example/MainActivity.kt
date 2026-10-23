@@ -460,7 +460,7 @@ class MainActivity : ComponentActivity() {
 
                     if (canWriteMonthlySetup) {
                       NavigationDrawerItem(
-                        label = { Text("📅 Monthly Data Entry (মান্থলি ডাটা এন্ট্রি)", color = if (currentScreen == AppScreen.MONTHLY_SETUP) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
+                        label = { Text("📅 Monthly Data Entry", color = if (currentScreen == AppScreen.MONTHLY_SETUP) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
                         selected = currentScreen == AppScreen.MONTHLY_SETUP,
                         onClick = {
                           currentScreen = AppScreen.MONTHLY_SETUP

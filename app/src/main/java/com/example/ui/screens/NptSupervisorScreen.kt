@@ -134,7 +134,7 @@ fun NptSupervisorScreen(
               fontSize = 17.sp
             )
             Text(
-              text = "লগইন সুপারভাইজার: $userName",
+              text = "Logged-in Supervisor: $userName",
               color = Color(0xFFBAE6FD),
               fontSize = 11.sp
             )
@@ -192,7 +192,7 @@ fun NptSupervisorScreen(
             Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFB45309), modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(8.dp))
             Text(
-              text = "ভিউ অনলি মোড (View Only) — আপনার এনপিটি এন্ট্রি বা ব্রেকডাউন লগ করার অনুমতি নেই।",
+              text = "View-Only Mode — You do not have permission to log or resolve NPT incidents.",
               color = Color(0xFF92400E),
               fontSize = 11.5.sp,
               fontWeight = FontWeight.Medium
@@ -734,7 +734,7 @@ fun NptSupervisorScreen(
           OutlinedTextField(
             value = formProcessName,
             onValueChange = { formProcessName = it },
-            label = { Text("Process Name (প্রসেসের নাম)") },
+            label = { Text("Process Name") },
             placeholder = { Text("e.g. Collar Attach, Side Seam, Hemming") },
             singleLine = true,
             colors = com.example.ui.theme.nflInputColors(),
@@ -790,7 +790,7 @@ fun NptSupervisorScreen(
           OutlinedTextField(
             value = formDescription,
             onValueChange = { formDescription = it },
-            label = { Text("NPT Description (সমস্যার বিবরণ) *") },
+            label = { Text("NPT Description *") },
             placeholder = { Text("e.g. Motor heated, needle bar vibrating, stitch skipping") },
             colors = com.example.ui.theme.nflInputColors(),
             textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
@@ -801,7 +801,7 @@ fun NptSupervisorScreen(
           OutlinedTextField(
             value = formReportedCause,
             onValueChange = { formReportedCause = it },
-            label = { Text("Reported Cause (কারণ - ঐচ্ছিক)") },
+            label = { Text("Reported Cause (Optional)") },
             placeholder = { Text("e.g. Bearing loose, belt cut") },
             colors = com.example.ui.theme.nflInputColors(),
             textStyle = LocalTextStyle.current.copy(color = Color(0xFF0F172A), fontWeight = FontWeight.Bold),
@@ -974,7 +974,7 @@ fun NptIncidentCommentsSection(
       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Icon(Icons.Default.ChatBubbleOutline, contentDescription = null, tint = Color(0xFF0284C7), modifier = Modifier.size(15.dp))
         Text(
-          text = if (comments.isEmpty()) "💬 Add Comments / Remarks (মন্তব্য করুন)" else "💬 Comments (${comments.size})",
+          text = if (comments.isEmpty()) "💬 Add Comments / Remarks" else "💬 Comments (${comments.size})",
           fontSize = 11.sp,
           fontWeight = FontWeight.Bold,
           color = Color(0xFF0369A1)

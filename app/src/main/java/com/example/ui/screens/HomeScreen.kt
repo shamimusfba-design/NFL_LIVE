@@ -1133,7 +1133,7 @@ fun HomeScreen(
               modifier = Modifier.fillMaxWidth()
             ) {
               Text(
-                text = "🔒 ভিউ অনলি: শুধুমাত্র IE অথবা অ্যাডমিন BS OQL পরিবর্তন করতে পারেন।",
+                text = "🔒 View-Only: Only authorized IE or Admin accounts can modify BS OQL.",
                 color = Color(0xFF92400E),
                 fontSize = 10.sp,
                 modifier = Modifier.padding(8.dp)
@@ -1328,8 +1328,8 @@ private fun OqlTrendChart(
 /**
  * Dual Defect Rectification Status Card (Sewing Defect & Spot Defect Dual Tracking)
  * Displays hourly Sent, Received, and Balance for:
- * 1. Sewing Defects (সুইং ডিফেক্ট)
- * 2. Spot / Stain Defects (স্পট / দাগ ডিফেক্ট)
+ * 1. Sewing Defects
+ * 2. Spot / Stain Defects
  */
 @Composable
 fun DualDefectTrackingCard(
@@ -1374,7 +1374,7 @@ fun DualDefectTrackingCard(
               shape = RoundedCornerShape(4.dp)
             ) {
               Text(
-                text = "সুইং ও স্পট ট্র্যাকিং",
+                text = "Sewing & Spot Tracking",
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF1E40AF),
@@ -1405,7 +1405,7 @@ fun DualDefectTrackingCard(
         }
       }
 
-      // SECTION 1: SEWING DEFECTS (সুইং ডিফেক্ট)
+      // SECTION 1: SEWING DEFECTS
       Surface(
         color = Color(0xFFFAFAFA),
         shape = RoundedCornerShape(8.dp),
@@ -1420,7 +1420,7 @@ fun DualDefectTrackingCard(
           ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
               Box(modifier = Modifier.size(8.dp).background(Color(0xFFEA580C), CircleShape))
-              Text("1. Sewing Defect (সুইং ডিফেক্ট)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+              Text("1. Sewing Defect", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
             }
             Text(
               text = "Recovery: ${String.format(java.util.Locale.US, "%.1f%%", sewRate)}",
@@ -1444,7 +1444,7 @@ fun DualDefectTrackingCard(
               Column(modifier = Modifier.padding(6.dp)) {
                 Text("Sew Sent", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFC2410C))
                 Text("$sewingSent", fontSize = 16.sp, fontWeight = FontWeight.Black, color = Color(0xFFEA580C))
-                Text("সেন্ট", fontSize = 7.5.sp, color = Color(0xFF9A3412))
+                Text("Sent to Line", fontSize = 7.5.sp, color = Color(0xFF9A3412))
               }
             }
             // Recv
@@ -1457,7 +1457,7 @@ fun DualDefectTrackingCard(
               Column(modifier = Modifier.padding(6.dp)) {
                 Text("Sew Recv", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D))
                 Text("$sewingReceived", fontSize = 16.sp, fontWeight = FontWeight.Black, color = Color(0xFF16A34A))
-                Text("রিসিভ", fontSize = 7.5.sp, color = Color(0xFF166534))
+                Text("Rectified Recv", fontSize = 7.5.sp, color = Color(0xFF166534))
               }
             }
             // Bal
@@ -1470,14 +1470,14 @@ fun DualDefectTrackingCard(
               Column(modifier = Modifier.padding(6.dp)) {
                 Text("Sew Bal", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = if (sewingBalance > 0) Color(0xFFB91C1C) else Color(0xFF15803D))
                 Text("$sewingBalance", fontSize = 16.sp, fontWeight = FontWeight.Black, color = if (sewingBalance > 0) Color(0xFFDC2626) else Color(0xFF16A34A))
-                Text(if (sewingBalance > 0) "বকেয়া অলটার" else "ক্লিয়ার", fontSize = 7.5.sp, color = if (sewingBalance > 0) Color(0xFF991B1B) else Color(0xFF166534))
+                Text(if (sewingBalance > 0) "Pending Alter" else "Cleared", fontSize = 7.5.sp, color = if (sewingBalance > 0) Color(0xFF991B1B) else Color(0xFF166534))
               }
             }
           }
         }
       }
 
-      // SECTION 2: SPOT DEFECTS (স্পট / দাগ ডিফেক্ট)
+      // SECTION 2: SPOT DEFECTS
       Surface(
         color = Color(0xFFFAFAFA),
         shape = RoundedCornerShape(8.dp),
@@ -1492,7 +1492,7 @@ fun DualDefectTrackingCard(
           ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
               Box(modifier = Modifier.size(8.dp).background(Color(0xFF7C3AED), CircleShape))
-              Text("2. Spot Defect (স্পট / দাগ ডিফেক্ট)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+              Text("2. Spot Defect", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
             }
             Text(
               text = "Recovery: ${String.format(java.util.Locale.US, "%.1f%%", spotRate)}",
@@ -1516,7 +1516,7 @@ fun DualDefectTrackingCard(
               Column(modifier = Modifier.padding(6.dp)) {
                 Text("Spot Sent", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7E22CE))
                 Text("$spotSent", fontSize = 16.sp, fontWeight = FontWeight.Black, color = Color(0xFF9333EA))
-                Text("স্পট সেন্ট", fontSize = 7.5.sp, color = Color(0xFF6B21A8))
+                Text("Sent to Spot", fontSize = 7.5.sp, color = Color(0xFF6B21A8))
               }
             }
             // Spot Recv
@@ -1529,7 +1529,7 @@ fun DualDefectTrackingCard(
               Column(modifier = Modifier.padding(6.dp)) {
                 Text("Spot Recv", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D))
                 Text("$spotReceived", fontSize = 16.sp, fontWeight = FontWeight.Black, color = Color(0xFF16A34A))
-                Text("দাগ মুক্ত রিসিভ", fontSize = 7.5.sp, color = Color(0xFF166534))
+                Text("Clean Recv", fontSize = 7.5.sp, color = Color(0xFF166534))
               }
             }
             // Spot Bal
@@ -1542,7 +1542,7 @@ fun DualDefectTrackingCard(
               Column(modifier = Modifier.padding(6.dp)) {
                 Text("Spot Bal", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = if (spotBalance > 0) Color(0xFFB91C1C) else Color(0xFF15803D))
                 Text("$spotBalance", fontSize = 16.sp, fontWeight = FontWeight.Black, color = if (spotBalance > 0) Color(0xFFDC2626) else Color(0xFF16A34A))
-                Text(if (spotBalance > 0) "দাগ বকেয়া" else "ক্লিয়ার", fontSize = 7.5.sp, color = if (spotBalance > 0) Color(0xFF991B1B) else Color(0xFF166534))
+                Text(if (spotBalance > 0) "Pending Spot" else "Cleared", fontSize = 7.5.sp, color = if (spotBalance > 0) Color(0xFF991B1B) else Color(0xFF166534))
               }
             }
           }

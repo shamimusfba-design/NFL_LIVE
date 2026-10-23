@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.data.NflRepository
 import com.example.model.*
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -35,7 +36,7 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `test 10 roles support and floor scope`() {
+  fun `test 11 roles support and floor scope`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val repository = NflRepository(context)
 
@@ -101,7 +102,7 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `test security authentication duplicate account and two device limit`() {
+  fun `test security authentication duplicate account and one device limit`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val repo = NflRepository(context)
 
@@ -114,29 +115,196 @@ class ExampleRobolectricTest {
       UserAccount(id = "supervisor", name = "Dup Sup", password = "999", role = UserRole.SUPERVISOR),
       isNewAccount = true
     )
-    assertTrue(!dupRes.success)
+    assertFalse(dupRes.success)
 
-    // 3. Enforce 2-device limit when 2 other devices are already approved
+    // 3. Enforce strict 1-device limit (MAX_APPROVED_DEVICES_PER_USER = 1) when another device is bound
+    assertEquals(1, MAX_APPROVED_DEVICES_PER_USER)
     val supUser = repo.users.value.find { it.id == "supervisor" }!!
     repo.saveUser(
       supUser.copy(
+        authorizedDeviceId = "DEV-OLD-1",
+        authorizedDeviceName = "Device 1",
         approvedDevices = listOf(
-          ApprovedDevice("DEV-OLD-1", "Device 1", 1000L, "Admin"),
-          ApprovedDevice("DEV-OLD-2", "Device 2", 2000L, "Admin")
+          ApprovedDevice("DEV-OLD-1", "Device 1", 1000L, "Admin")
         )
       ),
       isNewAccount = false
     )
-    val thirdDevAttempt = repo.authenticateUser("supervisor", "123")
-    assertEquals(AuthStatus.DEVICE_LIMIT_REACHED, thirdDevAttempt.status)
+    val secondDevAttempt = repo.authenticateUser("supervisor", "123")
+    assertEquals(AuthStatus.DEVICE_LIMIT_REACHED, secondDevAttempt.status)
 
-    // 4. Admin revokes one device -> now this device can bind and log in
+    // 4. Admin revokes the bound device -> now this device can bind and log in
     repo.authenticateUser("admin", "123")
     val revokeRes = repo.adminRevokeUserDevice("supervisor", "DEV-OLD-1")
     assertTrue(revokeRes.success)
 
-    val secondDevLogin = repo.authenticateUser("supervisor", "123")
-    assertEquals(AuthStatus.SUCCESS, secondDevLogin.status)
+    val newDevLogin = repo.authenticateUser("supervisor", "123")
+    assertEquals(AuthStatus.SUCCESS, newDevLogin.status)
+  }
+
+  @Test
+  fun `test first admin 1015198 bootstrap mandatory password change and idempotency`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repo = NflRepository(context)
+
+    // 1. Non-1015198 Employee ID cannot use first-admin bootstrap
+    val badIdBootstrap = repo.bootstrapFirstAdmin(
+      employeeId = "9999999",
+      initialPassword = "InitPass#2026",
+      confirmPassword = "InitPass#2026",
+      fullName = "Unauthorized User"
+    )
+    assertFalse(badIdBootstrap.success)
+
+    // 2. Bootstrap Initial Admin 1015198
+    assertFalse(repo.isFirstAdminProvisioned())
+    val bootstrapRes = repo.bootstrapFirstAdmin(
+      employeeId = INITIAL_ADMIN_EMPLOYEE_ID,
+      initialPassword = "InitPass#2026",
+      confirmPassword = "InitPass#2026",
+      fullName = "Initial Administrator"
+    )
+    assertTrue(bootstrapRes.success)
+    assertTrue(repo.isFirstAdminProvisioned())
+
+    // Verify no plaintext password is stored
+    val adminAccount = repo.users.value.find { it.id == INITIAL_ADMIN_EMPLOYEE_ID }!!
+    assertEquals("", adminAccount.password)
+    assertTrue(adminAccount.passwordHash.isNotBlank())
+    assertTrue(adminAccount.isAdmin)
+    assertEquals(FloorScope.ALL, adminAccount.authorizedFloorScope)
+    assertTrue(adminAccount.mustChangePassword)
+
+    // 3. Repeated bootstrap attempts must be blocked
+    val duplicateBootstrap = repo.bootstrapFirstAdmin(
+      employeeId = INITIAL_ADMIN_EMPLOYEE_ID,
+      initialPassword = "AnotherPass#2026",
+      confirmPassword = "AnotherPass#2026"
+    )
+    assertFalse(duplicateBootstrap.success)
+
+    // 4. First login with initial password requires password change before entering operational screens
+    val firstLogin = repo.authenticateUser(INITIAL_ADMIN_EMPLOYEE_ID, "InitPass#2026")
+    assertEquals(AuthStatus.PASSWORD_CHANGE_REQUIRED, firstLogin.status)
+
+    // 5. Complete mandatory password change
+    val changeRes = repo.changePassword(
+      userId = INITIAL_ADMIN_EMPLOYEE_ID,
+      currentPassword = "InitPass#2026",
+      newPassword = "NewAdminPass#2026",
+      confirmPassword = "NewAdminPass#2026"
+    )
+    assertTrue(changeRes.success)
+
+    // 6. Login with new password succeeds with full Admin & All Floor access
+    val secondLogin = repo.authenticateUser(INITIAL_ADMIN_EMPLOYEE_ID, "NewAdminPass#2026")
+    assertEquals(AuthStatus.SUCCESS, secondLogin.status)
+    assertEquals(UserRole.ADMIN, secondLogin.user?.role)
+    assertEquals(FloorScope.ALL, secondLogin.user?.authorizedFloorScope)
+    assertFalse(secondLogin.user?.mustChangePassword ?: true)
+  }
+
+  @Test
+  fun `test employee registration pending approval designation mapping and admin workflow`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repo = NflRepository(context)
+
+    // 1. Public registration cannot request Admin or All Floor as a physical floor
+    val allFloorAttempt = repo.registerEmployee(
+      fullName = "Test IE",
+      employeeId = "EMP-IE-01",
+      designation = EmployeeDesignation.IE,
+      physicalFloor = FloorScope.ALL,
+      password = "pass1234",
+      confirmPassword = "pass1234"
+    )
+    assertFalse(allFloorAttempt.success)
+
+    // 2. Register Head of Production on Sew-2 -> automatically maps to Production department, PRODUCTION_MANAGER role, and All Floor authorized scope
+    val hopReg = repo.registerEmployee(
+      fullName = "Rahim HOP",
+      employeeId = "EMP-HOP-101",
+      designation = EmployeeDesignation.HEAD_OF_PRODUCTION,
+      physicalFloor = FloorScope.SEW_2,
+      password = "pass1234",
+      confirmPassword = "pass1234"
+    )
+    assertTrue(hopReg.success)
+
+    // 3. Pending employee cannot log in before Admin approval
+    val pendingLogin = repo.authenticateUser("EMP-HOP-101", "pass1234")
+    assertEquals(AuthStatus.ACCOUNT_PENDING_APPROVAL, pendingLogin.status)
+
+    // 4. Register Production Supervisor on Sew-1 -> maps to Production department, SUPERVISOR role, and Sew-1 scope
+    val supReg = repo.registerEmployee(
+      fullName = "Karim Supervisor",
+      employeeId = "EMP-SUP-202",
+      designation = EmployeeDesignation.PRODUCTION_SUPERVISOR,
+      physicalFloor = FloorScope.SEW_1,
+      password = "pass1234",
+      confirmPassword = "pass1234"
+    )
+    assertTrue(supReg.success)
+    val supPending = repo.users.value.find { it.id == "EMP-SUP-202" }!!
+    assertEquals("Production", supPending.department)
+    assertEquals(UserRole.SUPERVISOR, supPending.role)
+    assertEquals(FloorScope.SEW_1, supPending.floor)
+    assertEquals(FloorScope.SEW_1, supPending.authorizedFloorScope)
+
+    // 5. Admin approves EMP-HOP-101 and rejects EMP-SUP-202
+    repo.authenticateUser("admin", "123")
+    val approveRes = repo.adminApproveUserRegistration("EMP-HOP-101")
+    assertTrue(approveRes.success)
+
+    val approvedHopLogin = repo.authenticateUser("EMP-HOP-101", "pass1234")
+    assertEquals(AuthStatus.SUCCESS, approvedHopLogin.status)
+    assertEquals("Production", approvedHopLogin.user?.department)
+    assertEquals(UserRole.PRODUCTION_MANAGER, approvedHopLogin.user?.role)
+    assertEquals(FloorScope.ALL, approvedHopLogin.user?.authorizedFloorScope)
+
+    // Switch back to Admin to test reject & suspend
+    repo.authenticateUser("admin", "123")
+    val rejectRes = repo.adminRejectUserRegistration("EMP-SUP-202", "Duplicate badge request")
+    assertTrue(rejectRes.success)
+    val rejectedLogin = repo.authenticateUser("EMP-SUP-202", "pass1234")
+    assertEquals(AuthStatus.ACCOUNT_REJECTED, rejectedLogin.status)
+
+    val suspendRes = repo.adminSuspendUser("EMP-HOP-101", "Temporary leave")
+    assertTrue(suspendRes.success)
+    val suspendedLogin = repo.authenticateUser("EMP-HOP-101", "pass1234")
+    assertEquals(AuthStatus.ACCOUNT_SUSPENDED, suspendedLogin.status)
+  }
+
+  @Test
+  fun `test unscheduled lines with zero target are excluded from performance rankings`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repo = NflRepository(context)
+    repo.authenticateUser("admin", "123")
+    val todayBd = repo.getCurrentBangladeshDateIso()
+
+    // Set Line K1 target to 0 (unscheduled)
+    repo.saveLineSetup(
+      SupervisorLineSetup(
+        lineId = "K1",
+        floor = "Sew 2",
+        date = todayBd,
+        itemName = "Unscheduled Style",
+        smv = 14.0,
+        targetDailyPcs = 0,
+        targetHourlyPcs = 0,
+        targetEfficiencyPct = 75.0,
+        operatorsCount = 20,
+        machinesCount = 20
+      )
+    )
+
+    val savedSetup = repo.getLineSetup("K1")
+    assertEquals(0, savedSetup.targetDailyPcs)
+
+    val tvData = repo.getTvDashboardData(FloorScope.SEW_2, PeriodScope.TODAY)
+    assertFalse(tvData.linePerformance.any { it.lineId == "K1" })
+    assertFalse(tvData.lowestEfficiencyLines.any { it.lineId == "K1" })
+    assertFalse(tvData.highestDhuLines.any { it.lineId == "K1" })
   }
 
   @Test

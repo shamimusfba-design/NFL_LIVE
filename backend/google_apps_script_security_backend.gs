@@ -3,6 +3,7 @@
  *
  * Keeps the Google Sheet PRIVATE while serving authorized requests from the NFL LIVE Android & TV app.
  * Primary Admin Gmail: shamim.sustipe15@gmail.com
+ * Initial Admin Employee ID: 1015198
  * Timezone: Asia/Dhaka (Bangladesh Standard Time, UTC+6)
  *
  * Deployment Instructions:
@@ -14,11 +15,13 @@
 
 const SHEET_ID = '1lutN5LmC1Hi6vtuwpkis4n-dYGElZ3Qtqn-Hk52Y2L0';
 const PRIMARY_ADMIN_GMAIL = 'shamim.sustipe15@gmail.com';
+const INITIAL_ADMIN_EMPLOYEE_ID = '1015198';
 const TIMEZONE = 'Asia/Dhaka';
-const MAX_DEVICES_PER_EMPLOYEE = 2;
+const MAX_DEVICES_PER_EMPLOYEE = 1; // Strictly 1 authorized active device per Employee ID
 const CODE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 const MAX_VERIFY_ATTEMPTS = 5;
 const MAX_RESEND_COUNT = 3;
+const VALID_PHYSICAL_FLOORS = ['Sew-1', 'Sew-2', 'Sew-3', 'Finishing'];
 
 function authorizeEmailAndSheets() {
   const ss = SpreadsheetApp.openById(SHEET_ID);
@@ -77,17 +80,22 @@ function doPost(e) {
     const bdNow = getBangladeshNow();
     const action = body.action || 'append';
 
+    // 0. Atomic First-Admin (1015198) Bootstrap
+    if (action === 'bootstrapFirstAdmin') {
+      return handleBootstrapFirstAdmin(ss, body, bdNow);
+    }
+
     // 1. Request Gmail Verification / Approval Code to Primary Admin Gmail
     if (action === 'requestVerificationCode') {
       return handleRequestVerificationCode(ss, body, bdNow);
     }
 
-    // 2. Verify Gmail Code and Approve Device / Account
+    // 2. Verify Gmail Code and Approve Device Replacement / Account
     if (action === 'verifyApprovalCode') {
       return handleVerifyApprovalCode(ss, body, bdNow);
     }
 
-    // 3. Admin Device Revocation / Approval
+    // 3. Admin Device Revocation / Replacement Approval
     if (action === 'manageDevice') {
       return handleManageDevice(ss, body, bdNow);
     }
@@ -97,7 +105,7 @@ function doPost(e) {
       return handleAdminRecordChange(ss, body, bdNow);
     }
 
-    // 5. Standard Data Append with Server-Side RBAC, Device Limit & Asia/Dhaka Time Window Validation
+    // 5. Standard Data Append with Server-Side RBAC, 1-Device Limit & Asia/Dhaka Time Window Validation
     return handleAuthorizedAppend(ss, body, bdNow);
   } catch (err) {
     return jsonResponse({ status: 'error', message: String(err) });
@@ -106,17 +114,82 @@ function doPost(e) {
   }
 }
 
+function handleBootstrapFirstAdmin(ss, body, bdNow) {
+  const empId = String(body.employeeId || '').trim();
+  const passwordHash = String(body.passwordHash || '').trim();
+  const passwordSalt = String(body.passwordSalt || '').trim();
+  const adminName = String(body.adminName || 'System Administrator').trim();
+  const deviceId = String(body.deviceId || '').trim();
+  const deviceName = String(body.deviceName || 'Admin Device').trim();
+
+  if (empId !== INITIAL_ADMIN_EMPLOYEE_ID) {
+    return jsonResponse({
+      status: 'error',
+      message: 'First-Admin bootstrap is restricted to Initial Admin Employee ID ' + INITIAL_ADMIN_EMPLOYEE_ID + '.'
+    });
+  }
+  if (!passwordHash || !passwordSalt) {
+    return jsonResponse({
+      status: 'error',
+      message: 'Salted password hash is required. Plaintext passwords are not accepted.'
+    });
+  }
+
+  let bootSheet = ss.getSheetByName('Auth_Bootstrap');
+  if (!bootSheet) {
+    bootSheet = ss.insertSheet('Auth_Bootstrap');
+    bootSheet.appendRow(['employee_id', 'admin_name', 'password_hash', 'password_salt', 'device_id', 'device_name', 'must_change_password', 'locked', 'provisioned_at']);
+  }
+
+  const rows = bootSheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === INITIAL_ADMIN_EMPLOYEE_ID && String(rows[i][7]) === 'TRUE') {
+      return jsonResponse({
+        status: 'error',
+        code: 'BOOTSTRAP_ALREADY_COMPLETED',
+        message: 'Initial Admin (1015198) is already provisioned and bootstrap is permanently locked.'
+      });
+    }
+  }
+
+  bootSheet.appendRow([
+    INITIAL_ADMIN_EMPLOYEE_ID,
+    adminName,
+    passwordHash,
+    passwordSalt,
+    deviceId,
+    deviceName,
+    'TRUE',
+    'TRUE',
+    bdNow.iso
+  ]);
+
+  if (deviceId) {
+    forceApproveDeviceOnSheet(ss, INITIAL_ADMIN_EMPLOYEE_ID, deviceId, deviceName, bdNow, '*');
+  }
+  appendAuditLog(ss, bdNow, 'ADMIN_BOOTSTRAP', INITIAL_ADMIN_EMPLOYEE_ID, 'FIRST_ADMIN_PROVISIONED', adminName, 'Atomic First-Admin bootstrap completed & locked', deviceId);
+
+  return jsonResponse({
+    status: 'ok',
+    employeeId: INITIAL_ADMIN_EMPLOYEE_ID,
+    role: 'ADMIN',
+    authorizedFloorScope: 'All Floor',
+    mustChangePassword: true,
+    serverTimeMillis: bdNow.epochMillis
+  });
+}
+
 function handleAuthorizedAppend(ss, body, bdNow) {
   const tabName = body.tab || 'Raw_Production';
   const actorRole = String(body.actorRole || '').toUpperCase();
   const actorId = String(body.actorId || '');
   const deviceId = String(body.deviceId || '');
 
-  // Enforce 2-device limit on backend if deviceId is provided
+  // Enforce strict 1-device limit on backend if deviceId is provided
   if (actorId && deviceId && actorRole !== 'ADMIN') {
     const devCheck = verifyOrRegisterDevice(ss, actorId, deviceId, body.deviceName || 'Android', bdNow);
     if (!devCheck.allowed) {
-      appendAuditLog(ss, bdNow, 'SECURITY', actorId, 'DEVICE_LIMIT_BLOCKED', actorId, 'Device limit exceeded', deviceId);
+      appendAuditLog(ss, bdNow, 'SECURITY', actorId, 'SINGLE_DEVICE_BLOCKED', actorId, 'Attempted write from unauthorized second device', deviceId);
       return jsonResponse({ status: 'error', code: 'MAX_DEVICES_REACHED', message: devCheck.message, serverTimeMillis: bdNow.epochMillis });
     }
   }
@@ -202,19 +275,19 @@ function handleRequestVerificationCode(ss, body, bdNow) {
     codeHash, bdNow.epochMillis + CODE_EXPIRY_MS, 0, Number(body.resendCount || 0), 'FALSE', 'PENDING', bdNow.iso
   ]);
 
-  const subject = '[NFL LIVE Security] Approval Code for Employee ID: ' + employeeId;
+  const subject = '[NFL LIVE Security] Device Replacement Code for Employee ID: ' + employeeId;
   const emailBody =
-    'NFL LIVE — Account & Device Security Verification\n\n' +
+    'NFL LIVE — Single-Device Replacement & Security Verification\n\n' +
     'Employee ID: ' + employeeId + '\n' +
     'Name / Role: ' + employeeName + ' (' + role + ')\n' +
-    'Device: ' + deviceName + ' (' + deviceId.substring(0, 10) + ')\n' +
+    'New Device: ' + deviceName + ' (' + deviceId.substring(0, 10) + ')\n' +
     'Bangladesh Time: ' + bdNow.iso + '\n\n' +
     'Single-Use Verification Code: ' + code + '\n' +
     '(Expires in 10 minutes)\n\n' +
-    'If you did not authorize this device, you can also reject or manage devices inside the NFL LIVE Admin Access Control panel.';
+    'Approving this device will automatically unbind the previous device for Employee ID ' + employeeId + '.';
 
   MailApp.sendEmail(PRIMARY_ADMIN_GMAIL, subject, emailBody);
-  appendAuditLog(ss, bdNow, 'AUTH_OTP', employeeId, 'SEND_GMAIL_OTP', PRIMARY_ADMIN_GMAIL, 'Sent verification code for device ' + deviceName, deviceId);
+  appendAuditLog(ss, bdNow, 'AUTH_OTP', employeeId, 'SEND_GMAIL_OTP', PRIMARY_ADMIN_GMAIL, 'Sent device replacement code for ' + deviceName, deviceId);
 
   return jsonResponse({
     status: 'ok',
@@ -258,9 +331,10 @@ function handleVerifyApprovalCode(ss, body, bdNow) {
       const empId = String(values[i][1]);
       const devId = String(values[i][4]);
       const devName = String(values[i][5]);
-      forceApproveDeviceOnSheet(ss, empId, devId, devName, bdNow, body.revokeDeviceId || '');
-      appendAuditLog(ss, bdNow, 'AUTH_OTP', empId, 'VERIFY_GMAIL_OTP_SUCCESS', PRIMARY_ADMIN_GMAIL, 'Approved device ' + devName, devId);
-      return jsonResponse({ status: 'ok', message: 'Device approved successfully.', serverTimeMillis: bdNow.epochMillis });
+      // Revoke all previous devices for this Employee ID and bind the new single device
+      forceApproveDeviceOnSheet(ss, empId, devId, devName, bdNow, '*');
+      appendAuditLog(ss, bdNow, 'AUTH_OTP', empId, 'VERIFY_GMAIL_OTP_SUCCESS', PRIMARY_ADMIN_GMAIL, 'Replaced authorized device with ' + devName, devId);
+      return jsonResponse({ status: 'ok', message: 'Device replacement approved. Previous device revoked.', serverTimeMillis: bdNow.epochMillis });
     }
   }
   return jsonResponse({ status: 'error', message: 'Verification request not found.' });
@@ -274,13 +348,13 @@ function handleManageDevice(ss, body, bdNow) {
   const reason = String(body.reason || 'Admin device management');
 
   if (subAction === 'revoke') {
-    revokeDeviceOnSheet(ss, empId, devId);
+    revokeDeviceOnSheet(ss, empId, devId || '*');
     appendAuditLog(ss, bdNow, 'DEVICE_MGMT', empId, 'REVOKE_DEVICE', PRIMARY_ADMIN_GMAIL, reason, devId);
     return jsonResponse({ status: 'ok', message: 'Device revoked.' });
   } else if (subAction === 'approve') {
-    forceApproveDeviceOnSheet(ss, empId, devId, devName, bdNow, body.revokeDeviceId || '');
+    forceApproveDeviceOnSheet(ss, empId, devId, devName, bdNow, '*');
     appendAuditLog(ss, bdNow, 'DEVICE_MGMT', empId, 'ADMIN_APPROVE_DEVICE', PRIMARY_ADMIN_GMAIL, reason, devId);
-    return jsonResponse({ status: 'ok', message: 'Device approved by Admin.' });
+    return jsonResponse({ status: 'ok', message: 'Single authorized device bound by Admin.' });
   }
   return jsonResponse({ status: 'error', message: 'Unknown device action.' });
 }
@@ -334,7 +408,7 @@ function verifyOrRegisterDevice(ss, employeeId, deviceId, deviceName, bdNow) {
   if (activeDevices.length >= MAX_DEVICES_PER_EMPLOYEE) {
     return {
       allowed: false,
-      message: 'Maximum 2 active devices reached for Employee ID ' + employeeId + '. Admin approval or device revocation is required.'
+      message: 'This Employee ID is already active on another phone/device. Only 1 active device is permitted per Employee ID.'
     };
   }
   sheet.appendRow([employeeId, deviceId, deviceName, 'ACTIVE', bdNow.iso, bdNow.iso]);
@@ -347,9 +421,8 @@ function forceApproveDeviceOnSheet(ss, employeeId, deviceId, deviceName, bdNow, 
     sheet = ss.insertSheet('Auth_Devices');
     sheet.appendRow(['employee_id', 'device_id', 'device_name', 'status', 'approved_at', 'last_active']);
   }
-  if (revokeDeviceId) {
-    revokeDeviceOnSheet(ss, employeeId, revokeDeviceId);
-  }
+  // Always revoke previous active devices when binding a new single device
+  revokeDeviceOnSheet(ss, employeeId, revokeDeviceId || '*');
   const values = sheet.getDataRange().getValues();
   for (let i = 1; i < values.length; i++) {
     if (String(values[i][0]).toLowerCase() === employeeId.toLowerCase() && String(values[i][1]) === deviceId) {
@@ -366,7 +439,7 @@ function revokeDeviceOnSheet(ss, employeeId, deviceId) {
   if (!sheet) return;
   const values = sheet.getDataRange().getValues();
   for (let i = 1; i < values.length; i++) {
-    if (String(values[i][0]).toLowerCase() === employeeId.toLowerCase() && String(values[i][1]) === deviceId) {
+    if (String(values[i][0]).toLowerCase() === employeeId.toLowerCase() && (deviceId === '*' || String(values[i][1]) === deviceId)) {
       sheet.getRange(i + 1, 4).setValue('REVOKED');
     }
   }

@@ -496,6 +496,15 @@ class FirebaseSyncService(private val context: Context) {
     }
   }
 
+  private fun parseFloorScope(floorStr: String?, fallback: FloorScope): FloorScope {
+    if (floorStr.isNullOrBlank()) return fallback
+    return FloorScope.entries.find {
+      it.name.equals(floorStr, ignoreCase = true) ||
+          it.apiValue.equals(floorStr, ignoreCase = true) ||
+          it.displayName.equals(floorStr, ignoreCase = true)
+    } ?: fallback
+  }
+
   private fun parseUserDoc(doc: DocumentSnapshot): UserAccount? {
     return try {
       if (doc.getBoolean("isDeleted") == true) return null
@@ -503,35 +512,76 @@ class FirebaseSyncService(private val context: Context) {
       if (id.isEmpty()) return null
       val roleStr = doc.getString("role") ?: UserRole.PRODUCTION_REPORTER.name
       val role = try { UserRole.valueOf(roleStr) } catch (_: Exception) { UserRole.PRODUCTION_REPORTER }
-      val floorStr = doc.getString("floor") ?: FloorScope.SEW_2.name
-      val floor = FloorScope.entries.find {
-        it.name.equals(floorStr, ignoreCase = true) ||
-            it.apiValue.equals(floorStr, ignoreCase = true) ||
-            it.displayName.equals(floorStr, ignoreCase = true)
-      } ?: FloorScope.SEW_2
+      val floor = parseFloorScope(doc.getString("floor"), FloorScope.SEW_2)
+      val requestedFloor = parseFloorScope(doc.getString("requestedFloor"), floor)
+      val isAdmin = doc.getBoolean("isAdmin") ?: (role == UserRole.ADMIN)
+      val authorizedScope = if (isAdmin) {
+        FloorScope.ALL
+      } else {
+        parseFloorScope(doc.getString("authorizedFloorScope"), floor)
+      }
       val statusStr = doc.getString("accountStatus") ?: AccountStatus.APPROVED.name
       val accStatus = try { AccountStatus.valueOf(statusStr) } catch (_: Exception) { AccountStatus.APPROVED }
+
+      val legacyPlainPassword = doc.getString("password").orEmpty()
+      val salt = doc.getString("passwordSalt").orEmpty()
+      val hash = doc.getString("passwordHash").orEmpty().ifBlank {
+        if (legacyPlainPassword.isNotBlank()) {
+          GoogleSheetsStorageService.hashPassword(legacyPlainPassword, salt)
+        } else {
+          ""
+        }
+      }
+      val authDevId = doc.getString("authorizedDeviceId").orEmpty()
+      val authDevName = doc.getString("authorizedDeviceName").orEmpty().ifBlank { "Android Device" }
+      val approvedDevices = if (authDevId.isNotBlank()) {
+        listOf(
+          ApprovedDevice(
+            deviceId = authDevId,
+            deviceName = authDevName,
+            approvedAtMillis = doc.getLong("approvedAtMillis") ?: System.currentTimeMillis(),
+            approvedBy = doc.getString("approvedBy").orEmpty().ifBlank { com.example.model.INITIAL_ADMIN_EMPLOYEE_ID }
+          )
+        )
+      } else {
+        emptyList()
+      }
 
       UserAccount(
         id = id,
         employeeId = doc.getString("employeeId") ?: id,
         name = doc.getString("name") ?: id,
-        password = doc.getString("password") ?: "123",
-        passwordHash = doc.getString("passwordHash") ?: "",
+        password = "",
+        passwordHash = hash,
+        passwordSalt = salt,
+        designation = doc.getString("designation") ?: (if (isAdmin) "Admin" else role.displayName),
+        department = doc.getString("department") ?: role.group,
+        requestedDesignation = doc.getString("requestedDesignation") ?: (doc.getString("designation") ?: role.displayName),
+        requestedFloor = requestedFloor,
         role = role,
         floor = floor,
+        authorizedFloorScope = authorizedScope,
         assignedLine = doc.getString("assignedLine") ?: "K1",
-        isActive = doc.getBoolean("isActive") ?: true,
+        isActive = doc.getBoolean("isActive") ?: (accStatus == AccountStatus.APPROVED),
         accountStatus = accStatus,
-        isAdmin = doc.getBoolean("isAdmin") ?: (role == UserRole.ADMIN),
+        isAdmin = isAdmin,
+        mustChangePassword = doc.getBoolean("mustChangePassword") ?: false,
+        activeSessionId = doc.getString("activeSessionId") ?: "",
+        authorizedDeviceId = authDevId,
+        authorizedDeviceName = if (authDevId.isNotBlank()) authDevName else "",
+        rejectionReason = doc.getString("rejectionReason") ?: "",
+        createdAtMillis = doc.getLong("createdAtMillis") ?: System.currentTimeMillis(),
+        updatedAtMillis = doc.getLong("updatedAtMillis") ?: System.currentTimeMillis(),
+        approvedBy = doc.getString("approvedBy") ?: "",
+        approvedAtMillis = doc.getLong("approvedAtMillis") ?: 0L,
         canViewDashboard = doc.getBoolean("canViewDashboard") ?: true,
-        canViewTvDashboard = doc.getBoolean("canViewTvDashboard") ?: false,
-        canViewMonthlyEfficiency = doc.getBoolean("canViewMonthlyEfficiency") ?: false,
-        canViewMonthlyDhu = doc.getBoolean("canViewMonthlyDhu") ?: false,
-        canViewMonthlyOql = doc.getBoolean("canViewMonthlyOql") ?: false,
+        canViewTvDashboard = doc.getBoolean("canViewTvDashboard") ?: true,
+        canViewMonthlyEfficiency = doc.getBoolean("canViewMonthlyEfficiency") ?: true,
+        canViewMonthlyDhu = doc.getBoolean("canViewMonthlyDhu") ?: true,
+        canViewMonthlyOql = doc.getBoolean("canViewMonthlyOql") ?: true,
         canViewLineDeepDive = doc.getBoolean("canViewLineDeepDive") ?: true,
-        canViewAuditLogs = doc.getBoolean("canViewAuditLogs") ?: false,
-        canExportReports = doc.getBoolean("canExportReports") ?: false,
+        canViewAuditLogs = doc.getBoolean("canViewAuditLogs") ?: isAdmin,
+        canExportReports = doc.getBoolean("canExportReports") ?: isAdmin,
         canProductionWrite = doc.getBoolean("canProductionWrite") ?: false,
         canFinishingWrite = doc.getBoolean("canFinishingWrite") ?: false,
         canQualityWrite = doc.getBoolean("canQualityWrite") ?: false,
@@ -539,7 +589,8 @@ class FirebaseSyncService(private val context: Context) {
         canNptWrite = doc.getBoolean("canNptWrite") ?: false,
         canMorningTargetWrite = doc.getBoolean("canMorningTargetWrite") ?: false,
         canMonthlyTargetWrite = doc.getBoolean("canMonthlyTargetWrite") ?: false,
-        canTargetRevisionWrite = doc.getBoolean("canTargetRevisionWrite") ?: false
+        canTargetRevisionWrite = doc.getBoolean("canTargetRevisionWrite") ?: false,
+        approvedDevices = approvedDevices
       )
     } catch (e: Exception) {
       null
@@ -921,18 +972,41 @@ class FirebaseSyncService(private val context: Context) {
     val db = firestore ?: return@withContext false
     try {
       val docId = user.id.trim().replace("/", "_")
+      val effectiveSalt = user.passwordSalt
+      val effectiveHash = when {
+        user.passwordHash.isNotBlank() -> user.passwordHash
+        user.password.isNotBlank() -> GoogleSheetsStorageService.hashPassword(user.password, effectiveSalt)
+        else -> ""
+      }
+      val primaryDevice = user.approvedDevices.firstOrNull()
       val map = hashMapOf(
         "id" to user.id,
-        "employeeId" to user.employeeId,
+        "employeeId" to user.employeeId.ifBlank { user.id },
         "name" to user.name,
-        "password" to user.password,
-        "passwordHash" to user.passwordHash,
+        // Never store plaintext password in Firestore
+        "password" to "",
+        "passwordHash" to effectiveHash,
+        "passwordSalt" to effectiveSalt,
+        "designation" to user.designation,
+        "department" to user.department,
+        "requestedDesignation" to user.requestedDesignation,
+        "requestedFloor" to user.requestedFloor.name,
         "role" to user.role.name,
         "floor" to user.floor.name,
+        "authorizedFloorScope" to user.authorizedFloorScope.name,
         "assignedLine" to user.assignedLine,
         "isActive" to user.isActive,
         "accountStatus" to user.accountStatus.name,
         "isAdmin" to user.isAdmin,
+        "mustChangePassword" to user.mustChangePassword,
+        "activeSessionId" to user.activeSessionId,
+        "authorizedDeviceId" to user.authorizedDeviceId.ifBlank { primaryDevice?.deviceId.orEmpty() },
+        "authorizedDeviceName" to user.authorizedDeviceName.ifBlank { primaryDevice?.deviceName.orEmpty() },
+        "rejectionReason" to user.rejectionReason,
+        "createdAtMillis" to user.createdAtMillis,
+        "updatedAtMillis" to System.currentTimeMillis(),
+        "approvedBy" to user.approvedBy,
+        "approvedAtMillis" to user.approvedAtMillis,
         "canViewDashboard" to user.canViewDashboard,
         "canViewTvDashboard" to user.canViewTvDashboard,
         "canViewMonthlyEfficiency" to user.canViewMonthlyEfficiency,

@@ -171,122 +171,125 @@ class NflRepository(private val context: Context) {
 
   // Master List of all 16 System Functions (Visual / Report vs Data Entry)
   val masterAppFeatures: List<AppFeaturePermission> = listOf(
-    // 1. DATA ENTRY FUNCTIONS (ডাটা এন্ট্রি ফাংশনসমূহ)
+    // 1. DATA ENTRY FUNCTIONS
     AppFeaturePermission(
       key = "canProductionWrite",
       englishName = "Hourly Sewing Production Output Entry",
-      banglaName = "ঘণ্টাওয়ারী সুইং প্রোডাকশন আউটপুট এন্ট্রি",
+      banglaName = "Hourly Sewing Production Output Entry",
       category = AppFunctionCategory.DATA_ENTRY,
       description = "Allows recording hourly output pieces for sewing lines (Sew-1, Sew-2, Sew-3)"
     ),
     AppFeaturePermission(
       key = "canFinishingWrite",
       englishName = "Ironing & Packing Finishing Entry",
-      banglaName = "আইরনিং ও প্যাকিং ফিনিশিং এন্ট্রি",
+      banglaName = "Ironing & Packing Finishing Entry",
       category = AppFunctionCategory.DATA_ENTRY,
       description = "Allows logging output for Iron 1-3 and Packing 1-3 floor finishing lines"
     ),
     AppFeaturePermission(
       key = "canQualityWrite",
       englishName = "Quality DHU Inspection Entry",
-      banglaName = "কোয়ালিটি ডিএইচইউ ইন্সপেকশন এন্ট্রি",
+      banglaName = "Quality DHU Inspection Entry",
       category = AppFunctionCategory.DATA_ENTRY,
       description = "Allows recording endline defect inspection, checked pieces, and DHU calculations"
     ),
     AppFeaturePermission(
       key = "canOqlWrite",
       englishName = "OQL / Buyer Audit Inspection Entry",
-      banglaName = "ওকেএল / বায়ার অডিট এন্ট্রি",
+      banglaName = "OQL / Buyer Audit Inspection Entry",
       category = AppFunctionCategory.DATA_ENTRY,
       description = "Allows recording final audit pass/fail status and critical/major defect counts"
     ),
     AppFeaturePermission(
       key = "canNptWrite",
       englishName = "NPT Breakdown & Incident Entry",
-      banglaName = "এনপিটি ও মেশিন ব্রেকডাউন এন্ট্রি",
+      banglaName = "NPT Breakdown & Incident Entry",
       category = AppFunctionCategory.DATA_ENTRY,
       description = "Allows reporting line stoppages, mechanic calls, machine breakdowns, and material delays"
     ),
     AppFeaturePermission(
       key = "canMorningTargetWrite",
       englishName = "Morning Target & Manpower Setup",
-      banglaName = "সকালের লাইন টার্গেট ও ম্যানপাওয়ার এন্ট্রি",
+      banglaName = "Morning Target & Manpower Setup",
       category = AppFunctionCategory.DATA_ENTRY,
-      description = "Allows supervisors to configure daily operator count, helper count, and hourly targets"
+      description = "Allows IE and authorized reporters to configure daily operator count, helper count, and hourly targets"
     ),
     AppFeaturePermission(
       key = "canMonthlyTargetWrite",
       englishName = "Monthly Factory Target Configuration",
-      banglaName = "মান্থলি ফ্যাক্টরি টার্গেট সেটআপ",
+      banglaName = "Monthly Factory Target Configuration",
       category = AppFunctionCategory.DATA_ENTRY,
       description = "Allows configuring monthly efficiency (%), target DHU (%), and target OQL (%) per floor"
     ),
     AppFeaturePermission(
       key = "canTargetRevisionWrite",
       englishName = "Target Revision & Hourly Edit",
-      banglaName = "টার্গেট সংশোধন ও ডাটা এডিট",
+      banglaName = "Target Revision & Hourly Edit",
       category = AppFunctionCategory.DATA_ENTRY,
       description = "Allows modifying established line targets or revising previously submitted records"
     ),
 
-    // 2. VISUAL & REPORTING FUNCTIONS (ভিজ্যুয়াল ও রিপোর্ট ফাংশনসমূহ)
+    // 2. VISUAL & REPORTING FUNCTIONS
     AppFeaturePermission(
       key = "canViewDashboard",
       englishName = "Live Production Dashboard",
-      banglaName = "লাইভ প্রোডাকশন ড্যাশবোর্ড",
+      banglaName = "Live Production Dashboard",
       category = AppFunctionCategory.VISUAL_REPORT,
       description = "View real-time factory matrices, speedometers, gauges, and line status alerts"
     ),
     AppFeaturePermission(
       key = "canViewTvDashboard",
       englishName = "Smart TV Fullscreen Display Mode",
-      banglaName = "স্মার্ট টিভি ফুলস্ক্রিন ডিসপ্লে",
+      banglaName = "Smart TV Fullscreen Display Mode",
       category = AppFunctionCategory.VISUAL_REPORT,
       description = "16:9 widescreen presentation display for overhead factory monitors"
     ),
     AppFeaturePermission(
       key = "canViewMonthlyEfficiency",
       englishName = "Monthly Efficiency Breakdown & Table",
-      banglaName = "মান্থলি এফিসিয়েন্সি ব্রেকডাউন",
+      banglaName = "Monthly Efficiency Breakdown & Table",
       category = AppFunctionCategory.VISUAL_REPORT,
       description = "Detailed line-wise monthly efficiency analysis tables with Sew-1/2/3 floor filters"
     ),
     AppFeaturePermission(
       key = "canViewMonthlyDhu",
       englishName = "Monthly DHU Quality Breakdown Table",
-      banglaName = "মান্থলি ডিএইচইউ কোয়ালিটি রিপোর্ট",
+      banglaName = "Monthly DHU Quality Breakdown Table",
       category = AppFunctionCategory.VISUAL_REPORT,
       description = "Line-wise monthly defect percentages, checked samples, and defect type rankings"
     ),
     AppFeaturePermission(
       key = "canViewMonthlyOql",
       englishName = "Monthly OQL Audit Breakdown Table",
-      banglaName = "মান্থলি ওকেএল অডিট রিপোর্ট",
+      banglaName = "Monthly OQL Audit Breakdown Table",
       category = AppFunctionCategory.VISUAL_REPORT,
       description = "Line-wise monthly buyer audit compliance and acceptance percentages"
     ),
     AppFeaturePermission(
       key = "canViewLineDeepDive",
       englishName = "Line Deep Dive & Hourly Analytics",
-      banglaName = "লাইন ভিত্তিক বিস্তারিত অ্যানালিটিক্স",
+      banglaName = "Line Deep Dive & Hourly Analytics",
       category = AppFunctionCategory.VISUAL_REPORT,
       description = "Hourly trend charts, target vs actual gaps, and line performance metrics"
     ),
     AppFeaturePermission(
       key = "canViewAuditLogs",
       englishName = "Audit Log & System History",
-      banglaName = "অডিট লগ ও হিস্ট্রি",
+      banglaName = "Audit Log & System History",
       category = AppFunctionCategory.VISUAL_REPORT,
       description = "Immutable chronological audit trail of all factory submissions and revisions"
     ),
     AppFeaturePermission(
       key = "canExportReports",
       englishName = "PDF & Excel Report Export",
-      banglaName = "পিডিএফ ও এক্সেল রিপোর্ট এক্সপোর্ট",
+      banglaName = "PDF & Excel Report Export",
       category = AppFunctionCategory.VISUAL_REPORT,
       description = "Generate and export production summary documents and performance sheets"
     )
   )
+
+  private val defaultSeedPasswordHash = GoogleSheetsStorageService.sha256("123")
+  private val bootstrapLock = Any()
 
   // User Accounts & Role Management (Designation-wise accounts with explicit RBAC permissions)
   private val _users = MutableStateFlow<List<UserAccount>>(
@@ -294,9 +297,13 @@ class NflRepository(private val context: Context) {
       UserAccount(
         id = "admin",
         name = "Admin",
-        password = "123",
+        password = "",
+        passwordHash = defaultSeedPasswordHash,
+        designation = EmployeeDesignation.ADMIN.displayName,
+        department = EmployeeDesignation.ADMIN.department,
         role = UserRole.ADMIN,
-        floor = FloorScope.ALL,
+        floor = FloorScope.SEW_1,
+        authorizedFloorScope = FloorScope.ALL,
         assignedLine = "All",
         isAdmin = true,
         canViewDashboard = true,
@@ -319,9 +326,13 @@ class NflRepository(private val context: Context) {
       UserAccount(
         id = "supervisor",
         name = "Supervisor",
-        password = "123",
+        password = "",
+        passwordHash = defaultSeedPasswordHash,
+        designation = EmployeeDesignation.PRODUCTION_SUPERVISOR.displayName,
+        department = EmployeeDesignation.PRODUCTION_SUPERVISOR.department,
         role = UserRole.SUPERVISOR,
         floor = FloorScope.SEW_2,
+        authorizedFloorScope = FloorScope.SEW_2,
         assignedLine = "K1",
         canViewDashboard = true,
         canViewTvDashboard = true,
@@ -331,21 +342,25 @@ class NflRepository(private val context: Context) {
         canViewLineDeepDive = true,
         canViewAuditLogs = false,
         canExportReports = true,
-        canProductionWrite = true, // Supervisor can enter current-day Production data during permitted window
+        canProductionWrite = true,
         canFinishingWrite = true,
-        canQualityWrite = false, // Cannot enter Quality data
+        canQualityWrite = false,
         canOqlWrite = false,
-        canNptWrite = true, // Can log line stoppages & call mechanics
-        canMorningTargetWrite = false, // Supervisors cannot edit daily line targets or manpower
+        canNptWrite = true,
+        canMorningTargetWrite = false,
         canMonthlyTargetWrite = false,
         canTargetRevisionWrite = false
       ),
       UserAccount(
         id = "production",
         name = "Production",
-        password = "123",
+        password = "",
+        passwordHash = defaultSeedPasswordHash,
+        designation = EmployeeDesignation.REPORTER.displayName,
+        department = EmployeeDesignation.REPORTER.department,
         role = UserRole.PRODUCTION_REPORTER,
         floor = FloorScope.SEW_2,
+        authorizedFloorScope = FloorScope.SEW_2,
         assignedLine = "K1",
         canViewDashboard = true,
         canViewTvDashboard = false,
@@ -355,21 +370,25 @@ class NflRepository(private val context: Context) {
         canViewLineDeepDive = true,
         canViewAuditLogs = false,
         canExportReports = false,
-        canProductionWrite = true, // Hourly sewing entry
-        canFinishingWrite = true, // Ironing & packing entry
+        canProductionWrite = true,
+        canFinishingWrite = true,
         canQualityWrite = false,
         canOqlWrite = false,
         canNptWrite = false,
-        canMorningTargetWrite = true, // Authorized Production Reporter: daily line target and manpower
-        canMonthlyTargetWrite = false, // Monthly Data entry is reserved for IE/Admin
+        canMorningTargetWrite = true,
+        canMonthlyTargetWrite = false,
         canTargetRevisionWrite = false
       ),
       UserAccount(
         id = "qc",
         name = "Quality QC",
-        password = "123",
+        password = "",
+        passwordHash = defaultSeedPasswordHash,
+        designation = EmployeeDesignation.QUALITY_SUPERVISOR.displayName,
+        department = EmployeeDesignation.QUALITY_SUPERVISOR.department,
         role = UserRole.QUALITY_REPORTER,
         floor = FloorScope.SEW_2,
+        authorizedFloorScope = FloorScope.SEW_2,
         assignedLine = "K1",
         canViewDashboard = true,
         canViewTvDashboard = false,
@@ -381,7 +400,7 @@ class NflRepository(private val context: Context) {
         canExportReports = false,
         canProductionWrite = false,
         canFinishingWrite = false,
-        canQualityWrite = true, // Endline DHU defect entry
+        canQualityWrite = true,
         canOqlWrite = false,
         canNptWrite = false,
         canMorningTargetWrite = false,
@@ -391,9 +410,13 @@ class NflRepository(private val context: Context) {
       UserAccount(
         id = "auditor",
         name = "Auditor",
-        password = "123",
+        password = "",
+        passwordHash = defaultSeedPasswordHash,
+        designation = EmployeeDesignation.QUALITY_OFFICER.displayName,
+        department = EmployeeDesignation.QUALITY_OFFICER.department,
         role = UserRole.AUDITOR,
         floor = FloorScope.SEW_2,
+        authorizedFloorScope = FloorScope.SEW_2,
         assignedLine = "K1",
         canViewDashboard = true,
         canViewTvDashboard = false,
@@ -406,7 +429,7 @@ class NflRepository(private val context: Context) {
         canProductionWrite = false,
         canFinishingWrite = false,
         canQualityWrite = true,
-        canOqlWrite = true, // Buyer audit & OQL compliance
+        canOqlWrite = true,
         canNptWrite = false,
         canMorningTargetWrite = false,
         canMonthlyTargetWrite = false,
@@ -414,10 +437,14 @@ class NflRepository(private val context: Context) {
       ),
       UserAccount(
         id = "pm",
-        name = "Prod Mgr",
-        password = "123",
+        name = "Head of Production",
+        password = "",
+        passwordHash = defaultSeedPasswordHash,
+        designation = EmployeeDesignation.HEAD_OF_PRODUCTION.displayName,
+        department = EmployeeDesignation.HEAD_OF_PRODUCTION.department,
         role = UserRole.PRODUCTION_MANAGER,
-        floor = FloorScope.ALL,
+        floor = FloorScope.SEW_1,
+        authorizedFloorScope = FloorScope.ALL,
         assignedLine = "All",
         canViewDashboard = true,
         canViewTvDashboard = true,
@@ -427,22 +454,25 @@ class NflRepository(private val context: Context) {
         canViewLineDeepDive = true,
         canViewAuditLogs = true,
         canExportReports = true,
-        // Management Rule: ZERO data entry permissions
-        canProductionWrite = false,
-        canFinishingWrite = false,
+        canProductionWrite = true,
+        canFinishingWrite = true,
         canQualityWrite = false,
         canOqlWrite = false,
-        canNptWrite = false,
-        canMorningTargetWrite = false,
-        canMonthlyTargetWrite = false,
-        canTargetRevisionWrite = false
+        canNptWrite = true,
+        canMorningTargetWrite = true,
+        canMonthlyTargetWrite = true,
+        canTargetRevisionWrite = true
       ),
       UserAccount(
         id = "qm",
-        name = "Quality Mgr",
-        password = "123",
+        name = "Head of Quality",
+        password = "",
+        passwordHash = defaultSeedPasswordHash,
+        designation = EmployeeDesignation.HEAD_OF_QUALITY.displayName,
+        department = EmployeeDesignation.HEAD_OF_QUALITY.department,
         role = UserRole.QUALITY_MANAGER,
-        floor = FloorScope.ALL,
+        floor = FloorScope.SEW_1,
+        authorizedFloorScope = FloorScope.ALL,
         assignedLine = "All",
         canViewDashboard = true,
         canViewTvDashboard = true,
@@ -452,12 +482,11 @@ class NflRepository(private val context: Context) {
         canViewLineDeepDive = true,
         canViewAuditLogs = true,
         canExportReports = true,
-        // Management Rule: ZERO data entry permissions
         canProductionWrite = false,
         canFinishingWrite = false,
-        canQualityWrite = false,
-        canOqlWrite = false,
-        canNptWrite = false,
+        canQualityWrite = true,
+        canOqlWrite = true,
+        canNptWrite = true,
         canMorningTargetWrite = false,
         canMonthlyTargetWrite = false,
         canTargetRevisionWrite = false
@@ -465,9 +494,13 @@ class NflRepository(private val context: Context) {
       UserAccount(
         id = "mechanic",
         name = "Mechanic",
-        password = "123",
+        password = "",
+        passwordHash = defaultSeedPasswordHash,
+        designation = EmployeeDesignation.MECHANIC.displayName,
+        department = EmployeeDesignation.MECHANIC.department,
         role = UserRole.MECHANIC,
         floor = FloorScope.SEW_2,
+        authorizedFloorScope = FloorScope.SEW_2,
         assignedLine = "K1",
         canViewDashboard = true,
         canViewTvDashboard = true,
@@ -481,7 +514,7 @@ class NflRepository(private val context: Context) {
         canFinishingWrite = false,
         canQualityWrite = false,
         canOqlWrite = false,
-        canNptWrite = true, // Can acknowledge and resolve mechanic repairs
+        canNptWrite = true,
         canMorningTargetWrite = false,
         canMonthlyTargetWrite = false,
         canTargetRevisionWrite = false
@@ -489,9 +522,13 @@ class NflRepository(private val context: Context) {
       UserAccount(
         id = "ie",
         name = "IE",
-        password = "123",
+        password = "",
+        passwordHash = defaultSeedPasswordHash,
+        designation = EmployeeDesignation.IE.displayName,
+        department = EmployeeDesignation.IE.department,
         role = UserRole.IE,
-        floor = FloorScope.ALL,
+        floor = FloorScope.SEW_1,
+        authorizedFloorScope = FloorScope.ALL,
         assignedLine = "All",
         canViewDashboard = true,
         canViewTvDashboard = true,
@@ -501,7 +538,7 @@ class NflRepository(private val context: Context) {
         canViewLineDeepDive = true,
         canViewAuditLogs = true,
         canExportReports = true,
-        canProductionWrite = true, // IE has full authority to enter any hourly or monthly report data
+        canProductionWrite = true,
         canFinishingWrite = true,
         canQualityWrite = true,
         canOqlWrite = true,
@@ -513,9 +550,13 @@ class NflRepository(private val context: Context) {
       UserAccount(
         id = "input",
         name = "Input",
-        password = "123",
+        password = "",
+        passwordHash = defaultSeedPasswordHash,
+        designation = EmployeeDesignation.OTHER.displayName,
+        department = EmployeeDesignation.OTHER.department,
         role = UserRole.INPUT_MATERIAL,
-        floor = FloorScope.ALL,
+        floor = FloorScope.SEW_1,
+        authorizedFloorScope = FloorScope.SEW_1,
         assignedLine = "All",
         canViewDashboard = true,
         canViewTvDashboard = false,
@@ -536,10 +577,14 @@ class NflRepository(private val context: Context) {
       ),
       UserAccount(
         id = "management",
-        name = "TV Monitor",
-        password = "123",
+        name = "Factory Management",
+        password = "",
+        passwordHash = defaultSeedPasswordHash,
+        designation = EmployeeDesignation.FACTORY_MANAGEMENT.displayName,
+        department = EmployeeDesignation.FACTORY_MANAGEMENT.department,
         role = UserRole.MANAGEMENT_VIEW,
-        floor = FloorScope.ALL,
+        floor = FloorScope.SEW_1,
+        authorizedFloorScope = FloorScope.ALL,
         assignedLine = "All",
         canViewDashboard = true,
         canViewTvDashboard = true,
@@ -549,7 +594,6 @@ class NflRepository(private val context: Context) {
         canViewLineDeepDive = true,
         canViewAuditLogs = true,
         canExportReports = true,
-        // Management Rule: ZERO data entry permissions
         canProductionWrite = false,
         canFinishingWrite = false,
         canQualityWrite = false,
@@ -634,7 +678,6 @@ class NflRepository(private val context: Context) {
       val mergedDefault = _users.value.map { defUser ->
         val saved = savedById[defUser.id.lowercase(Locale.US)]
         if (saved != null) {
-          // Migrate built-in account permissions without changing unrelated saved settings.
           when {
             defUser.id.lowercase(Locale.US) == "ie" || saved.role == UserRole.IE -> saved.copy(
               canProductionWrite = true,
@@ -654,23 +697,15 @@ class NflRepository(private val context: Context) {
         }
       }
       val defaultIds = _users.value.map { it.id.lowercase(Locale.US) }.toSet()
-      val customUsers = savedUsers.filter { it.id.lowercase(Locale.US) !in defaultIds }.map { u ->
-        if (u.role == UserRole.IE) {
-          u.copy(
-            canProductionWrite = true,
-            canFinishingWrite = true,
-            canQualityWrite = true,
-            canOqlWrite = true,
-            canNptWrite = true,
-            canMorningTargetWrite = true,
-            canMonthlyTargetWrite = true,
-            canTargetRevisionWrite = true
-          )
-        } else u
-      }
+      val customUsers = savedUsers.filter { it.id.lowercase(Locale.US) !in defaultIds }
       _users.value = mergedDefault + customUsers
+      if (_users.value.any { it.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) && it.isAdmin }) {
+        sheetsStorage.setFirstAdminBootstrapLocked(true)
+      }
       _currentUser.value?.let { cur ->
-        _currentUser.value = _users.value.find { it.id.equals(cur.id, ignoreCase = true) } ?: cur
+        _users.value.find { it.id.equals(cur.id, ignoreCase = true) }?.let { fresh ->
+          _currentUser.value = fresh
+        }
       }
     } else {
       sheetsStorage.saveLocalUsers(_users.value)
@@ -1024,8 +1059,8 @@ class NflRepository(private val context: Context) {
       val key = remote.id.trim().lowercase(Locale.US)
       val prev = byId[key]
       if (prev == null || prev != remote) {
-        val merged = if (prev != null && remote.approvedDevices.isEmpty() && prev.approvedDevices.isNotEmpty()) {
-          remote.copy(approvedDevices = prev.approvedDevices)
+        val merged = if (prev != null && remote.approvedDevices.isEmpty() && prev.approvedDevices.isNotEmpty() && remote.authorizedDeviceId.isNotBlank()) {
+          remote.copy(approvedDevices = prev.approvedDevices.take(MAX_APPROVED_DEVICES_PER_USER))
         } else {
           remote
         }
@@ -1035,13 +1070,26 @@ class NflRepository(private val context: Context) {
     }
     if (changed) {
       _users.value = byId.values.toList()
+      if (_users.value.any { it.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) && it.isAdmin }) {
+        sheetsStorage.setFirstAdminBootstrapLocked(true)
+      }
       sheetsStorage.saveLocalUsers(_users.value)
       _currentUser.value?.let { active ->
         val updatedActive = _users.value.find { it.id.equals(active.id, ignoreCase = true) }
         if (updatedActive != null) {
-          _currentUser.value = updatedActive
-          _currentRole.value = updatedActive.role
-          _currentUserName.value = updatedActive.name
+          val myDeviceId = sheetsStorage.getDeviceId()
+          val boundDevice = updatedActive.authorizedDeviceId.ifBlank { updatedActive.approvedDevices.firstOrNull()?.deviceId.orEmpty() }
+          if (!updatedActive.isActive ||
+            updatedActive.accountStatus != AccountStatus.APPROVED ||
+            (boundDevice.isNotBlank() && boundDevice != myDeviceId)
+          ) {
+            _currentUser.value = null
+            _syncStatusBanner.value = "Session ended: Account status or authorized device changed by Administrator."
+          } else {
+            _currentUser.value = updatedActive
+            _currentRole.value = updatedActive.role
+            _currentUserName.value = updatedActive.name
+          }
         }
       }
       touchDataUpdated()
@@ -1416,27 +1464,44 @@ class NflRepository(private val context: Context) {
     val lineObj = allLinesMaster.find { it.matches(cleanLine) }
     val floorName = lineObj?.floor ?: "Sew 2"
     val today = sheetsStorage.getCurrentBangladeshDateIso()
-    return _targets.value.find { !it.isDemo && it.lineId.equals(cleanLine, ignoreCase = true) && sheetsStorage.normalizeToIsoDate(it.date) == today }
-      ?: _targets.value.find { !it.isDemo && it.lineId.equals(cleanLine, ignoreCase = true) }
-      ?: _targets.value.find { it.lineId.equals(cleanLine, ignoreCase = true) && sheetsStorage.normalizeToIsoDate(it.date) == today }
-      ?: _targets.value.find { it.lineId.equals(cleanLine, ignoreCase = true) }
-      ?: SupervisorLineSetup(
-        lineId = lineObj?.id ?: cleanLine,
-        floor = floorName,
+    val isDemo = _isDemoMode.value
+
+    val todayReal = _targets.value.find { !it.isDemo && it.lineId.equals(cleanLine, ignoreCase = true) && sheetsStorage.normalizeToIsoDate(it.date) == today }
+    if (todayReal != null) return todayReal
+
+    val earlierReal = _targets.value.find { !it.isDemo && it.lineId.equals(cleanLine, ignoreCase = true) }
+    if (earlierReal != null) {
+      return earlierReal.copy(
         date = today,
-        styleNumber = "",
-        itemName = "Polo Shirt",
-        orderNumber = "PO-88210",
-        smv = 14.50,
-        targetHourlyPcs = 60,
-        targetDailyPcs = 480,
-        targetEfficiencyPct = 75.0,
-        operatorsCount = 20,
-        machinesCount = 20,
-        helpersCount = 2,
-        includeHelpersInEfficiency = false,
-        workingMinutesPerHour = 60
+        targetDailyPcs = 0,
+        targetHourlyPcs = 0
       )
+    }
+
+    if (isDemo) {
+      val demoToday = _targets.value.find { it.lineId.equals(cleanLine, ignoreCase = true) && sheetsStorage.normalizeToIsoDate(it.date) == today }
+      if (demoToday != null) return demoToday
+      val anyDemo = _targets.value.find { it.lineId.equals(cleanLine, ignoreCase = true) }
+      if (anyDemo != null) return anyDemo
+    }
+
+    return SupervisorLineSetup(
+      lineId = lineObj?.id ?: cleanLine,
+      floor = floorName,
+      date = today,
+      styleNumber = "",
+      itemName = "",
+      orderNumber = "",
+      smv = 0.0,
+      targetHourlyPcs = 0,
+      targetDailyPcs = 0,
+      targetEfficiencyPct = 75.0,
+      operatorsCount = 20,
+      machinesCount = 20,
+      helpersCount = 2,
+      includeHelpersInEfficiency = false,
+      workingMinutesPerHour = 60
+    )
   }
 
   fun retryPendingSubmissions() {
@@ -2268,9 +2333,9 @@ class NflRepository(private val context: Context) {
 
   fun saveLineSetup(setup: SupervisorLineSetup) {
     val u = getAuthoritativeCurrentUser()
-    val allowedRole = u?.role in setOf(UserRole.IE, UserRole.PRODUCTION_REPORTER)
-    if (u != null && !u.isAdmin && u.role != UserRole.IE && (!allowedRole || !u.canMorningTargetWrite)) {
-      _syncStatusBanner.value = "⚠️ Access Denied: Daily line targets and manpower can only be edited by authorized IE or Production Reporter accounts."
+    val allowedRole = u == null || u.isAdmin || u.role in setOf(UserRole.IE, UserRole.PRODUCTION_REPORTER, UserRole.SUPERVISOR, UserRole.PRODUCTION_MANAGER) || u.canMorningTargetWrite
+    if (!allowedRole) {
+      _syncStatusBanner.value = "⚠️ Access Denied: Daily line targets and manpower can only be edited by authorized IE, Supervisor, or Production accounts."
       return
     }
     val normDate = sheetsStorage.normalizeToIsoDate(setup.date)
@@ -2284,7 +2349,7 @@ class NflRepository(private val context: Context) {
     _targets.value = listOf(liveSetup) + filtered
     sheetsStorage.saveLocalSetups(_targets.value)
     touchDataUpdated()
-    addAuditLog("SETUP", liveSetup.lineId, "SAVE_TARGET", u?.name ?: "IE/Reporter", "Daily target: ${liveSetup.targetDailyPcs}, Hourly: ${liveSetup.targetHourlyPcs}, SMV: ${liveSetup.smv}, MP: ${liveSetup.totalManpower}")
+    addAuditLog("SETUP", liveSetup.lineId, "SAVE_TARGET", u?.name ?: "IE/Supervisor", "Daily target: ${liveSetup.targetDailyPcs}, Hourly: ${liveSetup.targetHourlyPcs}, SMV: ${liveSetup.smv}, MP: ${liveSetup.totalManpower}")
     repoScope.launch {
       val fOk = firebaseSync.pushLineSetupAwait(liveSetup)
       val sOk = sheetsStorage.pushLineSetupRow(liveSetup)
@@ -2299,9 +2364,9 @@ class NflRepository(private val context: Context) {
   fun saveBatchLineSetups(setups: List<SupervisorLineSetup>) {
     if (setups.isEmpty()) return
     val u = getAuthoritativeCurrentUser()
-    val allowedRole = u?.role in setOf(UserRole.IE, UserRole.PRODUCTION_REPORTER)
-    if (u != null && !u.isAdmin && u.role != UserRole.IE && (!allowedRole || !u.canMorningTargetWrite)) {
-      _syncStatusBanner.value = "⚠️ Access Denied: Daily line targets and manpower can only be edited by authorized IE or Production Reporter accounts."
+    val allowedRole = u == null || u.isAdmin || u.role in setOf(UserRole.IE, UserRole.PRODUCTION_REPORTER, UserRole.SUPERVISOR, UserRole.PRODUCTION_MANAGER) || u.canMorningTargetWrite
+    if (!allowedRole) {
+      _syncStatusBanner.value = "⚠️ Access Denied: Daily line targets and manpower can only be edited by authorized IE, Supervisor, or Production accounts."
       return
     }
     val nowTs = System.currentTimeMillis()
@@ -2334,7 +2399,339 @@ class NflRepository(private val context: Context) {
     }
   }
 
-  // Auth, 2-Device Limit, Gmail OTP Verification & User Management Methods
+  // =========================================================================
+  // PART 2, 3, 4, 6, 7, 8, 9: FIRST ADMIN BOOTSTRAP, REGISTRATION, RBAC & 1-DEVICE AUTH
+  // =========================================================================
+
+  /**
+   * Returns true if the Initial Admin account (Employee ID 1015198) has already been provisioned.
+   */
+  fun isFirstAdminProvisioned(): Boolean {
+    val existsInUsers = _users.value.any {
+      it.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) &&
+          it.isAdmin &&
+          it.passwordHash.isNotBlank()
+    }
+    return existsInUsers || sheetsStorage.isFirstAdminBootstrapLocked()
+  }
+
+  /**
+   * Atomic, idempotent First Admin (1015198) provisioning procedure.
+   * Never stores plaintext password in source code, SharedPreferences, or Firebase.
+   * Requires the initial Admin to change the initial password on first login.
+   */
+  fun bootstrapFirstAdmin(
+    employeeId: String,
+    initialPassword: String,
+    confirmPassword: String = initialPassword,
+    fullName: String = "Initial Administrator"
+  ): SecurityActionResult = synchronized(bootstrapLock) {
+    val cleanId = employeeId.trim()
+    val cleanPass = initialPassword.trim()
+    val cleanConfirm = confirmPassword.trim()
+    val cleanName = fullName.trim().ifEmpty { "Initial Administrator" }
+
+    if (!cleanId.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true)) {
+      addAuditLog(
+        type = "SECURITY",
+        id = cleanId.ifEmpty { "UNKNOWN" },
+        action = "BOOTSTRAP_DENIED_INVALID_ID",
+        by = cleanName,
+        details = "Rejected first-admin bootstrap attempt for non-designated ID '$cleanId'"
+      )
+      return SecurityActionResult(
+        false,
+        "Access Denied: Only designated Initial Admin Employee ID $INITIAL_ADMIN_EMPLOYEE_ID can be provisioned via First-Admin Bootstrap."
+      )
+    }
+
+    if (isFirstAdminProvisioned()) {
+      addAuditLog(
+        type = "SECURITY",
+        id = INITIAL_ADMIN_EMPLOYEE_ID,
+        action = "BOOTSTRAP_BLOCKED_ALREADY_PROVISIONED",
+        by = cleanName,
+        details = "Blocked duplicate first-admin bootstrap attempt"
+      )
+      return SecurityActionResult(
+        false,
+        "Initial Admin ($INITIAL_ADMIN_EMPLOYEE_ID) has already been provisioned. Further bootstrap attempts are disabled."
+      )
+    }
+
+    if (cleanPass.length < 6) {
+      return SecurityActionResult(
+        false,
+        "Initial Admin password must be at least 6 characters long."
+      )
+    }
+
+    if (cleanPass != cleanConfirm) {
+      return SecurityActionResult(
+        false,
+        "Passwords do not match. Please confirm the initial password accurately."
+      )
+    }
+
+    val salt = GoogleSheetsStorageService.generateSalt()
+    val passwordHash = GoogleSheetsStorageService.hashPassword(cleanPass, salt)
+    val now = System.currentTimeMillis()
+
+    val baseAdmin = UserAccount(
+      id = INITIAL_ADMIN_EMPLOYEE_ID,
+      employeeId = INITIAL_ADMIN_EMPLOYEE_ID,
+      name = cleanName,
+      password = "",
+      passwordHash = passwordHash,
+      passwordSalt = salt,
+      designation = EmployeeDesignation.ADMIN.displayName,
+      department = EmployeeDesignation.ADMIN.department,
+      requestedDesignation = EmployeeDesignation.ADMIN.displayName,
+      requestedFloor = FloorScope.SEW_1,
+      role = UserRole.ADMIN,
+      floor = FloorScope.SEW_1,
+      authorizedFloorScope = FloorScope.ALL,
+      assignedLine = "All",
+      isAdmin = true,
+      mustChangePassword = true,
+      isActive = true,
+      accountStatus = AccountStatus.APPROVED,
+      createdAtMillis = now,
+      updatedAtMillis = now,
+      approvedBy = "SYSTEM_BOOTSTRAP",
+      approvedAtMillis = now
+    )
+    val provisionedAdmin = DesignationPolicy.applyDesignationTemplate(
+      base = baseAdmin,
+      designation = EmployeeDesignation.ADMIN,
+      physicalFloor = FloorScope.SEW_1,
+      overrideScope = FloorScope.ALL
+    ).copy(mustChangePassword = true)
+
+    _users.value = listOf(provisionedAdmin) + _users.value.filterNot {
+      it.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true)
+    }
+    sheetsStorage.setFirstAdminBootstrapLocked(true)
+    sheetsStorage.saveLocalUsers(_users.value)
+    touchDataUpdated()
+
+    repoScope.launch {
+      firebaseSync.pushUserAccountAwait(provisionedAdmin)
+      sheetsStorage.pushUserAccountToSheet(provisionedAdmin)
+    }
+
+    addAuditLog(
+      type = "SECURITY",
+      id = INITIAL_ADMIN_EMPLOYEE_ID,
+      action = "FIRST_ADMIN_PROVISIONED",
+      by = cleanName,
+      details = "Initial Admin ($INITIAL_ADMIN_EMPLOYEE_ID) provisioned with All Floor scope and mandatory first-login password change."
+    )
+
+    return SecurityActionResult(
+      true,
+      "Initial Admin ($INITIAL_ADMIN_EMPLOYEE_ID) provisioned successfully. Please log in and change your initial password."
+    )
+  }
+
+  /**
+   * Recovery procedure if initial Admin setup failed half-way before completion.
+   */
+  fun recoverFirstAdminSetup(
+    employeeId: String,
+    newInitialPassword: String,
+    confirmPassword: String
+  ): SecurityActionResult = synchronized(bootstrapLock) {
+    if (!employeeId.trim().equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true)) {
+      return SecurityActionResult(false, "Recovery is restricted to Initial Admin ID $INITIAL_ADMIN_EMPLOYEE_ID.")
+    }
+    val existing = _users.value.find { it.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) }
+    if (existing != null && existing.passwordHash.isNotBlank() && !existing.mustChangePassword) {
+      return SecurityActionResult(
+        false,
+        "Initial Admin ($INITIAL_ADMIN_EMPLOYEE_ID) has already completed first-login setup. Recovery bootstrap is locked."
+      )
+    }
+    sheetsStorage.setFirstAdminBootstrapLocked(false)
+    _users.value = _users.value.filterNot { it.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) }
+    return bootstrapFirstAdmin(INITIAL_ADMIN_EMPLOYEE_ID, newInitialPassword, confirmPassword)
+  }
+
+  /**
+   * Changes a user's password and clears the mustChangePassword requirement.
+   */
+  fun changePassword(
+    userId: String,
+    currentPassword: String,
+    newPassword: String,
+    confirmPassword: String
+  ): SecurityActionResult {
+    val cleanId = userId.trim()
+    val cleanCur = currentPassword.trim()
+    val cleanNew = newPassword.trim()
+    val cleanConfirm = confirmPassword.trim()
+
+    val user = _users.value.find {
+      it.id.equals(cleanId, ignoreCase = true) || it.employeeId.equals(cleanId, ignoreCase = true)
+    } ?: return SecurityActionResult(false, "User account not found.")
+
+    val currentValid = (user.password.isNotBlank() && user.password == cleanCur) ||
+        GoogleSheetsStorageService.verifyPassword(cleanCur, user.passwordHash, user.passwordSalt)
+    if (!currentValid) {
+      addAuditLog("AUTH", user.id, "PASSWORD_CHANGE_FAILED", user.name, "Invalid current password")
+      return SecurityActionResult(false, "Current password is incorrect.")
+    }
+
+    if (cleanNew.length < 6) {
+      return SecurityActionResult(false, "New password must be at least 6 characters long.")
+    }
+    if (cleanNew != cleanConfirm) {
+      return SecurityActionResult(false, "New password and confirmation do not match.")
+    }
+    if (cleanNew == cleanCur) {
+      return SecurityActionResult(false, "New password must be different from the initial/current password.")
+    }
+
+    val newSalt = GoogleSheetsStorageService.generateSalt()
+    val newHash = GoogleSheetsStorageService.hashPassword(cleanNew, newSalt)
+    val updated = user.copy(
+      password = "",
+      passwordHash = newHash,
+      passwordSalt = newSalt,
+      mustChangePassword = false,
+      updatedAtMillis = System.currentTimeMillis()
+    )
+    updateUserInternal(updated)
+    addAuditLog("AUTH", updated.id, "PASSWORD_CHANGED", updated.name, "Password updated and security policy satisfied")
+    return SecurityActionResult(true, "Password updated successfully.")
+  }
+
+  /**
+   * Public Employee Registration workflow (Part 4, Part 5, Part 6).
+   * Submits registration in PENDING_APPROVAL status. Never grants Admin or active access prior to Admin approval.
+   */
+  fun registerEmployee(
+    fullName: String,
+    employeeId: String,
+    designation: EmployeeDesignation,
+    physicalFloor: FloorScope,
+    password: String,
+    confirmPassword: String
+  ): SecurityActionResult {
+    val cleanName = fullName.trim()
+    val cleanId = employeeId.trim()
+    val cleanPass = password.trim()
+    val cleanConfirm = confirmPassword.trim()
+
+    if (cleanName.length < 2) {
+      return SecurityActionResult(false, "Please enter your full name (at least 2 characters).")
+    }
+    if (cleanId.isEmpty()) {
+      return SecurityActionResult(false, "Employee ID is required.")
+    }
+    if (!cleanId.matches(Regex("^[A-Za-z0-9_-]{2,24}$"))) {
+      return SecurityActionResult(false, "Employee ID must contain only letters, numbers, hyphens, or underscores.")
+    }
+    if (cleanId.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) || cleanId.equals("admin", ignoreCase = true)) {
+      addAuditLog("SECURITY", cleanId, "BLOCKED_ADMIN_REGISTRATION", cleanName, "Attempted public registration with reserved Admin ID")
+      return SecurityActionResult(
+        false,
+        "Employee ID $cleanId is reserved for system administration and cannot be registered via standard employee registration."
+      )
+    }
+    if (designation == EmployeeDesignation.ADMIN || !designation.isPublicSelectable) {
+      addAuditLog("SECURITY", cleanId, "BLOCKED_ADMIN_ROLE_REQUEST", cleanName, "Attempted public registration with Admin designation")
+      return SecurityActionResult(false, "Ordinary registration cannot request Admin privileges.")
+    }
+    if (physicalFloor == FloorScope.ALL) {
+      return SecurityActionResult(
+        false,
+        "All Floor is an authorized access scope, not a physical floor. Please select Sew-1, Sew-2, Sew-3, or Finishing."
+      )
+    }
+    if (cleanPass.length < 4) {
+      return SecurityActionResult(false, "Password must be at least 4 characters long.")
+    }
+    if (cleanPass != cleanConfirm) {
+      return SecurityActionResult(false, "Password and Confirm Password do not match.")
+    }
+
+    val existing = _users.value.find {
+      it.id.equals(cleanId, ignoreCase = true) || it.employeeId.equals(cleanId, ignoreCase = true)
+    }
+    if (existing != null) {
+      val statusNote = when (existing.accountStatus) {
+        AccountStatus.PENDING_APPROVAL -> "A registration request for Employee ID '$cleanId' is already pending Admin approval."
+        AccountStatus.APPROVED -> "Employee ID '$cleanId' is already registered and approved. Please log in."
+        AccountStatus.REJECTED -> "A previous registration for Employee ID '$cleanId' was rejected. Please contact Admin."
+        AccountStatus.SUSPENDED -> "Employee ID '$cleanId' is currently suspended. Please contact Admin."
+      }
+      return SecurityActionResult(false, statusNote)
+    }
+
+    val sanitizedPhysicalFloor = DesignationPolicy.sanitizePhysicalFloor(physicalFloor, designation)
+    val salt = GoogleSheetsStorageService.generateSalt()
+    val passwordHash = GoogleSheetsStorageService.hashPassword(cleanPass, salt)
+    val now = System.currentTimeMillis()
+
+    val baseAccount = UserAccount(
+      id = cleanId,
+      employeeId = cleanId,
+      name = cleanName,
+      password = "",
+      passwordHash = passwordHash,
+      passwordSalt = salt,
+      designation = designation.displayName,
+      department = designation.department,
+      requestedDesignation = designation.displayName,
+      requestedFloor = sanitizedPhysicalFloor,
+      role = designation.defaultRole,
+      floor = sanitizedPhysicalFloor,
+      authorizedFloorScope = DesignationPolicy.resolveAuthorizedScope(designation, sanitizedPhysicalFloor),
+      assignedLine = "K1",
+      isAdmin = false,
+      mustChangePassword = false,
+      isActive = false,
+      accountStatus = AccountStatus.PENDING_APPROVAL,
+      approvedDevices = emptyList(),
+      createdAtMillis = now,
+      updatedAtMillis = now
+    )
+
+    val mappedAccount = DesignationPolicy.applyDesignationTemplate(
+      base = baseAccount,
+      designation = designation,
+      physicalFloor = sanitizedPhysicalFloor
+    ).copy(
+      isAdmin = false,
+      isActive = false,
+      accountStatus = AccountStatus.PENDING_APPROVAL,
+      requestedDesignation = designation.displayName,
+      requestedFloor = sanitizedPhysicalFloor
+    )
+
+    updateUserInternal(mappedAccount)
+    addAuditLog(
+      type = "USER_MGMT",
+      id = mappedAccount.id,
+      action = "EMPLOYEE_REGISTERED_PENDING",
+      by = mappedAccount.name,
+      details = "Designation: ${mappedAccount.designation}, Dept: ${mappedAccount.department}, Floor: ${mappedAccount.floor.displayName}, Scope: ${mappedAccount.authorizedFloorScope.displayName}"
+    )
+
+    return SecurityActionResult(
+      true,
+      "Registration submitted for Employee ID $cleanId (${designation.displayName} • ${sanitizedPhysicalFloor.displayName}). Waiting for Admin approval."
+    )
+  }
+
+  /**
+   * Authenticates an employee by Employee ID and password.
+   * Enforces:
+   * - Account approval state (PENDING_APPROVAL, REJECTED, SUSPENDED, APPROVED)
+   * - Strict 1-Employee-ID = 1-Active-Device binding (MAX_APPROVED_DEVICES_PER_USER = 1)
+   * - Mandatory password change on first login for Initial Admin (1015198)
+   */
   fun authenticateUser(id: String, pass: String): AuthResult {
     val cleanId = id.trim()
     val cleanIdLower = cleanId.lowercase(Locale.US)
@@ -2343,7 +2740,7 @@ class NflRepository(private val context: Context) {
     if (cleanIdLower.isEmpty() || cleanPass.isEmpty()) {
       return AuthResult(
         status = AuthStatus.INVALID_CREDENTIALS,
-        message = "অনুগ্রহ করে আপনার কোম্পানি আইডি কার্ড নম্বর এবং পাসওয়ার্ড দিন (Enter both Company ID and Password)."
+        message = "Please enter both your Employee ID and Password."
       )
     }
 
@@ -2353,27 +2750,27 @@ class NflRepository(private val context: Context) {
       uid == cleanIdLower || empId == cleanIdLower
     } ?: return AuthResult(
       status = AuthStatus.INVALID_CREDENTIALS,
-      message = "❌ অনুমোদিত অ্যাকাউন্ট পাওয়া যায়নি। শুধুমাত্র অনুমোদিত কোম্পানি আইডি লগইন করতে পারবে।"
+      message = if (cleanId.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) && !isFirstAdminProvisioned()) {
+        "Initial Admin ($INITIAL_ADMIN_EMPLOYEE_ID) has not been provisioned yet. Use 'Initialize First Admin (1015198)' below to set the initial password."
+      } else {
+        "Employee ID '$cleanId' was not found. Please check your Employee ID or register a new account."
+      }
     )
 
-    // Strict password validation (no backdoor/fallback password allowed)
-    val inputHash = sheetsStorage.sha256(cleanPass)
-    val passwordValid = matchedUser.password == cleanPass ||
-        (matchedUser.passwordHash.isNotBlank() && matchedUser.passwordHash.equals(inputHash, ignoreCase = true))
+    val passwordValid = (matchedUser.password.isNotBlank() && matchedUser.password == cleanPass) ||
+        GoogleSheetsStorageService.verifyPassword(cleanPass, matchedUser.passwordHash, matchedUser.passwordSalt)
 
     if (!passwordValid) {
-      addAuditLog("AUTH", matchedUser.id, "LOGIN_FAILED_PASSWORD", matchedUser.name, "Invalid password attempt on device ${sheetsStorage.getDeviceName()}")
+      addAuditLog(
+        type = "AUTH",
+        id = matchedUser.id,
+        action = "LOGIN_FAILED_PASSWORD",
+        by = matchedUser.name,
+        details = "Invalid password attempt on device ${sheetsStorage.getDeviceName()}"
+      )
       return AuthResult(
         status = AuthStatus.INVALID_CREDENTIALS,
-        message = "❌ ভুল পাসওয়ার্ড! সঠিক পাসওয়ার্ড প্রদান করুন।"
-      )
-    }
-
-    if (!matchedUser.isActive || matchedUser.accountStatus == AccountStatus.SUSPENDED) {
-      addAuditLog("AUTH", matchedUser.id, "LOGIN_BLOCKED_SUSPENDED", matchedUser.name, "Suspended account login attempt")
-      return AuthResult(
-        status = AuthStatus.ACCOUNT_SUSPENDED,
-        message = "⛔ আপনার অ্যাকাউন্টটি সাময়িকভাবে স্থগিত করা হয়েছে। অ্যাডমিনের সাথে যোগাযোগ করুন।"
+        message = "Invalid password. Please enter the correct password for Employee ID ${matchedUser.id}."
       )
     }
 
@@ -2385,102 +2782,139 @@ class NflRepository(private val context: Context) {
         status = AuthStatus.ACCOUNT_PENDING_APPROVAL,
         user = matchedUser,
         pendingRequest = pendingReq,
-        message = "⏳ অ্যাকাউন্টটি অ্যাডমিন (${PRIMARY_ADMIN_GMAIL}) অনুমোদনের অপেক্ষায় আছে। ইমেইল ভেরিফিকেশন কোড দিন অথবা অ্যাডমিন প্যানেল থেকে অনুমোদন নিন।"
+        message = "Your account (${matchedUser.name} • ID: ${matchedUser.id}) is pending Admin approval. You will be able to log in once an Administrator approves your registration."
       )
     }
 
-    // Enforce Two-Device Limit (Max 2 active approved devices per employee ID)
+    if (matchedUser.accountStatus == AccountStatus.REJECTED) {
+      val reasonSuffix = if (matchedUser.rejectionReason.isNotBlank()) " Reason: ${matchedUser.rejectionReason}" else ""
+      return AuthResult(
+        status = AuthStatus.ACCOUNT_REJECTED,
+        user = matchedUser,
+        message = "Your registration request for Employee ID ${matchedUser.id} was rejected by Admin.$reasonSuffix"
+      )
+    }
+
+    if (!matchedUser.isActive || matchedUser.accountStatus == AccountStatus.SUSPENDED) {
+      addAuditLog("AUTH", matchedUser.id, "LOGIN_BLOCKED_SUSPENDED", matchedUser.name, "Suspended account login attempt")
+      return AuthResult(
+        status = AuthStatus.ACCOUNT_SUSPENDED,
+        user = matchedUser,
+        message = "Your account (Employee ID ${matchedUser.id}) has been suspended by Admin. Please contact your Administrator."
+      )
+    }
+
+    // Enforce Strict One-Device-Per-Employee-ID Policy (MAX_APPROVED_DEVICES_PER_USER = 1)
     val currentDeviceId = sheetsStorage.getDeviceId()
     val currentDeviceName = sheetsStorage.getDeviceName()
-    val alreadyApprovedOnThisDevice = matchedUser.approvedDevices.any { it.deviceId == currentDeviceId }
+    val boundDeviceId = matchedUser.authorizedDeviceId.ifBlank {
+      matchedUser.approvedDevices.firstOrNull()?.deviceId.orEmpty()
+    }
+    val boundDeviceName = matchedUser.authorizedDeviceName.ifBlank {
+      matchedUser.approvedDevices.firstOrNull()?.deviceName.orEmpty().ifBlank { "Authorized Device" }
+    }
 
-    val finalUser = if (alreadyApprovedOnThisDevice) {
-      matchedUser
-    } else if (matchedUser.approvedDevices.size < MAX_APPROVED_DEVICES_PER_USER) {
-      // Register this device into the employee's approved device list (up to 2 devices) and persist to backend
-      val newDevice = ApprovedDevice(
-        deviceId = currentDeviceId,
-        deviceName = currentDeviceName,
-        approvedAtMillis = System.currentTimeMillis(),
-        approvedBy = "AUTO_SLOT_${matchedUser.approvedDevices.size + 1}"
-      )
-      val updated = matchedUser.copy(approvedDevices = matchedUser.approvedDevices + newDevice)
-      updateUserInternal(updated)
-      addAuditLog(
-        type = "DEVICE_SECURITY",
-        id = updated.id,
-        action = "BIND_DEVICE",
-        by = updated.name,
-        details = "Bound device ${updated.approvedDevices.size}/$MAX_APPROVED_DEVICES_PER_USER: $currentDeviceName ($currentDeviceId)"
-      )
-      updated
-    } else {
-      // 3rd device detected! Block login until Admin revokes an existing device or approves this device
+    if (boundDeviceId.isNotBlank() && boundDeviceId != currentDeviceId) {
       val pendingReq = createOrGetPendingDeviceApprovalRequest(
         user = matchedUser,
         deviceId = currentDeviceId,
         deviceName = currentDeviceName,
-        requestType = "THIRD_DEVICE_APPROVAL"
+        requestType = "DEVICE_REPLACEMENT"
       )
       addAuditLog(
         type = "DEVICE_SECURITY",
         id = matchedUser.id,
-        action = "BLOCKED_3RD_DEVICE",
+        action = "BLOCKED_SECOND_DEVICE",
         by = matchedUser.name,
-        details = "Blocked 3rd device $currentDeviceName ($currentDeviceId) — 2 devices already active"
+        details = "Blocked simultaneous login on $currentDeviceName ($currentDeviceId) — already bound to $boundDeviceName ($boundDeviceId)"
       )
       return AuthResult(
         status = AuthStatus.DEVICE_LIMIT_REACHED,
         user = matchedUser,
         pendingRequest = pendingReq,
-        message = "🔒 ২-ডিভাইস লিমিট পূর্ণ হয়েছে (${matchedUser.approvedDevices.size}/$MAX_APPROVED_DEVICES_PER_USER ডিভাইস সচল)। ৩য় ডিভাইস চালু করতে অ্যাডমিনের (${PRIMARY_ADMIN_GMAIL}) অনুমোদন বা পূর্বের ডিভাইস বাতিল (Revoke) প্রয়োজন।"
+        activeDevicesCount = 1,
+        message = "Employee ID ${matchedUser.id} is already active on another device ($boundDeviceName • $boundDeviceId). Only 1 active device is permitted per Employee ID. Request device replacement below or ask Admin to reset your device session."
       )
     }
+
+    val newSessionId = UUID.randomUUID().toString()
+    val approvedDeviceEntry = ApprovedDevice(
+      deviceId = currentDeviceId,
+      deviceName = currentDeviceName,
+      approvedAtMillis = System.currentTimeMillis(),
+      approvedBy = matchedUser.approvedBy.ifBlank { INITIAL_ADMIN_EMPLOYEE_ID },
+      lastActiveMillis = System.currentTimeMillis()
+    )
+    val finalUser = matchedUser.copy(
+      authorizedDeviceId = currentDeviceId,
+      authorizedDeviceName = currentDeviceName,
+      activeSessionId = newSessionId,
+      approvedDevices = listOf(approvedDeviceEntry),
+      updatedAtMillis = System.currentTimeMillis()
+    )
+    sheetsStorage.setLocalActiveSessionId(newSessionId)
+    updateUserInternal(finalUser)
 
     _currentUser.value = finalUser
     _currentRole.value = finalUser.role
     _currentUserName.value = finalUser.name
-    _currentFloor.value = finalUser.floor
+    _currentFloor.value = finalUser.authorizedFloorScope
     _assignedLine.value = finalUser.assignedLine
-    addAuditLog("AUTH", finalUser.id, "LOGIN", finalUser.name, "Role: ${finalUser.role.displayName}, Device: $currentDeviceName ($currentDeviceId)")
+
+    addAuditLog(
+      type = "AUTH",
+      id = finalUser.id,
+      action = "LOGIN",
+      by = finalUser.name,
+      details = "Designation: ${finalUser.designation}, Scope: ${finalUser.authorizedFloorScope.displayName}, Device: $currentDeviceName ($currentDeviceId)"
+    )
+
+    if (finalUser.mustChangePassword) {
+      return AuthResult(
+        status = AuthStatus.PASSWORD_CHANGE_REQUIRED,
+        user = finalUser,
+        activeDevicesCount = 1,
+        message = "Please change your initial password to continue."
+      )
+    }
+
     return AuthResult(
       status = AuthStatus.SUCCESS,
       user = finalUser,
-      message = "✓ লগইন সফল হয়েছে (${finalUser.name})"
+      activeDevicesCount = 1,
+      message = "Login successful (${finalUser.name})"
     )
   }
 
   fun login(id: String, pass: String): Boolean {
-    return authenticateUser(id, pass).status == AuthStatus.SUCCESS
+    val status = authenticateUser(id, pass).status
+    return status == AuthStatus.SUCCESS || status == AuthStatus.PASSWORD_CHANGE_REQUIRED
   }
 
   fun loginAsRole(role: UserRole): Boolean {
-    // Only permitted if already logged in as Admin
     val active = getAuthoritativeCurrentUser()
     if (active == null || !active.isAdmin) return false
     val user = _users.value.find { it.role == role } ?: return false
     _currentUser.value = user
     _currentRole.value = user.role
     _currentUserName.value = user.name
-    _currentFloor.value = user.floor
+    _currentFloor.value = user.authorizedFloorScope
     _assignedLine.value = user.assignedLine
     addAuditLog("AUTH", user.id, "ROLE_SWITCH", active.name, "Admin switched to role: ${user.role.displayName}")
     return true
   }
 
   /**
-   * Generates a 6-digit single-use expiring verification code and requests delivery to Primary Admin Gmail
-   * (shamim.sustipe15@gmail.com) via the Google Apps Script backend.
-   * If email delivery is unavailable, keeps the request PENDING for in-app Admin approval.
+   * Submits or resends a Device Replacement / Verification Request for Admin approval.
    */
   fun requestGmailVerificationCode(
     userId: String,
-    requestType: String = "DEVICE_APPROVAL",
+    requestType: String = "DEVICE_REPLACEMENT",
     onResult: (SecurityActionResult) -> Unit
   ) {
     val user = _users.value.find { it.id.equals(userId.trim(), ignoreCase = true) }
     if (user == null) {
-      onResult(SecurityActionResult(false, "⚠️ অনুমোদিত কোম্পানি আইডি পাওয়া যায়নি।"))
+      onResult(SecurityActionResult(false, "Employee ID not found."))
       return
     }
     val deviceId = sheetsStorage.getDeviceId()
@@ -2494,7 +2928,7 @@ class NflRepository(private val context: Context) {
       onResult(
         SecurityActionResult(
           false,
-          "⚠️ সর্বোচ্চ রিসেন্ড লিমিট (${existing.maxResends} বার) অতিক্রম করেছে। অনুগ্রহ করে অ্যাডমিন প্যানেল থেকে সরাসরি অনুমোদন নিন।"
+          "Maximum request resend limit (${existing.maxResends}) reached. Please ask an Administrator to approve your device directly in the Admin Panel."
         )
       )
       return
@@ -2502,7 +2936,7 @@ class NflRepository(private val context: Context) {
 
     val rawOtp = (100000 + (Math.abs(UUID.randomUUID().hashCode()) % 900000)).toString()
     val otpHash = sheetsStorage.sha256(rawOtp)
-    val expiryMillis = now + 10 * 60 * 1000L // 10 minutes validity
+    val expiryMillis = now + 10 * 60 * 1000L
 
     val updatedReq = if (existing != null) {
       existing.copy(
@@ -2517,8 +2951,13 @@ class NflRepository(private val context: Context) {
         userId = user.id,
         userName = user.name,
         role = user.role,
+        designation = user.designation,
+        department = user.department,
+        requestedFloor = user.floor.displayName,
         deviceId = deviceId,
         deviceName = deviceName,
+        previousDeviceId = user.authorizedDeviceId,
+        previousDeviceName = user.authorizedDeviceName,
         requestType = requestType,
         otpHash = otpHash,
         otpExpiresAtMillis = expiryMillis,
@@ -2538,11 +2977,11 @@ class NflRepository(private val context: Context) {
         adminEmail = PRIMARY_ADMIN_GMAIL
       )
       addAuditLog(
-        type = "GMAIL_VERIFICATION",
+        type = "DEVICE_SECURITY",
         id = user.id,
-        action = if (emailResult.success) "OTP_SENT" else "OTP_PENDING_ADMIN",
+        action = if (emailResult.success) "DEVICE_REQUEST_SENT" else "DEVICE_REQUEST_QUEUED",
         by = user.name,
-        details = "Device: $deviceName ($deviceId) • Admin Gmail: $PRIMARY_ADMIN_GMAIL • ${emailResult.message}"
+        details = "Device replacement requested for $deviceName ($deviceId) • ${emailResult.message}"
       )
       onResult(emailResult)
     }
@@ -2565,8 +3004,13 @@ class NflRepository(private val context: Context) {
       userId = user.id,
       userName = user.name,
       role = user.role,
+      designation = user.designation,
+      department = user.department,
+      requestedFloor = user.floor.displayName,
       deviceId = deviceId,
       deviceName = deviceName,
+      previousDeviceId = user.authorizedDeviceId,
+      previousDeviceName = user.authorizedDeviceName,
       requestType = requestType,
       otpHash = otpHash,
       otpExpiresAtMillis = System.currentTimeMillis() + 10 * 60 * 1000L,
@@ -2581,29 +3025,29 @@ class NflRepository(private val context: Context) {
   }
 
   /**
-   * Validates the 6-digit single-use Gmail OTP code on the backend/repository with expiry & attempt limits.
+   * Validates the 6-digit single-use verification code with expiry & attempt limits.
    */
   fun verifyGmailApprovalCode(userId: String, codeInput: String): SecurityActionResult {
     val cleanCode = codeInput.trim()
     if (cleanCode.length != 6) {
-      return SecurityActionResult(false, "⚠️ ৬-ডিজিটের ভেরিফিকেশন কোড সঠিকভাবে লিখুন।")
+      return SecurityActionResult(false, "Please enter a valid 6-digit verification code.")
     }
     val deviceId = sheetsStorage.getDeviceId()
     val req = _deviceApprovalRequests.value.find {
       it.userId.equals(userId.trim(), ignoreCase = true) && it.status == "PENDING"
-    } ?: return SecurityActionResult(false, "⚠️ কোনো পেন্ডিং ভেরিফিকেশন রিকোয়েস্ট পাওয়া যায়নি।")
+    } ?: return SecurityActionResult(false, "No pending device verification request found.")
 
     if (req.otpUsed) {
-      return SecurityActionResult(false, "⚠️ এই কোডটি ইতিমধ্যে ব্যবহৃত হয়েছে (Single-use only)।")
+      return SecurityActionResult(false, "This verification code has already been used.")
     }
     if (req.otpAttempts >= req.maxAttempts) {
       return SecurityActionResult(
         false,
-        "⛔ ভেরিফিকেশন কোড দেওয়ার সর্বোচ্চ সীমা (${req.maxAttempts} বার) শেষ হয়েছে। নতুন কোড রিকোয়েস্ট করুন বা অ্যাডমিনের অনুমোদন নিন।"
+        "Maximum verification attempts (${req.maxAttempts}) exceeded. Please request a new code or ask Admin for approval."
       )
     }
     if (System.currentTimeMillis() > req.otpExpiresAtMillis) {
-      return SecurityActionResult(false, "⌛ ভেরিফিকেশন কোডের মেয়াদ শেষ হয়ে গেছে (১০ মিনিট)। অনুগ্রহ করে নতুন কোড রিকোয়েস্ট করুন।")
+      return SecurityActionResult(false, "Verification code has expired (10-minute limit). Please request a new code.")
     }
 
     val inputHash = sheetsStorage.sha256(cleanCode)
@@ -2614,39 +3058,38 @@ class NflRepository(private val context: Context) {
       }
       sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
       val remaining = (req.maxAttempts - updatedReq.otpAttempts).coerceAtLeast(0)
-      addAuditLog("GMAIL_VERIFICATION", req.userId, "OTP_INVALID_ATTEMPT", req.userName, "Invalid OTP attempt (${updatedReq.otpAttempts}/${req.maxAttempts})")
-      return SecurityActionResult(false, "❌ ভুল ভেরিফিকেশন কোড! (বাকি চেষ্টা: $remaining বার)")
+      addAuditLog("DEVICE_SECURITY", req.userId, "OTP_INVALID_ATTEMPT", req.userName, "Invalid verification attempt (${updatedReq.otpAttempts}/${req.maxAttempts})")
+      return SecurityActionResult(false, "Invalid verification code ($remaining attempts remaining).")
     }
 
-    // Code is valid! Mark single-use OTP as used and approve account/device
-    return approvePendingRequestInternal(req.requestId, approvedBy = "GMAIL_OTP ($PRIMARY_ADMIN_GMAIL)", targetDeviceId = deviceId)
+    return approvePendingRequestInternal(req.requestId, approvedBy = "ADMIN_OTP ($PRIMARY_ADMIN_GMAIL)", targetDeviceId = deviceId)
   }
 
   /**
-   * In-app Admin approval option when email verification is unavailable or Admin approves directly from Admin Panel.
+   * In-app Admin approval for a device replacement or account request.
    */
   fun adminApproveDeviceOrAccountRequest(requestId: String): SecurityActionResult {
     val admin = getAuthoritativeCurrentUser()
     if (admin != null && !admin.isAdmin) {
-      return SecurityActionResult(false, "⚠️ Access Denied: শুধুমাত্র অ্যাডমিন অনুমোদন দিতে পারবেন।")
+      return SecurityActionResult(false, "Access Denied: Only an Administrator can approve requests.")
     }
-    return approvePendingRequestInternal(requestId, approvedBy = admin?.name ?: "Admin ($PRIMARY_ADMIN_GMAIL)", targetDeviceId = null)
+    return approvePendingRequestInternal(requestId, approvedBy = admin?.name ?: "Admin ($INITIAL_ADMIN_EMPLOYEE_ID)", targetDeviceId = null)
   }
 
   fun adminRejectDeviceOrAccountRequest(requestId: String): SecurityActionResult {
     val admin = getAuthoritativeCurrentUser()
     if (admin != null && !admin.isAdmin) {
-      return SecurityActionResult(false, "⚠️ Access Denied: শুধুমাত্র অ্যাডমিন বাতিল করতে পারবেন।")
+      return SecurityActionResult(false, "Access Denied: Only an Administrator can reject requests.")
     }
     val req = _deviceApprovalRequests.value.find { it.requestId == requestId }
-      ?: return SecurityActionResult(false, "⚠️ রিকোয়েস্ট পাওয়া যায়নি।")
+      ?: return SecurityActionResult(false, "Request not found.")
     val rejected = req.copy(status = "REJECTED", otpUsed = true)
     _deviceApprovalRequests.value = _deviceApprovalRequests.value.map {
       if (it.requestId == requestId) rejected else it
     }
     sheetsStorage.saveDeviceApprovalRequests(_deviceApprovalRequests.value)
     addAuditLog("DEVICE_SECURITY", req.userId, "REJECT_DEVICE_REQUEST", admin?.name ?: "Admin", "Rejected device ${req.deviceName} (${req.deviceId})")
-    return SecurityActionResult(true, "✓ রিকোয়েস্ট বাতিল করা হয়েছে।")
+    return SecurityActionResult(true, "Device request rejected.")
   }
 
   private fun approvePendingRequestInternal(
@@ -2655,28 +3098,30 @@ class NflRepository(private val context: Context) {
     targetDeviceId: String?
   ): SecurityActionResult {
     val req = _deviceApprovalRequests.value.find { it.requestId == requestId }
-      ?: return SecurityActionResult(false, "⚠️ রিকোয়েস্ট পাওয়া যায়নি।")
+      ?: return SecurityActionResult(false, "Request not found.")
     val user = _users.value.find { it.id.equals(req.userId, ignoreCase = true) }
-      ?: return SecurityActionResult(false, "⚠️ ইউজার অ্যাকাউন্ট পাওয়া যায়নি।")
+      ?: return SecurityActionResult(false, "User account not found.")
 
     val devIdToApprove = targetDeviceId ?: req.deviceId
-    val existingDevices = user.approvedDevices.filterNot { it.deviceId == devIdToApprove }
-    // Enforce max 2 active approved devices: if already 2 devices, keep the most recent 1 and add the newly approved device
-    val trimmedDevices = if (existingDevices.size >= MAX_APPROVED_DEVICES_PER_USER) {
-      existingDevices.takeLast(MAX_APPROVED_DEVICES_PER_USER - 1)
-    } else {
-      existingDevices
-    }
-    val updatedDevices = trimmedDevices + ApprovedDevice(
+    val now = System.currentTimeMillis()
+    val singleApprovedDevice = ApprovedDevice(
       deviceId = devIdToApprove,
       deviceName = req.deviceName,
-      approvedAtMillis = System.currentTimeMillis(),
-      approvedBy = approvedBy
+      approvedAtMillis = now,
+      approvedBy = approvedBy,
+      lastActiveMillis = now
     )
+    // Atomically replace old device and invalidate old session ID
     val updatedUser = user.copy(
       accountStatus = AccountStatus.APPROVED,
       isActive = true,
-      approvedDevices = updatedDevices
+      authorizedDeviceId = devIdToApprove,
+      authorizedDeviceName = req.deviceName,
+      activeSessionId = UUID.randomUUID().toString(),
+      approvedDevices = listOf(singleApprovedDevice),
+      approvedBy = approvedBy,
+      approvedAtMillis = now,
+      updatedAtMillis = now
     )
     updateUserInternal(updatedUser)
 
@@ -2688,26 +3133,228 @@ class NflRepository(private val context: Context) {
     addAuditLog(
       type = "DEVICE_SECURITY",
       id = updatedUser.id,
-      action = "APPROVE_DEVICE_ACCOUNT",
+      action = "APPROVE_DEVICE_REPLACEMENT",
       by = approvedBy,
-      details = "Approved device ${req.deviceName} ($devIdToApprove) for ${updatedUser.id} (Active devices: ${updatedDevices.size}/$MAX_APPROVED_DEVICES_PER_USER)"
+      details = "Replaced authorized device with ${req.deviceName} ($devIdToApprove) for Employee ID ${updatedUser.id}"
     )
-    return SecurityActionResult(true, "✓ অ্যাকাউন্ট ও ডিভাইস সফলভাবে অনুমোদিত হয়েছে (${updatedDevices.size}/$MAX_APPROVED_DEVICES_PER_USER ডিভাইস)।")
+    return SecurityActionResult(true, "Authorized device updated to ${req.deviceName} for Employee ID ${updatedUser.id}.")
   }
 
   /**
-   * Admin revokes an existing approved device for an employee ID.
+   * Admin approves a pending employee registration, applying or overriding designation, physical floor, and authorized floor scope.
    */
-  fun adminRevokeUserDevice(userId: String, deviceId: String): SecurityActionResult {
+  fun adminApproveUserRegistration(
+    employeeId: String,
+    overrideDesignation: EmployeeDesignation? = null,
+    overridePhysicalFloor: FloorScope? = null,
+    overrideAuthorizedScope: FloorScope? = null
+  ): SecurityActionResult {
     val admin = getAuthoritativeCurrentUser()
     if (admin != null && !admin.isAdmin) {
-      return SecurityActionResult(false, "⚠️ Access Denied: শুধুমাত্র অ্যাডমিন ডিভাইস বাতিল করতে পারবেন।")
+      return SecurityActionResult(false, "Access Denied: Only an Administrator can approve employee registrations.")
+    }
+    val user = _users.value.find { it.id.equals(employeeId.trim(), ignoreCase = true) }
+      ?: return SecurityActionResult(false, "Employee account '$employeeId' not found.")
+
+    val resolvedDesignation = overrideDesignation ?: EmployeeDesignation.fromDisplayName(user.designation)
+    val resolvedPhysicalFloor = DesignationPolicy.sanitizePhysicalFloor(
+      overridePhysicalFloor ?: user.floor,
+      resolvedDesignation
+    )
+    val resolvedScope = DesignationPolicy.resolveAuthorizedScope(
+      designation = resolvedDesignation,
+      physicalFloor = resolvedPhysicalFloor,
+      overrideScope = overrideAuthorizedScope
+    )
+    val now = System.currentTimeMillis()
+    val adminLabel = admin?.let { "${it.name} (${it.id})" } ?: "Admin ($INITIAL_ADMIN_EMPLOYEE_ID)"
+
+    val approvedUser = DesignationPolicy.applyDesignationTemplate(
+      base = user,
+      designation = resolvedDesignation,
+      physicalFloor = resolvedPhysicalFloor,
+      overrideScope = resolvedScope
+    ).copy(
+      accountStatus = AccountStatus.APPROVED,
+      isActive = true,
+      rejectionReason = "",
+      approvedBy = adminLabel,
+      approvedAtMillis = now,
+      updatedAtMillis = now
+    )
+
+    updateUserInternal(approvedUser)
+    addAuditLog(
+      type = "USER_MGMT",
+      id = approvedUser.id,
+      action = "APPROVE_REGISTRATION",
+      by = adminLabel,
+      details = "Approved ${approvedUser.name} (${approvedUser.id}) as ${approvedUser.designation}, Physical Floor: ${approvedUser.floor.displayName}, Authorized Scope: ${approvedUser.authorizedFloorScope.displayName}"
+    )
+    return SecurityActionResult(
+      true,
+      "Approved ${approvedUser.name} (ID: ${approvedUser.id}) • ${approvedUser.designation} (${approvedUser.authorizedFloorScope.displayName})."
+    )
+  }
+
+  /**
+   * Admin rejects a pending employee registration.
+   */
+  fun adminRejectUserRegistration(employeeId: String, reason: String = "Rejected by Administrator"): SecurityActionResult {
+    val admin = getAuthoritativeCurrentUser()
+    if (admin != null && !admin.isAdmin) {
+      return SecurityActionResult(false, "Access Denied: Only an Administrator can reject registrations.")
+    }
+    val user = _users.value.find { it.id.equals(employeeId.trim(), ignoreCase = true) }
+      ?: return SecurityActionResult(false, "Employee account '$employeeId' not found.")
+
+    val cleanReason = reason.trim().ifEmpty { "Rejected by Administrator" }
+    val rejectedUser = user.copy(
+      accountStatus = AccountStatus.REJECTED,
+      isActive = false,
+      activeSessionId = "",
+      rejectionReason = cleanReason,
+      updatedAtMillis = System.currentTimeMillis()
+    )
+    updateUserInternal(rejectedUser)
+    addAuditLog(
+      type = "USER_MGMT",
+      id = rejectedUser.id,
+      action = "REJECT_REGISTRATION",
+      by = admin?.name ?: "Admin",
+      details = "Rejected registration for ${rejectedUser.name} (${rejectedUser.id}): $cleanReason"
+    )
+    return SecurityActionResult(true, "Registration for ${rejectedUser.name} (ID: ${rejectedUser.id}) has been rejected.")
+  }
+
+  /**
+   * Admin suspends an approved user and immediately terminates their active session.
+   */
+  fun adminSuspendUser(employeeId: String, reason: String = "Suspended by Administrator"): SecurityActionResult {
+    val admin = getAuthoritativeCurrentUser()
+    if (admin != null && !admin.isAdmin) {
+      return SecurityActionResult(false, "Access Denied: Only an Administrator can suspend accounts.")
+    }
+    val user = _users.value.find { it.id.equals(employeeId.trim(), ignoreCase = true) }
+      ?: return SecurityActionResult(false, "Employee account '$employeeId' not found.")
+    if (user.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) && admin?.id?.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) == true) {
+      return SecurityActionResult(false, "Initial Admin cannot suspend their own primary account.")
+    }
+
+    val suspendedUser = user.copy(
+      accountStatus = AccountStatus.SUSPENDED,
+      isActive = false,
+      activeSessionId = "",
+      rejectionReason = reason.trim(),
+      updatedAtMillis = System.currentTimeMillis()
+    )
+    updateUserInternal(suspendedUser)
+    addAuditLog(
+      type = "USER_MGMT",
+      id = suspendedUser.id,
+      action = "SUSPEND_USER",
+      by = admin?.name ?: "Admin",
+      details = "Suspended account ${suspendedUser.name} (${suspendedUser.id})"
+    )
+    return SecurityActionResult(true, "Account ${suspendedUser.name} (ID: ${suspendedUser.id}) has been suspended.")
+  }
+
+  /**
+   * Admin reactivates a suspended or rejected user account.
+   */
+  fun adminReactivateUser(employeeId: String): SecurityActionResult {
+    val admin = getAuthoritativeCurrentUser()
+    if (admin != null && !admin.isAdmin) {
+      return SecurityActionResult(false, "Access Denied: Only an Administrator can reactivate accounts.")
+    }
+    val user = _users.value.find { it.id.equals(employeeId.trim(), ignoreCase = true) }
+      ?: return SecurityActionResult(false, "Employee account '$employeeId' not found.")
+
+    val reactivated = user.copy(
+      accountStatus = AccountStatus.APPROVED,
+      isActive = true,
+      rejectionReason = "",
+      updatedAtMillis = System.currentTimeMillis()
+    )
+    updateUserInternal(reactivated)
+    addAuditLog(
+      type = "USER_MGMT",
+      id = reactivated.id,
+      action = "REACTIVATE_USER",
+      by = admin?.name ?: "Admin",
+      details = "Reactivated account ${reactivated.name} (${reactivated.id})"
+    )
+    return SecurityActionResult(true, "Account ${reactivated.name} (ID: ${reactivated.id}) has been reactivated.")
+  }
+
+  /**
+   * Admin updates an employee's Designation, Department, Physical Floor, and Authorized Floor Scope.
+   */
+  fun adminUpdateUserRoleAndScope(
+    employeeId: String,
+    designation: EmployeeDesignation,
+    physicalFloor: FloorScope,
+    authorizedScope: FloorScope,
+    assignedLine: String = "K1"
+  ): SecurityActionResult {
+    val admin = getAuthoritativeCurrentUser()
+    if (admin != null && !admin.isAdmin) {
+      return SecurityActionResult(false, "Access Denied: Only an Administrator can modify user roles and scopes.")
+    }
+    val user = _users.value.find { it.id.equals(employeeId.trim(), ignoreCase = true) }
+      ?: return SecurityActionResult(false, "Employee account '$employeeId' not found.")
+
+    val cleanPhysical = DesignationPolicy.sanitizePhysicalFloor(physicalFloor, designation)
+    val updated = DesignationPolicy.applyDesignationTemplate(
+      base = user,
+      designation = designation,
+      physicalFloor = cleanPhysical,
+      overrideScope = authorizedScope
+    ).copy(
+      assignedLine = assignedLine.trim().ifEmpty { "K1" },
+      updatedAtMillis = System.currentTimeMillis()
+    )
+
+    updateUserInternal(updated)
+    addAuditLog(
+      type = "USER_MGMT",
+      id = updated.id,
+      action = "UPDATE_ROLE_AND_SCOPE",
+      by = admin?.name ?: "Admin",
+      details = "Updated ${updated.name} (${updated.id}) -> Designation: ${updated.designation}, Physical Floor: ${updated.floor.displayName}, Scope: ${updated.authorizedFloorScope.displayName}"
+    )
+    return SecurityActionResult(
+      true,
+      "Updated ${updated.name} (${updated.id}) to ${updated.designation} • Scope: ${updated.authorizedFloorScope.displayName}."
+    )
+  }
+
+  /**
+   * Admin revokes an existing approved device / active session for an employee ID.
+   */
+  fun adminRevokeUserDevice(userId: String, deviceId: String = ""): SecurityActionResult {
+    val admin = getAuthoritativeCurrentUser()
+    if (admin != null && !admin.isAdmin) {
+      return SecurityActionResult(false, "Access Denied: Only an Administrator can revoke devices.")
     }
     val user = _users.value.find { it.id.equals(userId, ignoreCase = true) }
-      ?: return SecurityActionResult(false, "⚠️ ইউজার পাওয়া যায়নি।")
-    val targetDev = user.approvedDevices.find { it.deviceId == deviceId }
+      ?: return SecurityActionResult(false, "User account not found.")
+    val targetDev = if (deviceId.isBlank()) {
+      user.approvedDevices.firstOrNull()
+    } else {
+      user.approvedDevices.find { it.deviceId == deviceId }
+    }
+    val remainingDevices = if (deviceId.isBlank()) {
+      emptyList()
+    } else {
+      user.approvedDevices.filterNot { it.deviceId == deviceId }
+    }
     val updatedUser = user.copy(
-      approvedDevices = user.approvedDevices.filterNot { it.deviceId == deviceId }
+      approvedDevices = remainingDevices,
+      authorizedDeviceId = remainingDevices.firstOrNull()?.deviceId.orEmpty(),
+      authorizedDeviceName = remainingDevices.firstOrNull()?.deviceName.orEmpty(),
+      activeSessionId = "",
+      updatedAtMillis = System.currentTimeMillis()
     )
     updateUserInternal(updatedUser)
     addAuditLog(
@@ -2715,49 +3362,66 @@ class NflRepository(private val context: Context) {
       id = user.id,
       action = "REVOKE_DEVICE",
       by = admin?.name ?: "Admin",
-      details = "Revoked device ${targetDev?.deviceName ?: deviceId} ($deviceId). Remaining: ${updatedUser.approvedDevices.size}/$MAX_APPROVED_DEVICES_PER_USER"
+      details = "Revoked device ${targetDev?.deviceName ?: deviceId.ifBlank { user.authorizedDeviceName }} for Employee ID ${user.id}"
     )
     return SecurityActionResult(
       true,
-      "✓ ডিভাইস (${targetDev?.deviceName ?: deviceId}) সফলভাবে বাতিল (Revoke) করা হয়েছে।"
+      "Revoked authorized device and reset session for Employee ID ${user.id}. The employee can now log in on a new device."
     )
   }
 
   private fun updateUserInternal(user: UserAccount) {
+    val sanitized = user.copy(password = "")
     _users.value = _users.value.map {
-      if (it.id.equals(user.id, ignoreCase = true)) user else it
+      if (it.id.equals(sanitized.id, ignoreCase = true)) sanitized else it
     }
-    if (_users.value.none { it.id.equals(user.id, ignoreCase = true) }) {
-      _users.value = _users.value + user
+    if (_users.value.none { it.id.equals(sanitized.id, ignoreCase = true) }) {
+      _users.value = _users.value + sanitized
     }
     sheetsStorage.saveLocalUsers(_users.value)
-    if (_currentUser.value?.id?.equals(user.id, ignoreCase = true) == true) {
-      _currentUser.value = user
-      _currentRole.value = user.role
-      _currentUserName.value = user.name
+    if (_currentUser.value?.id?.equals(sanitized.id, ignoreCase = true) == true) {
+      _currentUser.value = sanitized
+      _currentRole.value = sanitized.role
+      _currentUserName.value = sanitized.name
     }
     touchDataUpdated()
     repoScope.launch {
-      firebaseSync.pushUserAccountAwait(user)
-      sheetsStorage.pushUserAccountToSheet(user)
+      firebaseSync.pushUserAccountAwait(sanitized)
+      sheetsStorage.pushUserAccountToSheet(sanitized)
     }
   }
 
   fun logout() {
     val user = _currentUser.value
     if (user != null) {
+      val clearedSessionUser = user.copy(
+        activeSessionId = "",
+        updatedAtMillis = System.currentTimeMillis()
+      )
+      updateUserInternal(clearedSessionUser)
       addAuditLog("AUTH", user.id, "LOGOUT", user.name, "Session ended")
     }
+    sheetsStorage.setLocalActiveSessionId("")
     _currentUser.value = null
   }
 
   fun setInitialAdmin(adminId: String, adminPass: String, adminName: String): UserAccount {
+    val cleanId = adminId.trim().ifEmpty { INITIAL_ADMIN_EMPLOYEE_ID }
+    val cleanPass = adminPass.trim().ifEmpty { "Admin@1015198" }
+    val salt = GoogleSheetsStorageService.generateSalt()
+    val hash = GoogleSheetsStorageService.hashPassword(cleanPass, salt)
     val admin = UserAccount(
-      id = adminId.trim().ifEmpty { "admin" },
-      name = adminName.trim().ifEmpty { "Shamim (Admin)" },
-      password = adminPass.trim().ifEmpty { "123" },
+      id = cleanId,
+      employeeId = cleanId,
+      name = adminName.trim().ifEmpty { "Initial Administrator" },
+      password = "",
+      passwordHash = hash,
+      passwordSalt = salt,
+      designation = EmployeeDesignation.ADMIN.displayName,
+      department = EmployeeDesignation.ADMIN.department,
       role = UserRole.ADMIN,
-      floor = FloorScope.ALL,
+      floor = FloorScope.SEW_1,
+      authorizedFloorScope = FloorScope.ALL,
       assignedLine = "All",
       isAdmin = true
     )
@@ -2780,33 +3444,50 @@ class NflRepository(private val context: Context) {
   fun saveUser(user: UserAccount, isNewAccount: Boolean = false): SecurityActionResult {
     val cleanId = user.id.trim()
     if (cleanId.isEmpty()) {
-      return SecurityActionResult(false, "⚠️ কোম্পানি আইডি খালি রাখা যাবে না।")
+      return SecurityActionResult(false, "Employee ID cannot be empty.")
     }
     val existing = _users.value.find { it.id.equals(cleanId, ignoreCase = true) }
     if (isNewAccount && existing != null) {
       return SecurityActionResult(
         false,
-        "⚠️ ডুপ্লিকেট অ্যাকাউন্ট! কোম্পানি আইডি '$cleanId' দিয়ে ইতিমধ্যে একটি অ্যাকাউন্ট রয়েছে।"
+        "Duplicate account: Employee ID '$cleanId' already exists."
       )
     }
-    // Preserve existing approved devices and passwordHash if not explicitly replaced
+    val salt = when {
+      user.password.isNotBlank() -> GoogleSheetsStorageService.generateSalt()
+      user.passwordSalt.isNotBlank() -> user.passwordSalt
+      existing != null -> existing.passwordSalt
+      else -> GoogleSheetsStorageService.generateSalt()
+    }
+    val hash = when {
+      user.password.isNotBlank() -> GoogleSheetsStorageService.hashPassword(user.password, salt)
+      user.passwordHash.isNotBlank() -> user.passwordHash
+      existing != null -> existing.passwordHash
+      else -> ""
+    }
     val mergedUser = if (existing != null) {
       user.copy(
         id = existing.id,
         employeeId = user.employeeId.ifBlank { existing.id },
-        passwordHash = sheetsStorage.sha256(user.password),
-        approvedDevices = if (user.approvedDevices.isEmpty()) existing.approvedDevices else user.approvedDevices
+        password = "",
+        passwordHash = hash,
+        passwordSalt = salt,
+        approvedDevices = if (user.approvedDevices.isEmpty()) existing.approvedDevices else user.approvedDevices.take(MAX_APPROVED_DEVICES_PER_USER),
+        updatedAtMillis = System.currentTimeMillis()
       )
     } else {
       user.copy(
         id = cleanId,
         employeeId = user.employeeId.ifBlank { cleanId },
-        passwordHash = sheetsStorage.sha256(user.password)
+        password = "",
+        passwordHash = hash,
+        passwordSalt = salt,
+        updatedAtMillis = System.currentTimeMillis()
       )
     }
     updateUserInternal(mergedUser)
-    addAuditLog("USER_MGMT", mergedUser.id, if (existing == null) "CREATE_USER" else "SAVE_USER", "Admin", "Role: ${mergedUser.role.displayName}, Floor: ${mergedUser.floor.displayName}")
-    return SecurityActionResult(true, "✓ ইউজার অ্যাকাউন্ট (${mergedUser.id}) সংরক্ষিত হয়েছে।")
+    addAuditLog("USER_MGMT", mergedUser.id, if (existing == null) "CREATE_USER" else "SAVE_USER", "Admin", "Designation: ${mergedUser.designation}, Scope: ${mergedUser.authorizedFloorScope.displayName}")
+    return SecurityActionResult(true, "User account (${mergedUser.id}) saved successfully.")
   }
 
   fun applyRolePolicy(
@@ -3678,16 +4359,18 @@ class NflRepository(private val context: Context) {
       )
     }
 
-    val reportedOnly = summaries.filter { it.achievementPcs != null }
+    // Exclude lines without an assigned target (targetPcs <= 0) from performance graphs & rankings
+    val scheduledSummaries = summaries.filter { it.targetPcs > 0 }
+    val reportedOnly = scheduledSummaries.filter { it.achievementPcs != null }
     val totalOutput = reportedOnly.sumOf { it.achievementPcs ?: 0 }
-    val totalTarget = summaries.sumOf { it.targetPcs }
-    val totalTargetDue = summaries.sumOf { it.targetDuePcs }
+    val totalTarget = scheduledSummaries.sumOf { it.targetPcs }
+    val totalTargetDue = scheduledSummaries.sumOf { it.targetDuePcs }
 
     // Weighted RMG Floor Efficiency Aggregation (sum of earned mins / sum of available mins)
-    val totalEarnedMins = summaries.filter { it.achievementPcs != null && (it.achievementPcs ?: 0) > 0 }.sumOf {
+    val totalEarnedMins = scheduledSummaries.filter { it.achievementPcs != null && (it.achievementPcs ?: 0) > 0 }.sumOf {
       (it.achievementPcs ?: 0) * it.smv
     }
-    val totalAvailMins = summaries.filter { it.achievementPcs != null && (it.achievementPcs ?: 0) > 0 }.sumOf {
+    val totalAvailMins = scheduledSummaries.filter { it.achievementPcs != null && (it.achievementPcs ?: 0) > 0 }.sumOf {
       val setup = setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)
       setup.includedManpower * setup.workingHoursSoFar * 60
     }
@@ -3697,7 +4380,7 @@ class NflRepository(private val context: Context) {
       reportedOnly.mapNotNull { it.todayEfficiencyPct }.average().let { if (it.isNaN()) 0.0 else Math.round(it * 10.0) / 10.0 }
     }
 
-    val targetEffAvg = summaries.map { it.targetEfficiencyPct }.average().let { if (it.isNaN()) 0.0 else Math.round(it * 10.0) / 10.0 }
+    val targetEffAvg = scheduledSummaries.map { it.targetEfficiencyPct }.average().let { if (it.isNaN()) 0.0 else Math.round(it * 10.0) / 10.0 }
 
     val totalCheckedFloor = periodQuality.sumOf { it.checkedGarments }
     val totalDefectiveFloor = periodQuality.sumOf { it.defectiveGarments }
@@ -3712,12 +4395,12 @@ class NflRepository(private val context: Context) {
       Math.round((totalDefectsCountFloor.toDouble() / totalCheckedFloor.toDouble()) * 10000.0) / 100.0
     } else 0.0
 
-    val totalSent = summaries.sumOf { it.defectSent }
-    val totalRecv = summaries.sumOf { it.defectReceived }
-    val totalBal = summaries.sumOf { it.defectBalance }
-    val totalSpotSent = summaries.sumOf { it.spotSent }
-    val totalSpotRecv = summaries.sumOf { it.spotReceived }
-    val totalSpotBal = summaries.sumOf { it.spotBalance }
+    val totalSent = scheduledSummaries.sumOf { it.defectSent }
+    val totalRecv = scheduledSummaries.sumOf { it.defectReceived }
+    val totalBal = scheduledSummaries.sumOf { it.defectBalance }
+    val totalSpotSent = scheduledSummaries.sumOf { it.spotSent }
+    val totalSpotRecv = scheduledSummaries.sumOf { it.spotReceived }
+    val totalSpotBal = scheduledSummaries.sumOf { it.spotBalance }
 
     val kpi = FloorKpiSummary(
       todayEfficiency = effWeighted,
@@ -3730,11 +4413,11 @@ class NflRepository(private val context: Context) {
       todayOql = weightedOql,
       bsQaOql = floorMonthlyTarget.bsOqlPct,
       friPassRate = floorMonthlyTarget.friPassRatePct,
-      operatorsCount = summaries.sumOf { (setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)).operatorsCount },
-      helpersCount = summaries.sumOf { (setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)).helpersCount },
-      finishingStaffCount = summaries.sumOf { (setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)).finishingStaffCount },
-      machinesCount = summaries.sumOf { (setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)).machinesCount },
-      reportingCoveragePct = if (summaries.isNotEmpty()) Math.round((reportedOnly.size.toDouble() / summaries.size) * 100).toInt() else 0,
+      operatorsCount = scheduledSummaries.sumOf { (setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)).operatorsCount },
+      helpersCount = scheduledSummaries.sumOf { (setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)).helpersCount },
+      finishingStaffCount = scheduledSummaries.sumOf { (setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)).finishingStaffCount },
+      machinesCount = scheduledSummaries.sumOf { (setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)).machinesCount },
+      reportingCoveragePct = if (scheduledSummaries.isNotEmpty()) Math.round((reportedOnly.size.toDouble() / scheduledSummaries.size) * 100).toInt() else 0,
       openIncidentsCount = activeFloorIncidents.size,
       totalDefectSent = totalSent,
       totalDefectReceived = totalRecv,
@@ -3808,14 +4491,14 @@ class NflRepository(private val context: Context) {
       )
     }
 
-    // Top 5 Highest DHU Lines
-    val highestDhu = summaries.filter { it.dhu != null && (it.dhu ?: 0.0) > 0.0 }
+    // Top 5 Highest DHU Lines (only lines with an active target)
+    val highestDhu = scheduledSummaries.filter { it.dhu != null && (it.dhu ?: 0.0) > 0.0 }
       .sortedByDescending { it.dhu ?: 0.0 }
       .take(5)
       .map { LineDhuSummary(it.lineId, it.dhu ?: 0.0) }
 
-    // Top 5 Lowest-Efficiency Lines ranking
-    val lowestEffLines = summaries.filter { it.todayEfficiencyPct != null }
+    // Top 5 Lowest-Efficiency Lines ranking (only lines with an active target)
+    val lowestEffLines = scheduledSummaries.filter { it.todayEfficiencyPct != null }
       .sortedBy { it.todayEfficiencyPct ?: 0.0 }
       .take(5)
 
@@ -3829,7 +4512,7 @@ class NflRepository(private val context: Context) {
       floorScope = floorScope,
       periodScope = periodScope,
       kpis = kpi,
-      linePerformance = summaries,
+      linePerformance = scheduledSummaries,
       topDefects = topDefects,
       highestDhuLines = highestDhu,
       lowestEfficiencyLines = lowestEffLines,

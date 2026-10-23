@@ -415,20 +415,9 @@ fun TargetVsOutputBarChart(
   fitAllLinesToWidth: Boolean = compactMode,
   onLineClick: ((String) -> Unit)? = null
 ) {
-  val displayLines = lines.ifEmpty {
-    listOf(
-      LinePerformancePoint("J1", targetPcs = 500, achievementPcs = 450),
-      LinePerformancePoint("K1", targetPcs = 400, achievementPcs = 340),
-      LinePerformancePoint("L1", targetPcs = 350, achievementPcs = 280),
-      LinePerformancePoint("N1", targetPcs = 450, achievementPcs = null),
-      LinePerformancePoint("N2", targetPcs = 620, achievementPcs = 560),
-      LinePerformancePoint("O1", targetPcs = 520, achievementPcs = 480),
-      LinePerformancePoint("P1", targetPcs = 480, achievementPcs = 420),
-      LinePerformancePoint("Q1", targetPcs = 600, achievementPcs = 520)
-    )
-  }
+  val displayLines = lines.filter { it.targetPcs > 0 }
 
-  val lineCount = displayLines.size
+  val lineCount = displayLines.size.coerceAtLeast(1)
   val valFontSize = when {
     !fitAllLinesToWidth -> 8.5.sp
     lineCount <= 10 -> 7.sp
@@ -790,20 +779,9 @@ fun LineEfficiencyBarChart(
   fitAllLinesToWidth: Boolean = compactMode,
   onLineClick: ((String) -> Unit)? = null
 ) {
-  val displayLines = lines.ifEmpty {
-    listOf(
-      LinePerformancePoint("J1", targetPcs = 500, todayEfficiencyPct = 70.0, monthlyEfficiencyPct = 68.0),
-      LinePerformancePoint("K1", targetPcs = 400, todayEfficiencyPct = 66.0, monthlyEfficiencyPct = 64.0),
-      LinePerformancePoint("L1", targetPcs = 350, todayEfficiencyPct = 64.0, monthlyEfficiencyPct = 65.0),
-      LinePerformancePoint("N2", targetPcs = 620, todayEfficiencyPct = 76.0, monthlyEfficiencyPct = 72.0),
-      LinePerformancePoint("O1", targetPcs = 520, todayEfficiencyPct = 72.0, monthlyEfficiencyPct = 70.0),
-      LinePerformancePoint("P1", targetPcs = 480, todayEfficiencyPct = 68.0, monthlyEfficiencyPct = 66.0),
-      LinePerformancePoint("Q1", targetPcs = 600, todayEfficiencyPct = 71.0, monthlyEfficiencyPct = 69.0),
-      LinePerformancePoint("R1", targetPcs = 380, todayEfficiencyPct = 66.0, monthlyEfficiencyPct = 65.0)
-    )
-  }
+  val displayLines = lines.filter { it.targetPcs > 0 }
 
-  val lineCount = displayLines.size
+  val lineCount = displayLines.size.coerceAtLeast(1)
   val valFontSize = when {
     !fitAllLinesToWidth -> 7.5.sp
     lineCount <= 10 -> 6.8.sp
@@ -2666,7 +2644,7 @@ fun LineWiseDhuBarChart(
   modifier: Modifier = Modifier,
   compactMode: Boolean = false
 ) {
-  val displayLines = lines
+  val displayLines = lines.filter { it.targetPcs > 0 }
   val lineCount = displayLines.size.coerceAtLeast(1)
   val maxDhu = (displayLines.maxOfOrNull { it.dhu ?: 0.0 } ?: 3.0).coerceAtLeast(3.0).toFloat()
 

@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -80,25 +81,18 @@ fun QualityEntryScreen(
   val currentBdDate = remember { repository.getCurrentBangladeshDateIso() }
   var selectedDate by remember { mutableStateOf(currentBdDate) }
   var selectedHour by remember { mutableStateOf("10:00 - 11:00") }
-  var selectedStyle by remember { mutableStateOf("NFL-204") }
-  var checkedGarmentsText by remember { mutableStateOf("150") }
-  var defectiveGarmentsText by remember { mutableStateOf("5") }
-  var defectSentText by remember { mutableStateOf("14") }
-  var defectReceivedText by remember { mutableStateOf("12") }
-  var spotSentText by remember { mutableStateOf("8") }
-  var spotReceivedText by remember { mutableStateOf("7") }
+  var selectedStyle by remember { mutableStateOf("") }
+  var checkedGarmentsText by remember { mutableStateOf("") }
+  var defectiveGarmentsText by remember { mutableStateOf("") }
+  var defectSentText by remember { mutableStateOf("") }
+  var defectReceivedText by remember { mutableStateOf("") }
+  var spotSentText by remember { mutableStateOf("") }
+  var spotReceivedText by remember { mutableStateOf("") }
 
   val lineSetup = remember(selectedLine, allTargets) { repository.getLineSetup(selectedLine) }
 
-  // Defects list state
-  var defectRows by remember {
-    mutableStateOf(
-      listOf(
-        DefectItem("Skip Stitch", 3),
-        DefectItem("Uncut Thread", 4)
-      )
-    )
-  }
+  // Defects list state (starts blank by default)
+  var defectRows by remember { mutableStateOf(emptyList<DefectItem>()) }
 
   var remarksText by remember { mutableStateOf("") }
   var showHourDropdown by remember { mutableStateOf(false) }
@@ -120,16 +114,23 @@ fun QualityEntryScreen(
       if (existingSlotRecord.styleNumber.isNotBlank()) {
         selectedStyle = existingSlotRecord.styleNumber
       }
-      checkedGarmentsText = existingSlotRecord.checkedGarments.toString()
-      defectiveGarmentsText = existingSlotRecord.defectiveGarments.toString()
-      defectSentText = existingSlotRecord.defectSent.toString()
-      defectReceivedText = existingSlotRecord.defectReceived.toString()
-      spotSentText = existingSlotRecord.spotSent.toString()
-      spotReceivedText = existingSlotRecord.spotReceived.toString()
-      if (existingSlotRecord.defects.isNotEmpty()) {
-        defectRows = existingSlotRecord.defects
-      }
+      checkedGarmentsText = if (existingSlotRecord.checkedGarments > 0) existingSlotRecord.checkedGarments.toString() else ""
+      defectiveGarmentsText = if (existingSlotRecord.defectiveGarments > 0 || existingSlotRecord.isConfirmedZero) existingSlotRecord.defectiveGarments.toString() else ""
+      defectSentText = if (existingSlotRecord.defectSent > 0) existingSlotRecord.defectSent.toString() else ""
+      defectReceivedText = if (existingSlotRecord.defectReceived > 0) existingSlotRecord.defectReceived.toString() else ""
+      spotSentText = if (existingSlotRecord.spotSent > 0) existingSlotRecord.spotSent.toString() else ""
+      spotReceivedText = if (existingSlotRecord.spotReceived > 0) existingSlotRecord.spotReceived.toString() else ""
+      defectRows = existingSlotRecord.defects
       remarksText = existingSlotRecord.remarks
+    } else {
+      checkedGarmentsText = ""
+      defectiveGarmentsText = ""
+      defectSentText = ""
+      defectReceivedText = ""
+      spotSentText = ""
+      spotReceivedText = ""
+      defectRows = emptyList()
+      remarksText = ""
     }
   }
 
@@ -309,7 +310,7 @@ fun QualityEntryScreen(
               ) {
                 Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(18.dp))
                 Column {
-                  Text("View-Only Mode (কোয়ালিটি এন্ট্রি লক করা)", color = Color(0xFF92400E), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                  Text("View-Only Mode (Quality Entry Locked)", color = Color(0xFF92400E), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                   Text("You have read-only access. Only authorized QC Inspectors & Auditors can enter defect records. (Management has view-only access).", color = Color(0xFFB45309), fontSize = 10.sp)
                 }
               }
@@ -620,7 +621,7 @@ fun QualityEntryScreen(
             ) {
               Column {
                 Text(
-                  text = "Defect Breakdown by Type (ডিফেক্ট বিবরণ)",
+                  text = "Defect Breakdown by Type",
                   fontSize = 13.sp,
                   fontWeight = FontWeight.Bold,
                   color = Color(0xFF0F172A)
@@ -708,7 +709,7 @@ fun QualityEntryScreen(
                         )
                       }
                       DropdownMenuItem(
-                        text = { Text("✏️ + Custom Defect... (কাস্টম ডিফেক্ট)", fontWeight = FontWeight.Bold, color = NflRoyalBlue) },
+                        text = { Text("✏️ + Custom Defect...", fontWeight = FontWeight.Bold, color = NflRoyalBlue) },
                         onClick = {
                           defectRows = defectRows.mapIndexed { idx, itm ->
                             if (idx == index) itm.copy(defectType = "Custom Defect") else itm
@@ -719,28 +720,89 @@ fun QualityEntryScreen(
                     }
                   }
 
-                  // Count input
-                  OutlinedTextField(
-                    value = defectItem.count.toString(),
-                    onValueChange = { newVal ->
-                      val cnt = newVal.toIntOrNull() ?: 0
-                      defectRows = defectRows.mapIndexed { idx, itm ->
-                        if (idx == index) itm.copy(count = cnt) else itm
+                  // Count input with vertical + / - stepper buttons (top +, bottom -)
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                  ) {
+                    OutlinedTextField(
+                      value = if (defectItem.count > 0) defectItem.count.toString() else "",
+                      onValueChange = { newVal ->
+                        val cnt = newVal.filter { it.isDigit() }.toIntOrNull() ?: 0
+                        defectRows = defectRows.mapIndexed { idx, itm ->
+                          if (idx == index) itm.copy(count = cnt) else itm
+                        }
+                      },
+                      placeholder = { Text("0", fontSize = 12.sp, color = Color(0xFF94A3B8)) },
+                      singleLine = true,
+                      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                      modifier = Modifier
+                        .width(58.dp)
+                        .testTag("defect_count_input_$index"),
+                      colors = com.example.ui.theme.nflInputColors(),
+                      textStyle = LocalTextStyle.current.copy(
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        color = Color(0xFF102A43)
+                      ),
+                      shape = RoundedCornerShape(6.dp)
+                    )
+
+                    // Vertical + / - Stepper buttons (Top +, Bottom -)
+                    Column(
+                      verticalArrangement = Arrangement.spacedBy(2.dp),
+                      horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                      // Top: Plus Button (+)
+                      Surface(
+                        onClick = {
+                          defectRows = defectRows.mapIndexed { idx, itm ->
+                            if (idx == index) itm.copy(count = itm.count + 1) else itm
+                          }
+                        },
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFFDCFCE7),
+                        border = BorderStroke(1.dp, Color(0xFF86EFAC)),
+                        modifier = Modifier
+                          .size(width = 30.dp, height = 22.dp)
+                          .testTag("defect_inc_btn_$index")
+                      ) {
+                        Box(contentAlignment = Alignment.Center) {
+                          Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Increase defect count",
+                            tint = Color(0xFF15803D),
+                            modifier = Modifier.size(13.dp)
+                          )
+                        }
                       }
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier
-                      .weight(0.7f)
-                      .testTag("defect_count_input_$index"),
-                    colors = com.example.ui.theme.nflInputColors(),
-                    textStyle = LocalTextStyle.current.copy(
-                      fontSize = 14.sp,
-                      fontWeight = FontWeight.Bold,
-                      color = Color(0xFF102A43)
-                    ),
-                    shape = RoundedCornerShape(6.dp)
-                  )
+
+                      // Bottom: Minus Button (-)
+                      Surface(
+                        onClick = {
+                          defectRows = defectRows.mapIndexed { idx, itm ->
+                            if (idx == index) itm.copy(count = (itm.count - 1).coerceAtLeast(0)) else itm
+                          }
+                        },
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFFFEE2E2),
+                        border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                        modifier = Modifier
+                          .size(width = 30.dp, height = 22.dp)
+                          .testTag("defect_dec_btn_$index")
+                      ) {
+                        Box(contentAlignment = Alignment.Center) {
+                          Icon(
+                            imageVector = Icons.Default.Remove,
+                            contentDescription = "Decrease defect count",
+                            tint = Color(0xFFB91C1C),
+                            modifier = Modifier.size(13.dp)
+                          )
+                        }
+                      }
+                    }
+                  }
 
                   // Delete button
                   IconButton(
@@ -767,7 +829,7 @@ fun QualityEntryScreen(
                         if (idx == index) itm.copy(defectType = typedName.ifEmpty { "Custom Defect" }) else itm
                       }
                     },
-                    label = { Text("Enter Custom Defect Name (কাস্টম নাম লিখুন)", fontSize = 11.sp) },
+                    label = { Text("Enter Custom Defect Name", fontSize = 11.sp) },
                     placeholder = { Text("e.g. Broken Needle, Slub, Pleat", fontSize = 11.sp) },
                     singleLine = true,
                     colors = com.example.ui.theme.nflInputColors(),
@@ -841,7 +903,7 @@ fun QualityEntryScreen(
                   )
                   Column {
                     Text(
-                      text = "Can't exceed total defect (মোট ডিফেক্টের বেশি হতে পারবে না)!",
+                      text = "Can't exceed total defect!",
                       color = Color(0xFF991B1B),
                       fontSize = 12.sp,
                       fontWeight = FontWeight.Bold
@@ -879,7 +941,7 @@ fun QualityEntryScreen(
               ) {
                 Column {
                   Text(
-                    text = "Sewing Defect Rectification (সুইং ডিফেক্ট ট্র্যাকিং)",
+                    text = "Sewing Defect Rectification",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF0F172A)
@@ -912,7 +974,7 @@ fun QualityEntryScreen(
                 // 1. Defect Sent
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                   Text(
-                    text = "Defect Sent (সেন্ট)",
+                    text = "Defect Sent",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFFEA580C)
@@ -936,7 +998,7 @@ fun QualityEntryScreen(
                 // 2. Defect Received
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                   Text(
-                    text = "Defect Recv (রিসিভ)",
+                    text = "Defect Recv",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFF16A34A)
@@ -960,7 +1022,7 @@ fun QualityEntryScreen(
                 // 3. Defect Balance (Calculated read-only)
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                   Text(
-                    text = "Balance (ব্যালেন্স)",
+                    text = "Balance",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = if (liveBal > 0) Color(0xFFDC2626) else Color(0xFF16A34A)
@@ -985,7 +1047,7 @@ fun QualityEntryScreen(
                 }
               }
 
-              // Spot Defect Rectification Tracking (স্পট / দাগ ডিফেক্ট আদান-প্রদান ও রেক্টিফিকেশন)
+              // Spot Defect Rectification Tracking
               val liveSpotSent = spotSentText.toIntOrNull() ?: 0
               val liveSpotRecv = spotReceivedText.toIntOrNull() ?: 0
               val liveSpotBal = (liveSpotSent - liveSpotRecv).coerceAtLeast(0)
@@ -999,7 +1061,7 @@ fun QualityEntryScreen(
               ) {
                 Column {
                   Text(
-                    text = "Spot Defect Rectification (স্পট / দাগ ডিফেক্ট ট্র্যাকিং)",
+                    text = "Spot Defect Rectification",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF7E22CE)
@@ -1032,7 +1094,7 @@ fun QualityEntryScreen(
                 // 1. Spot Sent
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                   Text(
-                    text = "Spot Sent (স্পট সেন্ট)",
+                    text = "Spot Sent",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFF7E22CE)
@@ -1056,7 +1118,7 @@ fun QualityEntryScreen(
                 // 2. Spot Received
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                   Text(
-                    text = "Spot Recv (দাগ মুক্ত)",
+                    text = "Spot Recv",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFF0D9488)
@@ -1080,7 +1142,7 @@ fun QualityEntryScreen(
                 // 3. Spot Balance
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                   Text(
-                    text = "Spot Bal (বকেয়া)",
+                    text = "Spot Bal",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = if (liveSpotBal > 0) Color(0xFFDC2626) else Color(0xFF0D9488)

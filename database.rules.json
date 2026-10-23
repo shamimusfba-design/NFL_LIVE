@@ -1,0 +1,80 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "bootstrap_lock": {
+      "first_admin_1015198": {
+        ".read": "auth != null",
+        ".write": "auth != null && !data.exists()",
+        ".validate": "newData.hasChildren(['employeeId', 'provisionedAtMillis']) && newData.child('employeeId').val() === '1015198'"
+      }
+    },
+
+    "users": {
+      ".indexOn": ["employeeId", "accountStatus", "role", "assignedFloor"],
+      "$userId": {
+        ".read": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'ADMIN')",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'ADMIN' || (!data.exists() && newData.child('accountStatus').val() === 'PENDING_APPROVAL' && newData.child('role').val() !== 'ADMIN') || ($userId === 'U-1015198' && !root.child('bootstrap_lock/first_admin_1015198').exists()))",
+        ".validate": "newData.hasChildren(['employeeId', 'name', 'role', 'accountStatus', 'assignedFloor', 'authorizedFloorScope']) && (!newData.hasChild('password') || newData.child('password').val() === '') && (newData.child('assignedFloor').val() === 'Sew-1' || newData.child('assignedFloor').val() === 'Sew-2' || newData.child('assignedFloor').val() === 'Sew-3' || newData.child('assignedFloor').val() === 'Finishing')"
+      }
+    },
+
+    "active_sessions": {
+      "$employeeId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('employeeId').val() === $employeeId || root.child('users').child(auth.uid).child('role').val() === 'ADMIN')",
+        ".validate": "newData.hasChildren(['deviceId', 'deviceName', 'sessionId', 'updatedAtMillis'])"
+      }
+    },
+
+    "production_entries": {
+      ".indexOn": ["date", "floor", "lineId"],
+      "$entryId": {
+        ".read": "auth != null && root.child('users').child(auth.uid).child('accountStatus').val() === 'APPROVED' && (root.child('users').child(auth.uid).child('authorizedFloorScope').val() === 'All Floor' || root.child('users').child(auth.uid).child('assignedFloor').val() === data.child('floor').val())",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('accountStatus').val() === 'APPROVED' && (root.child('users').child(auth.uid).child('role').val() === 'ADMIN' || root.child('users').child(auth.uid).child('role').val() === 'SUPERVISOR' || root.child('users').child(auth.uid).child('role').val() === 'PRODUCTION_REPORTER') && (root.child('users').child(auth.uid).child('authorizedFloorScope').val() === 'All Floor' || root.child('users').child(auth.uid).child('assignedFloor').val() === newData.child('floor').val())",
+        ".validate": "newData.hasChildren(['lineId', 'floor', 'date', 'hourSlot', 'outputPcs']) && newData.child('outputPcs').isNumber() && newData.child('outputPcs').val() >= 0 && (newData.child('floor').val() === 'Sew-1' || newData.child('floor').val() === 'Sew-2' || newData.child('floor').val() === 'Sew-3' || newData.child('floor').val() === 'Finishing')"
+      }
+    },
+
+    "quality_entries": {
+      ".indexOn": ["date", "floor", "lineId"],
+      "$entryId": {
+        ".read": "auth != null && root.child('users').child(auth.uid).child('accountStatus').val() === 'APPROVED' && (root.child('users').child(auth.uid).child('authorizedFloorScope').val() === 'All Floor' || root.child('users').child(auth.uid).child('assignedFloor').val() === data.child('floor').val())",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('accountStatus').val() === 'APPROVED' && (root.child('users').child(auth.uid).child('role').val() === 'ADMIN' || root.child('users').child(auth.uid).child('role').val() === 'QUALITY_REPORTER' || root.child('users').child(auth.uid).child('role').val() === 'AUDITOR') && (root.child('users').child(auth.uid).child('authorizedFloorScope').val() === 'All Floor' || root.child('users').child(auth.uid).child('assignedFloor').val() === newData.child('floor').val())",
+        ".validate": "newData.hasChildren(['lineId', 'floor', 'date', 'hourSlot', 'checkedPcs', 'defectQty']) && newData.child('checkedPcs').isNumber() && newData.child('checkedPcs').val() >= 0 && newData.child('defectQty').isNumber() && newData.child('defectQty').val() >= 0 && (newData.child('floor').val() === 'Sew-1' || newData.child('floor').val() === 'Sew-2' || newData.child('floor').val() === 'Sew-3' || newData.child('floor').val() === 'Finishing')"
+      }
+    },
+
+    "daily_setups": {
+      ".indexOn": ["date", "floor", "lineId"],
+      "$setupId": {
+        ".read": "auth != null && root.child('users').child(auth.uid).child('accountStatus').val() === 'APPROVED'",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('accountStatus').val() === 'APPROVED' && (root.child('users').child(auth.uid).child('role').val() === 'ADMIN' || root.child('users').child(auth.uid).child('role').val() === 'IE' || root.child('users').child(auth.uid).child('role').val() === 'SUPERVISOR' || root.child('users').child(auth.uid).child('role').val() === 'PRODUCTION_REPORTER') && (root.child('users').child(auth.uid).child('authorizedFloorScope').val() === 'All Floor' || root.child('users').child(auth.uid).child('assignedFloor').val() === newData.child('floor').val())",
+        ".validate": "newData.hasChildren(['lineId', 'floor', 'targetDailyPcs', 'smv']) && newData.child('targetDailyPcs').isNumber() && newData.child('targetDailyPcs').val() >= 0"
+      }
+    },
+
+    "monthly_targets": {
+      "$floorKey": {
+        ".read": "auth != null && root.child('users').child(auth.uid).child('accountStatus').val() === 'APPROVED'",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('accountStatus').val() === 'APPROVED' && (root.child('users').child(auth.uid).child('role').val() === 'ADMIN' || root.child('users').child(auth.uid).child('role').val() === 'IE')"
+      }
+    },
+
+    "factory_alerts": {
+      ".indexOn": ["floor", "status"],
+      "$alertId": {
+        ".read": "auth != null && root.child('users').child(auth.uid).child('accountStatus').val() === 'APPROVED'",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('accountStatus').val() === 'APPROVED'"
+      }
+    },
+
+    "security_audit_logs": {
+      "$logId": {
+        ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'ADMIN'",
+        ".write": "auth != null && !data.exists()"
+      }
+    }
+  }
+}

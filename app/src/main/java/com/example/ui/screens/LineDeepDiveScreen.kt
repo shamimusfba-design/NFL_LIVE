@@ -961,7 +961,7 @@ private fun LineHourlyDefectTableCard(
               color = Color(0xFF0F172A)
             )
             Text(
-              text = "ঘন্টাভিত্তিক সুইং ও দাগ সেন্ট/রিসিভ/ব্যালেন্স বিবরণী",
+              text = "Hourly Sewing & Spot Sent / Received / Balance Summary",
               fontSize = 10.sp,
               color = Color(0xFF64748B)
             )

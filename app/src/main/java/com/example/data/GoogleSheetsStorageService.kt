@@ -80,6 +80,8 @@ class GoogleSheetsStorageService(private val appContext: Context) {
     private const val KEY_SAVED_USERS = "ledger_users_rbac_v1"
     private const val KEY_SAVED_DEVICE_REQUESTS = "ledger_device_requests_v1"
     private const val KEY_SERVER_DEVICE_LEDGER = "ledger_server_devices_v1"
+    private const val KEY_FIRST_ADMIN_PROVISIONED = "security_first_admin_1015198_provisioned"
+    private const val KEY_ACTIVE_SESSION_ID = "security_active_session_id"
 
     fun sha256(input: String): String {
       return try {
@@ -88,6 +90,29 @@ class GoogleSheetsStorageService(private val appContext: Context) {
       } catch (_: Throwable) {
         input.hashCode().toString()
       }
+    }
+
+    fun generateSalt(): String {
+      return UUID.randomUUID().toString().replace("-", "").take(16)
+    }
+
+    fun hashPassword(password: String, salt: String = ""): String {
+      val clean = password.trim()
+      return if (salt.isBlank()) {
+        sha256(clean)
+      } else {
+        sha256("$salt:$clean")
+      }
+    }
+
+    fun verifyPassword(inputPassword: String, storedHash: String, salt: String = ""): Boolean {
+      val clean = inputPassword.trim()
+      if (clean.isEmpty() || storedHash.isBlank()) return false
+      if (salt.isNotBlank() && sha256("$salt:$clean").equals(storedHash, ignoreCase = true)) {
+        return true
+      }
+      // Backward compatibility for unsalted SHA-256 hashes
+      return sha256(clean).equals(storedHash, ignoreCase = true)
     }
 
     fun extractSheetId(input: String): String {
@@ -100,13 +125,28 @@ class GoogleSheetsStorageService(private val appContext: Context) {
     val GOOGLE_APPS_SCRIPT_TEMPLATE = """
       // NFL LIVE — CENTRAL SECURITY & ACCESS-CONTROL BACKEND (GOOGLE APPS SCRIPT)
       // Keeps the Google Sheet PRIVATE while validating all requests on the backend.
-      // Primary Admin Gmail: shamim.sustipe15@gmail.com | Timezone: Asia/Dhaka
+      // Initial Admin ID: 1015198 | Primary Admin Gmail: shamim.sustipe15@gmail.com | Timezone: Asia/Dhaka
       // See backend/google_apps_script_security_backend.gs for full script.
       const SHEET_ID = '1lutN5LmC1Hi6vtuwpkis4n-dYGElZ3Qtqn-Hk52Y2L0';
+      const INITIAL_ADMIN_EMPLOYEE_ID = '1015198';
       const PRIMARY_ADMIN_GMAIL = 'shamim.sustipe15@gmail.com';
       const TIMEZONE = 'Asia/Dhaka';
-      const MAX_DEVICES_PER_EMPLOYEE = 2;
+      const MAX_DEVICES_PER_EMPLOYEE = 1;
     """.trimIndent()
+  }
+
+  fun isFirstAdminBootstrapLocked(): Boolean =
+    prefs.getBoolean(KEY_FIRST_ADMIN_PROVISIONED, false)
+
+  fun setFirstAdminBootstrapLocked(locked: Boolean) {
+    prefs.edit().putBoolean(KEY_FIRST_ADMIN_PROVISIONED, locked).apply()
+  }
+
+  fun getLocalActiveSessionId(): String =
+    prefs.getString(KEY_ACTIVE_SESSION_ID, "").orEmpty()
+
+  fun setLocalActiveSessionId(sessionId: String) {
+    prefs.edit().putString(KEY_ACTIVE_SESSION_ID, sessionId).apply()
   }
 
   /**
@@ -646,7 +686,7 @@ class GoogleSheetsStorageService(private val appContext: Context) {
     val serverDevicesMap = loadServerDeviceMap().toMutableMap()
     users.forEach { u ->
       val devicesArr = JSONArray()
-      u.approvedDevices.forEach { d ->
+      u.approvedDevices.take(MAX_APPROVED_DEVICES_PER_USER).forEach { d ->
         devicesArr.put(JSONObject().apply {
           put("deviceId", d.deviceId)
           put("deviceName", d.deviceName)
@@ -655,15 +695,39 @@ class GoogleSheetsStorageService(private val appContext: Context) {
           put("lastActiveMillis", d.lastActiveMillis)
         })
       }
-      serverDevicesMap[u.id.lowercase(Locale.US)] = u.approvedDevices
+      serverDevicesMap[u.id.lowercase(Locale.US)] = u.approvedDevices.take(MAX_APPROVED_DEVICES_PER_USER)
+      val effectiveSalt = u.passwordSalt
+      val effectiveHash = when {
+        u.passwordHash.isNotBlank() -> u.passwordHash
+        u.password.isNotBlank() -> hashPassword(u.password, effectiveSalt)
+        else -> ""
+      }
       arr.put(JSONObject().apply {
         put("id", u.id)
+        put("employeeId", u.employeeId.ifBlank { u.id })
         put("name", u.name)
-        put("password", u.password)
+        // Never persist plaintext passwords locally
+        put("password", "")
+        put("passwordHash", effectiveHash)
+        put("passwordSalt", effectiveSalt)
+        put("designation", u.designation)
+        put("department", u.department)
+        put("requestedDesignation", u.requestedDesignation)
+        put("requestedFloor", u.requestedFloor.name)
         put("role", u.role.name)
         put("floor", u.floor.name)
+        put("authorizedFloorScope", u.authorizedFloorScope.name)
         put("assignedLine", u.assignedLine)
         put("isAdmin", u.isAdmin)
+        put("mustChangePassword", u.mustChangePassword)
+        put("activeSessionId", u.activeSessionId)
+        put("authorizedDeviceId", u.authorizedDeviceId)
+        put("authorizedDeviceName", u.authorizedDeviceName)
+        put("rejectionReason", u.rejectionReason)
+        put("createdAtMillis", u.createdAtMillis)
+        put("updatedAtMillis", u.updatedAtMillis)
+        put("approvedBy", u.approvedBy)
+        put("approvedAtMillis", u.approvedAtMillis)
         put("canViewDashboard", u.canViewDashboard)
         put("canViewTvDashboard", u.canViewTvDashboard)
         put("canViewMonthlyEfficiency", u.canViewMonthlyEfficiency)
@@ -680,9 +744,10 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         put("canMorningTargetWrite", u.canMorningTargetWrite)
         put("canMonthlyTargetWrite", u.canMonthlyTargetWrite)
         put("canTargetRevisionWrite", u.canTargetRevisionWrite)
+        put("isActive", u.isActive)
         put("accountStatus", u.accountStatus.name)
         put("approvedDevices", devicesArr)
-        put("maxDevices", u.maxDevices)
+        put("maxDevices", MAX_APPROVED_DEVICES_PER_USER)
       })
     }
     saveServerDeviceMap(serverDevicesMap)
@@ -698,9 +763,11 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         val obj = arr.optJSONObject(i) ?: return@mapNotNull null
         val role = runCatching { UserRole.valueOf(obj.optString("role", "SUPERVISOR")) }.getOrDefault(UserRole.SUPERVISOR)
         val floor = runCatching { FloorScope.valueOf(obj.optString("floor", "SEW_2")) }.getOrDefault(FloorScope.SEW_2)
+        val requestedFloor = runCatching { FloorScope.valueOf(obj.optString("requestedFloor", floor.name)) }.getOrDefault(floor)
+        val authorizedScope = runCatching { FloorScope.valueOf(obj.optString("authorizedFloorScope", floor.name)) }.getOrDefault(floor)
         val isAdmin = obj.optBoolean("isAdmin", role == UserRole.ADMIN)
         val status = runCatching { AccountStatus.valueOf(obj.optString("accountStatus", "APPROVED")) }.getOrDefault(AccountStatus.APPROVED)
-        val userId = obj.optString("id", "")
+        val userId = obj.optString("id", obj.optString("employeeId", ""))
         val devArr = obj.optJSONArray("approvedDevices")
         val parsedDevices = if (devArr != null) {
           (0 until devArr.length()).mapNotNull { j ->
@@ -709,21 +776,44 @@ class GoogleSheetsStorageService(private val appContext: Context) {
               deviceId = dObj.optString("deviceId", ""),
               deviceName = dObj.optString("deviceName", "Android Device"),
               approvedAtMillis = dObj.optLong("approvedAtMillis", System.currentTimeMillis()),
-              approvedBy = dObj.optString("approvedBy", PRIMARY_ADMIN_GMAIL),
+              approvedBy = dObj.optString("approvedBy", INITIAL_ADMIN_EMPLOYEE_ID),
               lastActiveMillis = dObj.optLong("lastActiveMillis", System.currentTimeMillis())
             )
           }.filter { it.deviceId.isNotBlank() }
         } else {
           serverDevicesMap[userId.lowercase(Locale.US)] ?: emptyList()
+        }.take(MAX_APPROVED_DEVICES_PER_USER)
+        val legacyPassword = obj.optString("password", "")
+        val storedSalt = obj.optString("passwordSalt", "")
+        val storedHash = obj.optString("passwordHash", "").ifBlank {
+          if (legacyPassword.isNotBlank()) hashPassword(legacyPassword, storedSalt) else ""
         }
+        val firstDevice = parsedDevices.firstOrNull()
         UserAccount(
           id = userId,
+          employeeId = userId,
           name = obj.optString("name", ""),
-          password = obj.optString("password", "123"),
+          password = "",
+          passwordHash = storedHash,
+          passwordSalt = storedSalt,
+          designation = obj.optString("designation", if (isAdmin) "Admin" else role.displayName),
+          department = obj.optString("department", role.group),
+          requestedDesignation = obj.optString("requestedDesignation", obj.optString("designation", role.displayName)),
+          requestedFloor = requestedFloor,
           role = role,
           floor = floor,
+          authorizedFloorScope = if (isAdmin) FloorScope.ALL else authorizedScope,
           assignedLine = obj.optString("assignedLine", "K1"),
           isAdmin = isAdmin,
+          mustChangePassword = obj.optBoolean("mustChangePassword", false),
+          activeSessionId = obj.optString("activeSessionId", ""),
+          authorizedDeviceId = obj.optString("authorizedDeviceId", firstDevice?.deviceId.orEmpty()),
+          authorizedDeviceName = obj.optString("authorizedDeviceName", firstDevice?.deviceName.orEmpty()),
+          rejectionReason = obj.optString("rejectionReason", ""),
+          createdAtMillis = obj.optLong("createdAtMillis", System.currentTimeMillis()),
+          updatedAtMillis = obj.optLong("updatedAtMillis", System.currentTimeMillis()),
+          approvedBy = obj.optString("approvedBy", ""),
+          approvedAtMillis = obj.optLong("approvedAtMillis", 0L),
           canViewDashboard = obj.optBoolean("canViewDashboard", true),
           canViewTvDashboard = obj.optBoolean("canViewTvDashboard", true),
           canViewMonthlyEfficiency = obj.optBoolean("canViewMonthlyEfficiency", true),
@@ -740,9 +830,10 @@ class GoogleSheetsStorageService(private val appContext: Context) {
           canMorningTargetWrite = obj.optBoolean("canMorningTargetWrite", isAdmin),
           canMonthlyTargetWrite = obj.optBoolean("canMonthlyTargetWrite", isAdmin),
           canTargetRevisionWrite = obj.optBoolean("canTargetRevisionWrite", isAdmin),
+          isActive = obj.optBoolean("isActive", status == AccountStatus.APPROVED),
           accountStatus = status,
-          approvedDevices = parsedDevices.take(MAX_APPROVED_DEVICES_PER_USER),
-          maxDevices = obj.optInt("maxDevices", MAX_APPROVED_DEVICES_PER_USER)
+          approvedDevices = parsedDevices,
+          maxDevices = MAX_APPROVED_DEVICES_PER_USER
         )
       }.filter { it.id.isNotBlank() }
     } catch (_: Throwable) {
@@ -766,10 +857,10 @@ class GoogleSheetsStorageService(private val appContext: Context) {
             deviceId = dObj.optString("deviceId", ""),
             deviceName = dObj.optString("deviceName", "Android Device"),
             approvedAtMillis = dObj.optLong("approvedAtMillis", 0L),
-            approvedBy = dObj.optString("approvedBy", PRIMARY_ADMIN_GMAIL),
+            approvedBy = dObj.optString("approvedBy", INITIAL_ADMIN_EMPLOYEE_ID),
             lastActiveMillis = dObj.optLong("lastActiveMillis", 0L)
           )
-        }.filter { it.deviceId.isNotBlank() }
+        }.filter { it.deviceId.isNotBlank() }.take(MAX_APPROVED_DEVICES_PER_USER)
         out[empId.lowercase(Locale.US)] = list
       }
       out
@@ -782,7 +873,7 @@ class GoogleSheetsStorageService(private val appContext: Context) {
     val root = JSONObject()
     map.forEach { (empId, devices) ->
       val arr = JSONArray()
-      devices.forEach { d ->
+      devices.take(MAX_APPROVED_DEVICES_PER_USER).forEach { d ->
         arr.put(JSONObject().apply {
           put("deviceId", d.deviceId)
           put("deviceName", d.deviceName)
@@ -806,8 +897,13 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         put("employeeId", r.employeeId.ifBlank { r.userId })
         put("employeeName", r.employeeName.ifBlank { r.userName })
         put("role", r.role.name)
+        put("designation", r.designation)
+        put("department", r.department)
+        put("requestedFloor", r.requestedFloor)
         put("deviceId", r.deviceId)
         put("deviceName", r.deviceName)
+        put("previousDeviceId", r.previousDeviceId)
+        put("previousDeviceName", r.previousDeviceName)
         put("requestType", r.requestType)
         put("requestedAtMillis", r.requestedAtMillis)
         put("status", r.status)
@@ -827,7 +923,7 @@ class GoogleSheetsStorageService(private val appContext: Context) {
         put("reason", r.reason)
       })
     }
-    prefs.edit().putString(KEY_SAVED_DEVICE_REQUESTS, arr.toString()).commit()
+    prefs.edit().putString(KEY_SAVED_DEVICE_REQUESTS, arr.toString()).apply()
   }
 
   fun saveDeviceApprovalRequests(requests: List<DeviceApprovalRequest>) =
@@ -852,9 +948,14 @@ class GoogleSheetsStorageService(private val appContext: Context) {
           employeeId = uid,
           employeeName = uname,
           role = runCatching { UserRole.valueOf(obj.optString("role", "SUPERVISOR")) }.getOrDefault(UserRole.SUPERVISOR),
+          designation = obj.optString("designation", ""),
+          department = obj.optString("department", ""),
+          requestedFloor = obj.optString("requestedFloor", "Sew-1"),
           deviceId = obj.optString("deviceId", ""),
           deviceName = obj.optString("deviceName", "Android Device"),
-          requestType = obj.optString("requestType", "NEW_DEVICE"),
+          previousDeviceId = obj.optString("previousDeviceId", ""),
+          previousDeviceName = obj.optString("previousDeviceName", ""),
+          requestType = obj.optString("requestType", "DEVICE_REPLACEMENT"),
           requestedAtMillis = obj.optLong("requestedAtMillis", System.currentTimeMillis()),
           status = obj.optString("status", "PENDING"),
           otpHash = hash,

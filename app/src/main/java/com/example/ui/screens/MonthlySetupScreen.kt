@@ -99,7 +99,7 @@ fun MonthlySetupScreen(
         title = {
           Column {
             Text("Monthly Achieved Data Setup", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
-            Text("মাসিক আপটুডেট এচিভড এফিসিয়েন্সি, ওকিউএল ও ডিএইচইউ ম্যানুয়াল এন্ট্রি", fontSize = 10.sp, color = Color(0xFFBAE6FD))
+            Text("Manual Entry for Monthly Achieved Efficiency, OQL & DHU", fontSize = 10.sp, color = Color(0xFFBAE6FD))
           }
         },
         navigationIcon = {
@@ -209,7 +209,7 @@ fun MonthlySetupScreen(
           OutlinedTextField(
             value = updateEffText,
             onValueChange = { updateEffText = it },
-            label = { Text("Monthly Achieved Efficiency (%) — আপটুডেট এচিভ", color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) },
+            label = { Text("Monthly Achieved Efficiency (%) — Up-to-Date", color = Color(0xFF1E293B), fontWeight = FontWeight.Bold) },
             placeholder = { Text("e.g. 71.5", color = Color(0xFF475569)) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
@@ -337,7 +337,7 @@ fun MonthlySetupScreen(
                 Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFB45309), modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
-                  text = "🔒 ভিউ অনলি মোড (View Only) — আপনার মাসিক ফ্যাক্টরি টার্গেট সংশোধনের অনুমতি নেই। শুধুমাত্র Admin, IE বা Production Reporter এটি পরিবর্তন করতে পারবেন।",
+                  text = "🔒 View-Only Mode — You do not have permission to edit monthly factory targets. Only Admin, IE, or Production Reporter accounts can modify these values.",
                   color = Color(0xFF92400E),
                   fontSize = 11.5.sp
                 )

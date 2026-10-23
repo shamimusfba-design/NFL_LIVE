@@ -83,13 +83,15 @@ fun ProductionEntryScreen(
   // Batch vs Single Line Mode Toggle (Batch is default for faster floor entry)
   var isBatchMode by remember { mutableStateOf(true) }
 
-  // Map to hold batch outputs for each line: lineId -> pieces text
+  // Map to hold batch outputs for each line: lineId -> pieces text (blank by default)
   val batchOutputs = remember(selectedFloor, selectedDate, selectedHour) {
     mutableStateMapOf<String, String>().apply {
       availableLines.forEach { line ->
         val existingReal = entries.find { !it.isDemo && it.lineId.equals(line.id, ignoreCase = true) && it.date == selectedDate && it.hourSlot == selectedHour }
         if (existingReal != null && (existingReal.outputQty > 0 || existingReal.isConfirmedZero)) {
           this[line.id] = existingReal.outputQty.toString()
+        } else {
+          this[line.id] = ""
         }
       }
     }
@@ -98,8 +100,10 @@ fun ProductionEntryScreen(
   LaunchedEffect(entries, selectedFloor, selectedDate, selectedHour) {
     availableLines.forEach { line ->
       val existingReal = entries.find { !it.isDemo && it.lineId.equals(line.id, ignoreCase = true) && it.date == selectedDate && it.hourSlot == selectedHour }
-      if (existingReal != null) {
+      if (existingReal != null && (existingReal.outputQty > 0 || existingReal.isConfirmedZero)) {
         batchOutputs[line.id] = existingReal.outputQty.toString()
+      } else {
+        batchOutputs[line.id] = ""
       }
     }
   }
@@ -112,7 +116,7 @@ fun ProductionEntryScreen(
     )
   }
   var showLineDropdown by remember { mutableStateOf(false) }
-  var singleOutputQtyText by remember { mutableStateOf("85") }
+  var singleOutputQtyText by remember { mutableStateOf("") }
   var singleRemarksText by remember { mutableStateOf("") }
 
   val existingSingleReal = remember(entries, selectedSingleLine, selectedDate, selectedHour) {
@@ -126,8 +130,11 @@ fun ProductionEntryScreen(
 
   LaunchedEffect(selectedSingleLine, selectedDate, selectedHour, existingSingleReal?.timestamp, existingSingleReal?.revision) {
     if (existingSingleReal != null) {
-      singleOutputQtyText = existingSingleReal.outputQty.toString()
+      singleOutputQtyText = if (existingSingleReal.outputQty > 0 || existingSingleReal.isConfirmedZero) existingSingleReal.outputQty.toString() else ""
       singleRemarksText = existingSingleReal.remarks
+    } else {
+      singleOutputQtyText = ""
+      singleRemarksText = ""
     }
   }
 
@@ -150,7 +157,7 @@ fun ProductionEntryScreen(
               fontSize = 17.sp
             )
             Text(
-              text = "ঘণ্টাভিত্তিক উৎপাদন ডাটা এন্ট্রি",
+              text = "Hourly Production Output Data Entry",
               color = Color(0xFFBAE6FD),
               fontSize = 10.sp
             )
@@ -346,7 +353,7 @@ fun ProductionEntryScreen(
               ) {
                 Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(18.dp))
                 Column {
-                  Text("View-Only Mode (ডাটা এন্ট্রি লক করা)", color = Color(0xFF92400E), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                  Text("View-Only Mode (Data Entry Locked)", color = Color(0xFF92400E), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                   Text("You have read-only access. Only authorized production reporters can enter records. (Management has view-only access).", color = Color(0xFFB45309), fontSize = 10.sp)
                 }
               }
@@ -390,7 +397,7 @@ fun ProductionEntryScreen(
 
           // Hour slot box with dropdown
           Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Hour Slot (ঘণ্টা)", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
+            Text("Hour Slot", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF64748B))
             Box {
               Surface(
                 onClick = { showHourDropdown = true },

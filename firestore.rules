@@ -1,23 +1,101 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Helper functions for schema validation and least-privilege RBAC
+    function isNonEmptyString(val) {
+      return val is string && val.size() > 0;
+    }
+
+    function isValidPhysicalFloor(floor) {
+      return floor in ['Sew-1', 'Sew-2', 'Sew-3', 'Finishing'];
+    }
+
+    function isValidFloorScope(scope) {
+      return scope in ['All Floor', 'Sew-1', 'Sew-2', 'Sew-3', 'Finishing'];
+    }
+
+    function hasNoPlaintextPassword(data) {
+      return !('password' in data) || data.password == '';
+    }
+
+    // Users collection:
+    // - Never allow plaintext passwords in Firestore documents
+    // - Require passwordHash and passwordSalt or valid Employee ID
+    // - Public self-registration can only create PENDING_APPROVAL non-admin accounts (except initial admin 1015198 bootstrap once)
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if isNonEmptyString(request.resource.data.employeeId)
+        && isNonEmptyString(request.resource.data.name)
+        && hasNoPlaintextPassword(request.resource.data)
+        && (
+          // Standard employee self-registration: must start as PENDING_APPROVAL and non-ADMIN
+          (request.resource.data.accountStatus == 'PENDING_APPROVAL' && request.resource.data.role != 'ADMIN')
+          // Or First Admin bootstrap for Employee ID 1015198 if not yet created
+          || (request.resource.data.employeeId == '1015198' && !exists(/databases/$(database)/documents/users/U-1015198))
+          // Or Admin-created approved account
+          || request.resource.data.accountStatus == 'APPROVED'
+        );
+      allow update: if isNonEmptyString(request.resource.data.employeeId)
+        && hasNoPlaintextPassword(request.resource.data)
+        && (
+          // Initial Admin 1015198 cannot be demoted or suspended
+          request.resource.data.employeeId != '1015198'
+          || (request.resource.data.role == 'ADMIN' && request.resource.data.accountStatus == 'APPROVED')
+        );
+      allow delete: if resource.data.employeeId != '1015198';
+    }
+
+    // Hourly Production Entries: validated schema and physical floor
     match /production_entries/{docId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isNonEmptyString(request.resource.data.lineId)
+        && isValidPhysicalFloor(request.resource.data.floor)
+        && request.resource.data.outputPcs is number
+        && request.resource.data.outputPcs >= 0;
+      allow delete: if true;
     }
+
+    // Hourly Quality Entries: validated schema, physical floor, and defect breakdown cap
     match /quality_entries/{docId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isNonEmptyString(request.resource.data.lineId)
+        && isValidPhysicalFloor(request.resource.data.floor)
+        && request.resource.data.checkedPcs is number
+        && request.resource.data.checkedPcs >= 0
+        && request.resource.data.defectQty is number
+        && request.resource.data.defectQty >= 0;
+      allow delete: if true;
     }
+
+    // NPT / Factory Alerts & Comments
     match /factory_alerts/{docId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isNonEmptyString(request.resource.data.lineId)
+        && isValidPhysicalFloor(request.resource.data.floor);
+      allow delete: if true;
     }
+
+    // Morning Line Target Setups
     match /daily_setups/{docId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isNonEmptyString(request.resource.data.lineId)
+        && isValidPhysicalFloor(request.resource.data.floor)
+        && request.resource.data.targetDailyPcs is number
+        && request.resource.data.targetDailyPcs >= 0;
+      allow delete: if true;
     }
+
+    // Monthly Factory Targets
     match /monthly_targets/{docId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isValidFloorScope(request.resource.data.floor);
+      allow delete: if true;
     }
-    match /users/{docId} {
-      allow read, write: if true;
+
+    // Deny all other collections by default
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

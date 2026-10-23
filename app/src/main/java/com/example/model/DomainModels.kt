@@ -24,9 +24,9 @@ enum class PeriodScope(val displayName: String) {
 }
 
 enum class MonthlyMetricType(val displayName: String, val banglaName: String) {
-  EFFICIENCY("Monthly Efficiency", "মান্থলি এফিসিয়েন্সি"),
-  DHU("Monthly DHU", "মান্থলি ডিএইচইউ"),
-  OQL("Monthly OQL", "মান্থলি ওকেএল")
+  EFFICIENCY("Monthly Efficiency", "Monthly Efficiency"),
+  DHU("Monthly DHU", "Monthly DHU"),
+  OQL("Monthly OQL", "Monthly OQL")
 }
 
 enum class UserRole(val displayName: String, val group: String) {
@@ -43,9 +43,399 @@ enum class UserRole(val displayName: String, val group: String) {
   MANAGEMENT_VIEW("Management / View-Only", "Executive")
 }
 
+enum class EmployeeDesignation(
+  val displayName: String,
+  val department: String,
+  val defaultRole: UserRole,
+  val defaultAuthorizedScope: FloorScope?, // null means use assigned physical floor
+  val requiresPhysicalFloor: Boolean = true,
+  val isPublicSelectable: Boolean = true
+) {
+  MANAGEMENT("Management", "Management", UserRole.MANAGEMENT_VIEW, FloorScope.ALL, true, true),
+  FACTORY_MANAGEMENT("Factory Management", "Management", UserRole.MANAGEMENT_VIEW, FloorScope.ALL, true, true),
+  HEAD_OF_PRODUCTION("Head of Production", "Production", UserRole.PRODUCTION_MANAGER, FloorScope.ALL, true, true),
+  HEAD_OF_QUALITY("Head of Quality", "Quality", UserRole.QUALITY_MANAGER, FloorScope.ALL, true, true),
+  IE("IE", "IE & Planning", UserRole.IE, null, true, true),
+  REPORTER("Reporter", "IE & Planning", UserRole.PRODUCTION_REPORTER, null, true, true),
+  PRODUCTION_SUPERVISOR("Production Supervisor", "Production", UserRole.SUPERVISOR, null, true, true),
+  PRODUCTION_OFFICER("Production Officer", "Production", UserRole.SUPERVISOR, null, true, true),
+  QUALITY_SUPERVISOR("Quality Supervisor", "Quality", UserRole.QUALITY_REPORTER, null, true, true),
+  QUALITY_OFFICER("Quality Officer", "Quality", UserRole.AUDITOR, null, true, true),
+  FINISHING_SUPERVISOR("Finishing Supervisor", "Finishing", UserRole.SUPERVISOR, FloorScope.FINISHING, false, true),
+  FINISHING_IN_CHARGE("Finishing In-charge", "Finishing", UserRole.SUPERVISOR, FloorScope.FINISHING, false, true),
+  FINISHING_MANAGER("Finishing Manager", "Finishing", UserRole.PRODUCTION_MANAGER, FloorScope.FINISHING, false, true),
+  MAINTENANCE("Maintenance", "Maintenance", UserRole.MECHANIC, null, true, true),
+  MECHANIC("Mechanic", "Maintenance", UserRole.MECHANIC, null, true, true),
+  OTHER("Other", "Other", UserRole.MANAGEMENT_VIEW, null, true, true),
+  ADMIN("Admin", "Administration", UserRole.ADMIN, FloorScope.ALL, false, false);
+
+  companion object {
+    fun publicOptions(): List<EmployeeDesignation> = entries.filter { it.isPublicSelectable }
+
+    fun adminOptions(): List<EmployeeDesignation> = entries.toList()
+
+    fun fromDisplayName(name: String): EmployeeDesignation {
+      val trimmed = name.trim()
+      return entries.firstOrNull {
+        it.displayName.equals(trimmed, ignoreCase = true) ||
+            it.name.equals(trimmed, ignoreCase = true)
+      } ?: OTHER
+    }
+  }
+}
+
+object DesignationPolicy {
+  val validPhysicalSewingFloors: List<FloorScope> = listOf(
+    FloorScope.SEW_1,
+    FloorScope.SEW_2,
+    FloorScope.SEW_3
+  )
+
+  val validPhysicalFloorsWithFinishing: List<FloorScope> = listOf(
+    FloorScope.SEW_1,
+    FloorScope.SEW_2,
+    FloorScope.SEW_3,
+    FloorScope.FINISHING
+  )
+
+  fun isFinishingDesignation(designation: EmployeeDesignation): Boolean {
+    return designation == EmployeeDesignation.FINISHING_SUPERVISOR ||
+        designation == EmployeeDesignation.FINISHING_IN_CHARGE ||
+        designation == EmployeeDesignation.FINISHING_MANAGER
+  }
+
+  fun sanitizePhysicalFloor(
+    requestedFloor: FloorScope,
+    designation: EmployeeDesignation
+  ): FloorScope {
+    if (isFinishingDesignation(designation)) {
+      return FloorScope.FINISHING
+    }
+    return if (requestedFloor in validPhysicalFloorsWithFinishing) {
+      requestedFloor
+    } else {
+      FloorScope.SEW_1
+    }
+  }
+
+  fun resolveAuthorizedScope(
+    designation: EmployeeDesignation,
+    physicalFloor: FloorScope,
+    overrideScope: FloorScope? = null
+  ): FloorScope {
+    if (overrideScope != null) return overrideScope
+    return designation.defaultAuthorizedScope ?: sanitizePhysicalFloor(physicalFloor, designation)
+  }
+
+  fun applyDesignationTemplate(
+    base: UserAccount,
+    designation: EmployeeDesignation,
+    physicalFloor: FloorScope,
+    overrideScope: FloorScope? = null
+  ): UserAccount {
+    val cleanPhysical = sanitizePhysicalFloor(physicalFloor, designation)
+    val authScope = resolveAuthorizedScope(designation, cleanPhysical, overrideScope)
+    return when (designation) {
+      EmployeeDesignation.ADMIN -> base.copy(
+        designation = designation.displayName,
+        department = designation.department,
+        role = UserRole.ADMIN,
+        floor = cleanPhysical,
+        authorizedFloorScope = FloorScope.ALL,
+        isAdmin = true,
+        canViewDashboard = true,
+        canViewTvDashboard = true,
+        canViewMonthlyEfficiency = true,
+        canViewMonthlyDhu = true,
+        canViewMonthlyOql = true,
+        canViewLineDeepDive = true,
+        canViewAuditLogs = true,
+        canExportReports = true,
+        canProductionWrite = true,
+        canFinishingWrite = true,
+        canQualityWrite = true,
+        canOqlWrite = true,
+        canNptWrite = true,
+        canMorningTargetWrite = true,
+        canMonthlyTargetWrite = true,
+        canTargetRevisionWrite = true
+      )
+      EmployeeDesignation.MANAGEMENT,
+      EmployeeDesignation.FACTORY_MANAGEMENT -> base.copy(
+        designation = designation.displayName,
+        department = designation.department,
+        role = UserRole.MANAGEMENT_VIEW,
+        floor = cleanPhysical,
+        authorizedFloorScope = FloorScope.ALL,
+        isAdmin = false,
+        canViewDashboard = true,
+        canViewTvDashboard = true,
+        canViewMonthlyEfficiency = true,
+        canViewMonthlyDhu = true,
+        canViewMonthlyOql = true,
+        canViewLineDeepDive = true,
+        canViewAuditLogs = true,
+        canExportReports = true,
+        canProductionWrite = false,
+        canFinishingWrite = false,
+        canQualityWrite = false,
+        canOqlWrite = false,
+        canNptWrite = false,
+        canMorningTargetWrite = false,
+        canMonthlyTargetWrite = false,
+        canTargetRevisionWrite = false
+      )
+      EmployeeDesignation.HEAD_OF_PRODUCTION -> base.copy(
+        designation = designation.displayName,
+        department = designation.department,
+        role = UserRole.PRODUCTION_MANAGER,
+        floor = cleanPhysical,
+        authorizedFloorScope = FloorScope.ALL,
+        isAdmin = false,
+        canViewDashboard = true,
+        canViewTvDashboard = true,
+        canViewMonthlyEfficiency = true,
+        canViewMonthlyDhu = true,
+        canViewMonthlyOql = true,
+        canViewLineDeepDive = true,
+        canViewAuditLogs = true,
+        canExportReports = true,
+        canProductionWrite = true,
+        canFinishingWrite = true,
+        canQualityWrite = false,
+        canOqlWrite = false,
+        canNptWrite = true,
+        canMorningTargetWrite = true,
+        canMonthlyTargetWrite = true,
+        canTargetRevisionWrite = true
+      )
+      EmployeeDesignation.HEAD_OF_QUALITY -> base.copy(
+        designation = designation.displayName,
+        department = designation.department,
+        role = UserRole.QUALITY_MANAGER,
+        floor = cleanPhysical,
+        authorizedFloorScope = FloorScope.ALL,
+        isAdmin = false,
+        canViewDashboard = true,
+        canViewTvDashboard = true,
+        canViewMonthlyEfficiency = true,
+        canViewMonthlyDhu = true,
+        canViewMonthlyOql = true,
+        canViewLineDeepDive = true,
+        canViewAuditLogs = true,
+        canExportReports = true,
+        canProductionWrite = false,
+        canFinishingWrite = false,
+        canQualityWrite = true,
+        canOqlWrite = true,
+        canNptWrite = true,
+        canMorningTargetWrite = false,
+        canMonthlyTargetWrite = false,
+        canTargetRevisionWrite = false
+      )
+      EmployeeDesignation.IE -> base.copy(
+        designation = designation.displayName,
+        department = designation.department,
+        role = UserRole.IE,
+        floor = cleanPhysical,
+        authorizedFloorScope = authScope,
+        isAdmin = false,
+        canViewDashboard = true,
+        canViewTvDashboard = true,
+        canViewMonthlyEfficiency = true,
+        canViewMonthlyDhu = true,
+        canViewMonthlyOql = true,
+        canViewLineDeepDive = true,
+        canViewAuditLogs = false,
+        canExportReports = true,
+        canProductionWrite = false,
+        canFinishingWrite = false,
+        canQualityWrite = false,
+        canOqlWrite = false,
+        canNptWrite = true,
+        canMorningTargetWrite = true,
+        canMonthlyTargetWrite = true,
+        canTargetRevisionWrite = true
+      )
+      EmployeeDesignation.REPORTER -> base.copy(
+        designation = designation.displayName,
+        department = designation.department,
+        role = UserRole.PRODUCTION_REPORTER,
+        floor = cleanPhysical,
+        authorizedFloorScope = authScope,
+        isAdmin = false,
+        canViewDashboard = true,
+        canViewTvDashboard = true,
+        canViewMonthlyEfficiency = true,
+        canViewMonthlyDhu = true,
+        canViewMonthlyOql = true,
+        canViewLineDeepDive = true,
+        canViewAuditLogs = false,
+        canExportReports = false,
+        canProductionWrite = true,
+        canFinishingWrite = cleanPhysical == FloorScope.FINISHING,
+        canQualityWrite = true,
+        canOqlWrite = false,
+        canNptWrite = true,
+        canMorningTargetWrite = true,
+        canMonthlyTargetWrite = false,
+        canTargetRevisionWrite = false
+      )
+      EmployeeDesignation.PRODUCTION_SUPERVISOR,
+      EmployeeDesignation.PRODUCTION_OFFICER -> base.copy(
+        designation = designation.displayName,
+        department = designation.department,
+        role = UserRole.SUPERVISOR,
+        floor = cleanPhysical,
+        authorizedFloorScope = authScope,
+        isAdmin = false,
+        canViewDashboard = true,
+        canViewTvDashboard = true,
+        canViewMonthlyEfficiency = true,
+        canViewMonthlyDhu = true,
+        canViewMonthlyOql = true,
+        canViewLineDeepDive = true,
+        canViewAuditLogs = false,
+        canExportReports = false,
+        canProductionWrite = true,
+        canFinishingWrite = false,
+        canQualityWrite = false,
+        canOqlWrite = false,
+        canNptWrite = true,
+        canMorningTargetWrite = true,
+        canMonthlyTargetWrite = false,
+        canTargetRevisionWrite = false
+      )
+      EmployeeDesignation.QUALITY_SUPERVISOR -> base.copy(
+        designation = designation.displayName,
+        department = designation.department,
+        role = UserRole.QUALITY_REPORTER,
+        floor = cleanPhysical,
+        authorizedFloorScope = authScope,
+        isAdmin = false,
+        canViewDashboard = true,
+        canViewTvDashboard = true,
+        canViewMonthlyEfficiency = true,
+        canViewMonthlyDhu = true,
+        canViewMonthlyOql = true,
+        canViewLineDeepDive = true,
+        canViewAuditLogs = false,
+        canExportReports = false,
+        canProductionWrite = false,
+        canFinishingWrite = false,
+        canQualityWrite = true,
+        canOqlWrite = false,
+        canNptWrite = true,
+        canMorningTargetWrite = false,
+        canMonthlyTargetWrite = false,
+        canTargetRevisionWrite = false
+      )
+      EmployeeDesignation.QUALITY_OFFICER -> base.copy(
+        designation = designation.displayName,
+        department = designation.department,
+        role = UserRole.AUDITOR,
+        floor = cleanPhysical,
+        authorizedFloorScope = authScope,
+        isAdmin = false,
+        canViewDashboard = true,
+        canViewTvDashboard = true,
+        canViewMonthlyEfficiency = true,
+        canViewMonthlyDhu = true,
+        canViewMonthlyOql = true,
+        canViewLineDeepDive = true,
+        canViewAuditLogs = false,
+        canExportReports = true,
+        canProductionWrite = false,
+        canFinishingWrite = false,
+        canQualityWrite = true,
+        canOqlWrite = true,
+        canNptWrite = true,
+        canMorningTargetWrite = false,
+        canMonthlyTargetWrite = false,
+        canTargetRevisionWrite = false
+      )
+      EmployeeDesignation.FINISHING_SUPERVISOR,
+      EmployeeDesignation.FINISHING_IN_CHARGE,
+      EmployeeDesignation.FINISHING_MANAGER -> base.copy(
+        designation = designation.displayName,
+        department = designation.department,
+        role = designation.defaultRole,
+        floor = FloorScope.FINISHING,
+        authorizedFloorScope = FloorScope.FINISHING,
+        isAdmin = false,
+        canViewDashboard = true,
+        canViewTvDashboard = true,
+        canViewMonthlyEfficiency = true,
+        canViewMonthlyDhu = true,
+        canViewMonthlyOql = true,
+        canViewLineDeepDive = true,
+        canViewAuditLogs = false,
+        canExportReports = designation == EmployeeDesignation.FINISHING_MANAGER,
+        canProductionWrite = true,
+        canFinishingWrite = true,
+        canQualityWrite = false,
+        canOqlWrite = false,
+        canNptWrite = true,
+        canMorningTargetWrite = designation == EmployeeDesignation.FINISHING_MANAGER,
+        canMonthlyTargetWrite = false,
+        canTargetRevisionWrite = false
+      )
+      EmployeeDesignation.MAINTENANCE,
+      EmployeeDesignation.MECHANIC -> base.copy(
+        designation = designation.displayName,
+        department = designation.department,
+        role = UserRole.MECHANIC,
+        floor = cleanPhysical,
+        authorizedFloorScope = authScope,
+        isAdmin = false,
+        canViewDashboard = true,
+        canViewTvDashboard = true,
+        canViewMonthlyEfficiency = false,
+        canViewMonthlyDhu = false,
+        canViewMonthlyOql = false,
+        canViewLineDeepDive = true,
+        canViewAuditLogs = false,
+        canExportReports = false,
+        canProductionWrite = false,
+        canFinishingWrite = false,
+        canQualityWrite = false,
+        canOqlWrite = false,
+        canNptWrite = true,
+        canMorningTargetWrite = false,
+        canMonthlyTargetWrite = false,
+        canTargetRevisionWrite = false
+      )
+      EmployeeDesignation.OTHER -> base.copy(
+        designation = designation.displayName,
+        department = designation.department,
+        role = UserRole.MANAGEMENT_VIEW,
+        floor = cleanPhysical,
+        authorizedFloorScope = cleanPhysical,
+        isAdmin = false,
+        canViewDashboard = true,
+        canViewTvDashboard = true,
+        canViewMonthlyEfficiency = false,
+        canViewMonthlyDhu = false,
+        canViewMonthlyOql = false,
+        canViewLineDeepDive = false,
+        canViewAuditLogs = false,
+        canExportReports = false,
+        canProductionWrite = false,
+        canFinishingWrite = false,
+        canQualityWrite = false,
+        canOqlWrite = false,
+        canNptWrite = false,
+        canMorningTargetWrite = false,
+        canMonthlyTargetWrite = false,
+        canTargetRevisionWrite = false
+      )
+    }
+  }
+}
+
 enum class AppFunctionCategory(val displayName: String, val banglaName: String) {
-  DATA_ENTRY("Data Entry Functions", "ডাটা এন্ট্রি ফাংশনসমূহ"),
-  VISUAL_REPORT("Visual & Reporting Functions", "ভিজ্যুয়াল ও রিপোর্ট ফাংশনসমূহ")
+  DATA_ENTRY("Data Entry Functions", "Data Entry Functions"),
+  VISUAL_REPORT("Visual & Reporting Functions", "Visual & Reporting Functions")
 }
 
 data class AppFeaturePermission(
@@ -56,12 +446,14 @@ data class AppFeaturePermission(
   val description: String
 )
 
+const val INITIAL_ADMIN_EMPLOYEE_ID = "1015198"
 const val PRIMARY_ADMIN_GMAIL = "shamim.sustipe15@gmail.com"
-const val MAX_APPROVED_DEVICES_PER_USER = 2
+const val MAX_APPROVED_DEVICES_PER_USER = 1
 
 enum class AccountStatus {
   APPROVED,
   PENDING_APPROVAL,
+  REJECTED,
   SUSPENDED
 }
 
@@ -69,7 +461,7 @@ data class ApprovedDevice(
   val deviceId: String,
   val deviceName: String,
   val approvedAtMillis: Long = System.currentTimeMillis(),
-  val approvedBy: String = PRIMARY_ADMIN_GMAIL,
+  val approvedBy: String = INITIAL_ADMIN_EMPLOYEE_ID,
   val lastActiveMillis: Long = System.currentTimeMillis()
 )
 
@@ -87,9 +479,14 @@ data class DeviceApprovalRequest(
   val employeeId: String = userId,
   val employeeName: String = userName,
   val role: UserRole = UserRole.SUPERVISOR,
+  val designation: String = "",
+  val department: String = "",
+  val requestedFloor: String = "Sew-1",
   val deviceId: String = "",
   val deviceName: String = "",
-  val requestType: String = "NEW_DEVICE",
+  val previousDeviceId: String = "",
+  val previousDeviceName: String = "",
+  val requestType: String = "DEVICE_REPLACEMENT",
   val requestedAtMillis: Long = System.currentTimeMillis(),
   val status: String = "PENDING",
   val otpHash: String = "",
@@ -112,10 +509,13 @@ enum class AuthStatus {
   SUCCESS,
   INVALID_CREDENTIALS,
   ACCOUNT_SUSPENDED,
+  ACCOUNT_REJECTED,
   PENDING_ADMIN_APPROVAL,
   ACCOUNT_PENDING_APPROVAL,
   DEVICE_APPROVAL_REQUIRED,
-  DEVICE_LIMIT_REACHED
+  DEVICE_LIMIT_REACHED,
+  ACTIVE_ON_ANOTHER_DEVICE,
+  PASSWORD_CHANGE_REQUIRED
 }
 
 data class AuthResult(
@@ -135,14 +535,29 @@ data class UserAccount(
   val id: String, // Employee ID card number
   val name: String,
   val employeeId: String = id,
-  val password: String = "1234",
+  val password: String = "",
   val passwordHash: String = "",
+  val passwordSalt: String = "",
+  val designation: String = "Production Supervisor",
+  val department: String = "Production",
+  val requestedDesignation: String = designation,
+  val requestedFloor: FloorScope = FloorScope.SEW_2,
   val role: UserRole = UserRole.SUPERVISOR,
   val floor: FloorScope = FloorScope.SEW_2,
+  val authorizedFloorScope: FloorScope = floor,
   val assignedLine: String = "K1",
   val isAdmin: Boolean = false,
+  val mustChangePassword: Boolean = false,
+  val activeSessionId: String = "",
+  val authorizedDeviceId: String = "",
+  val authorizedDeviceName: String = "",
+  val rejectionReason: String = "",
+  val createdAtMillis: Long = System.currentTimeMillis(),
+  val updatedAtMillis: Long = System.currentTimeMillis(),
+  val approvedBy: String = "",
+  val approvedAtMillis: Long = 0L,
 
-  // 1. VISUAL / VIEW PERMISSIONS (কে দেখতে পারবে)
+  // 1. VISUAL / VIEW PERMISSIONS
   val canViewDashboard: Boolean = true,
   val canViewTvDashboard: Boolean = true,
   val canViewMonthlyEfficiency: Boolean = true,
@@ -152,7 +567,7 @@ data class UserAccount(
   val canViewAuditLogs: Boolean = true,
   val canExportReports: Boolean = true,
 
-  // 2. DATA ENTRY PERMISSIONS (কে এন্ট্রি দিতে পারবে)
+  // 2. DATA ENTRY PERMISSIONS
   val canProductionWrite: Boolean = false,
   val canFinishingWrite: Boolean = false,
   val canQualityWrite: Boolean = false,
@@ -169,7 +584,7 @@ data class UserAccount(
   val canMorningTargetRead: Boolean = true,
   val canMonthlyTargetRead: Boolean = true,
 
-  // 3. SECURITY, ACCOUNT STATUS & 2-DEVICE LIMIT
+  // 3. SECURITY, ACCOUNT STATUS & 1-DEVICE LIMIT
   val isActive: Boolean = true,
   val accountStatus: AccountStatus = AccountStatus.APPROVED,
   val approvedDevices: List<ApprovedDevice> = emptyList(),
@@ -182,6 +597,24 @@ data class UserAccount(
 
   val isViewOnly: Boolean
     get() = !hasAnyWritePermission
+
+  val canAccessAllFloors: Boolean
+    get() = isAdmin || authorizedFloorScope == FloorScope.ALL || floor == FloorScope.ALL
+
+  fun canAccessFloor(targetFloor: FloorScope): Boolean {
+    if (canAccessAllFloors) return true
+    if (targetFloor == FloorScope.ALL) return false
+    return authorizedFloorScope == targetFloor || floor == targetFloor
+  }
+
+  fun canAccessFloorName(floorName: String): Boolean {
+    if (canAccessAllFloors) return true
+    val normalized = floorName.trim().replace("-", " ")
+    val authNormalized = authorizedFloorScope.apiValue.trim().replace("-", " ")
+    val physNormalized = floor.apiValue.trim().replace("-", " ")
+    return normalized.equals(authNormalized, ignoreCase = true) ||
+        normalized.equals(physNormalized, ignoreCase = true)
+  }
 }
 
 data class LineInfo(

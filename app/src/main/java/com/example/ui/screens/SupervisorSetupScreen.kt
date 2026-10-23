@@ -58,8 +58,8 @@ fun SupervisorSetupScreen(
   val allTargets by repository.targets.collectAsState()
   val currentUser by repository.currentUser.collectAsState()
   val canMorningTargetWrite = currentUser?.let { user ->
-    user.isAdmin || user.role == UserRole.IE || (user.canMorningTargetWrite && user.role in setOf(UserRole.IE, UserRole.PRODUCTION_REPORTER))
-  } ?: false
+    user.isAdmin || user.role in setOf(UserRole.IE, UserRole.SUPERVISOR, UserRole.PRODUCTION_MANAGER, UserRole.PRODUCTION_REPORTER) || user.canMorningTargetWrite
+  } ?: true
 
   var selectedFloor by remember { mutableStateOf(FloorScope.SEW_2) }
   var saveSuccessMsg by remember { mutableStateOf<String?>(null) }
@@ -77,23 +77,27 @@ fun SupervisorSetupScreen(
   }
 
   // Mutable state map holding the 4-column editable row draft for every line on the floor:
-  // 1. Line (লাইন)
-  // 2. Item (আইটেম)
-  // 3. SMV (এসএমবি)
-  // 4. Target (টার্গেট - Daily Total Target)
-  val rowDrafts = remember(selectedFloor, allTargets) {
+  // 1. Line
+  // 2. Item
+  // 3. SMV
+  // 4. Hourly Target (pcs/hr) — Daily Target calculated as Hourly * 8
+  val rowDrafts = remember(selectedFloor) {
     mutableStateMapOf<String, LineRowDraft>().apply {
       floorLines.forEach { lineInfo ->
         val setup = repository.getLineSetup(lineInfo.id)
-        val dailyTgt = if (setup.targetDailyPcs > 0) setup.targetDailyPcs else 600
+        val hourlyTgt = if (setup.targetHourlyPcs > 0) {
+          setup.targetHourlyPcs
+        } else if (setup.targetDailyPcs > 0) {
+          (setup.targetDailyPcs / 8).coerceAtLeast(1)
+        } else 0
         put(
           lineInfo.id,
           LineRowDraft(
             lineId = lineInfo.id,
             floor = lineInfo.floor,
-            itemName = setup.itemName.ifBlank { "Polo Shirt" },
-            smvText = if (setup.smv > 0) setup.smv.toString() else "14.50",
-            targetText = dailyTgt.toString()
+            itemName = setup.itemName,
+            smvText = if (setup.smv > 0) setup.smv.toString() else "",
+            targetText = if (hourlyTgt > 0) hourlyTgt.toString() else ""
           )
         )
       }
@@ -103,8 +107,8 @@ fun SupervisorSetupScreen(
   fun buildSetupFromDraft(draft: LineRowDraft): SupervisorLineSetup {
     val existing = repository.getLineSetup(draft.lineId)
     val smvVal = draft.smvText.toDoubleOrNull()?.coerceAtLeast(0.1) ?: existing.smv
-    val targetVal = draft.targetText.toIntOrNull()?.coerceAtLeast(0) ?: existing.targetDailyPcs
-    val hourlyVal = (targetVal / 8).coerceAtLeast(1)
+    val hourlyVal = draft.targetText.toIntOrNull()?.coerceAtLeast(0) ?: 0
+    val dailyVal = hourlyVal * 8
 
     return existing.copy(
       lineId = draft.lineId,
@@ -112,7 +116,7 @@ fun SupervisorSetupScreen(
       date = repository.getCurrentBangladeshDateIso(),
       itemName = draft.itemName.trim().ifBlank { existing.itemName },
       smv = smvVal,
-      targetDailyPcs = targetVal,
+      targetDailyPcs = dailyVal,
       targetHourlyPcs = hourlyVal
     )
   }
@@ -140,7 +144,7 @@ fun SupervisorSetupScreen(
               fontSize = 15.sp
             )
             Text(
-              text = "লাইন ওয়াইজ ডেইলি টার্গেট শিট: লাইন | আইটেম | এসএমবি | টার্গেট",
+              text = "Line-wise Hourly Target (pcs/hr) • 8-Hour Shift (Daily = Hourly × 8)",
               color = Color(0xFFBAE6FD),
               fontSize = 10.sp
             )
@@ -240,7 +244,7 @@ fun SupervisorSetupScreen(
           ) {
             Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(18.dp))
             Column {
-              Text("View-Only Mode (টার্গেট সেটআপ লক করা)", color = Color(0xFF92400E), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+              Text("View-Only Mode (Target Setup Locked)", color = Color(0xFF92400E), fontSize = 11.sp, fontWeight = FontWeight.Bold)
               Text("Only authorized IE and Production Reporter accounts can edit line targets and SMV.", color = Color(0xFFB45309), fontSize = 10.sp)
             }
           }
@@ -268,10 +272,10 @@ fun SupervisorSetupScreen(
       }
 
       // 2. Exactly 4-Column Morning Target Spreadsheet Card:
-      // Column 1: Line (লাইন)
-      // Column 2: Item (আইটেম)
-      // Column 3: SMV (এসএমবি)
-      // Column 4: Target (টার্গেট)
+      // Column 1: Line
+      // Column 2: Item
+      // Column 3: SMV
+      // Column 4: 8-Hr Target
       Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -304,7 +308,7 @@ fun SupervisorSetupScreen(
                   color = Color(0xFF0F172A)
                 )
                 Text(
-                  text = "Columns: 1. লাইন | 2. আইটেম | 3. এসএমবি | 4. টার্গেট",
+                  text = "Columns: 1. Line | 2. Item | 3. SMV | 4. 8-Hr Target (pcs)",
                   fontSize = 9.5.sp,
                   color = Color(0xFF64748B)
                 )
@@ -320,7 +324,7 @@ fun SupervisorSetupScreen(
               .horizontalScroll(tableScrollState),
             verticalArrangement = Arrangement.spacedBy(4.dp)
           ) {
-            // Table Header: Line | Item | SMV | Target | Save
+            // Table Header: Line | Item | SMV | Hourly Target | Save
             Row(
               modifier = Modifier
                 .background(Color(0xFF0F172A), RoundedCornerShape(6.dp))
@@ -329,11 +333,11 @@ fun SupervisorSetupScreen(
               horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
               TableHeaderCell("Line", 54.dp, TextAlign.Center)
-              TableHeaderCell("Item (আইটেম)", 124.dp, TextAlign.Start)
-              TableHeaderCell("SMV (এসএমবি)", 68.dp, TextAlign.Center)
-              TableHeaderCell("Target (টার্গেট)", 84.dp, TextAlign.Center)
+              TableHeaderCell("Item / Style", 124.dp, TextAlign.Start)
+              TableHeaderCell("SMV", 68.dp, TextAlign.Center)
+              TableHeaderCell("Hourly Target (pcs/hr)", 96.dp, TextAlign.Center)
               if (canMorningTargetWrite) {
-                TableHeaderCell("Save", 44.dp, TextAlign.Center)
+                TableHeaderCell("Save", 50.dp, TextAlign.Center)
               }
             }
 
@@ -353,7 +357,7 @@ fun SupervisorSetupScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
               ) {
-                // Column 1: Line Badge (ডার্ক ব্যাকগ্রাউন্ডে ব্রাইট হোয়াইট টেক্সট)
+                // Column 1: Line Badge
                 Surface(
                   color = Color(0xFF0A2558),
                   shape = RoundedCornerShape(5.dp),
@@ -370,7 +374,7 @@ fun SupervisorSetupScreen(
                   }
                 }
 
-                // Column 2: Item (আইটেম / Style) Text Field (লাইট ব্যাকগ্রাউন্ডে ডার্ক টেক্সট)
+                // Column 2: Item / Style Text Field
                 CompactTableTextField(
                   value = draft.itemName,
                   onValueChange = { newVal ->
@@ -378,12 +382,12 @@ fun SupervisorSetupScreen(
                   },
                   width = 124.dp,
                   enabled = canMorningTargetWrite,
-                  placeholder = "Item / Style",
+                  placeholder = "Style / Item",
                   textAlign = TextAlign.Start,
                   testTag = if (idx == 0) "setup_item_first_input" else null
                 )
 
-                // Column 3: SMV (এসএমবি) Decimal Field (লাইট ব্যাকগ্রাউন্ডে ডার্ক টেক্সট)
+                // Column 3: SMV Decimal Field
                 CompactTableNumberField(
                   value = draft.smvText,
                   onValueChange = { newVal ->
@@ -393,42 +397,53 @@ fun SupervisorSetupScreen(
                   width = 68.dp,
                   enabled = canMorningTargetWrite,
                   isDecimal = true,
+                  placeholder = "SMV",
                   testTag = if (idx == 0) "setup_smv_input" else null
                 )
 
-                // Column 4: Target (টার্গেট) Daily Total Target Field (লাইট ব্যাকগ্রাউন্ডে ডার্ক টেক্সট)
+                // Column 4: Hourly Target (pcs/hr) Field
                 CompactTableNumberField(
                   value = draft.targetText,
                   onValueChange = { newVal ->
                     val clean = newVal.filter { it.isDigit() }
                     rowDrafts[lineInfo.id] = draft.copy(targetText = clean)
                   },
-                  width = 84.dp,
+                  width = 96.dp,
                   enabled = canMorningTargetWrite,
                   isDecimal = false,
+                  placeholder = "pcs/hr",
                   testTag = if (idx == 0) "setup_target_pcs_input" else null
                 )
 
-                // Quick Single-Row Save Button
+                // Column 5: Quick Single-Row Save Button
                 if (canMorningTargetWrite) {
                   Surface(
                     onClick = {
                       val setup = buildSetupFromDraft(draft)
                       repository.saveLineSetup(setup)
-                      saveSuccessMsg = "✓ Saved Line ${draft.lineId}: Item '${setup.itemName}', SMV ${setup.smv}, Target ${setup.targetDailyPcs} pcs"
+                      saveSuccessMsg = "✓ Saved Line ${draft.lineId}: Hourly Target ${setup.targetHourlyPcs} pcs/hr (${setup.targetDailyPcs} pcs/day)"
                     },
                     color = Color(0xFFDCFCE7),
                     shape = RoundedCornerShape(5.dp),
                     border = BorderStroke(1.dp, Color(0xFF86EFAC)),
-                    modifier = Modifier.width(44.dp).height(34.dp)
+                    modifier = Modifier
+                      .width(50.dp)
+                      .height(34.dp)
+                      .testTag("setup_save_row_${lineInfo.id}")
                   ) {
-                    Box(contentAlignment = Alignment.Center) {
+                    Row(
+                      modifier = Modifier.fillMaxSize(),
+                      horizontalArrangement = Arrangement.Center,
+                      verticalAlignment = Alignment.CenterVertically
+                    ) {
                       Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = "Save Line ${lineInfo.id}",
                         tint = Color(0xFF15803D),
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(13.dp)
                       )
+                      Spacer(modifier = Modifier.width(2.dp))
+                      Text("Save", color = Color(0xFF15803D), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                   }
                 }
@@ -545,6 +560,7 @@ private fun CompactTableNumberField(
   width: Dp,
   enabled: Boolean,
   isDecimal: Boolean,
+  placeholder: String = "",
   testTag: String? = null
 ) {
   BasicTextField(
@@ -582,12 +598,12 @@ private fun CompactTableNumberField(
           .padding(horizontal = 4.dp),
         contentAlignment = Alignment.Center
       ) {
-        if (value.isEmpty()) {
+        if (value.isEmpty() && placeholder.isNotEmpty()) {
           Text(
-            text = "0",
-            color = Color(0xFF475569),
-            fontSize = 11.5.sp,
-            fontWeight = FontWeight.Bold,
+            text = placeholder,
+            color = Color(0xFF94A3B8),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Normal,
             textAlign = TextAlign.Center
           )
         }
