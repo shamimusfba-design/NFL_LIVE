@@ -689,6 +689,9 @@ class NflRepository(private val context: Context) {
   private val _lastDataUpdate = MutableStateFlow(SimpleDateFormat("hh:mm a", Locale.US).format(Date()))
   val lastDataUpdate: StateFlow<String> = _lastDataUpdate.asStateFlow()
 
+  private val _lastSyncTimeMillis = MutableStateFlow(System.currentTimeMillis())
+  val lastSyncTimeMillis: StateFlow<Long> = _lastSyncTimeMillis.asStateFlow()
+
   private val _syncStatusBanner = MutableStateFlow<String?>(
     "Live Data Ready • Last Updated ${sheetsStorage.getLastSyncTime()}"
   )
@@ -1340,10 +1343,12 @@ class NflRepository(private val context: Context) {
   }
 
   private fun touchDataUpdated() {
-    val nowTime = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-    val nowUpdate = SimpleDateFormat("hh:mm:ss a", Locale.US).format(Date())
+    val now = Date()
+    val nowTime = SimpleDateFormat("HH:mm:ss", Locale.US).format(now)
+    val nowUpdate = SimpleDateFormat("hh:mm:ss a", Locale.US).format(now)
     _lastRefreshTime.value = nowTime
     _lastDataUpdate.value = nowUpdate
+    _lastSyncTimeMillis.value = now.time
     _refreshTrigger.value = _refreshTrigger.value + 1
   }
 
@@ -1402,9 +1407,11 @@ class NflRepository(private val context: Context) {
           sheetsStorage.saveLocalQualityEntries(_qualityEntries.value)
         }
 
-        val nowTime = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+        val nowDate = Date()
+        val nowTime = SimpleDateFormat("HH:mm:ss", Locale.US).format(nowDate)
         _lastRefreshTime.value = nowTime
-        _lastDataUpdate.value = SimpleDateFormat("hh:mm:ss a", Locale.US).format(Date())
+        _lastDataUpdate.value = SimpleDateFormat("hh:mm:ss a", Locale.US).format(nowDate)
+        _lastSyncTimeMillis.value = nowDate.time
 
         val totalPending = pendingProds.size + pendingQas.size
         val totalPushed = syncedProdIds.size + syncedQaIds.size
@@ -4588,14 +4595,28 @@ class NflRepository(private val context: Context) {
       }
     }
 
+    val bdTz = sheetsStorage.getBangladeshTimeZone()
+    val incIsoFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = bdTz }
+    val nowMs = System.currentTimeMillis()
+
     val openIncidentsByLine = HashMap<String, Int>()
+    val downtimeMinsByLine = HashMap<String, Int>()
     val activeFloorIncidents = ArrayList<IncidentItem>()
     _incidents.value.forEach { inc ->
+      val key = canonicalLineKey(inc.lineId)
+      val resolvedFloor = allLinesMaster.find { it.matches(inc.lineId) }?.floor ?: inc.floor
+      val inFloor = floorScope == FloorScope.ALL || isInSelectedFloor(resolvedFloor, floorScope)
+      val incDateIso = incIsoFmt.format(Date(inc.startTimeMillis))
+      if (inFloor && isDateInPeriod(incDateIso, periodScope)) {
+        val endMs = inc.endTimeMillis ?: nowMs
+        val durMins = ((endMs - inc.startTimeMillis) / 60000L).toInt().coerceAtLeast(0)
+        if (durMins > 0) {
+          downtimeMinsByLine[key] = (downtimeMinsByLine[key] ?: 0) + durMins
+        }
+      }
       if (inc.status != IncidentStatus.RESOLVED) {
-        val key = canonicalLineKey(inc.lineId)
         openIncidentsByLine[key] = (openIncidentsByLine[key] ?: 0) + 1
-        val resolvedFloor = allLinesMaster.find { it.matches(inc.lineId) }?.floor ?: inc.floor
-        if (isInSelectedFloor(resolvedFloor, floorScope)) {
+        if (inFloor) {
           activeFloorIncidents.add(inc)
         }
       }
@@ -4649,6 +4670,16 @@ class NflRepository(private val context: Context) {
       val oqlPct = if (checked > 0) ((defective.toDouble() / checked) * 100).let { Math.round(it * 100.0) / 100.0 } else 0.0
       val dhuVal = if (checked > 0) ((defectsTotal.toDouble() / checked) * 100).let { Math.round(it * 100.0) / 100.0 } else 0.0
 
+      val lineMainDefect = if (hasQa) {
+        qas.flatMap { it.defects }
+          .filter { it.count > 0 && it.defectType.isNotBlank() }
+          .groupBy { it.defectType.trim() }
+          .mapValues { (_, list) -> list.sumOf { it.count } }
+          .maxByOrNull { it.value }
+          ?.key
+          .orEmpty()
+      } else ""
+
       val resolvedMonthlyEff = when {
         lineMonthly != null && lineMonthly.updateEfficiencyPct > 0.0 -> lineMonthly.updateEfficiencyPct
         effPct > 0.0 -> Math.round(((effPct * 0.65) + (floorMonthlyForLine.updateEfficiencyPct * 0.35)) * 10.0) / 10.0
@@ -4665,7 +4696,15 @@ class NflRepository(private val context: Context) {
         else -> floorMonthlyForLine.targetDhuPct
       }
 
+      // Part A #5: Never invent bsOqlPct = oqlPct * 0.85. Use stored IE value or null ("--").
+      val storedIeBsOql: Double? = when {
+        lineMonthly != null && lineMonthly.bsOqlPct > 0.0 -> lineMonthly.bsOqlPct
+        floorMonthlyForLine.bsOqlPct > 0.0 -> floorMonthlyForLine.bsOqlPct
+        else -> null
+      }
+
       val openIncs = openIncidentsByLine[lineKey] ?: 0
+      val lineDowntimeMins = downtimeMinsByLine[lineKey] ?: 0
 
       LinePerformancePoint(
         lineId = setup.lineId,
@@ -4686,7 +4725,8 @@ class NflRepository(private val context: Context) {
         monthlyOqlPct = resolvedMonthlyOql,
         dhu = if (hasQa && checked > 0) dhuVal else null,
         monthlyDhuPct = resolvedMonthlyDhu,
-        bsOqlPct = if (hasQa && checked > 0) (oqlPct * 0.85).let { Math.round(it * 100.0) / 100.0 } else floorMonthlyForLine.bsOqlPct,
+        bsOqlPct = storedIeBsOql ?: 0.0,
+        storedBsOqlPct = storedIeBsOql,
         reportingStatus = if (hasReported) "Complete" else "Not reported",
         openIncidentsCount = openIncs,
         defectSent = sentQas,
@@ -4694,7 +4734,10 @@ class NflRepository(private val context: Context) {
         defectBalance = lineBal,
         spotSent = sentSpotsQas,
         spotReceived = recvSpotsQas,
-        spotBalance = lineSpotBal
+        spotBalance = lineSpotBal,
+        checkedGarments = checked,
+        mainDefectName = lineMainDefect,
+        downtimeMinutes = lineDowntimeMins
       )
     }
 
@@ -4741,15 +4784,27 @@ class NflRepository(private val context: Context) {
     val totalSpotRecv = scheduledSummaries.sumOf { it.spotReceived }
     val totalSpotBal = scheduledSummaries.sumOf { it.spotBalance }
 
+    // NPT Category breakdown for the floor & period (real incidents only, Part A #2)
+    val nptBreakdown = calculateFloorNptBreakdown(floorScope, periodScope)
+    val totalDowntimeMinutes = nptBreakdown.sumOf { it.minutes }
+    val totalEstimatedLostPcs = nptBreakdown.sumOf { it.estimatedLostPcs }
+
+    val inspectedLinesCount = scheduledSummaries.count { it.checkedGarments > 0 }
+    val unscheduledLinesCount = summaries.count { it.targetPcs <= 0 }
+    val missingReportLineIds = scheduledSummaries.filter { it.achievementPcs == null }.map { it.lineId }
+
     val kpi = FloorKpiSummary(
       todayEfficiency = effWeighted,
-      todayTargetEfficiency = targetEffAvg,
+      todayTargetEfficiency = if (targetEffAvg > 0.0) targetEffAvg else 75.0,
       monthlyEfficiency = if (floorMonthlyTarget.updateEfficiencyPct > 0.0) floorMonthlyTarget.updateEfficiencyPct else effWeighted,
       monthlyEfficiencyDelta = Math.round((effWeighted - floorMonthlyTarget.targetEfficiencyPct) * 10.0) / 10.0,
       todayOutputPcs = totalOutput,
       todayTargetPcs = totalTarget,
       todayTargetDuePcs = totalTargetDue,
       todayOql = weightedOql,
+      todayDhu = weightedDhu,
+      monthlyOql = floorMonthlyTarget.targetOqlPct,
+      monthlyDhu = floorMonthlyTarget.targetDhuPct,
       bsQaOql = floorMonthlyTarget.bsOqlPct,
       friPassRate = floorMonthlyTarget.friPassRatePct,
       operatorsCount = scheduledSummaries.sumOf { (setupsByLine[it.lineId.trim().uppercase(Locale.US)] ?: getLineSetup(it.lineId)).operatorsCount },
@@ -4763,7 +4818,17 @@ class NflRepository(private val context: Context) {
       totalDefectBalance = totalBal,
       totalSpotSent = totalSpotSent,
       totalSpotReceived = totalSpotRecv,
-      totalSpotBalance = totalSpotBal
+      totalSpotBalance = totalSpotBal,
+      totalCheckedGarments = totalCheckedFloor,
+      inspectedLinesCount = inspectedLinesCount,
+      scheduledLinesCount = scheduledSummaries.size,
+      reportedLinesCount = reportedOnly.size,
+      unscheduledLinesCount = unscheduledLinesCount,
+      totalLinesInFloor = summaries.size,
+      missingReportLineIds = missingReportLineIds,
+      downtimeMinutes = totalDowntimeMinutes,
+      estimatedLostPcs = totalEstimatedLostPcs,
+      targetAvailableForPeriod = (periodScope == PeriodScope.TODAY)
     )
 
     val aggregatedDefectMap = mutableMapOf<String, Int>()
@@ -4844,14 +4909,59 @@ class NflRepository(private val context: Context) {
     // Day-by-day trend calculation for Efficiency, OQL, and DHU (reusing deduped lists & setups)
     val qaTrend = generateDailyPerformanceTrend(floorScope, periodScope, dedupedProds, dedupedQas, totalTarget)
 
-    // NPT Category breakdown for the floor (Lost Minutes & Share %)
-    val nptBreakdown = calculateFloorNptBreakdown(floorScope)
+    // Hourly floor aggregation (output, target, DHU, OQL) from already-loaded records
+    val hourlyFloorTargetPcs = scheduledSummaries.sumOf { it.hourlyTargetPcs }
+    val hourlySlots = buildTvHourlySlots(
+      floorLines = floorLines,
+      prodsInPeriodByLine = prodsInPeriodByLine,
+      periodQuality = periodQuality,
+      hourlyFloorTargetPcs = hourlyFloorTargetPcs
+    )
+
+    // Floor & Factory Efficiency comparison for TV "All" page (Sew 1, Sew 2, Sew 3, Factory)
+    val floorEffComparison = buildTvFloorEfficiencyComparison(
+      dedupedProds = dedupedProds,
+      periodScope = periodScope
+    )
+
+    // Open stoppages table items for TV "Production" page
+    val openStoppages = activeFloorIncidents.map { inc ->
+      val minsOpen = ((nowMs - inc.startTimeMillis) / 60000L).toInt().coerceAtLeast(0)
+      val causeName = when (inc.category) {
+        IncidentCategory.MACHINE_BREAKDOWN -> "Machine breakdown"
+        IncidentCategory.INPUT_MATERIAL -> "Input N/A"
+        IncidentCategory.LINE_BALANCING -> "Line balancing"
+        IncidentCategory.QUALITY_PROBLEM -> "Quality problem"
+        IncidentCategory.OPERATOR_NA -> "Operator N/A"
+        IncidentCategory.POWER_OUTAGE -> "Power outage"
+        IncidentCategory.LOW_PRODUCTION -> "Low production"
+        IncidentCategory.OTHER -> inc.nptType.ifBlank { "Maintenance / Other" }
+      }
+      val respStatus = when {
+        inc.status == IncidentStatus.ACKNOWLEDGED && !inc.assignedTo.isNullOrBlank() ->
+          "acknowledged · ${inc.assignedTo}"
+        inc.status == IncidentStatus.ACKNOWLEDGED ->
+          "acknowledged"
+        inc.status == IncidentStatus.MUTED ->
+          "muted · waiting"
+        else ->
+          "reported · waiting"
+      }
+      TvOpenStoppageItem(
+        incidentId = inc.id,
+        lineId = inc.lineId,
+        causeName = causeName,
+        minutesOpen = minsOpen,
+        responseStatusText = respStatus
+      )
+    }.sortedByDescending { it.minutesOpen }
 
     return TvDashboardData(
       floorScope = floorScope,
       periodScope = periodScope,
       kpis = kpi,
       linePerformance = scheduledSummaries,
+      allFloorLines = summaries,
       topDefects = topDefects,
       highestDhuLines = highestDhu,
       lowestEfficiencyLines = lowestEffLines,
@@ -4859,10 +4969,150 @@ class NflRepository(private val context: Context) {
       weeklyQaTrend = qaTrend,
       nptBreakdown = nptBreakdown,
       activeIncidents = activeFloorIncidents,
+      hourlySlots = hourlySlots,
+      floorEfficiencyComparison = floorEffComparison,
+      openStoppages = openStoppages,
       lastDataUpdate = _lastDataUpdate.value,
       lastRefreshTime = _lastRefreshTime.value,
+      lastSyncTimeMillis = _lastSyncTimeMillis.value,
       isDemoMode = _isDemoMode.value
     )
+  }
+
+  private fun extractSlotStartHour(rawSlot: String): Int? {
+    val match = Regex("""(\d{1,2})\s*[:.]\s*\d{2}""").find(rawSlot)
+      ?: Regex("""\b(\d{1,2})\s*-\s*\d{1,2}\b""").find(rawSlot)
+    return match?.groupValues?.getOrNull(1)?.toIntOrNull()
+  }
+
+  private fun buildTvHourlySlots(
+    floorLines: List<LineInfo>,
+    prodsInPeriodByLine: Map<String, List<ProductionRecord>>,
+    periodQuality: List<QualityRecord>,
+    hourlyFloorTargetPcs: Int
+  ): List<TvHourlySlotPoint> {
+    val prodByHour = HashMap<Int, Int>()
+    val prodCountByHour = HashMap<Int, Int>()
+    floorLines.forEach { lineInfo ->
+      val key = lineInfo.id.trim().uppercase(Locale.US)
+      val recs = prodsInPeriodByLine[key] ?: emptyList()
+      recs.forEach { rec ->
+        val hr = extractSlotStartHour(rec.hourSlot)
+        if (hr != null) {
+          prodByHour[hr] = (prodByHour[hr] ?: 0) + rec.outputQty
+          prodCountByHour[hr] = (prodCountByHour[hr] ?: 0) + 1
+        }
+      }
+    }
+
+    val qaCheckedByHour = HashMap<Int, Int>()
+    val qaDefectiveByHour = HashMap<Int, Int>()
+    val qaDefectsByHour = HashMap<Int, Int>()
+    periodQuality.forEach { qa ->
+      val hr = extractSlotStartHour(qa.hourSlot)
+      if (hr != null) {
+        qaCheckedByHour[hr] = (qaCheckedByHour[hr] ?: 0) + qa.checkedGarments
+        qaDefectiveByHour[hr] = (qaDefectiveByHour[hr] ?: 0) + qa.defectiveGarments
+        qaDefectsByHour[hr] = (qaDefectsByHour[hr] ?: 0) + qa.totalDefects
+      }
+    }
+
+    // Standard 8 shift display hours (08..15); if 12 has no records and 16 has records (lunch at 12-13), include active hours
+    val candidateHours = (prodByHour.keys + qaCheckedByHour.keys)
+      .filter { it in 8..19 }
+      .sorted()
+    val shiftHours = if (candidateHours.size >= 8) {
+      candidateHours.take(8)
+    } else {
+      val base = mutableListOf(8, 9, 10, 11, 12, 13, 14, 15)
+      if (!prodByHour.containsKey(12) && !qaCheckedByHour.containsKey(12) &&
+          (prodByHour.containsKey(16) || qaCheckedByHour.containsKey(16))
+      ) {
+        base.remove(12)
+        base.add(16)
+      }
+      candidateHours.forEach { h ->
+        if (h !in base && base.size < 8) base.add(h)
+      }
+      base.sorted()
+    }
+
+    return shiftHours.map { hr ->
+      val nextHr = (hr + 1) % 24
+      val shortHour = String.format(Locale.US, "%02d", hr)
+      val shortRange = String.format(Locale.US, "%02d-%02d", hr, nextHr)
+      val fullSlot = String.format(Locale.US, "%02d:00 - %02d:00", hr, nextHr)
+      val outPcs = prodByHour[hr] ?: 0
+      val hasProd = (prodCountByHour[hr] ?: 0) > 0
+      val checked = qaCheckedByHour[hr] ?: 0
+      val defective = qaDefectiveByHour[hr] ?: 0
+      val defects = qaDefectsByHour[hr] ?: 0
+      val dhuVal = if (checked > 0) Math.round((defects.toDouble() / checked.toDouble()) * 10000.0) / 100.0 else null
+      val oqlVal = if (checked > 0) Math.round((defective.toDouble() / checked.toDouble()) * 10000.0) / 100.0 else null
+      TvHourlySlotPoint(
+        hourSlot = fullSlot,
+        shortRangeLabel = shortRange,
+        shortHourLabel = shortHour,
+        outputPcs = outPcs,
+        targetPcs = hourlyFloorTargetPcs,
+        hasProduction = hasProd,
+        checkedPcs = checked,
+        dhuPct = dhuVal,
+        oqlPct = oqlVal
+      )
+    }
+  }
+
+  private fun buildTvFloorEfficiencyComparison(
+    dedupedProds: List<ProductionRecord>,
+    periodScope: PeriodScope
+  ): List<TvFloorEfficiencyPoint> {
+    val targetAvailable = (periodScope == PeriodScope.TODAY)
+    val floorsToCompare = listOf(
+      "Sew 1" to FloorScope.SEW_1,
+      "Sew 2" to FloorScope.SEW_2,
+      "Sew 3" to FloorScope.SEW_3,
+      "Factory" to FloorScope.ALL
+    )
+
+    val prodSumByLine = HashMap<String, Int>()
+    dedupedProds.forEach { rec ->
+      if (isDateInPeriod(rec.date, periodScope)) {
+        val matched = allLinesMaster.find { it.matches(rec.lineId.trim()) }
+        val key = (matched?.id ?: rec.lineId.trim()).uppercase(Locale.US)
+        prodSumByLine[key] = (prodSumByLine[key] ?: 0) + rec.outputQty
+      }
+    }
+
+    return floorsToCompare.map { (label, scope) ->
+      val monthlyObj = if (scope == FloorScope.ALL) getMonthlyTarget("All Floor") else getMonthlyTarget(scope.apiValue)
+      val linesForScope = allLinesMaster.filter { line ->
+        val isFinishing = line.id.startsWith("Iron", ignoreCase = true) || line.id.startsWith("Packing", ignoreCase = true)
+        !isFinishing && (scope == FloorScope.ALL || isInSelectedFloor(line.floor, scope))
+      }
+      var earnedMins = 0.0
+      var availMins = 0.0
+      linesForScope.forEach { lineInfo ->
+        val setup = getLineSetup(lineInfo.id)
+        if (setup.targetDailyPcs > 0) {
+          val key = lineInfo.id.trim().uppercase(Locale.US)
+          val outQty = prodSumByLine[key]
+          if (outQty != null && outQty > 0) {
+            earnedMins += outQty * setup.smv
+            availMins += setup.includedManpower * setup.workingHoursSoFar * 60.0
+          }
+        }
+      }
+      val todayEff = if (targetAvailable && availMins > 0.0) {
+        Math.round((earnedMins / availMins) * 1000.0) / 10.0
+      } else null
+      TvFloorEfficiencyPoint(
+        label = label,
+        monthlyEfficiencyPct = monthlyObj.updateEfficiencyPct,
+        todayEfficiencyPct = todayEff,
+        targetEfficiencyPct = if (monthlyObj.targetEfficiencyPct > 0.0) monthlyObj.targetEfficiencyPct else 75.0
+      )
+    }
   }
 
   fun getLinePerformancePoint(lineId: String, floorScope: FloorScope = FloorScope.ALL, periodScope: PeriodScope = PeriodScope.TODAY): LinePerformancePoint {
@@ -4870,6 +5120,13 @@ class NflRepository(private val context: Context) {
     return data.linePerformance.find { it.lineId.equals(lineId.trim(), ignoreCase = true) }
       ?: run {
         val setup = getLineSetup(lineId)
+        val lineMonthly = getMonthlyLineTarget(setup.floor, setup.lineId)
+        val floorMonthlyForLine = getMonthlyTarget(setup.floor)
+        val storedIeBsOql: Double? = when {
+          lineMonthly != null && lineMonthly.bsOqlPct > 0.0 -> lineMonthly.bsOqlPct
+          floorMonthlyForLine.bsOqlPct > 0.0 -> floorMonthlyForLine.bsOqlPct
+          else -> null
+        }
         val hash = Math.abs(lineId.hashCode())
         val lineSent = 12 + (hash % 10)
         val lineRecv = (lineSent - (hash % 4)).coerceAtLeast(0)
@@ -4887,12 +5144,13 @@ class NflRepository(private val context: Context) {
           spotSent = lineSpotSent,
           spotReceived = lineSpotRecv,
           spotBalance = (lineSpotSent - lineSpotRecv).coerceAtLeast(0),
-          bsOqlPct = 2.40
+          bsOqlPct = storedIeBsOql ?: 0.0,
+          storedBsOqlPct = storedIeBsOql
         )
       }
   }
 
-  // Computes Day-by-Day performance trends (Efficiency, OQL, DHU, Output) for Weekly and Monthly views in O(N)
+  // Part A #3: Return real days only; unknown values must be null or the day skipped. Never invent curves or nflAqcPct = 5.0.
   private fun generateDailyPerformanceTrend(
     floorScope: FloorScope,
     periodScope: PeriodScope,
@@ -4915,7 +5173,8 @@ class NflRepository(private val context: Context) {
 
     val prodsByDate = HashMap<String, Int>(daysCount * 2)
     dedupedProds.forEach { rec ->
-      if (isInSelectedFloor(rec.floor, floorScope)) {
+      val resolvedFloor = allLinesMaster.find { it.matches(rec.lineId) }?.floor ?: rec.floor
+      if (isInSelectedFloor(resolvedFloor, floorScope)) {
         val d = sheetsStorage.normalizeToIsoDate(rec.date)
         prodsByDate[d] = (prodsByDate[d] ?: 0) + rec.outputQty
       }
@@ -4923,7 +5182,8 @@ class NflRepository(private val context: Context) {
 
     val qasByDate = HashMap<String, Triple<Int, Int, Int>>(daysCount * 2)
     dedupedQas.forEach { rec ->
-      if (isInSelectedFloor(rec.floor, floorScope)) {
+      val resolvedFloor = allLinesMaster.find { it.matches(rec.lineId) }?.floor ?: rec.floor
+      if (isInSelectedFloor(resolvedFloor, floorScope)) {
         val d = sheetsStorage.normalizeToIsoDate(rec.date)
         val prev = qasByDate[d]
         qasByDate[d] = if (prev == null) {
@@ -4934,102 +5194,135 @@ class NflRepository(private val context: Context) {
       }
     }
 
-    val baseTargetDailyPcs = if (floorTargetDailyPcs > 0) floorTargetDailyPcs else 4200
     val baseTargetEff = 75.0
 
-    return datesList.mapIndexed { index, (rawDate, dateLabel, dayName) ->
+    return datesList.mapNotNull { (rawDate, dateLabel, dayName) ->
       val recordedOutput = prodsByDate[rawDate]
-      val actualOutput = recordedOutput ?: run {
-        val variance = (index % 5 - 2) * 90 + ((index * 37) % 110)
-        (baseTargetDailyPcs * 0.88).toInt() + variance
-      }
-
-      val actualEff = if (recordedOutput != null && baseTargetDailyPcs > 0) {
-        val earnedRatio = actualOutput.toDouble() / baseTargetDailyPcs.toDouble()
-        Math.round((baseTargetEff * earnedRatio).coerceIn(45.0, 95.0) * 10.0) / 10.0
-      } else {
-        val effCurve = listOf(68.5, 70.2, 72.8, 71.4, 73.9, 74.5, 75.2, 72.0, 73.5, 74.8, 71.9, 73.2, 74.0, 75.5)
-        effCurve[index % effCurve.size]
-      }
-
       val qaAgg = qasByDate[rawDate]
-      val (actualOql, actualDhu) = if (qaAgg != null) {
-        val checked = qaAgg.first.coerceAtLeast(1)
-        val defective = qaAgg.second
-        val defects = qaAgg.third
-        val oql = Math.round((defective.toDouble() / checked.toDouble()) * 10000.0) / 100.0
-        val dhu = Math.round((defects.toDouble() / checked.toDouble()) * 10000.0) / 100.0
-        Pair(oql, dhu)
-      } else {
-        val oqlCurve = listOf(3.85, 3.60, 3.45, 3.90, 3.25, 3.10, 2.95, 3.70, 3.40, 3.15, 3.50, 3.30, 3.05, 2.85)
-        val dhuCurve = listOf(1.45, 1.35, 1.22, 1.40, 1.15, 1.05, 0.95, 1.38, 1.25, 1.10, 1.30, 1.18, 1.02, 0.90)
-        Pair(oqlCurve[index % oqlCurve.size], dhuCurve[index % dhuCurve.size])
+      val hasQa = qaAgg != null && qaAgg.first > 0
+      val hasProd = recordedOutput != null
+
+      // Skip days that have no real production and no real quality records
+      if (!hasProd && !hasQa) {
+        return@mapNotNull null
       }
+
+      val actualEff: Double? = if (recordedOutput != null && floorTargetDailyPcs > 0) {
+        val earnedRatio = recordedOutput.toDouble() / floorTargetDailyPcs.toDouble()
+        Math.round((baseTargetEff * earnedRatio) * 10.0) / 10.0
+      } else null
+
+      val actualOql: Double? = if (hasQa) {
+        val checked = qaAgg!!.first
+        val defective = qaAgg.second
+        Math.round((defective.toDouble() / checked.toDouble()) * 10000.0) / 100.0
+      } else null
+
+      val actualDhu: Double? = if (hasQa) {
+        val checked = qaAgg!!.first
+        val defects = qaAgg.third
+        Math.round((defects.toDouble() / checked.toDouble()) * 10000.0) / 100.0
+      } else null
 
       DailyQaTrend(
         dateLabel = dateLabel,
         dayName = dayName,
-        bsOqlPct = actualOql,
-        nflAqcPct = 5.0,
-        efficiencyPct = actualEff,
+        fullDateIso = rawDate,
+        bsOqlPct = actualOql ?: 0.0,
+        nflAqcPct = 0.0,
+        efficiencyPct = actualEff ?: 0.0,
         targetEfficiencyPct = baseTargetEff,
-        dhu = actualDhu,
-        targetDhu = 1.50,
-        outputPcs = actualOutput,
-        targetPcs = baseTargetDailyPcs
+        dhu = actualDhu ?: 0.0,
+        targetDhu = 2.00,
+        outputPcs = recordedOutput ?: 0,
+        targetPcs = if (floorTargetDailyPcs > 0) floorTargetDailyPcs else 0,
+        actualOqlPct = actualOql,
+        actualNflAqcPct = null,
+        actualDhuPct = actualDhu,
+        actualEfficiencyPct = actualEff,
+        actualOutputPcs = recordedOutput
       )
     }
   }
 
-  // Calculate NPT distribution for the floor
-  private fun calculateFloorNptBreakdown(floorScope: FloorScope): List<NptCategorySlice> {
-    val floorIncidents = _incidents.value.filter {
-      floorScope == FloorScope.ALL || isInSelectedFloor(it.floor, floorScope)
+  // Part A #2: Return only real incidents for the selected floor & period with real minutes (no fake defaults, no 10..180 clamping)
+  private fun calculateFloorNptBreakdown(
+    floorScope: FloorScope,
+    periodScope: PeriodScope = _currentPeriod.value
+  ): List<NptCategorySlice> {
+    val bdTz = sheetsStorage.getBangladeshTimeZone()
+    val isoFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = bdTz }
+    val nowMs = System.currentTimeMillis()
+
+    val floorIncidents = _incidents.value.filter { inc ->
+      val resolvedFloor = allLinesMaster.find { it.matches(inc.lineId) }?.floor ?: inc.floor
+      val inFloor = floorScope == FloorScope.ALL || isInSelectedFloor(resolvedFloor, floorScope)
+      val incDateIso = isoFmt.format(Date(inc.startTimeMillis))
+      inFloor && isDateInPeriod(incDateIso, periodScope)
     }
 
-    val categoryMinutes = mutableMapOf<String, Pair<Int, Int>>() // Category -> Pair(Minutes, Count)
-    floorIncidents.forEach { inc ->
-      val mins = (((inc.endTimeMillis ?: System.currentTimeMillis()) - inc.startTimeMillis) / 60000).toInt().coerceIn(10, 180)
-      val catName = when (inc.category) {
-        IncidentCategory.MACHINE_BREAKDOWN -> "Machine Breakdown"
-        IncidentCategory.INPUT_MATERIAL -> "Cutting Rip / Input Due"
-        IncidentCategory.LINE_BALANCING -> "Line Balancing"
-        IncidentCategory.QUALITY_PROBLEM -> "Quality Problem"
-        IncidentCategory.OPERATOR_NA -> "Operator N/A"
-        IncidentCategory.POWER_OUTAGE -> "Power Outage"
-        IncidentCategory.LOW_PRODUCTION -> "Low Production"
-        IncidentCategory.OTHER -> "Maintenance / Other"
-      }
-      val current = categoryMinutes[catName] ?: Pair(0, 0)
-      categoryMinutes[catName] = Pair(current.first + mins, current.second + 1)
-    }
+    if (floorIncidents.isEmpty()) return emptyList()
 
-    // If active incidents are few, supplement with standard realistic categories so the pie chart is richly populated
-    val defaultCategories = listOf(
-      Triple("Machine Breakdown", 65, 0xFFEF4444),
-      Triple("Cutting Rip / Input Due", 45, 0xFFF97316),
-      Triple("Line Balancing", 25, 0xFF8B5CF6),
-      Triple("Quality Problem", 18, 0xFFEAB308),
-      Triple("Operator N/A", 10, 0xFF3B82F6)
+    data class CategoryAccum(
+      var minutes: Int = 0,
+      var count: Int = 0,
+      var lostPcs: Int = 0,
+      val colorHex: Long
     )
 
-    val finalCategories = mutableListOf<Triple<String, Int, Long>>()
-    defaultCategories.forEach { (catName, defaultMins, colorHex) ->
-      val recorded = categoryMinutes[catName]
-      val mins = if (recorded != null && recorded.first > 0) recorded.first else defaultMins
-      finalCategories.add(Triple(catName, mins, colorHex))
+    val categoryMap = mutableMapOf<String, CategoryAccum>()
+    floorIncidents.forEach { inc ->
+      val endMs = inc.endTimeMillis ?: nowMs
+      val mins = ((endMs - inc.startTimeMillis) / 60000L).toInt().coerceAtLeast(0)
+      if (mins <= 0) return@forEach
+
+      val (catName, colorHex) = when (inc.category) {
+        IncidentCategory.MACHINE_BREAKDOWN -> "Machine breakdown" to 0xFFFF6B6B
+        IncidentCategory.INPUT_MATERIAL -> "Input N/A" to 0xFFF5B73B
+        IncidentCategory.LINE_BALANCING -> "Line balancing" to 0xFF5AA9FF
+        IncidentCategory.QUALITY_PROBLEM -> "Quality problem" to 0xFF5AA9FF
+        IncidentCategory.OPERATOR_NA -> "Operator N/A" to 0xFF5AA9FF
+        IncidentCategory.POWER_OUTAGE -> "Power outage" to 0xFFFF6B6B
+        IncidentCategory.LOW_PRODUCTION -> "Low production" to 0xFFF5B73B
+        IncidentCategory.OTHER -> "Maintenance / Other" to 0xFF5AA9FF
+      }
+
+      val setup = getLineSetup(inc.lineId)
+      val hourlyRate = when {
+        setup.targetHourlyPcs > 0 -> setup.targetHourlyPcs.toDouble()
+        setup.targetDailyPcs > 0 && setup.totalShiftHours > 0 -> setup.targetDailyPcs.toDouble() / setup.totalShiftHours.toDouble()
+        else -> 0.0
+      }
+      val estLost = if (hourlyRate > 0.0) {
+        Math.round((mins.toDouble() / 60.0) * hourlyRate).toInt().coerceAtLeast(0)
+      } else {
+        inc.estimatedOutputLossPcs.coerceAtLeast(0)
+      }
+
+      val acc = categoryMap.getOrPut(catName) { CategoryAccum(colorHex = colorHex) }
+      acc.minutes += mins
+      acc.count += 1
+      acc.lostPcs += estLost
     }
 
-    val totalMins = finalCategories.sumOf { it.second }.coerceAtLeast(1)
-    return finalCategories.map { (catName, mins, colorHex) ->
-      val pct = Math.round((mins.toDouble() / totalMins.toDouble()) * 1000.0) / 10.0
-      val count = categoryMinutes[catName]?.second ?: (mins / 20).coerceAtLeast(1)
+    if (categoryMap.isEmpty()) return emptyList()
+
+    val totalMins = categoryMap.values.sumOf { it.minutes }.coerceAtLeast(1)
+    return categoryMap.entries.map { (catName, acc) ->
+      val pct = Math.round((acc.minutes.toDouble() / totalMins.toDouble()) * 1000.0) / 10.0
+      val impact = when {
+        acc.minutes >= 45 -> "HIGH"
+        acc.minutes >= 20 -> "MEDIUM"
+        else -> "LOW"
+      }
       NptCategorySlice(
         categoryName = catName,
-        minutes = mins,
-        count = count,
+        minutes = acc.minutes,
+        count = acc.count,
         percentage = pct,
-        colorHex = colorHex
+        impactLevel = impact,
+        colorHex = acc.colorHex,
+        estimatedLostPcs = acc.lostPcs
       )
     }.sortedByDescending { it.minutes }
   }

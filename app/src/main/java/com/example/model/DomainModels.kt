@@ -884,6 +884,7 @@ data class LinePerformancePoint(
   val todayOqlPct: Double? = null,
   val monthlyOqlPct: Double = 3.8,
   val bsOqlPct: Double = 2.40,
+  val storedBsOqlPct: Double? = null,
   val dhu: Double? = null,
   val monthlyDhuPct: Double = 1.35,
   val reportingStatus: String = "Complete", // "Complete", "Not reported", "In Progress"
@@ -893,7 +894,10 @@ data class LinePerformancePoint(
   val defectBalance: Int = 0,
   val spotSent: Int = 0,
   val spotReceived: Int = 0,
-  val spotBalance: Int = 0
+  val spotBalance: Int = 0,
+  val checkedGarments: Int = 0,
+  val mainDefectName: String = "",
+  val downtimeMinutes: Int = 0
 )
 
 data class DefectSummary(
@@ -912,14 +916,20 @@ data class LineDhuSummary(
 data class DailyQaTrend(
   val dateLabel: String,
   val dayName: String = "",
-  val bsOqlPct: Double = 3.5,
-  val nflAqcPct: Double = 5.0,
-  val efficiencyPct: Double = 68.0,
+  val fullDateIso: String = "",
+  val bsOqlPct: Double = 0.0,
+  val nflAqcPct: Double = 0.0,
+  val efficiencyPct: Double = 0.0,
   val targetEfficiencyPct: Double = 75.0,
-  val dhu: Double = 1.25,
-  val targetDhu: Double = 1.50,
-  val outputPcs: Int = 3450,
-  val targetPcs: Int = 4200
+  val dhu: Double = 0.0,
+  val targetDhu: Double = 2.00,
+  val outputPcs: Int = 0,
+  val targetPcs: Int = 0,
+  val actualOqlPct: Double? = null,
+  val actualNflAqcPct: Double? = null,
+  val actualDhuPct: Double? = null,
+  val actualEfficiencyPct: Double? = null,
+  val actualOutputPcs: Int? = null
 )
 
 data class NptCategorySlice(
@@ -928,7 +938,8 @@ data class NptCategorySlice(
   val count: Int,
   val percentage: Double,
   val impactLevel: String = "HIGH",
-  val colorHex: Long = 0xFFEF4444
+  val colorHex: Long = 0xFFEF4444,
+  val estimatedLostPcs: Int = 0
 )
 
 data class FloorKpiSummary(
@@ -944,6 +955,9 @@ data class FloorKpiSummary(
   val todayTargetPcs: Int = 4200,
   val todayTargetDuePcs: Int = 3680,
   val todayOql: Double = 3.81,
+  val todayDhu: Double = 0.0,
+  val monthlyOql: Double = 3.50,
+  val monthlyDhu: Double = 2.00,
   val bsQaOql: Double = 5.00,
   val friPassRate: Double = 100.0,
   val reportingCoveragePct: Int = 95,
@@ -953,17 +967,55 @@ data class FloorKpiSummary(
   val totalDefectBalance: Int = 0,
   val totalSpotSent: Int = 0,
   val totalSpotReceived: Int = 0,
-  val totalSpotBalance: Int = 0
+  val totalSpotBalance: Int = 0,
+  val totalCheckedGarments: Int = 0,
+  val inspectedLinesCount: Int = 0,
+  val scheduledLinesCount: Int = 0,
+  val reportedLinesCount: Int = 0,
+  val unscheduledLinesCount: Int = 0,
+  val totalLinesInFloor: Int = 0,
+  val missingReportLineIds: List<String> = emptyList(),
+  val downtimeMinutes: Int = 0,
+  val estimatedLostPcs: Int = 0,
+  val targetAvailableForPeriod: Boolean = true
 ) {
   val totalManpower: Int
     get() = operatorsCount + helpersCount + finishingStaffCount
 }
+
+data class TvHourlySlotPoint(
+  val hourSlot: String = "",
+  val shortRangeLabel: String = "",
+  val shortHourLabel: String = "",
+  val outputPcs: Int = 0,
+  val targetPcs: Int = 0,
+  val hasProduction: Boolean = false,
+  val checkedPcs: Int = 0,
+  val dhuPct: Double? = null,
+  val oqlPct: Double? = null
+)
+
+data class TvFloorEfficiencyPoint(
+  val label: String = "",
+  val monthlyEfficiencyPct: Double = 0.0,
+  val todayEfficiencyPct: Double? = null,
+  val targetEfficiencyPct: Double = 75.0
+)
+
+data class TvOpenStoppageItem(
+  val incidentId: String = "",
+  val lineId: String = "",
+  val causeName: String = "",
+  val minutesOpen: Int = 0,
+  val responseStatusText: String = ""
+)
 
 data class TvDashboardData(
   val floorScope: FloorScope = FloorScope.SEW_2,
   val periodScope: PeriodScope = PeriodScope.TODAY,
   val kpis: FloorKpiSummary = FloorKpiSummary(),
   val linePerformance: List<LinePerformancePoint> = emptyList(),
+  val allFloorLines: List<LinePerformancePoint> = emptyList(),
   val topDefects: List<DefectSummary> = emptyList(),
   val highestDhuLines: List<LineDhuSummary> = emptyList(),
   val lowestEfficiencyLines: List<LinePerformancePoint> = emptyList(),
@@ -971,8 +1023,12 @@ data class TvDashboardData(
   val weeklyQaTrend: List<DailyQaTrend> = emptyList(),
   val nptBreakdown: List<NptCategorySlice> = emptyList(),
   val activeIncidents: List<IncidentItem> = emptyList(),
+  val hourlySlots: List<TvHourlySlotPoint> = emptyList(),
+  val floorEfficiencyComparison: List<TvFloorEfficiencyPoint> = emptyList(),
+  val openStoppages: List<TvOpenStoppageItem> = emptyList(),
   val lastDataUpdate: String = "10:24 AM",
   val lastRefreshTime: String = "18:49",
+  val lastSyncTimeMillis: Long = System.currentTimeMillis(),
   val isDemoMode: Boolean = true
 )
 
