@@ -1057,13 +1057,14 @@ class NflRepository(private val context: Context) {
     val boundDevice = savedUser.authorizedDeviceId.ifBlank {
       savedUser.approvedDevices.firstOrNull()?.deviceId.orEmpty()
     }
+    val isAdminAccount = savedUser.isAdmin
     val sessionMatches = !savedSessionId.startsWith("REVOKED-") &&
-        !savedUser.activeSessionId.startsWith("REVOKED-") &&
-        (savedUser.activeSessionId.isBlank() || savedUser.activeSessionId == savedSessionId)
+        (isAdminAccount || (!savedUser.activeSessionId.startsWith("REVOKED-") &&
+        (savedUser.activeSessionId.isBlank() || savedUser.activeSessionId == savedSessionId)))
     val canRestore = savedUser.accountStatus == AccountStatus.APPROVED &&
         savedUser.isActive &&
         !savedUser.mustChangePassword &&
-        (boundDevice.isBlank() || boundDevice == myDeviceId) &&
+        (isAdminAccount || boundDevice.isBlank() || boundDevice == myDeviceId) &&
         sessionMatches
 
     if (canRestore) {
@@ -3469,7 +3470,9 @@ class NflRepository(private val context: Context) {
       matchedUser.approvedDevices.firstOrNull()?.deviceName.orEmpty().ifBlank { "Authorized Device" }
     }
 
-    if (boundDeviceId.isNotBlank() && boundDeviceId != currentDeviceId) {
+    // The securely provisioned Admin account is not subject to the employee device binding.
+    // Do not grant this exemption based on the typed ID alone: matchedUser comes from approved user records.
+    if (!matchedUser.isAdmin && boundDeviceId.isNotBlank() && boundDeviceId != currentDeviceId) {
       val pendingReq = createOrGetPendingDeviceApprovalRequest(
         user = matchedUser,
         deviceId = currentDeviceId,
@@ -3501,13 +3504,19 @@ class NflRepository(private val context: Context) {
       approvedBy = matchedUser.approvedBy.ifBlank { INITIAL_ADMIN_EMPLOYEE_ID },
       lastActiveMillis = loginTimeMillis
     )
-    val finalUser = matchedUser.copy(
-      authorizedDeviceId = currentDeviceId,
-      authorizedDeviceName = currentDeviceName,
-      activeSessionId = newSessionId,
-      approvedDevices = listOf(approvedDeviceEntry),
-      updatedAtMillis = loginTimeMillis
-    )
+    val finalUser = if (matchedUser.isAdmin) {
+      // Admin sessions are device-local; never replace the shared account's device binding
+      // or active session when another Admin device signs in.
+      matchedUser.copy(updatedAtMillis = loginTimeMillis)
+    } else {
+      matchedUser.copy(
+        authorizedDeviceId = currentDeviceId,
+        authorizedDeviceName = currentDeviceName,
+        activeSessionId = newSessionId,
+        approvedDevices = listOf(approvedDeviceEntry),
+        updatedAtMillis = loginTimeMillis
+      )
+    }
     sheetsStorage.saveLocalActiveSession(
       employeeId = finalUser.id,
       sessionId = newSessionId,
