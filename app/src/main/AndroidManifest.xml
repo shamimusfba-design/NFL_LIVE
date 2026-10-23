@@ -16,6 +16,7 @@
         android:required="false" />
 
     <application
+        android:name=".NflApplication"
         android:allowBackup="true"
         android:banner="@drawable/ic_nfl_logo"
         android:dataExtractionRules="@xml/data_extraction_rules"
