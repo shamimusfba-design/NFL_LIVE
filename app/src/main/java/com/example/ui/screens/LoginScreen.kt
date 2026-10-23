@@ -851,12 +851,29 @@ fun LoginScreen(
                   verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                   Text(
-                    text = if (isFinishingRole) "Assigned Section (Auto-mapped)" else "Assigned Physical Floor",
+                    text = when {
+                      previewAuthorizedScope == FloorScope.ALL -> "Assigned Scope (Auto-mapped)"
+                      isFinishingRole -> "Assigned Section (Auto-mapped)"
+                      else -> "Assigned Physical Floor"
+                    },
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF334155)
                   )
-                  if (isFinishingRole) {
+                  if (previewAuthorizedScope == FloorScope.ALL) {
+                    FilterChip(
+                      selected = true,
+                      onClick = {},
+                      label = { Text("All Floor • All Departments", fontWeight = FontWeight.Bold) },
+                      leadingIcon = { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                      colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color(0xFFDBEAFE),
+                        selectedLabelColor = Color(0xFF1E3A8A),
+                        containerColor = Color(0xFFF8FAFC),
+                        labelColor = Color(0xFF475569)
+                      )
+                    )
+                  } else if (isFinishingRole) {
                     FilterChip(
                       selected = true,
                       onClick = {},
