@@ -1526,11 +1526,17 @@ class NflRepository(private val context: Context) {
             remote.activeSessionId != localSessionId
 
         if (isTargetActiveUser && isNewerThanLocal) {
+          // Admin accounts are intentionally multi-device and do not use the shared session id / device binding
+          // (see authenticateUser). Another Admin device signing in rewrites the shared record, so session-id and
+          // device-binding differences must NOT log an Admin out. Status changes and an explicit REVOKED- session still do.
+          val isAdminSession = activeBefore?.isAdmin == true && remote.isAdmin
           val statusRevoked = remote.accountStatus != AccountStatus.APPROVED || !remote.isActive
-          val deviceRevoked = remoteBoundDevice.isNotBlank() && remoteBoundDevice != myDeviceId
-          val sessionRevoked = remote.activeSessionId.isNotBlank() &&
+          val explicitlyRevoked = remote.activeSessionId.startsWith("REVOKED-")
+          val deviceRevoked = !isAdminSession && remoteBoundDevice.isNotBlank() && remoteBoundDevice != myDeviceId
+          val sessionRevoked = explicitlyRevoked || (!isAdminSession &&
+              remote.activeSessionId.isNotBlank() &&
               savedSessionId.isNotBlank() &&
-              remote.activeSessionId != savedSessionId
+              remote.activeSessionId != savedSessionId)
           if (statusRevoked || deviceRevoked || sessionRevoked) {
             forceLogoutActiveUser = true
           }
@@ -1868,7 +1874,7 @@ class NflRepository(private val context: Context) {
   fun setRole(role: UserRole) {
     // Security rule: Only an authenticated Admin can switch active role preview
     val active = getAuthoritativeCurrentUser()
-    if (active != null && !active.isAdmin) {
+    if (active?.isAdmin != true) {
       _syncStatusBanner.value = "⚠️ Access Denied: Employees cannot assign themselves roles or permissions."
       return
     }
@@ -4450,7 +4456,7 @@ class NflRepository(private val context: Context) {
   // Incident Actions
   fun reportIncident(item: IncidentItem): IncidentItem {
     val u = _currentUser.value
-    if (u != null && !u.isAdmin && !u.canNptWrite) {
+    if (u == null || (!u.isAdmin && !u.canNptWrite)) {
       _syncStatusBanner.value = "⚠️ Access Denied: You do not have permission for NPT Entry"
       return item
     }
@@ -4528,7 +4534,7 @@ class NflRepository(private val context: Context) {
 
   fun acknowledgeIncident(id: String, ackBy: String) {
     val u = _currentUser.value
-    if (u != null && !u.isAdmin && !u.canNptWrite) {
+    if (u == null || (!u.isAdmin && !u.canNptWrite)) {
       _syncStatusBanner.value = "⚠️ Access Denied: You do not have permission to acknowledge NPT incidents"
       return
     }
@@ -4560,7 +4566,7 @@ class NflRepository(private val context: Context) {
 
   fun resolveIncident(id: String, resolvedBy: String, note: String) {
     val u = _currentUser.value
-    if (u != null && !u.isAdmin && !u.canNptWrite) {
+    if (u == null || (!u.isAdmin && !u.canNptWrite)) {
       _syncStatusBanner.value = "⚠️ Access Denied: You do not have permission to resolve NPT incidents"
       return
     }
