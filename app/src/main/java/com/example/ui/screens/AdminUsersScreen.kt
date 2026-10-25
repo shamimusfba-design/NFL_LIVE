@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,10 +73,10 @@ fun AdminUsersScreen(
     BackHandler { onNavigateBack() }
 
     val context = LocalContext.current
-    val users by repository.users.collectAsState()
-    val currentUser by repository.currentUser.collectAsState()
-    val deviceRequests by repository.deviceApprovalRequests.collectAsState()
-    val auditLogs by repository.auditLogs.collectAsState()
+    val users by repository.users.collectAsStateWithLifecycle()
+    val currentUser by repository.currentUser.collectAsStateWithLifecycle()
+    val deviceRequests by repository.deviceApprovalRequests.collectAsStateWithLifecycle()
+    val auditLogs by repository.auditLogs.collectAsStateWithLifecycle()
 
     var selectedTab by remember { mutableStateOf(AdminSubTab.USERS) }
     var statusFilter by remember { mutableStateOf(UserStatusFilter.ALL) }
@@ -86,6 +87,8 @@ fun AdminUsersScreen(
     var rejectingUser by remember { mutableStateOf<UserAccount?>(null) }
     var rejectionReasonInput by remember { mutableStateOf("") }
     var statusBanner by remember { mutableStateOf<String?>(null) }
+    var showClearDemoDialog by remember { mutableStateOf(false) }
+    var showFactoryResetDialog by remember { mutableStateOf(false) }
 
     val pendingUsersCount = remember(users) {
         users.count { it.accountStatus == AccountStatus.PENDING_APPROVAL }
@@ -311,6 +314,50 @@ fun AdminUsersScreen(
                                     "Enforce Management Strict View-Only Policy",
                                     fontSize = 11.sp,
                                     color = AdminCyan,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = { showClearDemoDialog = true },
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, AdminAmber.copy(alpha = 0.6f)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("admin_clear_demo_button")
+                            ) {
+                                Icon(
+                                    Icons.Default.CleaningServices,
+                                    contentDescription = "Clear Demo Data",
+                                    tint = AdminAmber,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    "Clear Demo Data",
+                                    fontSize = 11.sp,
+                                    color = AdminAmber,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Button(
+                                onClick = { showFactoryResetDialog = true },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = AdminRed),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("admin_factory_reset_button")
+                            ) {
+                                Icon(
+                                    Icons.Default.DeleteForever,
+                                    contentDescription = "Factory Reset All Records",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    "Factory Reset All Records",
+                                    fontSize = 11.sp,
+                                    color = Color.White,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -658,6 +705,81 @@ fun AdminUsersScreen(
             },
             dismissButton = {
                 TextButton(onClick = { rejectingUser = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showClearDemoDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearDemoDialog = false },
+            title = {
+                Text(
+                    "Clear Demo / Sample Data?",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                Text(
+                    "This removes all sample/demo records and disables auto-generated chart numbers. Real operational records are preserved. To wipe all operational records (including Cloud Firestore test records), use 'Factory Reset All Records'.",
+                    fontSize = 12.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        repository.removeAllDemoData()
+                        statusBanner = "✓ All sample/demo data cleared and saved."
+                        showClearDemoDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AdminAmber)
+                ) {
+                    Text("Clear Demo Data", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDemoDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showFactoryResetDialog) {
+        AlertDialog(
+            onDismissRequest = { showFactoryResetDialog = false },
+            title = {
+                Text(
+                    "Factory Reset All Operational Records?",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 16.sp,
+                    color = AdminRed
+                )
+            },
+            text = {
+                Text(
+                    "This will permanently clear ALL Production, Quality, NPT Incidents, and Daily Line Setups from both this device AND Cloud Firestore so your factory starts clean at 0.\n\nEmployee Accounts, Roles, and Factory Line Master will be preserved.",
+                    fontSize = 12.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showFactoryResetDialog = false
+                        statusBanner = "Purging local & Cloud Firestore operational records..."
+                        repository.resetAllOperationalData(clearCloud = true) { deletedCount, _ ->
+                            statusBanner = "✓ Factory Reset Complete! Local & $deletedCount Cloud Firestore records cleared."
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AdminRed)
+                ) {
+                    Text("Confirm Factory Reset", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFactoryResetDialog = false }) {
                     Text("Cancel")
                 }
             }

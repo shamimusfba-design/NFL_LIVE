@@ -178,3 +178,27 @@ To deploy the TV dashboard to factory TV screens:
 ### Remaining Steps (User Action):
 1. **Google Sheets Service Account:** Place your `service-account.json` in `/backend` and set `APP_MODE=live` to start streaming real data into spreadsheet `1lutN5LmC1Hi6vtuwpkis4n-dYGElZ3Qtqn-Hk52Y2L0`.
 2. **Release Keystore Generation:** Run `keytool` as described in Section 3.1 to sign your production APK for Android installation.
+
+
+---
+
+## 7. Free Desktop Version (Windows / Mac / Linux) & Admin Data Reset Guide
+
+### 7.1. Admin Data Reset Controls (Android & Desktop)
+Both the Android app (**Home**, **Settings**, and **Admin Panel**) and the Desktop Web/PWA app (**Admin & Reset**) now include two distinct reset actions for Admin users (`1015198` / `NFL@26live`):
+1. **Clear Demo Data:** Removes all synthetic sample records, immediately flushes the cleared state to disk (`SharedPreferences` / `localStorage`), and disables synthetic chart fallback numbers so empty slots show clean `0` values while preserving your real operational entries.
+2. **Factory Reset All Records:** Completely wipes all operational records (Production Entries, Quality Inspections, NPT Incidents, and Daily Line Setups) from both **Local Storage** and **Cloud Firestore** (`production_entries`, `quality_entries`, `factory_alerts`, `daily_setups`) while keeping your User Accounts, Roles, and Line Master configuration intact.
+
+### 7.2. 100% Free Desktop Version (3 Ways to Use on Office PCs)
+The full Desktop version is located in `/web-dashboard-and-mobile` and is synced in real time with the exact same Firebase Firestore database (`nfl-live-72213`) used by your Android phones and Smart TVs:
+* **Option 1 — Run Locally or on Office LAN (Free):**
+  ```bash
+  cd web-dashboard-and-mobile
+  npm install
+  npm run dev -- --host
+  ```
+  Open `http://localhost:5173` in Chrome or Microsoft Edge on any PC.
+* **Option 2 — Install as a Native Desktop App (PWA — Free):**
+  When opened in Chrome or Microsoft Edge on Windows/Mac, click the **"🖥️ Install Desktop App"** button in the top bar (or the browser's **Install App ⊕** icon in the address bar). This installs **NFL LIVE Desktop** onto your Windows Desktop and Taskbar in its own standalone window without browser tabs.
+* **Option 3 — Free Static Cloud Hosting ($0/month forever):**
+  Run `npm run build` inside `web-dashboard-and-mobile` and upload the generated `dist/` folder to **Firebase Hosting** (`firebase deploy --only hosting`), **GitHub Pages**, **Cloudflare Pages**, or **Vercel** free tier.

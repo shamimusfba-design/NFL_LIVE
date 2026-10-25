@@ -86,7 +86,7 @@ class MainActivity : ComponentActivity() {
 
         LaunchedEffect(isTelevisionDevice, hasValidTvSession) {
           if (isTelevisionDevice && !hasValidTvSession) {
-            repository.ensureTvDisplaySetupRequest()
+            repository.activateTvDeviceDirectly()
           }
         }
 
@@ -129,14 +129,10 @@ class MainActivity : ComponentActivity() {
         }
 
         if (isTelevisionDevice) {
-          if (hasValidTvSession) {
-            TvDashboardScreen(
-              repository = repository,
-              onNavigateBack = { /* Smart TV stays on TV_DASHBOARD */ }
-            )
-          } else {
-            TvSetupScreen(repository = repository)
-          }
+          TvDashboardScreen(
+            repository = repository,
+            onNavigateBack = { /* Smart TV stays on TV_DASHBOARD */ }
+          )
         } else if (effectiveUser == null || currentScreen == AppScreen.LOGIN) {
           LoginScreen(
             repository = repository,

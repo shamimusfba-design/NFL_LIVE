@@ -1439,6 +1439,55 @@ class FirebaseSyncService(private val context: Context) {
     }
   }
 
+  suspend fun deleteAllOperationalRecordsAwait(): Pair<Int, Boolean> = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext Pair(0, false)
+    val operationalCollections = listOf(
+      "production_entries",
+      "quality_entries",
+      "factory_alerts",
+      "daily_setups"
+    )
+    var totalDeleted = 0
+    var allSucceeded = true
+    lastPushedProductionSignatures.clear()
+    lastPushedQualitySignatures.clear()
+    knownLegacyProductionDocIds.clear()
+    knownLegacyQualityDocIds.clear()
+
+    for (collectionName in operationalCollections) {
+      try {
+        val snap = withTimeout(15000L) {
+          db.collection(collectionName).get().await()
+        }
+        val docs = snap.documents
+        if (docs.isNotEmpty()) {
+          docs.chunked(400).forEach { chunk ->
+            val batch = db.batch()
+            chunk.forEach { doc ->
+              batch.delete(doc.reference)
+            }
+            withTimeout(15000L) {
+              batch.commit().await()
+            }
+            totalDeleted += chunk.size
+          }
+        }
+      } catch (e: Exception) {
+        allSucceeded = false
+        lastErrorMessage = e.message
+        Log.w("FirebaseSync", "Failed purging collection $collectionName: ${e.message}")
+      }
+    }
+    Pair(totalDeleted, allSucceeded)
+  }
+
+  fun deleteAllOperationalRecords(onComplete: ((Int, Boolean) -> Unit)? = null) {
+    serviceScope.launch {
+      val (deletedCount, ok) = deleteAllOperationalRecordsAwait()
+      onComplete?.invoke(deletedCount, ok)
+    }
+  }
+
   fun cleanupListeners() {
     listeners.forEach {
       try {

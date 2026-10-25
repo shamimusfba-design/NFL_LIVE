@@ -9,6 +9,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -60,6 +61,7 @@ fun SettingsScreen(
   var showLineDropdown by remember { mutableStateOf(false) }
   var showFloorDropdown by remember { mutableStateOf(false) }
   var confirmPurgeDialog by remember { mutableStateOf(false) }
+  var confirmFactoryResetDialog by remember { mutableStateOf(false) }
   var statusMessage by remember { mutableStateOf<String?>(null) }
 
   val clipboardManager = LocalClipboardManager.current
@@ -74,6 +76,7 @@ fun SettingsScreen(
   val liveProdsCount = prods.count { !it.isDemo }
   val liveQasCount = qas.count { !it.isDemo }
   val liveIncsCount = incs.count { !it.isDemo }
+  val totalLiveRows = liveTargetsCount + liveProdsCount + liveQasCount + liveIncsCount
 
   Scaffold(
     topBar = {
@@ -397,12 +400,23 @@ fun SettingsScreen(
 
             Button(
               onClick = { confirmPurgeDialog = true },
-              colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+              colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
               shape = RoundedCornerShape(8.dp),
               modifier = Modifier.weight(1f)
             ) {
-              Text("Remove All Demo", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+              Text("Clear Demo Data", fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
+          }
+
+          Button(
+            onClick = { confirmFactoryResetDialog = true },
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C)),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.fillMaxWidth().testTag("settings_factory_reset_btn")
+          ) {
+            Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Factory Reset All Records ($totalLiveRows Live + $totalDemoRows Demo)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
           }
         }
       }
@@ -468,22 +482,51 @@ fun SettingsScreen(
       onDismissRequest = { confirmPurgeDialog = false },
       title = { Text("Confirm Removal of Demo Data", fontWeight = FontWeight.Bold) },
       text = {
-        Text("This will purge all $totalDemoRows demo records. Real user accounts, settings, line master, and Google Sheet records will be completely preserved.")
+        Text("This will purge all $totalDemoRows demo records and disable auto-generated chart numbers. Real user accounts, settings, line master, and non-demo records will be preserved.")
       },
       confirmButton = {
         Button(
           onClick = {
             repository.removeAllDemoData()
             confirmPurgeDialog = false
-            statusMessage = "✓ All demo data removed! Switched to clean live Google Sheet state."
+            statusMessage = "✓ All demo data removed and persisted!"
           },
-          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
+          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706))
         ) {
-          Text("Confirm Delete", fontWeight = FontWeight.Bold)
+          Text("Clear Demo Data", fontWeight = FontWeight.Bold)
         }
       },
       dismissButton = {
         TextButton(onClick = { confirmPurgeDialog = false }) {
+          Text("Cancel")
+        }
+      }
+    )
+  }
+
+  if (confirmFactoryResetDialog) {
+    AlertDialog(
+      onDismissRequest = { confirmFactoryResetDialog = false },
+      title = { Text("Factory Reset All Operational Records?", fontWeight = FontWeight.Bold, color = Color(0xFFB91C1C)) },
+      text = {
+        Text("This will permanently wipe all $totalLiveRows live/test operational records and $totalDemoRows demo records (Production, Quality, NPT Incidents, and Daily Line Setups) from BOTH local storage and Cloud Firestore.\n\nUser accounts, roles, and Factory Line Master will be preserved.")
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            confirmFactoryResetDialog = false
+            repository.resetAllOperationalData(clearCloud = true) { deletedCloudCount, _ ->
+              statusMessage = "✓ Factory Reset Complete! Local & $deletedCloudCount Cloud Firestore records cleared."
+            }
+            statusMessage = "✓ Factory Reset triggered! Clearing local and Cloud Firestore records..."
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C))
+        ) {
+          Text("Confirm Factory Reset", fontWeight = FontWeight.Bold)
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { confirmFactoryResetDialog = false }) {
           Text("Cancel")
         }
       }

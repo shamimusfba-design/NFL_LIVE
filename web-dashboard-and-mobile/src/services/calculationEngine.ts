@@ -11,21 +11,21 @@ import {
 
 export class CalculationEngine {
   /**
-   * FIX: Instead of filtering targets, we now map ALL lines to targets.
-   * This ensures all 63 lines appear, even if they have 0 production/target.
+   * Maps all active factory lines to their date-matched targets, defaulting to 0 when no setup exists.
    */
   public static getTargetedLines(
-    allLines: LineMasterItem[], // Added this parameter
+    allLines: LineMasterItem[],
     targets: LineTargetConfig[],
     floor: FloorId,
     date: string
   ): LineTargetConfig[] {
     return allLines
-      .filter(line => floor === 'All' || line.floor === floor)
+      .filter(line => line.isActive !== false && (floor === 'All' || line.floor === floor))
       .map(line => {
-        // Find if there is a target for this specific line and date
-        const target = targets.find(t => t.lineId === line.id && t.date === date);
-        
+        const target =
+          targets.find(t => t.lineId === line.id && t.date === date) ||
+          targets.find(t => t.lineId === line.id);
+
         return {
           lineId: line.id,
           floor: line.floor,
@@ -40,13 +40,13 @@ export class CalculationEngine {
           helpersCount: target?.helpersCount || 0,
           includeHelpersInEfficiency: target?.includeHelpersInEfficiency || false,
           workingHoursSoFar: target?.workingHoursSoFar || 0,
-          totalShiftHours: target?.totalShiftHours || 8,
+          totalShiftHours: target?.totalShiftHours || 8
         };
       });
   }
 
   /**
-   * Computes comprehensive line summaries
+   * Computes comprehensive line summaries with zero synthetic fallback when cleared.
    */
   public static computeLineSummaries(
     targetedConfigs: LineTargetConfig[],
@@ -56,10 +56,10 @@ export class CalculationEngine {
   ): LinePerformanceSummary[] {
     return targetedConfigs.map(config => {
       const lineProds = productions.filter(
-        p => p.lineId === config.lineId && p.date === config.date
+        p => p.lineId === config.lineId && (!config.date || p.date === config.date)
       );
       const lineQas = qualities.filter(
-        q => q.lineId === config.lineId && q.date === config.date
+        q => q.lineId === config.lineId && (!config.date || q.date === config.date)
       );
 
       const hasReportedProd = lineProds.length > 0;
@@ -69,10 +69,10 @@ export class CalculationEngine {
 
       const isConfirmedZero = lineProds.some(p => p.isConfirmedZero || p.outputQty === 0);
 
-      // Target Due calculation
-      const targetDue = Math.round(
-        (config.dailyTargetPcs / config.totalShiftHours) * config.workingHoursSoFar
-      );
+      const targetDue =
+        config.totalShiftHours > 0
+          ? Math.round((config.dailyTargetPcs / config.totalShiftHours) * config.workingHoursSoFar)
+          : 0;
 
       const gap = totalOutput !== null ? totalOutput - targetDue : -targetDue;
 
@@ -81,15 +81,14 @@ export class CalculationEngine {
           ? Number(((totalOutput / config.dailyTargetPcs) * 100).toFixed(1))
           : null;
 
-      const earnedMinutes =
-        totalOutput !== null ? totalOutput * (config.smv || 14.5) : 0;
+      const earnedMinutes = totalOutput !== null ? totalOutput * (config.smv || 0) : 0;
       const availableMinutes =
         (config.operatorsCount + (config.includeHelpersInEfficiency ? config.helpersCount : 0)) *
-        config.workingHoursSoFar *
+        (config.workingHoursSoFar || 1) *
         60;
 
       const efficiencyPct =
-        totalOutput !== null && availableMinutes > 0
+        totalOutput !== null && availableMinutes > 0 && config.smv > 0
           ? Number(((earnedMinutes / availableMinutes) * 100).toFixed(1))
           : null;
 
@@ -111,12 +110,13 @@ export class CalculationEngine {
         i => i.lineId === config.lineId && i.status !== 'RESOLVED'
       ).length;
 
-      const monthlyEfficiencyPct = Math.max(55, Math.round((efficiencyPct ?? 65) - 4));
-      const monthlyOqlPct = Number(((todayOqlPct ?? 3.8) * 0.9).toFixed(2));
+      const monthlyEfficiencyPct = efficiencyPct !== null ? efficiencyPct : 0;
+      const monthlyOqlPct = todayOqlPct !== null ? todayOqlPct : 0;
 
       let reportingStatus: 'Complete' | 'Not reported' | 'In Progress' = 'Not reported';
       if (hasReportedProd) {
-        reportingStatus = totalOutput !== null && totalOutput >= targetDue * 0.8 ? 'Complete' : 'In Progress';
+        reportingStatus =
+          totalOutput !== null && totalOutput >= targetDue * 0.8 ? 'Complete' : 'In Progress';
       }
 
       return {
@@ -138,7 +138,7 @@ export class CalculationEngine {
         machines: config.machinesCount,
         reportingStatus,
         openIncidentsCount: openIncidents,
-        lastUpdate: lineProds.length > 0 ? 'Just now' : 'Not reported'
+        lastUpdate: lineProds.length > 0 ? 'Live Synced' : 'Not reported'
       };
     });
   }
@@ -147,7 +147,8 @@ export class CalculationEngine {
     summaries: LinePerformanceSummary[],
     incidents: IncidentRecord[]
   ): FloorKpis {
-    const targetedCount = summaries.length;
+    const activeTargetLines = summaries.filter(s => s.target > 0 || s.output !== null);
+    const targetedCount = activeTargetLines.length;
     const reportedSummaries = summaries.filter(s => s.output !== null);
     const reportedCount = reportedSummaries.length;
 
@@ -162,29 +163,25 @@ export class CalculationEngine {
       todayTargetPcs > 0 ? Number(((todayOutputPcs / todayTargetPcs) * 100).toFixed(1)) : 0;
 
     const effSum = reportedSummaries.reduce(
-      (s, i) => s + (i.efficiencyPct ? i.efficiencyPct * i.operators : 0),
+      (s, i) => s + (i.efficiencyPct ? i.efficiencyPct * Math.max(1, i.operators) : 0),
       0
     );
     const activeOps = reportedSummaries.reduce(
-      (s, i) => s + (i.efficiencyPct ? i.operators : 0),
+      (s, i) => s + (i.efficiencyPct ? Math.max(1, i.operators) : 0),
       0
     );
-    const todayEfficiencyPct = activeOps > 0 ? Number((effSum / activeOps).toFixed(1)) : 68.0;
+    const todayEfficiencyPct = activeOps > 0 ? Number((effSum / activeOps).toFixed(1)) : 0;
 
-    const monthlyEfficiencyPct = 72.2;
-    const monthlyEfficiencyDelta = 4.1;
+    const monthlyEfficiencyPct = todayEfficiencyPct;
+    const monthlyEfficiencyDelta = 0;
 
-    const oqlSum = reportedSummaries.reduce(
-      (s, i) => s + (i.todayOqlPct ? i.todayOqlPct : 0),
-      0
-    );
+    const oqlReported = summaries.filter(s => s.todayOqlPct !== null);
+    const oqlSum = oqlReported.reduce((s, i) => s + (i.todayOqlPct ?? 0), 0);
     const todayOqlPct =
-      reportedSummaries.length > 0
-        ? Number((oqlSum / reportedSummaries.length).toFixed(2))
-        : 3.81;
+      oqlReported.length > 0 ? Number((oqlSum / oqlReported.length).toFixed(2)) : 0;
 
-    const bsQaOqlPct = 5.00;
-    const friPassRatePct = 100;
+    const bsQaOqlPct = 2.4;
+    const friPassRatePct = reportedCount > 0 ? 100 : 0;
     const reportingCoveragePct =
       targetedCount > 0 ? Math.round((reportedCount / targetedCount) * 100) : 0;
 
@@ -198,12 +195,12 @@ export class CalculationEngine {
       todayTargetPcs,
       todayTargetDuePcs,
       achievementPct,
-      operatorsCount: operatorsCount || 266,
-      machinesCount: machinesCount || 267,
+      operatorsCount,
+      machinesCount,
       todayOqlPct,
       bsQaOqlPct,
       friPassRatePct,
-      reportingCoveragePct: reportingCoveragePct || 95,
+      reportingCoveragePct,
       reportedLinesCount: reportedCount,
       targetedLinesCount: targetedCount,
       openIncidentsCount
@@ -226,7 +223,7 @@ export class CalculationEngine {
     const items = Object.entries(defectCounts).map(([defect, count]) => ({
       defect,
       count,
-      dhu: totalChecked > 0 ? Number(((count / totalChecked) * 100).toFixed(2)) : count
+      dhu: totalChecked > 0 ? Number(((count / totalChecked) * 100).toFixed(2)) : 0
     }));
 
     items.sort((a, b) => b.count - a.count);

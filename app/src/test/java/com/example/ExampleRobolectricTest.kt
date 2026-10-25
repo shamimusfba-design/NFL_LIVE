@@ -1413,5 +1413,122 @@ class ExampleRobolectricTest {
     assertEquals(expected.map { it.submissionId to it.outputQty }, result1.map { it.submissionId to it.outputQty })
     assertEquals(142, result1.first { it.submissionId == "DET-1" }.outputQty)
   }
+
+  @Test
+  fun `test primary admin 1015198 and emulator bound accounts never lock out phone login and TV activates directly`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repo = NflRepository(context)
+
+    // 1. Provision Initial Admin 1015198 and complete initial password change
+    repo.bootstrapFirstAdmin(
+      employeeId = INITIAL_ADMIN_EMPLOYEE_ID,
+      initialPassword = "InitPass#2026",
+      confirmPassword = "InitPass#2026",
+      fullName = "Shamim Admin"
+    )
+    repo.changePassword(
+      userId = INITIAL_ADMIN_EMPLOYEE_ID,
+      currentPassword = "InitPass#2026",
+      newPassword = "NFL@26live",
+      confirmPassword = "NFL@26live"
+    )
+
+    // 2. Simulate 1015198 having been bound to the AI Studio emulator (Google sdk_gphone64_arm64 • DEV-4A78CFB624AEBD7E)
+    val adminUser = repo.users.value.first { it.id == INITIAL_ADMIN_EMPLOYEE_ID }
+    repo.upsertRemoteUsers(
+      listOf(
+        adminUser.copy(
+          authorizedDeviceId = "DEV-4A78CFB624AEBD7E",
+          authorizedDeviceName = "Google sdk_gphone64_arm64",
+          approvedDevices = listOf(
+            ApprovedDevice("DEV-4A78CFB624AEBD7E", "Google sdk_gphone64_arm64", System.currentTimeMillis(), "1015198")
+          ),
+          updatedAtMillis = System.currentTimeMillis() + 5000L
+        )
+      )
+    )
+
+    // 3. Logging in on the physical phone with 1015198 and valid password succeeds without DEVICE_LIMIT_REACHED
+    val phoneLogin = repo.authenticateUser(INITIAL_ADMIN_EMPLOYEE_ID, "NFL@26live")
+    assertEquals(AuthStatus.SUCCESS, phoneLogin.status)
+    assertEquals(INITIAL_ADMIN_EMPLOYEE_ID, repo.currentUser.value?.id)
+
+    // 4. Direct TV activation immediately enables read-only tv_display session without blocking
+    val tvRepo = NflRepository(context)
+    tvRepo.activateTvDeviceDirectly()
+    assertTrue(tvRepo.hasValidTvSession())
+    assertEquals(NflRepository.TV_DISPLAY_ACCOUNT_ID, tvRepo.currentUser.value?.id)
+    assertTrue(tvRepo.currentUser.value?.isViewOnly == true)
+    assertFalse(tvRepo.currentUser.value?.canProductionWrite == true)
+  }
+
+  @Test
+  fun `test removeAllDemoData and resetAllOperationalData clear records persist to disk and disable synthetic fallbacks`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val repo = NflRepository(context)
+    repo.loadSeedDemoData(force = true)
+    assertTrue(repo.productionEntries.value.any { it.isDemo })
+
+    // Add a live non-demo record
+    val beforeResetTs = System.currentTimeMillis() - 5000L
+    repo.upsertRemoteProductionRecords(
+      listOf(
+        ProductionRecord(
+          id = "LIVE-P1",
+          submissionId = "LIVE-P1",
+          lineId = "A1",
+          floor = "Sew 1",
+          date = "2026-10-24",
+          hourSlot = "08:00 - 09:00",
+          styleNumber = "ST-101",
+          outputQty = 95,
+          timestamp = beforeResetTs,
+          isDemo = false
+        )
+      )
+    )
+
+    // 1. removeAllDemoData removes demo records, persists to disk, and disables synthetic chart fallbacks
+    repo.removeAllDemoData()
+    assertFalse(repo.productionEntries.value.any { it.isDemo })
+    assertTrue(repo.productionEntries.value.any { it.submissionId == "LIVE-P1" })
+    assertTrue(repo.isSampleDataCleared())
+    assertTrue(repo.getLineIssues("Z99").isEmpty())
+    assertTrue(repo.getParetoDefects("Z99").isEmpty())
+    assertTrue(repo.getHourlyProductionData("Z99", PeriodScope.TODAY).all { it.achieveOutput == 0 })
+
+    // 2. resetAllOperationalData wipes both live and demo operational records and blocks stale pre-reset snapshots
+    repo.resetAllOperationalData(clearCloud = false)
+    assertTrue(repo.productionEntries.value.isEmpty())
+    assertTrue(repo.qualityEntries.value.isEmpty())
+    assertTrue(repo.incidents.value.isEmpty())
+    assertTrue(repo.targets.value.isEmpty())
+    assertTrue(repo.users.value.isNotEmpty())
+
+    // Stale remote snapshot from before the reset is ignored
+    repo.upsertRemoteProductionRecords(
+      listOf(
+        ProductionRecord(
+          id = "STALE-P1",
+          submissionId = "STALE-P1",
+          lineId = "A1",
+          floor = "Sew 1",
+          date = "2026-10-24",
+          hourSlot = "09:00 - 10:00",
+          styleNumber = "ST-101",
+          outputQty = 88,
+          timestamp = beforeResetTs,
+          isDemo = false
+        )
+      )
+    )
+    assertTrue(repo.productionEntries.value.isEmpty())
+
+    // Restarting repository loads clean empty state from disk
+    val reloadedRepo = NflRepository(context)
+    assertTrue(reloadedRepo.productionEntries.value.isEmpty())
+  }
 }
+
+
 

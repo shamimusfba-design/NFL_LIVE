@@ -841,6 +841,7 @@ class GoogleSheetsStorageService(private val appContext: Context) {
     saveServerDeviceMap(serverDevicesMap)
     val json = arr.toString()
     prefs.edit().putString(KEY_SAVED_USERS, json).apply()
+    NflRepository.clearDirtyUsersOnActiveInstances()
     if (BuildConfig.DEBUG) {
       val elapsedMs = SystemClock.elapsedRealtime() - startMs
       Log.d("NflPerf", "saveLocalUsers rows=${users.size} chars=${json.length} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
@@ -848,6 +849,7 @@ class GoogleSheetsStorageService(private val appContext: Context) {
   }
 
   fun loadLocalUsers(): List<UserAccount> {
+    NflRepository.flushAllActiveInstances()
     val raw = prefs.getString(KEY_SAVED_USERS, null) ?: return emptyList()
     val serverDevicesMap = loadServerDeviceMap()
     return try {

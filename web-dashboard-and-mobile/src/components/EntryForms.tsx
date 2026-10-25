@@ -7,7 +7,7 @@ import {
   LineTargetConfig,
   QualityDefectItem
 } from '../types';
-import { STANDARD_STYLES, STANDARD_HOUR_SLOTS, STANDARD_DEFECT_TYPES } from '../data/masterData';
+import { STANDARD_STYLES, STANDARD_HOUR_SLOTS, STANDARD_DEFECT_TYPES, getBangladeshTodayIso } from '../data/masterData';
 
 interface EntryFormsProps {
   lines: LineMasterItem[];
@@ -29,6 +29,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const [activeTab, setActiveTab] = useState<'PRODUCTION' | 'QUALITY' | 'SETUP'>('PRODUCTION');
 
   // Shared state
+  const [formDate, setFormDate] = useState(getBangladeshTodayIso());
   const [formFloor, setFormFloor] = useState<'Sew 1' | 'Sew 2' | 'Sew 3'>('Sew 2');
   const [formLine, setFormLine] = useState('K1');
   const [formHourSlot, setFormHourSlot] = useState(STANDARD_HOUR_SLOTS[2]);
@@ -78,7 +79,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
     onSaveProduction({
       lineId: formLine,
       floor: formFloor,
-      date: '2026-10-09',
+      date: formDate,
       hourSlot: formHourSlot,
       styleNumber: formStyle,
       outputQty: qty,
@@ -101,7 +102,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
     onSaveQuality({
       lineId: formLine,
       floor: formFloor,
-      date: '2026-10-09',
+      date: formDate,
       hourSlot: formHourSlot,
       styleNumber: formStyle,
       checkedGarments: numChecked,
@@ -124,7 +125,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
     onSaveSetup({
       lineId: formLine,
       floor: formFloor,
-      date: '2026-10-09',
+      date: formDate,
       dailyTargetPcs: daily,
       hourlyTargetPcs: Math.round(daily / 8),
       buyer: 'Nike / NFL',
@@ -199,7 +200,17 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
         <div className="flex-1 overflow-y-auto p-5 bg-[#F8FAFC]">
           {/* Shared line selectors */}
-          <div className="grid grid-cols-3 gap-3 mb-4 bg-white p-3 rounded-xl border border-slate-200">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 bg-white p-3 rounded-xl border border-slate-200">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 mb-1">Date</label>
+              <input
+                type="date"
+                value={formDate}
+                onChange={e => setFormDate(e.target.value)}
+                className="w-full text-xs font-bold border border-slate-300 rounded-lg p-2 bg-white"
+              />
+            </div>
+
             <div>
               <label className="block text-[11px] font-bold text-slate-600 mb-1">Floor</label>
               <select

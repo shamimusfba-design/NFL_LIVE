@@ -1,4 +1,29 @@
-import { LineMasterItem, UserAccount, LineTargetConfig, IncidentRecord, ProductionEntryRecord, QualityEntryRecord } from '../types';
+import {
+  LineMasterItem,
+  UserAccount,
+  LineTargetConfig,
+  IncidentRecord,
+  ProductionEntryRecord,
+  QualityEntryRecord
+} from '../types';
+
+export const getBangladeshTodayIso = (): string => {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Dhaka',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(new Date());
+    const y = parts.find(p => p.type === 'year')?.value;
+    const m = parts.find(p => p.type === 'month')?.value;
+    const d = parts.find(p => p.type === 'day')?.value;
+    if (y && m && d) return `${y}-${m}-${d}`;
+  } catch {
+    // Fallback
+  }
+  return new Date().toISOString().slice(0, 10);
+};
 
 export const ALL_FACTORY_LINES: LineMasterItem[] = [
   // Sew 1 (22 lines)
@@ -40,37 +65,168 @@ export const ALL_FACTORY_LINES: LineMasterItem[] = [
   { id: 'ZA2B', floor: 'Sew 3', isActive: true }
 ];
 
-// NEW GARMENT STYLES LIST
 export const GARMENT_STYLES = [
-  'SS T shirt', 'LS T shirt', 'Hoodie', 'Jacket', 'Hoody Jacket', 
+  'SS T shirt', 'LS T shirt', 'Hoodie', 'Jacket', 'Hoody Jacket',
   'Leggings', 'Pant', 'Body Suit', 'Jumpsuit', 'Custom'
 ];
 
-// NEW DEFECT TYPES LIST
+export const STANDARD_STYLES = [
+  { styleNumber: 'SS T shirt', name: 'Short Sleeve Tee', smv: 6.5 },
+  { styleNumber: 'LS T shirt', name: 'Long Sleeve Tee', smv: 8.2 },
+  { styleNumber: 'Hoodie', name: 'Fleece Hoodie', smv: 16.5 },
+  { styleNumber: 'Jacket', name: 'Track Jacket', smv: 18.0 },
+  { styleNumber: 'Hoody Jacket', name: 'Zip Hoody Jacket', smv: 19.5 },
+  { styleNumber: 'Leggings', name: 'Stretch Leggings', smv: 7.4 },
+  { styleNumber: 'Pant', name: 'Jogger Pant', smv: 13.8 },
+  { styleNumber: 'Body Suit', name: 'Infant Body Suit', smv: 9.0 },
+  { styleNumber: 'Jumpsuit', name: 'Knit Jumpsuit', smv: 15.2 }
+];
+
+export const STANDARD_HOUR_SLOTS = [
+  '08:00 - 09:00',
+  '09:00 - 10:00',
+  '10:00 - 11:00',
+  '11:00 - 12:00',
+  '13:00 - 14:00',
+  '14:00 - 15:00',
+  '15:00 - 16:00',
+  '16:00 - 17:00',
+  '17:00 - 18:00',
+  '18:00 - 19:00'
+];
+
 export const DEFECT_TYPES = [
   'Poor iron', 'Uncut thread', 'Dirty spot', 'Oil spot', 'Skip stitch',
   'Open seam', 'Broken stitch', 'Puckering', 'Pleat', 'Shading', 'Custom'
 ];
 
-// NEW NPT TYPES LIST
+export const STANDARD_DEFECT_TYPES = DEFECT_TYPES.filter(d => d !== 'Custom');
+
 export const NPT_TYPES = [
-  'Machine Breakdown', 'Power Failure', 'Material Shortage', 
+  'Machine Breakdown', 'Power Failure', 'Material Shortage',
   'Manpower Shortage', 'Quality Issue', 'Setup Time', 'Custom'
 ];
 
 export const STANDARD_USERS: UserAccount[] = [
-  { id: 'u-1', name: 'Admin', username: 'admin', role: 'ADMIN', floor: 'All' },
-  { id: 'u-2', name: 'Prod Reporter', username: 'prod_reporter', role: 'PRODUCTION_REPORTER', floor: 'Sew 2', assignedLine: 'K1' },
-  { id: 'u-3', name: 'QA Reporter', username: 'qa_reporter', role: 'QUALITY_REPORTER', floor: 'Sew 2', assignedLine: 'K1' },
-  { id: 'u-4', name: 'Supervisor', username: 'supervisor', role: 'SUPERVISOR', floor: 'Sew 2' },
-  { id: 'u-5', name: 'Prod Manager', username: 'prod_mgr', role: 'PRODUCTION_MANAGER', floor: 'All' },
-  { id: 'u-6', name: 'QA Manager', username: 'qa_mgr', role: 'QUALITY_MANAGER', floor: 'All' },
-  { id: 'u-7', name: 'Mechanic', username: 'mechanic', role: 'MECHANIC', floor: 'Sew 2' },
-  { id: 'u-8', name: 'IE Officer', username: 'ie_officer', role: 'IE', floor: 'All' },
-  { id: 'u-9', name: 'Input Coord', username: 'input_coord', role: 'INPUT_MATERIAL', floor: 'Sew 2' },
-  { id: 'u-10', name: 'Management', username: 'management', role: 'MANAGEMENT_VIEW', floor: 'All' }
+  { id: '1015198', name: 'Primary Administrator (1015198)', username: '1015198', role: 'ADMIN', floor: 'All' },
+  { id: 'admin', name: 'System Admin', username: 'admin', role: 'ADMIN', floor: 'All' },
+  { id: 'ie', name: 'IE Officer', username: 'ie', role: 'IE', floor: 'All' },
+  { id: 'supervisor', name: 'Floor Supervisor', username: 'supervisor', role: 'SUPERVISOR', floor: 'Sew 2' },
+  { id: 'production', name: 'Production Manager', username: 'production', role: 'PRODUCTION_MANAGER', floor: 'All' },
+  { id: 'quality', name: 'Quality Manager', username: 'quality', role: 'QUALITY_MANAGER', floor: 'All' },
+  { id: 'mechanic', name: 'Senior Mechanic', username: 'mechanic', role: 'MECHANIC', floor: 'Sew 2' },
+  { id: 'input_coord', name: 'Input Coordinator', username: 'input_coord', role: 'INPUT_MATERIAL', floor: 'Sew 2' },
+  { id: 'management', name: 'Factory Management', username: 'management', role: 'MANAGEMENT_VIEW', floor: 'All' }
 ];
 
-// ... rest of your existing helper functions (generateSyntheticDemoDataset, etc.)
-// (Note: I have kept the helper functions the same to avoid breaking your current demo)
-// Copy the rest of your existing functions from the original masterData.ts file here.
+export function generateSyntheticDemoDataset(dateStr: string = getBangladeshTodayIso()): {
+  targets: LineTargetConfig[];
+  productions: ProductionEntryRecord[];
+  qualities: QualityEntryRecord[];
+  incidents: IncidentRecord[];
+} {
+  const targets: LineTargetConfig[] = [];
+  const productions: ProductionEntryRecord[] = [];
+  const qualities: QualityEntryRecord[] = [];
+
+  ALL_FACTORY_LINES.forEach((line, idx) => {
+    const styleObj = STANDARD_STYLES[idx % STANDARD_STYLES.length];
+    const dailyTarget = 480 + (idx % 6) * 40;
+    const hourlyTarget = Math.round(dailyTarget / 8);
+    const achievedTotal = Math.round(dailyTarget * (0.76 + (idx % 5) * 0.04));
+
+    targets.push({
+      lineId: line.id,
+      floor: line.floor,
+      date: dateStr,
+      dailyTargetPcs: dailyTarget,
+      hourlyTargetPcs: hourlyTarget,
+      buyer: 'NFL Global',
+      styleNumber: styleObj.styleNumber,
+      smv: styleObj.smv,
+      operatorsCount: 20,
+      machinesCount: 20,
+      helpersCount: 2,
+      includeHelpersInEfficiency: false,
+      workingHoursSoFar: 7,
+      totalShiftHours: 8,
+      isDemo: true
+    });
+
+    productions.push({
+      id: `demo-prod-${line.id}-${dateStr}`,
+      submissionId: `demo-prod-${line.id}-${dateStr}`,
+      lineId: line.id,
+      floor: line.floor,
+      date: dateStr,
+      hourSlot: '15:00 - 16:00',
+      styleNumber: styleObj.styleNumber,
+      outputQty: achievedTotal,
+      isConfirmedZero: false,
+      remarks: 'Demo seed output',
+      reportedBy: 'Demo Seeder',
+      timestamp: Date.now() - 3600_000,
+      revision: 1,
+      isDemo: true
+    });
+
+    const defectsCount = 2 + (idx % 4);
+    qualities.push({
+      id: `demo-qa-${line.id}-${dateStr}`,
+      submissionId: `demo-qa-${line.id}-${dateStr}`,
+      lineId: line.id,
+      floor: line.floor,
+      date: dateStr,
+      hourSlot: '15:00 - 16:00',
+      styleNumber: styleObj.styleNumber,
+      checkedGarments: 200,
+      defectiveGarments: Math.max(1, defectsCount - 1),
+      defects: [
+        { defectType: STANDARD_DEFECT_TYPES[idx % STANDARD_DEFECT_TYPES.length], count: defectsCount }
+      ],
+      totalDefects: defectsCount,
+      isConfirmedZero: false,
+      remarks: 'Demo seed inspection',
+      reportedBy: 'Demo QA',
+      timestamp: Date.now() - 3600_000,
+      revision: 1,
+      isDemo: true
+    });
+  });
+
+  const incidents: IncidentRecord[] = [
+    {
+      id: 'demo-inc-1',
+      floor: 'Sew 2',
+      lineId: 'K1',
+      category: 'MACHINE_BREAKDOWN',
+      machineRef: 'SNLS-04',
+      description: 'Needle bar vibration & thread breakage on SNLS-04',
+      reportedCause: 'Drive belt tension slip',
+      impactLevel: 'HIGH',
+      affectedManpower: 4,
+      startTimeMillis: Date.now() - 25 * 60 * 1000,
+      status: 'OPEN',
+      reportedBy: 'Floor Supervisor',
+      isDemo: true
+    },
+    {
+      id: 'demo-inc-2',
+      floor: 'Sew 1',
+      lineId: 'A2',
+      category: 'INPUT_MATERIAL',
+      description: 'Waiting for collar rib bundles from cutting store',
+      reportedCause: 'Bundle numbering delay',
+      impactLevel: 'MEDIUM',
+      affectedManpower: 8,
+      startTimeMillis: Date.now() - 18 * 60 * 1000,
+      status: 'ACKNOWLEDGED',
+      acknowledgedBy: 'Biplob Das',
+      acknowledgedTimeMillis: Date.now() - 10 * 60 * 1000,
+      reportedBy: 'Line Supervisor',
+      isDemo: true
+    }
+  ];
+
+  return { targets, productions, qualities, incidents };
+}

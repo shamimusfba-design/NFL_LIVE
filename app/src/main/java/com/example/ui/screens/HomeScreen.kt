@@ -100,6 +100,7 @@ fun HomeScreen(
   var selectedChartTab by remember { mutableStateOf("SPEEDOMETER") } // SPEEDOMETER | COLUMN | DONUT | PARETO
   var selectedLineDetail by remember { mutableStateOf<LinePerformancePoint?>(null) }
   var showClearSampleDataDialog by remember { mutableStateOf(false) }
+  var showFactoryResetDialog by remember { mutableStateOf(false) }
   var showBsOqlDialog by remember { mutableStateOf(false) }
 
   val openIncidents = remember(incidents) {
@@ -429,17 +430,35 @@ fun HomeScreen(
         }
       }
 
-      // Admin-only data reset. It clears sample records only, never non-sample submissions.
-      if (currentRole == UserRole.ADMIN) {
-        OutlinedButton(
-          onClick = { showClearSampleDataDialog = true },
+      // Admin-only data reset controls: Clear Demo Data or Factory Reset All Operational Records (Local + Cloud).
+      if (isAdminUser) {
+        Row(
           modifier = Modifier.fillMaxWidth(),
-          colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFB91C1C)),
-          border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5))
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-          Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
-          Spacer(Modifier.width(8.dp))
-          Text("Clear All Sample Data", fontWeight = FontWeight.Bold)
+          OutlinedButton(
+            onClick = { showClearSampleDataDialog = true },
+            modifier = Modifier.weight(1f).testTag("home_clear_demo_button"),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFB45309)),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCD34D)),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+          ) {
+            Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Clear Demo Data", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+          }
+
+          Button(
+            onClick = { showFactoryResetDialog = true },
+            modifier = Modifier.weight(1f).testTag("home_factory_reset_button"),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C)),
+            shape = RoundedCornerShape(8.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+          ) {
+            Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Factory Reset All", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+          }
         }
       }
 
@@ -962,23 +981,50 @@ fun HomeScreen(
   }
   }
 
-  if (showClearSampleDataDialog && currentRole == UserRole.ADMIN) {
+  if (showClearSampleDataDialog && isAdminUser) {
     AlertDialog(
       onDismissRequest = { showClearSampleDataDialog = false },
-      title = { Text("Clear all sample data?", fontWeight = FontWeight.Black) },
+      title = { Text("Clear Demo / Sample Data?", fontWeight = FontWeight.Black) },
       text = {
-        Text("This removes only records marked as sample data (production, quality, targets and incidents). Non-sample records are preserved. The sample dataset will not be automatically added again after restarting the app.")
+        Text("This removes all records tagged as sample/demo data and disables auto-generated chart numbers. If you also want to wipe test entries saved in Cloud Firestore, use 'Factory Reset All' instead.")
       },
       confirmButton = {
-        TextButton(onClick = {
-          repository.removeAllDemoData()
-          showClearSampleDataDialog = false
-        }) {
-          Text("Clear Sample Data", color = Color(0xFFB91C1C), fontWeight = FontWeight.Bold)
+        Button(
+          onClick = {
+            repository.removeAllDemoData()
+            showClearSampleDataDialog = false
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706))
+        ) {
+          Text("Clear Demo Data", color = Color.White, fontWeight = FontWeight.Bold)
         }
       },
       dismissButton = {
         TextButton(onClick = { showClearSampleDataDialog = false }) { Text("Cancel") }
+      }
+    )
+  }
+
+  if (showFactoryResetDialog && isAdminUser) {
+    AlertDialog(
+      onDismissRequest = { showFactoryResetDialog = false },
+      title = { Text("Factory Reset All Operational Records?", fontWeight = FontWeight.Black, color = Color(0xFFB91C1C)) },
+      text = {
+        Text("This will permanently clear ALL Production, Quality, NPT Incidents, and Daily Line Setups from both this device AND Cloud Firestore so your factory starts clean at 0.\n\nEmployee Accounts, Roles, and Factory Line Master will be preserved.")
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            repository.resetAllOperationalData(clearCloud = true)
+            showFactoryResetDialog = false
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C))
+        ) {
+          Text("Confirm Factory Reset", color = Color.White, fontWeight = FontWeight.Bold)
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showFactoryResetDialog = false }) { Text("Cancel") }
       }
     )
   }

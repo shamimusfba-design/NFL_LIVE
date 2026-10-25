@@ -10,8 +10,15 @@ interface AdminViewProps {
     qualitiesCount: number;
     incidentsCount: number;
   };
+  liveStats?: {
+    targetsCount: number;
+    productionsCount: number;
+    qualitiesCount: number;
+    incidentsCount: number;
+  };
   onLoadDemoData: () => void;
   onRemoveAllDemoData: () => void;
+  onFactoryResetAll?: () => Promise<number>;
   onToggleLineActive: (lineId: string) => void;
   onClose: () => void;
 }
@@ -20,13 +27,17 @@ export const AdminView: React.FC<AdminViewProps> = ({
   lines,
   users,
   demoStats,
+  liveStats,
   onLoadDemoData,
   onRemoveAllDemoData,
+  onFactoryResetAll,
   onToggleLineActive,
   onClose
 }) => {
   const [adminTab, setAdminTab] = useState<'DEMO' | 'LINES' | 'USERS'>('DEMO');
   const [confirmRemoval, setConfirmRemoval] = useState(false);
+  const [confirmFactoryReset, setConfirmFactoryReset] = useState(false);
+  const [isResettingCloud, setIsResettingCloud] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const totalDemoRecords =
@@ -35,17 +46,38 @@ export const AdminView: React.FC<AdminViewProps> = ({
     demoStats.qualitiesCount +
     demoStats.incidentsCount;
 
+  const totalLiveRecords = liveStats
+    ? liveStats.targetsCount +
+      liveStats.productionsCount +
+      liveStats.qualitiesCount +
+      liveStats.incidentsCount
+    : 0;
+
   const handleLoadDemo = () => {
     onLoadDemoData();
-    setActionMessage('✓ Synthetic demo dataset loaded idempotently across all three floors!');
-    setTimeout(() => setActionMessage(null), 3000);
+    setActionMessage('✓ Synthetic demo dataset loaded idempotently across all floors!');
+    setTimeout(() => setActionMessage(null), 4000);
   };
 
   const handleRemoveDemo = () => {
     onRemoveAllDemoData();
     setConfirmRemoval(false);
-    setActionMessage('✓ All demo records purged! Real records and line master safely preserved.');
-    setTimeout(() => setActionMessage(null), 3000);
+    setActionMessage('✓ All demo records purged and saved! Real records and line master safely preserved.');
+    setTimeout(() => setActionMessage(null), 4000);
+  };
+
+  const handleFactoryReset = async () => {
+    if (!onFactoryResetAll) return;
+    setIsResettingCloud(true);
+    try {
+      const deletedCount = await onFactoryResetAll();
+      setConfirmFactoryReset(false);
+      setActionMessage(
+        `✓ Factory Reset Complete! Wiped all local records and ${deletedCount} Cloud Firestore documents. User accounts & Line Master preserved.`
+      );
+    } finally {
+      setIsResettingCloud(false);
+    }
   };
 
   return (
@@ -54,10 +86,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
         <div className="bg-[#002D62] text-white px-5 py-3.5 flex items-center justify-between">
           <div>
             <h2 className="text-base font-black tracking-wide">
-              Administrator Master Console & Demo Data
+              Administrator Master Console & Data Reset
             </h2>
             <div className="text-xs text-blue-200">
-              Master Data • Floor Census • Demo Lifecycle Management
+              Master Data • Cloud Firestore Reset • Demo Lifecycle Management
             </div>
           </div>
           <button
@@ -78,7 +110,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 : 'border-transparent text-slate-500'
             }`}
           >
-            Demo Data Lifecycle
+            Data Reset & Demo Lifecycle
           </button>
           <button
             onClick={() => setAdminTab('LINES')}
@@ -104,55 +136,68 @@ export const AdminView: React.FC<AdminViewProps> = ({
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-[#F8FAFC]">
           {actionMessage && (
-            <div className="p-3 bg-blue-50 border border-blue-200 text-blue-900 text-xs font-bold rounded-xl shadow-sm">
+            <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs font-bold rounded-xl shadow-sm">
               {actionMessage}
             </div>
           )}
 
-          {/* TAB 1: DEMO DATA */}
+          {/* TAB 1: DEMO & FACTORY DATA RESET */}
           {adminTab === 'DEMO' && (
             <div className="space-y-4">
               <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm space-y-3">
                 <h3 className="text-sm font-black text-slate-900">
-                  Demo Data Status & Inventory
+                  Live Cloud & Demo Record Inventory
                 </h3>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  Demo data provides realistic test figures matching the mobile and TV visual references across Sew 1, Sew 2, and Sew 3. Demo records are isolated with an internal demo identifier.
+                  Manage sample/demo records or perform a full <b>Factory Reset</b> across both this PC and Cloud Firestore (Phones & Smart TVs) when starting clean production.
                 </p>
 
                 <div className="grid grid-cols-4 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-center text-xs">
                   <div>
-                    <div className="text-[10px] text-slate-500 font-bold">Demo Targets</div>
-                    <div className="text-lg font-black text-slate-900">{demoStats.targetsCount}</div>
+                    <div className="text-[10px] text-slate-500 font-bold">Targets (Demo / Live)</div>
+                    <div className="text-lg font-black text-slate-900">
+                      {demoStats.targetsCount} / {liveStats?.targetsCount ?? 0}
+                    </div>
                   </div>
                   <div>
-                    <div className="text-[10px] text-slate-500 font-bold">Demo Output Rows</div>
-                    <div className="text-lg font-black text-slate-900">{demoStats.productionsCount}</div>
+                    <div className="text-[10px] text-slate-500 font-bold">Output (Demo / Live)</div>
+                    <div className="text-lg font-black text-slate-900">
+                      {demoStats.productionsCount} / {liveStats?.productionsCount ?? 0}
+                    </div>
                   </div>
                   <div>
-                    <div className="text-[10px] text-slate-500 font-bold">Demo Quality Rows</div>
-                    <div className="text-lg font-black text-slate-900">{demoStats.qualitiesCount}</div>
+                    <div className="text-[10px] text-slate-500 font-bold">Quality (Demo / Live)</div>
+                    <div className="text-lg font-black text-slate-900">
+                      {demoStats.qualitiesCount} / {liveStats?.qualitiesCount ?? 0}
+                    </div>
                   </div>
                   <div>
-                    <div className="text-[10px] text-slate-500 font-bold">Demo Incidents</div>
-                    <div className="text-lg font-black text-red-600">{demoStats.incidentsCount}</div>
+                    <div className="text-[10px] text-slate-500 font-bold">Incidents (Demo / Live)</div>
+                    <div className="text-lg font-black text-red-600">
+                      {demoStats.incidentsCount} / {liveStats?.incidentsCount ?? 0}
+                    </div>
                   </div>
                 </div>
 
-                <div className="text-xs font-bold text-slate-700">
-                  Total Active Demo Records: <span className="text-blue-700 font-black">{totalDemoRecords}</span>
+                <div className="flex items-center justify-between text-xs font-bold text-slate-700 pt-1">
+                  <span>
+                    Active Demo Records: <b className="text-amber-700">{totalDemoRecords}</b>
+                  </span>
+                  <span>
+                    Live / Cloud Records: <b className="text-blue-700">{totalLiveRecords}</b>
+                  </span>
                 </div>
               </div>
 
               {/* Action Buttons */}
               <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm space-y-4">
-                <h3 className="text-sm font-black text-slate-900">Lifecycle Operations</h3>
+                <h3 className="text-sm font-black text-slate-900">Data Reset & Lifecycle Operations</h3>
 
                 <div className="flex items-center justify-between p-3 border rounded-xl bg-slate-50">
                   <div>
                     <div className="text-xs font-bold text-slate-900">Load / Refresh Demo Data</div>
                     <div className="text-[11px] text-slate-500">
-                      Idempotently seeds all 3 floors with realistic targets, outputs, and live incidents.
+                      Idempotently seeds all floors with realistic targets, outputs, and live incidents.
                     </div>
                   </div>
                   <button
@@ -163,19 +208,19 @@ export const AdminView: React.FC<AdminViewProps> = ({
                   </button>
                 </div>
 
-                <div className="flex items-center justify-between p-3 border rounded-xl bg-red-50/40 border-red-200">
+                <div className="flex items-center justify-between p-3 border rounded-xl bg-amber-50/60 border-amber-200">
                   <div>
-                    <div className="text-xs font-bold text-red-950">Remove All Demo Data</div>
-                    <div className="text-[11px] text-red-700">
-                      Purges all demo rows. Preserves real entered data, real users, settings, and line master.
+                    <div className="text-xs font-bold text-amber-950">Clear Demo Data Only</div>
+                    <div className="text-[11px] text-amber-800">
+                      Removes only sample/demo rows ({totalDemoRecords}) and disables auto-seed numbers. Preserves real cloud entries.
                     </div>
                   </div>
                   {!confirmRemoval ? (
                     <button
                       onClick={() => setConfirmRemoval(true)}
-                      className="bg-red-600 hover:bg-red-700 text-white font-black text-xs px-4 py-2 rounded-xl shadow transition"
+                      className="bg-amber-600 hover:bg-amber-700 text-white font-black text-xs px-4 py-2 rounded-xl shadow transition"
                     >
-                      Remove All Demo Data
+                      Clear Demo Data
                     </button>
                   ) : (
                     <div className="flex items-center gap-2">
@@ -187,9 +232,45 @@ export const AdminView: React.FC<AdminViewProps> = ({
                       </button>
                       <button
                         onClick={handleRemoveDemo}
-                        className="bg-red-700 hover:bg-red-800 text-white font-black text-xs px-4 py-1.5 rounded-lg shadow"
+                        className="bg-amber-700 hover:bg-amber-800 text-white font-black text-xs px-4 py-1.5 rounded-lg shadow"
                       >
-                        Confirm Delete ({totalDemoRecords} rows)
+                        Confirm Clear Demo
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between p-3.5 border-2 rounded-xl bg-red-50/70 border-red-300">
+                  <div className="pr-3">
+                    <div className="text-xs font-black text-red-950">
+                      Factory Reset All Operational Records (Local + Cloud Firestore)
+                    </div>
+                    <div className="text-[11px] text-red-800 mt-0.5">
+                      Permanently wipes ALL Production, Quality, NPT Incidents, and Daily Line Setups ({totalLiveRecords} live + {totalDemoRecords} demo) from both this PC and Cloud Firestore so Phones, TVs, and PCs start at 0. User accounts & Line Master are preserved.
+                    </div>
+                  </div>
+                  {!confirmFactoryReset ? (
+                    <button
+                      onClick={() => setConfirmFactoryReset(true)}
+                      className="bg-red-700 hover:bg-red-800 text-white font-black text-xs px-4 py-2.5 rounded-xl shadow transition shrink-0"
+                    >
+                      Factory Reset All
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => setConfirmFactoryReset(false)}
+                        disabled={isResettingCloud}
+                        className="text-xs font-bold px-3 py-1.5 rounded-lg border bg-white text-slate-600"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleFactoryReset}
+                        disabled={isResettingCloud}
+                        className="bg-red-800 hover:bg-red-950 text-white font-black text-xs px-4 py-2 rounded-lg shadow"
+                      >
+                        {isResettingCloud ? 'Purging Cloud...' : 'Confirm Full Reset'}
                       </button>
                     </div>
                   )}
@@ -203,10 +284,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
             <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3 shadow-sm">
               <div className="flex justify-between items-center pb-2 border-b">
                 <h3 className="text-xs font-bold text-slate-800">
-                  All 60 Configured Lines Across Sewing Floors
+                  All {lines.length} Configured Lines Across Sewing Floors
                 </h3>
                 <span className="text-[11px] text-slate-500">
-                  Sew 1 (22) • Sew 2 (14) • Sew 3 (24)
+                  Sew 1 (22) • Sew 2 (17) • Sew 3 (23)
                 </span>
               </div>
 
@@ -248,24 +329,30 @@ export const AdminView: React.FC<AdminViewProps> = ({
           {adminTab === 'USERS' && (
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
               <div className="p-3 bg-slate-100 text-xs font-bold text-slate-800 border-b">
-                10 Configured User Roles & Floor Assignments
+                Configured System Accounts & Role Routing
               </div>
               <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 text-slate-600 font-extrabold border-b">
+                <thead className="bg-slate-50 text-slate-600 border-b">
                   <tr>
                     <th className="py-2 px-3">Name</th>
-                    <th className="py-2 px-3">Username</th>
+                    <th className="py-2 px-3">Employee ID</th>
                     <th className="py-2 px-3">Role</th>
-                    <th className="py-2 px-3">Floor Scope</th>
+                    <th className="py-2 px-3">Scope</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y">
                   {users.map(u => (
-                    <tr key={u.id} className="hover:bg-slate-50">
+                    <tr key={u.id}>
                       <td className="py-2 px-3 font-bold text-slate-900">{u.name}</td>
-                      <td className="py-2 px-3 font-mono text-slate-600">{u.username}</td>
-                      <td className="py-2 px-3 font-bold text-blue-800">{u.role}</td>
-                      <td className="py-2 px-3 text-slate-600">{u.floor || 'All'}</td>
+                      <td className="py-2 px-3 text-slate-600 font-mono">{u.username}</td>
+                      <td className="py-2 px-3">
+                        <span className="bg-blue-100 text-blue-900 font-bold text-[10px] px-2 py-0.5 rounded">
+                          {u.role}
+                        </span>
+                      </td>
+                      <td className="py-2 px-3 text-slate-600">
+                        {u.floor || 'All'} {u.assignedLine ? `(${u.assignedLine})` : ''}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

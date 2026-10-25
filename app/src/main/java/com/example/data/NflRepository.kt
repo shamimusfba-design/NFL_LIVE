@@ -234,6 +234,14 @@ class NflRepository(private val context: Context) {
     }
   }
 
+  fun cancelDirtyUsers() {
+    dirtyUsers.set(false)
+    synchronized(persistenceLock) {
+      usersSaveJob?.cancel()
+      usersSaveJob = null
+    }
+  }
+
   // Complete Verified Factory Master across all floors including all specified lines
   val allLinesMaster = listOf(
     // Sew 1 (22 sewing lines A1 to H2 + Iron 1, Packing 1)
@@ -1242,7 +1250,13 @@ class NflRepository(private val context: Context) {
   }
 
   fun upsertRemoteProductionRecords(remoteList: List<ProductionRecord>) {
-    if (remoteList.isEmpty()) return
+    val resetCutoff = getLastOperationalResetMillis()
+    val filteredRemote = if (resetCutoff > 0L) {
+      remoteList.filter { it.timestamp <= 0L || it.timestamp > resetCutoff }
+    } else {
+      remoteList
+    }
+    if (filteredRemote.isEmpty()) return
     val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
     var didChange = false
     var finalSize = 0
@@ -1257,7 +1271,7 @@ class NflRepository(private val context: Context) {
 
       // 2. Upsert incoming remote records (updates existing records in place without duplicating)
       var changed = false
-      remoteList.forEach { remote ->
+      filteredRemote.forEach { remote ->
         val cleanRemote = remote.copy(
           date = sheetsStorage.normalizeToIsoDate(remote.date),
           syncStatus = SyncStatus.SYNCED,
@@ -1350,7 +1364,13 @@ class NflRepository(private val context: Context) {
   }
 
   fun upsertRemoteQualityRecords(remoteList: List<QualityRecord>) {
-    if (remoteList.isEmpty()) return
+    val resetCutoff = getLastOperationalResetMillis()
+    val filteredRemote = if (resetCutoff > 0L) {
+      remoteList.filter { it.timestamp <= 0L || it.timestamp > resetCutoff }
+    } else {
+      remoteList
+    }
+    if (filteredRemote.isEmpty()) return
     val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
     var didChange = false
     var finalSize = 0
@@ -1363,7 +1383,7 @@ class NflRepository(private val context: Context) {
       }
 
       var changed = false
-      remoteList.forEach { remote ->
+      filteredRemote.forEach { remote ->
         val cleanRemote = remote.copy(
           date = sheetsStorage.normalizeToIsoDate(remote.date),
           syncStatus = SyncStatus.SYNCED,
@@ -1448,7 +1468,13 @@ class NflRepository(private val context: Context) {
   }
 
   fun upsertRemoteIncidents(remoteList: List<IncidentItem>) {
-    if (remoteList.isEmpty()) return
+    val resetCutoff = getLastOperationalResetMillis()
+    val filteredRemote = if (resetCutoff > 0L) {
+      remoteList.filter { it.startTimeMillis <= 0L || it.startTimeMillis > resetCutoff }
+    } else {
+      remoteList
+    }
+    if (filteredRemote.isEmpty()) return
     val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
     var didChange = false
     var finalSize = 0
@@ -1458,7 +1484,7 @@ class NflRepository(private val context: Context) {
       val existingNonDemoById = current.filter { !it.isDemo }.associateBy { it.id }.toMutableMap()
       var changed = false
 
-      remoteList.forEach { remote ->
+      filteredRemote.forEach { remote ->
         val cleanRemote = remote.copy(isDemo = false)
         val prev = existingNonDemoById[cleanRemote.id]
         if (prev == null) {
@@ -1501,7 +1527,13 @@ class NflRepository(private val context: Context) {
   }
 
   fun upsertRemoteSetups(remoteList: List<SupervisorLineSetup>) {
-    if (remoteList.isEmpty()) return
+    val resetCutoff = getLastOperationalResetMillis()
+    val filteredRemote = if (resetCutoff > 0L) {
+      remoteList.filter { it.snapshotTimestamp <= 0L || it.snapshotTimestamp > resetCutoff }
+    } else {
+      remoteList
+    }
+    if (filteredRemote.isEmpty()) return
     val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
     var didChange = false
     var finalSize = 0
@@ -1514,7 +1546,7 @@ class NflRepository(private val context: Context) {
       }
 
       var changed = false
-      remoteList.forEach { remote ->
+      filteredRemote.forEach { remote ->
         val cleanRemote = remote.copy(
           date = sheetsStorage.normalizeToIsoDate(remote.date),
           isDemo = false
@@ -2146,12 +2178,21 @@ class NflRepository(private val context: Context) {
     refreshFromGoogleSheet()
   }
 
+  fun isSampleDataCleared(): Boolean =
+    prefs.getBoolean("sample_data_cleared", false)
+
+  fun getLastOperationalResetMillis(): Long =
+    prefs.getLong("last_operational_reset_millis", 0L)
+
   // Idempotent demo data seeder with full dynamic dates and hourly distributions
   // Preserves all real saved records and never overwrites or duplicates slots that have real data.
   fun loadSeedDemoData(force: Boolean = true) {
     if (!force && prefs.getBoolean("sample_data_cleared", false)) return
     if (force) {
-      prefs.edit().putBoolean("sample_data_cleared", false).apply()
+      prefs.edit()
+        .putBoolean("sample_data_cleared", false)
+        .putLong("last_operational_reset_millis", 0L)
+        .apply()
     }
 
     val datesToSeed = mutableListOf<String>()
@@ -2464,14 +2505,89 @@ class NflRepository(private val context: Context) {
 
   fun removeAllDemoData() {
     // Only records explicitly tagged as sample data are removed. Real submissions are preserved.
-    _targets.value = _targets.value.filter { !it.isDemo }
-    _productionEntries.value = _productionEntries.value.filter { !it.isDemo }
-    _qualityEntries.value = _qualityEntries.value.filter { !it.isDemo }
-    _incidents.value = _incidents.value.filter { !it.isDemo }
+    val cleanSetups: List<SupervisorLineSetup>
+    val cleanProds: List<ProductionRecord>
+    val cleanQas: List<QualityRecord>
+    val cleanIncs: List<IncidentItem>
+    synchronized(stateLock) {
+      cleanSetups = _targets.value.filter { !it.isDemo }
+      cleanProds = _productionEntries.value.filter { !it.isDemo }
+      cleanQas = _qualityEntries.value.filter { !it.isDemo }
+      cleanIncs = _incidents.value.filter { !it.isDemo }
+      _targets.value = cleanSetups
+      _productionEntries.value = cleanProds
+      _qualityEntries.value = cleanQas
+      _incidents.value = cleanIncs
+    }
     prefs.edit().putBoolean("sample_data_cleared", true).apply()
     _isDemoMode.value = false
+    sheetsStorage.saveLocalSetups(cleanSetups)
+    sheetsStorage.saveLocalProductionEntries(cleanProds)
+    sheetsStorage.saveLocalQualityEntries(cleanQas)
+    sheetsStorage.saveLocalIncidents(cleanIncs)
+    flushPendingPersistence()
     touchDataUpdated()
+    _syncStatusBanner.value = "✓ Sample demo data cleared (${cleanProds.size} live production records preserved)"
     addAuditLog("DATA_ADMIN", "ALL", "CLEAR_SAMPLE_DATA", _currentUser.value?.name ?: "Admin", "Removed sample records; preserved non-sample records")
+  }
+
+  /**
+   * Factory Reset for all operational data (Production, Quality, NPT Incidents, and Daily Line Setups)
+   * across both local storage and Cloud Firestore while preserving User Accounts, Roles, and Factory Line Master.
+   */
+  fun resetAllOperationalData(
+    clearCloud: Boolean = true,
+    onComplete: ((Int, Boolean) -> Unit)? = null
+  ) {
+    val resetMillis = System.currentTimeMillis()
+    synchronized(persistenceLock) {
+      prodSaveJob?.cancel(); prodSaveJob = null
+      qaSaveJob?.cancel(); qaSaveJob = null
+      setupsSaveJob?.cancel(); setupsSaveJob = null
+      incidentsSaveJob?.cancel(); incidentsSaveJob = null
+    }
+    dirtyProduction.set(false)
+    dirtyQuality.set(false)
+    dirtySetups.set(false)
+    dirtyIncidents.set(false)
+    synchronized(stateLock) {
+      _targets.value = emptyList()
+      _productionEntries.value = emptyList()
+      _qualityEntries.value = emptyList()
+      _incidents.value = emptyList()
+    }
+    prefs.edit()
+      .putBoolean("sample_data_cleared", true)
+      .putLong("last_operational_reset_millis", resetMillis)
+      .apply()
+    _isDemoMode.value = false
+    sheetsStorage.saveLocalSetups(emptyList())
+    sheetsStorage.saveLocalProductionEntries(emptyList())
+    sheetsStorage.saveLocalQualityEntries(emptyList())
+    sheetsStorage.saveLocalIncidents(emptyList())
+    touchDataUpdated()
+    addAuditLog(
+      "DATA_ADMIN",
+      "ALL",
+      "FACTORY_RESET_OPERATIONAL_DATA",
+      _currentUser.value?.name ?: "Admin",
+      "Cleared all local & cloud operational records (Production, Quality, Incidents, Setups)"
+    )
+    if (clearCloud && firebaseSync.isAvailable()) {
+      _syncStatusBanner.value = "🔄 Factory Reset: Clearing local & Cloud Firestore operational records..."
+      firebaseSync.deleteAllOperationalRecords { deletedCount, ok ->
+        _syncStatusBanner.value = if (ok) {
+          "✓ Factory Reset Complete • Cleared local & $deletedCount Cloud Firestore operational records"
+        } else {
+          "✓ Local operational data cleared ($deletedCount Cloud records removed)"
+        }
+        touchDataUpdated()
+        onComplete?.invoke(deletedCount, ok)
+      }
+    } else {
+      _syncStatusBanner.value = "✓ Factory Reset Complete • All local operational records cleared"
+      onComplete?.invoke(0, true)
+    }
   }
 
   // Submissions (Saved to Cloud Firestore + Google Sheet Storage + Local Persistent Ledger)
@@ -4864,12 +4980,15 @@ class NflRepository(private val context: Context) {
     var cumTgt = 0
     var cumAch = 0
 
+    val sampleCleared = isSampleDataCleared() && !_isDemoMode.value
     return slots.mapIndexed { idx, slot ->
       val recordedForSlot = lineProds.filter { it.hourSlot.equals(slot, ignoreCase = true) }
       val realForSlot = recordedForSlot.filter { !it.isDemo }
       val effectiveSlotRecords = realForSlot.ifEmpty { recordedForSlot }
       val ach = if (effectiveSlotRecords.isNotEmpty()) {
         effectiveSlotRecords.sumOf { it.outputQty }
+      } else if (sampleCleared) {
+        0
       } else {
         when (period) {
           PeriodScope.TODAY -> if (idx < 7 && !_productionEntries.value.any { !it.isDemo && it.lineId.equals(lineId, ignoreCase = true) }) randomSeeds[idx % randomSeeds.size] else 0
@@ -4926,6 +5045,10 @@ class NflRepository(private val context: Context) {
           actionTaken = inc.resolutionNote.ifBlank { inc.acknowledgedBy ?: "Maintenance underway" }
         )
       }
+    }
+
+    if (isSampleDataCleared() && !_isDemoMode.value) {
+      return emptyList()
     }
 
     // Proportional breakdown for the 70 minutes NPT:
@@ -5016,6 +5139,13 @@ class NflRepository(private val context: Context) {
           dhuPct = dhuPct,
           oqlPct = oqlPct,
           majorDefectsName = topDefNames
+        )
+      } else if (isSampleDataCleared() && !_isDemoMode.value) {
+        HourlyQualityRow(
+          hourSlot = slot,
+          dhuPct = 0.0,
+          oqlPct = 0.0,
+          majorDefectsName = "None"
         )
       } else {
         HourlyQualityRow(
@@ -5121,6 +5251,9 @@ class NflRepository(private val context: Context) {
           cumulativePercentage = cumPct
         )
       }
+    }
+    if (isSampleDataCleared() && !_isDemoMode.value) {
+      return emptyList()
     }
     return listOf(
       ParetoDefectPoint("Puckering", 38, 32.5, 32.5),
@@ -5909,6 +6042,20 @@ class NflRepository(private val context: Context) {
     return req
   }
 
+  fun activateTvDeviceDirectly() {
+    val existingTvUser = synchronized(stateLock) {
+      _users.value.find { it.id.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) }
+    } ?: UserAccount(
+      id = TV_DISPLAY_ACCOUNT_ID,
+      employeeId = TV_DISPLAY_ACCOUNT_ID,
+      name = "Smart TV Display",
+      role = UserRole.MANAGEMENT_VIEW,
+      floor = FloorScope.ALL,
+      authorizedFloorScope = FloorScope.ALL
+    )
+    activateTvDisplaySession(existingTvUser)
+  }
+
   fun shutdown() {
     flushPendingPersistence()
     firebaseSync.cleanupListeners()
@@ -5930,6 +6077,13 @@ class NflRepository(private val context: Context) {
         activeInstances.mapNotNull { it.get() }
       }
       list.forEach { it.flushPendingPersistence() }
+    }
+
+    fun clearDirtyUsersOnActiveInstances() {
+      val list = synchronized(activeInstances) {
+        activeInstances.mapNotNull { it.get() }
+      }
+      list.forEach { it.cancelDirtyUsers() }
     }
   }
 }
