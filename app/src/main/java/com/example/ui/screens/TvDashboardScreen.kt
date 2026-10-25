@@ -10,35 +10,538 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.NflRepository
 import com.example.model.*
-import com.example.ui.components.*
+import com.example.ui.components.LiveLinePerformanceTable
+import kotlin.math.abs
 import kotlinx.coroutines.delay
 
+/** Kept for source compatibility with any code that still references it. */
 enum class TvViewMode(val label: String, val shortLabel: String) {
   ALL_GRAPHS("All Main Charts (Fit Screen)", "Main Charts"),
   PRODUCTION("Production Focus", "Production"),
   QUALITY("Quality & OQL Focus", "Quality"),
   TABLE("Detailed Matrix Table", "Table")
 }
+
+enum class WbPage(val label: String) {
+  PRODUCTION("Production"),
+  QUALITY("Quality"),
+  ALL("All"),
+  TABLE("Table")
+}
+
+/** Slide interval choices in seconds; 0 = paused. The first one is the default (30 s). */
+private val WB_INTERVALS = listOf(30, 60, 10, 15, 0)
+private const val FRI_GOOD = 95.0
+
+private fun floorLabel(f: FloorScope): String = when (f) {
+  FloorScope.SEW_1 -> "Sew 1"
+  FloorScope.SEW_2 -> "Sew 2"
+  FloorScope.SEW_3 -> "Sew 3"
+  FloorScope.ALL -> "All Floors"
+  else -> f.displayName
+}
+
+private class WbCtx(
+  val floor: FloorScope,
+  val period: PeriodScope,
+  val isToday: Boolean,
+  val d: TvDashboardData,
+  val m: WbMetrics,
+  val dhuLimit: Double,
+  val oqlTarget: Double,
+  val weekly: List<WeeklyQualityEntry>,
+  val nowMs: Long,
+  val floorKpis: List<Pair<FloorScope, FloorKpiSummary>>
+)
+
+// ---------- line value builders ----------
+
+private fun achItems(lines: List<LinePerformancePoint>, isToday: Boolean): List<WbLineVal> = lines.map { l ->
+  val pct = l.achievementPct
+  val out = l.achievementPcs
+  WbLineVal(
+    name = l.lineId,
+    back = if (isToday) l.targetPcs.toDouble() else null,
+    front = out?.toDouble(),
+    frontColor = if (isToday) wbAchColor(pct) else WbTheme.BLUE,
+    belowText = if (isToday && pct != null) "${pct.toInt()}%" else "—",
+    belowColor = if (isToday) wbAchColor(pct) else WbTheme.MUTED,
+    marker = null,
+    rankValue = if (isToday) (pct ?: 0.0) else (out ?: 0).toDouble(),
+    rankText = if (isToday) (pct?.let { "${it.toInt()}%" } ?: "--") else (out ?: 0).toString(),
+    rankColor = if (isToday) wbAchColor(pct) else WbTheme.BLUE,
+    sortKey = if (isToday) (pct ?: -1.0) else (out ?: 0).toDouble()
+  )
+}
+
+private fun effItems(lines: List<LinePerformancePoint>, isToday: Boolean): List<WbLineVal> = lines.map { l ->
+  val t = if (isToday) l.todayEfficiencyPct else null
+  val shown = t ?: l.monthlyEfficiencyPct
+  val col = if (t != null) wbEffColor(t, l.targetEfficiencyPct) else WbTheme.BLUE
+  WbLineVal(
+    name = l.lineId,
+    back = l.monthlyEfficiencyPct,
+    front = t,
+    frontColor = col,
+    belowText = if (t != null) "${t.toInt()}%" else "—",
+    belowColor = if (t != null) col else WbTheme.MUTED,
+    marker = null,
+    rankValue = shown,
+    rankText = "${shown.toInt()}%",
+    rankColor = col,
+    sortKey = shown
+  )
+}
+
+private fun dhuItems(lines: List<LinePerformancePoint>, limit: Double): List<WbLineVal> = lines.map { l ->
+  val v = l.dhu
+  val col = if (v != null) wbDhuColor(v, limit) else WbTheme.GREY
+  WbLineVal(
+    name = l.lineId, back = null, front = v, frontColor = col,
+    belowText = "", belowColor = col, marker = null,
+    rankValue = v ?: 0.0, rankText = if (v != null) wbF1(v) else "--", rankColor = col,
+    sortKey = if (v != null) -v else 1.0
+  )
+}
+
+private fun oqlItems(lines: List<LinePerformancePoint>, target: Double): List<WbLineVal> = lines.map { l ->
+  val v = l.todayOqlPct
+  val col = if (v != null) wbOqlColor(v, target) else WbTheme.GREY
+  WbLineVal(
+    name = l.lineId, back = null, front = v, frontColor = col,
+    belowText = "", belowColor = col,
+    marker = if (l.monthlyOqlPct > 0.0) l.monthlyOqlPct else null,
+    rankValue = v ?: 0.0, rankText = if (v != null) wbF2(v) else "--", rankColor = col,
+    sortKey = if (v != null) -v else 1.0
+  )
+}
+
+private fun roundedMax(values: List<Double>, floor: Double, headroom: Double): Double =
+  maxOf(values.maxOrNull() ?: 0.0, floor, 0.0001) * headroom
+
+@Composable
+private fun ColumnScope.WbEmpty(text: String) {
+  Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+    WbText(text, 15, WbTheme.MUTED, FontWeight.Medium)
+  }
+}
+
+@Composable
+private fun ColumnScope.WbBig(value: String, color: Color, sub: String) {
+  Column(
+    Modifier.weight(1f).fillMaxWidth(),
+    verticalArrangement = Arrangement.Center,
+    horizontalAlignment = Alignment.CenterHorizontally
+  ) {
+    WbText(value, 44, color, FontWeight.Black)
+    WbText(sub, 13, WbTheme.MUTED, FontWeight.Medium)
+  }
+}
+
+@Composable
+private fun WbDivider() {
+  Box(Modifier.fillMaxWidth().height(1.dp).background(WbTheme.LINE))
+}
+
+// ---------- shared panels ----------
+
+@Composable
+private fun RowScope.WbTargetPanel(c: WbCtx, weight: Float) {
+  val lines = c.d.linePerformance
+  val items = achItems(lines, c.isToday)
+  val maxPcs = lines.maxOfOrNull { maxOf(it.targetPcs, it.achievementPcs ?: 0) }?.toDouble() ?: 1.0
+  val cap = if (c.isToday) "bar = target pcs · % = achieved" else "output pcs · target is daily (Today only)"
+  WbPanel("Live Target vs Achievement", cap, Modifier.weight(weight).fillMaxHeight()) {
+    WbLineAdaptive(
+      items = items, vmax = maxPcs * 1.12, tick = null,
+      rankMax = if (c.isToday) 100.0 else maxPcs, rankLimit = null,
+      labelOnBack = true, fmt = { wbInt(it.toInt()) },
+      modifier = Modifier.weight(1f).fillMaxWidth()
+    )
+  }
+}
+
+@Composable
+private fun RowScope.WbEffPanel(c: WbCtx, weight: Float) {
+  val lines = c.d.linePerformance
+  val tgt = if (lines.isEmpty()) 75.0 else lines.map { it.targetEfficiencyPct }.average()
+  WbPanel("Efficiency by Line", "bar = month · narrow = today", Modifier.weight(weight).fillMaxHeight()) {
+    WbLineAdaptive(
+      items = effItems(lines, c.isToday), vmax = 100.0, tick = if (c.isToday) tgt else null,
+      rankMax = 100.0, rankLimit = if (c.isToday) tgt else null,
+      labelOnBack = true, fmt = { wbF1(it) },
+      modifier = Modifier.weight(1f).fillMaxWidth()
+    )
+  }
+}
+
+@Composable
+private fun RowScope.WbOqlPanel(c: WbCtx, weight: Float) {
+  val lines = c.d.linePerformance
+  val vals = lines.mapNotNull { it.todayOqlPct } + lines.map { it.monthlyOqlPct }
+  val vmax = roundedMax(vals, WbThresholds.OQL_COMMITMENT, 1.15)
+  WbPanel("OQL by Line", "tick = monthly · dashed = ${wbF1(WbThresholds.OQL_COMMITMENT)}%", Modifier.weight(weight).fillMaxHeight()) {
+    WbLineAdaptive(
+      items = oqlItems(lines, c.oqlTarget), vmax = vmax, tick = WbThresholds.OQL_COMMITMENT,
+      rankMax = vmax, rankLimit = WbThresholds.OQL_COMMITMENT,
+      labelOnBack = false, fmt = { wbF2(it) },
+      modifier = Modifier.weight(1f).fillMaxWidth()
+    )
+  }
+}
+
+// ---------- pages ----------
+
+@Composable
+private fun WbProductionPage(c: WbCtx, modifier: Modifier) {
+  val k = c.d.kpis
+  val lines = c.d.linePerformance
+  val reported = lines.count { it.achievementPcs != null }
+  val overallPct = if (k.todayTargetPcs > 0) k.todayOutputPcs * 100.0 / k.todayTargetPcs else null
+  Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth().height(100.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      val tm = Modifier.weight(1f).fillMaxHeight()
+      WbKpiTile(
+        "EFFICIENCY · target ${wbF1(k.todayTargetEfficiency)}%",
+        if (c.isToday) "${wbF1(k.todayEfficiency)}%" else "—",
+        if (c.isToday) wbEffColor(k.todayEfficiency, k.todayTargetEfficiency) else WbTheme.MUTED,
+        if (c.isToday) "Month ${wbF1(k.monthlyEfficiency)}%" else "Targets are daily: Today only", tm
+      )
+      val gap = k.todayTargetPcs - k.todayOutputPcs
+      WbKpiTile(
+        "OUTPUT vs TARGET",
+        if (c.isToday) "${wbInt(k.todayOutputPcs)} / ${wbInt(k.todayTargetPcs)}" else wbInt(k.todayOutputPcs),
+        if (c.isToday) wbAchColor(overallPct) else WbTheme.TXT,
+        if (c.isToday) "${wbInt(abs(gap))} pcs ${if (gap > 0) "behind" else "ahead"}" else "target n/a for this period",
+        tm, valueSize = 30
+      )
+      WbKpiTile(
+        "LINES REPORTED", "$reported of ${lines.size}",
+        if (reported < lines.size) WbTheme.AMBER else WbTheme.GREEN,
+        if (reported < lines.size) "${lines.size - reported} line(s) without output entry" else "all scheduled lines reported", tm
+      )
+      WbKpiTile(
+        "DOWNTIME (elapsed)", "${wbInt(c.m.downtimeMin)} min",
+        if (c.m.downtimeMin > 0) WbTheme.RED else WbTheme.GREEN,
+        "≈ ${wbInt(c.m.lostPcsEst)} pcs lost (est.) · ${c.d.activeIncidents.size} open", tm
+      )
+      WbKpiTile(
+        "OPERATORS / MACHINES", "${k.operatorsCount} / ${k.machinesCount}", WbTheme.TXT,
+        "planned counts, not attendance", tm
+      )
+    }
+    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        WbTargetPanel(c, 5f)
+        WbEffPanel(c, 4f)
+        WbPanel("Lowest Efficiency Lines", "balancing alert", Modifier.weight(3f).fillMaxHeight()) {
+          val low = c.d.lowestEfficiencyLines.filter { it.todayEfficiencyPct != null }.take(5)
+          if (!c.isToday) WbEmpty("Ranking is available for Today")
+          else if (low.isEmpty()) WbEmpty("No efficiency reported yet")
+          else WbRankBars(
+            low.map {
+              val v = it.todayEfficiencyPct ?: 0.0
+              WbRow(it.lineId, v, "${v.toInt()}%", wbEffColor(v, it.targetEfficiencyPct))
+            },
+            100.0, low.first().targetEfficiencyPct, 40.dp, 15, Modifier.weight(1f).fillMaxWidth()
+          )
+        }
+      }
+      Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val ht = c.m.hourlyTarget.toDouble()
+        WbPanel(
+          "Hourly Output vs Target",
+          if (c.isToday && ht > 0) "dashed = ${wbInt(c.m.hourlyTarget)} pcs/hr (floor)" else "floor total",
+          Modifier.weight(5f).fillMaxHeight()
+        ) {
+          val hs = c.m.hours
+          if (!c.m.hourlySupported) WbEmpty("Hourly view is for Today or Yesterday")
+          else if (hs.isEmpty()) WbEmpty("No hourly output recorded yet")
+          else {
+            val vmax = maxOf(hs.maxOf { it.output }.toDouble(), if (c.isToday) ht else 0.0, 1.0) * 1.15
+            WbColumnChart(
+              labels = hs.map { it.label + "h" },
+              back = hs.map<WbHour, Double?> { null },
+              front = hs.map<WbHour, Double?> { it.output.toDouble() },
+              vmax = vmax,
+              frontColor = { i ->
+                if (c.isToday && ht > 0) wbAchColor(hs[i].output * 100.0 / ht) else WbTheme.BLUE
+              },
+              below = hs.map {
+                if (c.isToday && ht > 0) {
+                  val p = it.output * 100.0 / ht
+                  "${p.toInt()}%" to wbAchColor(p)
+                } else ("" to WbTheme.MUTED)
+              },
+              labelOnBack = false, marker = null,
+              tick = if (c.isToday && ht > 0) ht else null,
+              fmt = { wbInt(it.toInt()) },
+              modifier = Modifier.weight(1f).fillMaxWidth()
+            )
+          }
+        }
+        WbPanel("Downtime by Cause (min)", "real incidents only", Modifier.weight(4f).fillMaxHeight()) {
+          val cs = c.m.causes.take(6)
+          if (cs.isEmpty()) WbEmpty("No downtime recorded for this period")
+          else WbRankBars(
+            cs.mapIndexed { i, x -> WbRow(x.name, x.minutes.toDouble(), "${x.minutes}m", if (i == 0) WbTheme.RED else WbTheme.AMBER) },
+            cs.first().minutes.toDouble(), null, 124.dp, 13, Modifier.weight(1f).fillMaxWidth()
+          )
+        }
+        WbPanel("Open Stoppages", "line · cause · open", Modifier.weight(3f).fillMaxHeight()) {
+          val act = c.d.activeIncidents.take(5)
+          if (act.isEmpty()) WbEmpty("No open stoppage")
+          else Column(Modifier.weight(1f).fillMaxWidth()) {
+            act.forEach { inc ->
+              val mins = ((c.nowMs - inc.startTimeMillis) / 60000L).coerceAtLeast(0L)
+              WbDivider()
+              Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                WbText(inc.lineId, 20, WbTheme.TXT, FontWeight.Black, Modifier.width(44.dp))
+                Column(Modifier.weight(1f)) {
+                  WbText(inc.category.displayName, 14, WbTheme.TXT, FontWeight.Bold)
+                  WbText(inc.status.displayName, 12, WbTheme.MUTED, FontWeight.Medium)
+                }
+                WbText("${mins}m", 18, if (mins > 30) WbTheme.RED else WbTheme.AMBER, FontWeight.Black)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun WbQualityPage(c: WbCtx, modifier: Modifier) {
+  val k = c.d.kpis
+  val lines = c.d.linePerformance
+  val worst = lines.filter { it.dhu != null }.maxByOrNull { it.dhu ?: 0.0 }
+  val dhuV = c.m.dhu
+  val oqlV = c.m.oql
+  Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth().height(100.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      val tm = Modifier.weight(1f).fillMaxHeight()
+      WbKpiTile(
+        "DHU · limit ${wbF1(c.dhuLimit)}", dhuV?.let { wbF2(it) } ?: "—",
+        if (dhuV != null) wbDhuColor(dhuV, c.dhuLimit) else WbTheme.MUTED,
+        worst?.let { "worst ${it.lineId} ${wbF1(it.dhu ?: 0.0)}" } ?: "no inspection yet", tm
+      )
+      WbKpiTile(
+        "OQL · commitment ${wbF1(WbThresholds.OQL_COMMITMENT)}%", oqlV?.let { "${wbF2(it)}%" } ?: "—",
+        if (oqlV != null) wbOqlColor(oqlV, c.oqlTarget) else WbTheme.MUTED,
+        "target ${wbF1(c.oqlTarget)}%", tm
+      )
+      WbKpiTile(
+        "FIRST-TIME RIGHT (derived)", oqlV?.let { "${wbF1(100.0 - it)}%" } ?: "—",
+        if (oqlV != null) WbTheme.GREEN else WbTheme.MUTED, "100 minus OQL", tm
+      )
+      val pending = k.totalDefectBalance + k.totalSpotBalance
+      WbKpiTile(
+        "DEFECTS PENDING", "${wbInt(pending)} pcs",
+        if (pending > 0) WbTheme.RED else WbTheme.GREEN,
+        "sewing ${k.totalDefectBalance} · spot ${k.totalSpotBalance} not returned", tm
+      )
+      WbKpiTile("CHECKED", "${wbInt(c.m.checkedPcs)} pcs", WbTheme.TXT, "${lines.count { it.dhu != null }} of ${lines.size} lines inspected", tm)
+    }
+    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val dMax = roundedMax(lines.mapNotNull { it.dhu }, c.dhuLimit, 1.15)
+        WbPanel("DHU by Line", "dashed = ${wbF1(c.dhuLimit)} limit", Modifier.weight(5f).fillMaxHeight()) {
+          WbLineAdaptive(
+            items = dhuItems(lines, c.dhuLimit), vmax = dMax, tick = c.dhuLimit,
+            rankMax = dMax, rankLimit = c.dhuLimit, labelOnBack = false, fmt = { wbF1(it) },
+            modifier = Modifier.weight(1f).fillMaxWidth()
+          )
+        }
+        WbOqlPanel(c, 4f)
+        WbPanel("Top Defects (Pareto)", "count · cumulative %", Modifier.weight(3f).fillMaxHeight()) {
+          val par = c.d.paretoDefects.take(5)
+          if (par.isEmpty()) WbEmpty("No defects recorded")
+          else WbRankBars(
+            par.map { WbRow(it.defectName, it.count.toDouble(), "${it.count} · ${it.cumulativePercentage.toInt()}%", WbTheme.BLUE) },
+            par.maxOf { it.count }.toDouble().coerceAtLeast(1.0), null, 92.dp, 13, Modifier.weight(1f).fillMaxWidth()
+          )
+        }
+      }
+      Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        WbPanel("Hourly DHU and OQL", "red = DHU · orange = OQL · dashed = DHU limit", Modifier.weight(5f).fillMaxHeight()) {
+          val hs = c.m.hours.filter { it.dhu != null || it.oql != null }
+          if (!c.m.hourlySupported) WbEmpty("Hourly view is for Today or Yesterday")
+          else if (hs.isEmpty()) WbEmpty("No hourly inspection recorded yet")
+          else {
+            val mx = hs.flatMap { listOfNotNull(it.dhu, it.oql) }.maxOrNull() ?: 1.0
+            WbLineChart(
+              labels = hs.map { it.label + "h" },
+              series = listOf(WbSeries(hs.map { it.dhu }, WbTheme.RED), WbSeries(hs.map { it.oql }, WbTheme.ORANGE)),
+              lo = 0.0, hi = maxOf(mx, c.dhuLimit) * 1.2, limit = c.dhuLimit,
+              modifier = Modifier.weight(1f).fillMaxWidth()
+            )
+          }
+        }
+        WbPanel("Defect Rectification Pending", "pcs · sewing / spot", Modifier.weight(4f).fillMaxHeight()) {
+          val rows = lines
+            .map { Triple(it.lineId, it.defectBalance.coerceAtLeast(0), it.spotBalance.coerceAtLeast(0)) }
+            .filter { it.second + it.third > 0 }
+            .sortedByDescending { it.second + it.third }
+            .take(6)
+          if (rows.isEmpty()) WbEmpty("No pending defects")
+          else WbStackBars(rows, WbTheme.AMBER, WbTheme.BLUE, Modifier.weight(1f).fillMaxWidth())
+        }
+        WbPanel("Main Defect, Worst Lines", "line · defect · DHU", Modifier.weight(3f).fillMaxHeight()) {
+          val w = c.m.worstLineDefects
+          if (w.isEmpty()) WbEmpty("No defect entries yet")
+          else Column(Modifier.weight(1f).fillMaxWidth()) {
+            w.forEach { x ->
+              WbDivider()
+              Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                WbText(x.lineId, 20, WbTheme.TXT, FontWeight.Black, Modifier.width(44.dp))
+                WbText(x.defect, 14, WbTheme.TXT, FontWeight.Bold, Modifier.weight(1f))
+                WbText(wbF1(x.dhu), 18, wbDhuColor(x.dhu, c.dhuLimit), FontWeight.Black)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun WbAllPage(c: WbCtx, modifier: Modifier) {
+  val k = c.d.kpis
+  val lines = c.d.linePerformance
+  Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth().height(160.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      WbPanel("Today Live Efficiency", "target ${wbF1(k.todayTargetEfficiency)}%", Modifier.weight(1.1f).fillMaxHeight()) {
+        WbGauge(
+          if (c.isToday) k.todayEfficiency else 0.0, 100.0, k.todayTargetEfficiency,
+          if (c.isToday) wbEffColor(k.todayEfficiency, k.todayTargetEfficiency) else WbTheme.MUTED,
+          if (c.isToday) "${wbF1(k.todayEfficiency)}%" else "—",
+          Modifier.weight(1f).fillMaxWidth()
+        )
+      }
+      WbPanel("Monthly Efficiency", "", Modifier.weight(0.9f).fillMaxHeight()) {
+        WbBig("${wbF1(k.monthlyEfficiency)}%", wbEffColor(k.monthlyEfficiency, k.todayTargetEfficiency), "target ${wbF1(k.todayTargetEfficiency)}%")
+      }
+      WbPanel("Operator vs Machine", "planned", Modifier.weight(1f).fillMaxHeight()) {
+        WbDonut(k.operatorsCount, k.machinesCount, WbTheme.ORANGE, WbTheme.BLUE, Modifier.weight(1f).fillMaxWidth())
+        WbText("■ ${k.operatorsCount} Operators", 13, WbTheme.ORANGE, FontWeight.Bold)
+        WbText("■ ${k.machinesCount} Machines", 13, WbTheme.BLUE, FontWeight.Bold)
+      }
+      WbPanel("Floor & Factory Efficiency", "bar = month · narrow = today", Modifier.weight(1.4f).fillMaxHeight()) {
+        val fk = c.floorKpis
+        if (fk.size < 4) WbEmpty("Loading floors...")
+        else {
+          val names = listOf("Sew 1", "Sew 2", "Sew 3", "Factory")
+          WbColumnChart(
+            labels = names,
+            back = fk.map<Pair<FloorScope, FloorKpiSummary>, Double?> { it.second.monthlyEfficiency },
+            front = fk.map<Pair<FloorScope, FloorKpiSummary>, Double?> { if (c.isToday) it.second.todayEfficiency else null },
+            vmax = 100.0,
+            frontColor = { i -> wbEffColor(fk[i].second.todayEfficiency, fk[i].second.todayTargetEfficiency) },
+            below = fk.map {
+              if (c.isToday) "${wbF1(it.second.todayEfficiency)}%" to wbEffColor(it.second.todayEfficiency, it.second.todayTargetEfficiency)
+              else ("" to WbTheme.MUTED)
+            },
+            labelOnBack = true, marker = null, tick = k.todayTargetEfficiency, fmt = { wbF1(it) },
+            modifier = Modifier.weight(1f).fillMaxWidth()
+          )
+        }
+      }
+      WbPanel("BS QA OQL", "IE-entered monthly", Modifier.weight(0.9f).fillMaxHeight()) {
+        WbBig("${wbF2(k.bsQaOql)}%", wbOqlColor(k.bsQaOql, c.oqlTarget), "commitment ${wbF1(WbThresholds.OQL_COMMITMENT)}%")
+      }
+      WbPanel("Today Live OQL", "limit ${wbF1(WbThresholds.OQL_COMMITMENT)}%", Modifier.weight(1f).fillMaxHeight()) {
+        val o = c.m.oql
+        WbGauge(
+          o ?: 0.0, 10.0, WbThresholds.OQL_COMMITMENT,
+          if (o != null) wbOqlColor(o, c.oqlTarget) else WbTheme.MUTED,
+          o?.let { "${wbF2(it)}%" } ?: "—", Modifier.weight(1f).fillMaxWidth()
+        )
+      }
+      WbPanel("BS QA FRI Pass", "manual monthly", Modifier.weight(0.9f).fillMaxHeight()) {
+        WbBig("${wbF1(k.friPassRate)}%", if (k.friPassRate >= FRI_GOOD) WbTheme.GREEN else WbTheme.AMBER, "target ${wbF1(FRI_GOOD)}%")
+      }
+    }
+    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        WbTargetPanel(c, 5f)
+        WbOqlPanel(c, 5f)
+        WbPanel("Top 5 Defects", "DHU", Modifier.weight(3f).fillMaxHeight()) {
+          val td = c.d.topDefects.take(5)
+          if (td.isEmpty()) WbEmpty("No defects recorded")
+          else WbRankBars(
+            td.map { WbRow(it.defectType, it.dhu, wbF2(it.dhu), WbTheme.BLUE) },
+            td.maxOf { it.dhu }.coerceAtLeast(0.01), null, 92.dp, 13, Modifier.weight(1f).fillMaxWidth()
+          )
+        }
+      }
+      Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        WbEffPanel(c, 5f)
+        val wk = c.weekly.sortedBy { it.weekStartIso }.takeLast(12)
+        WbPanel(
+          "Weekly BS OQL and NFL AQC",
+          if (wk.isEmpty()) "no weekly values entered yet"
+          else "last ${wk.size} weeks · dashed = commitment ${wbF1(WbThresholds.OQL_COMMITMENT)}%",
+          Modifier.weight(5f).fillMaxHeight()
+        ) {
+          if (wk.isEmpty()) {
+            WbEmpty("Weekly BS OQL and NFL AQC are entered by IE once a week")
+          } else {
+            val latestBs = wk.lastOrNull { it.bsOqlPct != null }?.bsOqlPct
+            val latestAqc = wk.lastOrNull { it.nflAqcPct != null }?.nflAqcPct
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+              WbText("■ BS OQL" + (latestBs?.let { " ${wbF2(it)}%" } ?: ""), 12, WbTheme.BLUE, FontWeight.Bold)
+              WbText("■ NFL AQC" + (latestAqc?.let { " ${wbF2(it)}%" } ?: ""), 12, WbTheme.ORANGE, FontWeight.Bold)
+            }
+            val all = wk.flatMap { listOfNotNull(it.bsOqlPct, it.nflAqcPct) } + WbThresholds.OQL_COMMITMENT
+            val lo = Math.max(0.0, Math.floor((all.minOrNull() ?: 0.0) - 1.0))
+            val hi = Math.ceil((all.maxOrNull() ?: 10.0) + 1.0)
+            WbLineChart(
+              labels = wk.map { WeeklyQualityWeek.labelFor(it.weekKey) },
+              series = listOf(
+                WbSeries(wk.map { it.nflAqcPct }, WbTheme.ORANGE),
+                WbSeries(wk.map { it.bsOqlPct }, WbTheme.BLUE)
+              ),
+              lo = lo, hi = hi, limit = WbThresholds.OQL_COMMITMENT,
+              modifier = Modifier.weight(1f).fillMaxWidth()
+            )
+          }
+        }
+        WbPanel("Poor 5 DHU Lines", "dashed = ${wbF1(c.dhuLimit)} limit", Modifier.weight(3f).fillMaxHeight()) {
+          val hl = c.d.highestDhuLines.take(5)
+          if (hl.isEmpty()) WbEmpty("No DHU data yet")
+          else {
+            val mx = roundedMax(hl.map { it.dhu }, c.dhuLimit, 1.15)
+            WbRankBars(
+              hl.map { WbRow(it.lineId, it.dhu, wbF2(it.dhu), wbDhuColor(it.dhu, c.dhuLimit)) },
+              mx, c.dhuLimit, 40.dp, 14, Modifier.weight(1f).fillMaxWidth()
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+// ---------- screen ----------
 
 @Composable
 fun TvDashboardScreen(
@@ -53,141 +556,127 @@ fun TvDashboardScreen(
   val qualityEntries by repository.qualityEntries.collectAsStateWithLifecycle()
   val targets by repository.targets.collectAsStateWithLifecycle()
   val monthlyTargets by repository.monthlyTargets.collectAsStateWithLifecycle()
-  val isSyncing by repository.isSyncing.collectAsStateWithLifecycle()
+  val weeklyQuality by repository.weeklyQuality.collectAsStateWithLifecycle()
   val lastRefreshTime by repository.lastRefreshTime.collectAsStateWithLifecycle()
   val refreshTrigger by repository.refreshTrigger.collectAsStateWithLifecycle()
 
   var isScreenActive by remember { mutableStateOf(true) }
-  var viewMode by remember { mutableStateOf(TvViewMode.ALL_GRAPHS) }
+  var page by remember { mutableStateOf(WbPage.PRODUCTION) }
+  var intervalIdx by remember { mutableIntStateOf(0) }
+  val interval = WB_INTERVALS[intervalIdx]
+  var countdown by remember { mutableIntStateOf(WB_INTERVALS[0]) }
+  var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+  var syncSeenAt by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-  // 30-second Auto-Sliding Carousel state (cycles Main Charts -> Production -> Quality every 30s)
-  var isAutoSlideEnabled by remember { mutableStateOf(true) }
-  var slideCountdown by remember { mutableIntStateOf(30) }
+  LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { isScreenActive = true }
+  LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { isScreenActive = false }
 
-  // Lifecycle awareness: Pause refresh & auto-slide ticker when TV screen is paused
-  LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-    isScreenActive = true
-  }
-  LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) {
-    isScreenActive = false
-  }
+  LaunchedEffect(lastRefreshTime) { syncSeenAt = System.currentTimeMillis() }
 
   val tvData = remember(
-    currentFloor,
-    currentPeriod,
-    isDemoMode,
-    incidents,
-    productionEntries,
-    qualityEntries,
-    targets,
-    monthlyTargets,
-    refreshTrigger
+    currentFloor, currentPeriod, isDemoMode, incidents, productionEntries,
+    qualityEntries, targets, monthlyTargets, refreshTrigger
   ) {
     repository.getTvDashboardData(currentFloor, currentPeriod)
   }
 
-  // 30-second view mode Auto-Sliding loop
-  LaunchedEffect(isScreenActive, isAutoSlideEnabled, viewMode) {
+  val metrics = remember(
+    currentFloor, currentPeriod, isDemoMode, incidents, productionEntries,
+    qualityEntries, targets, monthlyTargets, refreshTrigger
+  ) {
+    buildWbMetrics(
+      repository, currentFloor, currentPeriod, productionEntries, qualityEntries,
+      incidents, tvData.linePerformance, System.currentTimeMillis()
+    )
+  }
+
+  val onAllPage = page == WbPage.ALL
+  val floorKpis = remember(
+    currentPeriod, isDemoMode, productionEntries, qualityEntries, targets,
+    monthlyTargets, refreshTrigger, onAllPage
+  ) {
+    if (onAllPage) {
+      listOf(FloorScope.SEW_1, FloorScope.SEW_2, FloorScope.SEW_3, FloorScope.ALL)
+        .map { it to repository.getTvDashboardData(it, currentPeriod).kpis }
+    } else emptyList()
+  }
+
+  // Auto-slide Production -> Quality -> All. Pauses on the Table page and when the screen is paused.
+  LaunchedEffect(isScreenActive, interval, page) {
     while (isScreenActive) {
       delay(1000)
-      if (isAutoSlideEnabled && viewMode != TvViewMode.TABLE) {
-        if (slideCountdown > 1) {
-          slideCountdown -= 1
+      nowMs = System.currentTimeMillis()
+      if (interval > 0 && page != WbPage.TABLE) {
+        if (countdown > 1) {
+          countdown -= 1
         } else {
-          slideCountdown = 30
-          viewMode = when (viewMode) {
-            TvViewMode.ALL_GRAPHS -> TvViewMode.PRODUCTION
-            TvViewMode.PRODUCTION -> TvViewMode.QUALITY
-            TvViewMode.QUALITY -> TvViewMode.ALL_GRAPHS
-            TvViewMode.TABLE -> TvViewMode.TABLE
+          countdown = interval
+          page = when (page) {
+            WbPage.PRODUCTION -> WbPage.QUALITY
+            WbPage.QUALITY -> WbPage.ALL
+            WbPage.ALL -> WbPage.PRODUCTION
+            WbPage.TABLE -> WbPage.TABLE
           }
         }
       }
     }
   }
 
-  val activeIncidents = tvData.activeIncidents
+  val floorTarget = monthlyTargets.firstOrNull {
+    it.lineId.isBlank() && repository.isInSelectedFloor(it.floor, currentFloor)
+  }
+  val dhuLimit = floorTarget?.targetDhuPct?.takeIf { it > 0.0 } ?: 2.0
+  val oqlTarget = floorTarget?.targetOqlPct?.takeIf { it > 0.0 } ?: WbThresholds.OQL_COMMITMENT
+  val isToday = currentPeriod == PeriodScope.TODAY
+  val lines = tvData.linePerformance
 
-  val tvFloorOptions = listOf(
-    FloorScope.SEW_1,
-    FloorScope.SEW_2,
-    FloorScope.SEW_3,
-    FloorScope.ALL
-  )
+  val floorLinesCount = repository.allLinesMaster.count { line ->
+    val fin = line.id.startsWith("Iron", ignoreCase = true) || line.id.startsWith("Packing", ignoreCase = true)
+    if (currentFloor == FloorScope.FINISHING) fin || repository.isInSelectedFloor(line.floor, currentFloor)
+    else !fin && repository.isInSelectedFloor(line.floor, currentFloor)
+  }
 
-  val tvPeriodOptions = listOf(
-    PeriodScope.TODAY,
-    PeriodScope.YESTERDAY,
-    PeriodScope.WEEK,
-    PeriodScope.MONTH
+  val ctx = WbCtx(
+    floor = currentFloor, period = currentPeriod, isToday = isToday, d = tvData, m = metrics,
+    dhuLimit = dhuLimit, oqlTarget = oqlTarget, weekly = weeklyQuality, nowMs = nowMs, floorKpis = floorKpis
   )
 
   val baseDensity = LocalDensity.current
+  val tnum = LocalTextStyle.current.merge(TextStyle(fontFeatureSettings = "tnum"))
 
-  // Auto-Adjustable Fullscreen TV Container: dynamically calculates optimal density scale
-  // from physical TV pixel dimensions (720p, 768p, 1080p, 4K, or Android TV Box)
-  // so 100% of headers, KPI cards, and all floor lines (A1-H2B, J1-R1, S1-ZA2B) fit on 1 screen!
-  BoxWithConstraints(
-    modifier = Modifier
-      .fillMaxSize()
-      .background(Color(0xFFF1F5F9))
-  ) {
+  BoxWithConstraints(Modifier.fillMaxSize().background(WbTheme.BG)) {
     val widthPx = constraints.maxWidth.toFloat()
     val heightPx = constraints.maxHeight.toFloat()
-    val isLandscapeScreen = widthPx >= heightPx
-    val targetVirtualWidthDp = if (isLandscapeScreen) 1140f else 680f
-    val targetVirtualHeightDp = if (isLandscapeScreen) 640f else 980f
-
-    val computedDensity = if (widthPx > 0f && heightPx > 0f) {
-      minOf(widthPx / targetVirtualWidthDp, heightPx / targetVirtualHeightDp).coerceIn(0.45f, 4.5f)
-    } else {
-      baseDensity.density
-    }
+    // Design canvas is 1280x720 dp; density scales it to the real TV (720p, 1080p, 4K) so nothing overflows.
+    val density = if (widthPx > 0f && heightPx > 0f) {
+      minOf(widthPx / 1280f, heightPx / 720f).coerceIn(0.45f, 4.5f)
+    } else baseDensity.density
 
     CompositionLocalProvider(
-      LocalDensity provides Density(density = computedDensity, fontScale = 1.0f)
+      LocalDensity provides Density(density = density, fontScale = 1.0f),
+      LocalTextStyle provides tnum
     ) {
       Column(
-        modifier = Modifier
-          .fillMaxSize()
-          .background(Color(0xFFF1F5F9))
-          .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        Modifier.fillMaxSize().padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
       ) {
-    // 1. Ultra-Minimal 2-Layer Executive TV Header
-    // Layer 1 (Top): Title + View Mode Buttons (Main Charts / Production / Quality / Table) + 30s Auto-Slide Toggle + Refresh
-    // Layer 2 (Bottom): Floor Buttons (Sew-1 / Sew-2 / Sew-3 / All Floor) + Inline Stoppage Alert + Period Filter
-    Surface(
-      color = Color(0xFF002D62),
-      shape = RoundedCornerShape(6.dp),
-      modifier = Modifier.fillMaxWidth()
-    ) {
-      Column(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 6.dp, vertical = 3.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-      ) {
-        // TOP LAYER: Brand & Title on Left | View Mode Buttons & Auto-Slide on Right (Above Floor Layer)
+        // ---- header ----
         Row(
-          modifier = Modifier.fillMaxWidth(),
+          Modifier.fillMaxWidth().height(44.dp),
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically
         ) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-          ) {
-            var isBackFocused by remember { mutableStateOf(false) }
+          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            var backFocused by remember { mutableStateOf(false) }
             IconButton(
               onClick = onNavigateBack,
               modifier = Modifier
-                .size(22.dp)
+                .size(30.dp)
                 .testTag("tv_back_button")
-                .onFocusChanged { isBackFocused = it.isFocused }
+                .onFocusChanged { backFocused = it.isFocused }
                 .border(
-                  width = if (isBackFocused) 1.5.dp else 0.dp,
-                  color = if (isBackFocused) Color(0xFFF59E0B) else Color.Transparent,
+                  width = if (backFocused) 2.dp else 0.dp,
+                  color = if (backFocused) WbTheme.AMBER else Color.Transparent,
                   shape = CircleShape
                 )
                 .focusable()
@@ -196,560 +685,130 @@ fun TvDashboardScreen(
                 Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Back to Navigation",
                 tint = Color.White,
-                modifier = Modifier.size(14.dp)
+                modifier = Modifier.size(18.dp)
               )
             }
-
-            Surface(
-              color = Color.White,
-              shape = RoundedCornerShape(3.dp)
-            ) {
+            Surface(color = Color.White, shape = RoundedCornerShape(4.dp)) {
               Row(
+                Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
               ) {
                 Icon(
                   painter = androidx.compose.ui.res.painterResource(com.example.R.drawable.ic_nfl_logo),
                   contentDescription = "NFL Logo",
-                  modifier = Modifier.size(12.dp),
+                  modifier = Modifier.size(18.dp),
                   tint = Color.Unspecified
                 )
-                Text(
-                  text = "NFL LIVE",
-                  color = Color(0xFF002D62),
-                  fontSize = 9.sp,
-                  fontWeight = FontWeight.Black
-                )
+                WbText("NFL LIVE", 18, Color(0xFF002D62), FontWeight.Black)
               }
-            }
-
-            Text(
-              text = "NFL Live Production & Quality Wallboard",
-              color = Color.White,
-              fontSize = 11.sp,
-              fontWeight = FontWeight.Black,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis
-            )
-
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-              Box(
-                modifier = Modifier
-                  .size(5.dp)
-                  .background(Color(0xFF10B981), CircleShape)
-              )
-              Text(
-                text = "Sync ${lastRefreshTime.takeLast(8)}",
-                color = Color(0xFF90CAF9),
-                fontSize = 7.5.sp,
-                fontWeight = FontWeight.Medium
-              )
             }
           }
-
-          // Top Right: View Mode Buttons (Main Charts, Production, Quality, Table) + Auto-Slide 30s + Refresh
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+          WbSegment(
+            items = WbPage.values().toList(), selected = page, label = { it.label },
+            fontSp = 14, tagPrefix = "tv_page_"
           ) {
-            // View Mode Selector Pills (Placed on Top Layer above Floor Layer as requested)
-            Surface(
-              color = Color(0xFF001B3D),
-              shape = RoundedCornerShape(4.dp)
-            ) {
-              Row(modifier = Modifier.padding(1.5.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                TvViewMode.values().forEach { mode ->
-                  val isSelected = viewMode == mode
-                  var isFocused by remember { mutableStateOf(false) }
-                  Surface(
-                    onClick = {
-                      viewMode = mode
-                      slideCountdown = 30
-                    },
-                    color = if (isSelected) Color(0xFF0284C7) else Color.Transparent,
-                    shape = RoundedCornerShape(3.dp),
-                    modifier = Modifier
-                      .testTag("tv_mode_${mode.name.lowercase()}")
-                      .onFocusChanged { isFocused = it.isFocused }
-                      .border(
-                        width = if (isFocused) 1.5.dp else 0.dp,
-                        color = if (isFocused) Color(0xFFF59E0B) else Color.Transparent,
-                        shape = RoundedCornerShape(3.dp)
-                      )
-                      .focusable()
-                  ) {
-                    Text(
-                      text = mode.shortLabel,
-                      color = if (isSelected) Color.White else Color(0xFFBAE6FD),
-                      fontSize = 8.5.sp,
-                      fontWeight = FontWeight.Bold,
-                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.5.dp)
-                    )
-                  }
-                }
-              }
-            }
+            page = it
+            countdown = if (interval > 0) interval else WB_INTERVALS[0]
+          }
+          WbSegment(
+            items = listOf(FloorScope.SEW_1, FloorScope.SEW_2, FloorScope.SEW_3, FloorScope.ALL),
+            selected = currentFloor, label = { floorLabel(it) }, fontSp = 14, tagPrefix = "tv_floor_"
+          ) { repository.setFloor(it) }
+          WbSegment(
+            items = listOf(PeriodScope.TODAY, PeriodScope.YESTERDAY, PeriodScope.WEEK, PeriodScope.MONTH),
+            selected = currentPeriod, label = { it.displayName }, fontSp = 13, tagPrefix = "tv_period_"
+          ) { repository.setPeriod(it) }
+        }
 
-            // 30-Second Auto-Sliding Carousel Toggle Pill
-            var isSlideFocused by remember { mutableStateOf(false) }
+        // ---- status strip ----
+        Row(
+          Modifier.fillMaxWidth().height(26.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            WbText("${floorLabel(currentFloor)} · ${page.label} · ${currentPeriod.displayName}", 16, WbTheme.TXT, FontWeight.Bold)
+            if (isToday) {
+              val onT = lines.count { (it.achievementPct ?: -1.0) >= WbThresholds.ACH_GREEN }
+              val slight = lines.count { val p = it.achievementPct; p != null && p >= WbThresholds.ACH_AMBER && p < WbThresholds.ACH_GREEN }
+              val far = lines.count { val p = it.achievementPct; p != null && p < WbThresholds.ACH_AMBER }
+              val none = lines.count { it.achievementPcs == null }
+              val notRunning = (floorLinesCount - lines.size).coerceAtLeast(0)
+              WbChip("$onT on target", WbTheme.GREEN, Color(0xFF052E22))
+              WbChip("$slight slightly behind", WbTheme.AMBER, Color(0xFF3B2A00))
+              WbChip("$far far behind", WbTheme.RED, Color(0xFF3B0A0A))
+              WbChip("$none no output", WbTheme.GREY, Color(0xFF0F172A))
+              WbChip("$notRunning not running", WbTheme.DIM, WbTheme.TXT)
+            } else {
+              WbChip("Target % shown for Today only", WbTheme.DIM, WbTheme.TXT)
+            }
+          }
+          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            var slideFocused by remember { mutableStateOf(false) }
             Surface(
               onClick = {
-                isAutoSlideEnabled = !isAutoSlideEnabled
-                slideCountdown = 30
+                intervalIdx = (intervalIdx + 1) % WB_INTERVALS.size
+                countdown = if (WB_INTERVALS[intervalIdx] > 0) WB_INTERVALS[intervalIdx] else WB_INTERVALS[0]
               },
-              color = if (isAutoSlideEnabled) Color(0xFF0D9488) else Color(0xFF334155),
-              shape = RoundedCornerShape(4.dp),
+              color = WbTheme.PANEL,
+              shape = RoundedCornerShape(6.dp),
               modifier = Modifier
                 .testTag("tv_auto_slide_toggle")
-                .onFocusChanged { isSlideFocused = it.isFocused }
+                .onFocusChanged { slideFocused = it.isFocused }
                 .border(
-                  width = if (isSlideFocused) 1.5.dp else 0.dp,
-                  color = if (isSlideFocused) Color(0xFFF59E0B) else Color.Transparent,
-                  shape = RoundedCornerShape(4.dp)
+                  width = if (slideFocused) 2.dp else 1.dp,
+                  color = if (slideFocused) WbTheme.AMBER else WbTheme.LINE,
+                  shape = RoundedCornerShape(6.dp)
                 )
                 .focusable()
             ) {
               Row(
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
               ) {
-                Icon(
-                  imageVector = if (isAutoSlideEnabled) Icons.Default.Autorenew else Icons.Default.Pause,
-                  contentDescription = "Auto Slide 30s",
-                  tint = Color.White,
-                  modifier = Modifier.size(10.dp)
+                WbText(
+                  if (interval > 0) "Auto-slide ${interval}s · next ${countdown}s" else "Auto-slide paused",
+                  13, WbTheme.MUTED, FontWeight.Bold
                 )
-                Text(
-                  text = if (isAutoSlideEnabled) "Auto Slide ${slideCountdown}s" else "Slide Paused",
-                  color = Color.White,
-                  fontSize = 8.sp,
-                  fontWeight = FontWeight.Bold
-                )
-              }
-            }
-          }
-        }
-
-        // BOTTOM LAYER: Floor Selector Buttons + Active Line Count + Inline Stoppage Alert | Period Filter
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          // Floor Scope Pills (Sew-1, Sew-2, Sew-3, All Floor)
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-          ) {
-            Text(
-              text = "Floor:",
-              fontSize = 8.5.sp,
-              fontWeight = FontWeight.Bold,
-              color = Color(0xFF90CAF9)
-            )
-            tvFloorOptions.forEach { floor ->
-              val isSelected = currentFloor == floor
-              var isFocused by remember { mutableStateOf(false) }
-              Surface(
-                onClick = { repository.setFloor(floor) },
-                color = if (isSelected) Color(0xFF1E88E5) else Color(0xFF001B3D),
-                shape = RoundedCornerShape(3.dp),
-                modifier = Modifier
-                  .testTag("tv_floor_${floor.name.lowercase()}")
-                  .onFocusChanged { isFocused = it.isFocused }
-                  .border(
-                    width = if (isFocused) 1.5.dp else 0.dp,
-                    color = if (isFocused) Color(0xFFF59E0B) else Color.Transparent,
-                    shape = RoundedCornerShape(3.dp)
-                  )
-                  .focusable()
-              ) {
-                Text(
-                  text = floor.displayName,
-                  color = if (isSelected) Color.White else Color(0xFF90CAF9),
-                  fontSize = 8.5.sp,
-                  fontWeight = FontWeight.Bold,
-                  modifier = Modifier.padding(horizontal = 7.dp, vertical = 1.5.dp)
-                )
-              }
-            }
-
-            Surface(
-              color = Color(0xFF0F172A),
-              shape = RoundedCornerShape(3.dp)
-            ) {
-              Text(
-                text = "${tvData.linePerformance.size} Lines",
-                color = Color(0xFF38BDF8),
-                fontSize = 8.sp,
-                fontWeight = FontWeight.ExtraBold,
-                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
-              )
-            }
-
-            // Inline Stoppage Alert Chip (Saves vertical screen height!)
-            if (activeIncidents.isNotEmpty()) {
-              Surface(
-                color = Color(0xFF991B1B),
-                shape = RoundedCornerShape(3.dp)
-              ) {
-                Row(
-                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.5.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
+                listOf(WbPage.PRODUCTION, WbPage.QUALITY, WbPage.ALL).forEach { p ->
                   Box(
-                    modifier = Modifier
-                      .size(5.dp)
-                      .clip(CircleShape)
-                      .background(Color(0xFFF87171))
-                  )
-                  val firstInc = activeIncidents.first()
-                  val mins = ((System.currentTimeMillis() - firstInc.startTimeMillis) / 60000).coerceAtLeast(0)
-                  Text(
-                    text = "⚠️ ${activeIncidents.size} Stoppage: L-${firstInc.lineId} ${firstInc.category.displayName} (${mins}m)",
-                    color = Color(0xFFFEE2E2),
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    Modifier
+                      .width(22.dp)
+                      .height(6.dp)
+                      .background(if (p == page) WbTheme.BLUE else WbTheme.DIM, RoundedCornerShape(3.dp))
                   )
                 }
               }
             }
-          }
-
-          // Period filters (Today, Yesterday, Week, Month)
-          Surface(
-            color = Color(0xFF001B3D),
-            shape = RoundedCornerShape(3.dp)
-          ) {
-            Row(modifier = Modifier.padding(1.5.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-              tvPeriodOptions.forEach { period ->
-                val isSelected = currentPeriod == period
-                var isFocused by remember { mutableStateOf(false) }
-                Surface(
-                  onClick = { repository.setPeriod(period) },
-                  color = if (isSelected) Color(0xFF1976D2) else Color.Transparent,
-                  shape = RoundedCornerShape(2.5.dp),
-                  modifier = Modifier
-                    .onFocusChanged { isFocused = it.isFocused }
-                    .border(
-                      width = if (isFocused) 1.5.dp else 0.dp,
-                      color = if (isFocused) Color(0xFFF59E0B) else Color.Transparent,
-                      shape = RoundedCornerShape(2.5.dp)
-                    )
-                    .focusable()
-                ) {
-                  Text(
-                    text = period.displayName,
-                    color = if (isSelected) Color.White else Color(0xFF90CAF9),
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                  )
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // 2. Ultra-Slim Top KPI Metric Ribbon (6 Compact TV Cards in a single slim strip)
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-      ExecutiveKpiCard(
-        title = "Today Efficiency",
-        valueText = "${tvData.kpis.todayEfficiency}%",
-        targetText = "Target: 75.0%",
-        trendText = if (tvData.kpis.todayEfficiency >= 75) "ON TGT" else "UNDER",
-        isPositiveTrend = tvData.kpis.todayEfficiency >= 75,
-        progressFraction = (tvData.kpis.todayEfficiency / 100.0).toFloat(),
-        accentColor = Color(0xFF1E88E5),
-        compactMode = true,
-        modifier = Modifier.weight(1f)
-      )
-
-      ExecutiveKpiCard(
-        title = "Monthly Eff.",
-        valueText = "${tvData.kpis.monthlyEfficiency}%",
-        targetText = "Cumulative Avg",
-        trendText = "MONTH",
-        isPositiveTrend = true,
-        progressFraction = (tvData.kpis.monthlyEfficiency / 100.0).toFloat(),
-        accentColor = Color(0xFF0284C7),
-        compactMode = true,
-        modifier = Modifier.weight(1f)
-      )
-
-      ExecutiveKpiCard(
-        title = "Output vs Target",
-        valueText = "${tvData.kpis.todayOutputPcs} pcs",
-        targetText = "Tgt: ${tvData.kpis.todayTargetPcs} pcs",
-        trendText = "${tvData.kpis.todayOutputPcs - tvData.kpis.todayTargetPcs}",
-        isPositiveTrend = tvData.kpis.todayOutputPcs >= tvData.kpis.todayTargetPcs,
-        progressFraction = if (tvData.kpis.todayTargetPcs > 0) (tvData.kpis.todayOutputPcs.toFloat() / tvData.kpis.todayTargetPcs.toFloat()) else 0f,
-        accentColor = Color(0xFF10B981),
-        compactMode = true,
-        modifier = Modifier.weight(1f)
-      )
-
-      ExecutiveKpiCard(
-        title = "Today DHU %",
-        valueText = "${String.format(java.util.Locale.US, "%.2f", tvData.kpis.todayOql * 0.4)}%",
-        targetText = "Std: ≤ 2.00%",
-        trendText = "DHU",
-        isPositiveTrend = true,
-        progressFraction = 0.5f,
-        accentColor = Color(0xFF059669),
-        compactMode = true,
-        modifier = Modifier.weight(1f)
-      )
-
-      ExecutiveKpiCard(
-        title = "Up-to-Date OQL",
-        valueText = "${tvData.kpis.todayOql}%",
-        targetText = "BS Std: ≤ 5.00%",
-        trendText = if (tvData.kpis.todayOql <= 5.0) "GOOD" else "ALERT",
-        isPositiveTrend = tvData.kpis.todayOql <= 5.0,
-        progressFraction = (tvData.kpis.todayOql / 10.0).toFloat(),
-        accentColor = Color(0xFFF59E0B),
-        compactMode = true,
-        modifier = Modifier.weight(1f)
-      )
-
-      OperatorMachineMetricCard(
-        operatorsCount = tvData.kpis.operatorsCount,
-        machinesCount = tvData.kpis.machinesCount,
-        helpersCount = tvData.kpis.helpersCount,
-        finishingCount = tvData.kpis.finishingStaffCount,
-        compactMode = true,
-        modifier = Modifier.weight(1f)
-      )
-    }
-
-    // 3. Dynamic Graphs Container — Scaled to 100% of remaining TV screen height
-    Box(
-      modifier = Modifier
-        .fillMaxWidth()
-        .weight(1f)
-    ) {
-      when (viewMode) {
-        TvViewMode.ALL_GRAPHS -> {
-          // Row 1: ONLY 2 WIDE LINE-WISE CHARTS (50% width each) so all 10-26 lines on the floor are 100% visible!
-          // Row 2: Line-wise DHU + BS OQL Weekly Trend (W32-W43) + Defect Pareto
-          Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-          ) {
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .weight(1.08f),
-              horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-              Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                TargetVsOutputBarChart(
-                  title = "${currentFloor.displayName} — Today Line-wise Target vs Achievement",
-                  lines = tvData.linePerformance,
-                  compactMode = true,
-                  fitAllLinesToWidth = true,
-                  modifier = Modifier.fillMaxSize()
-                )
-              }
-
-              Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                LineEfficiencyBarChart(
-                  title = "${currentFloor.displayName} — Line-wise Today vs Monthly Efficiency %",
-                  lines = tvData.linePerformance,
-                  compactMode = true,
-                  fitAllLinesToWidth = true,
-                  modifier = Modifier.fillMaxSize()
-                )
-              }
-            }
-
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .weight(0.92f),
-              horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-              Box(modifier = Modifier.weight(1.1f).fillMaxHeight()) {
-                LineWiseDhuBarChart(
-                  title = "${currentFloor.displayName} — Line-wise Today's DHU %",
-                  lines = tvData.linePerformance,
-                  compactMode = true,
-                  modifier = Modifier.fillMaxSize()
-                )
-              }
-
-              Box(modifier = Modifier.weight(1.05f).fillMaxHeight()) {
-                BsOqlWeeklyTrendChartCard(
-                  compactMode = true,
-                  modifier = Modifier.fillMaxSize().testTag("tv_bs_oql_trend_chart")
-                )
-              }
-
-              Box(modifier = Modifier.weight(0.85f).fillMaxHeight()) {
-                DefectParetoBarAndLineChart(
-                  title = "${currentFloor.displayName} — Defect Pareto 80/20",
-                  paretoData = tvData.paretoDefects,
-                  compactMode = true,
-                  modifier = Modifier.fillMaxSize()
-                )
-              }
-            }
+            if (isDemoMode) WbChip("DEMO DATA", WbTheme.RED, Color(0xFF3B0A0A))
+            val age = ((nowMs - syncSeenAt) / 1000L).coerceAtLeast(0L)
+            val stale = age > WbThresholds.STALE_SECONDS
+            val ageText = if (age < 60) "${age}s ago" else "${age / 60}m ago"
+            WbChip(
+              "Synced ${lastRefreshTime.takeLast(8)} · $ageText",
+              if (stale) WbTheme.RED else WbTheme.PANEL,
+              if (stale) WbTheme.BG else WbTheme.GREEN
+            )
           }
         }
 
-        TvViewMode.PRODUCTION -> {
-          // Production Slide: Row 1 has 2 full-width Line-wise Charts (50% each); Row 2 has Lowest Efficiency & NPT
-          Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-          ) {
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .weight(1.15f),
-              horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-              Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                TargetVsOutputBarChart(
-                  title = "${currentFloor.displayName} — Today Line-wise Target vs Achievement",
-                  lines = tvData.linePerformance,
-                  compactMode = true,
-                  fitAllLinesToWidth = true,
-                  modifier = Modifier.fillMaxSize()
-                )
-              }
-
-              Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                LineEfficiencyBarChart(
-                  title = "${currentFloor.displayName} — Line-wise Today vs Monthly Efficiency %",
-                  lines = tvData.linePerformance,
-                  compactMode = true,
-                  fitAllLinesToWidth = true,
-                  modifier = Modifier.fillMaxSize()
-                )
-              }
-            }
-
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .weight(0.85f),
-              horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-              Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                LowestEfficiencyRankingCard(
-                  title = "Top Lowest-Efficiency Lines (Balancing Alert)",
-                  lines = tvData.lowestEfficiencyLines,
-                  compactMode = true,
-                  modifier = Modifier.fillMaxSize()
-                )
-              }
-
-              Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                NptPieChartCard(
-                  title = "${currentFloor.displayName} — NPT Downtime Breakdown",
-                  breakdown = tvData.nptBreakdown,
-                  compactMode = true,
-                  modifier = Modifier.fillMaxSize()
-                )
-              }
-            }
-          }
-        }
-
-        TvViewMode.QUALITY -> {
-          // Quality & OQL Slide: Row 1 has 2 full-width Line-wise Quality Charts; Row 2 has BS OQL Trend, Pareto, Top DHU
-          Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-          ) {
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .weight(1.05f),
-              horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-              Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                LineWiseDhuBarChart(
-                  title = "${currentFloor.displayName} — Line-wise Today's DHU %",
-                  lines = tvData.linePerformance,
-                  compactMode = true,
-                  modifier = Modifier.fillMaxSize()
-                )
-              }
-
-              Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                LineWiseOqlBarChart(
-                  title = "${currentFloor.displayName} — Line-wise Today's OQL %",
-                  lines = tvData.linePerformance,
-                  compactMode = true,
-                  modifier = Modifier.fillMaxSize()
-                )
-              }
-            }
-
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .weight(0.95f),
-              horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-              Box(modifier = Modifier.weight(1.15f).fillMaxHeight()) {
-                BsOqlWeeklyTrendChartCard(
-                  compactMode = true,
-                  modifier = Modifier.fillMaxSize().testTag("tv_bs_oql_trend_chart")
-                )
-              }
-
-              Box(modifier = Modifier.weight(0.95f).fillMaxHeight()) {
-                DefectParetoBarAndLineChart(
-                  title = "${currentFloor.displayName} — Defect Pareto (80/20 Rule)",
-                  paretoData = tvData.paretoDefects,
-                  compactMode = true,
-                  modifier = Modifier.fillMaxSize()
-                )
-              }
-
-              Box(modifier = Modifier.weight(0.9f).fillMaxHeight()) {
-                Top5DhuLinesCard(
-                  title = "Highest DHU Defect Lines",
-                  lines = tvData.linePerformance,
-                  compactMode = true,
-                  modifier = Modifier.fillMaxSize()
-                )
-              }
-            }
-          }
-        }
-
-        TvViewMode.TABLE -> {
-          // Complete verified live line performance table (Scrollable for deep inspection)
-          Box(
-            modifier = Modifier
-              .fillMaxSize()
+        // ---- page body ----
+        when (page) {
+          WbPage.PRODUCTION -> WbProductionPage(ctx, Modifier.weight(1f))
+          WbPage.QUALITY -> WbQualityPage(ctx, Modifier.weight(1f))
+          WbPage.ALL -> WbAllPage(ctx, Modifier.weight(1f))
+          WbPage.TABLE -> Box(
+            Modifier
+              .weight(1f)
+              .fillMaxWidth()
+              .background(Color(0xFFF1F5F9), RoundedCornerShape(8.dp))
               .verticalScroll(rememberScrollState())
           ) {
-            LiveLinePerformanceTable(
-              lines = tvData.linePerformance
-            )
+            LiveLinePerformanceTable(lines = lines)
           }
         }
-      }
-    }
       }
     }
   }
