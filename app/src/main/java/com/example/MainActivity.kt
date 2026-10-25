@@ -42,6 +42,7 @@ enum class AppScreen {
   NPT_SUPERVISOR,
   SUPERVISOR_SETUP,
   MONTHLY_SETUP,
+  WEEKLY_QUALITY,
   ADMIN_USERS,
   LINE_DEEP_DIVE,
   TV_DASHBOARD,
@@ -496,6 +497,21 @@ class MainActivity : ComponentActivity() {
                         ),
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
                       )
+                      NavigationDrawerItem(
+                        label = { Text("📈 Weekly OQL / AQC Entry", color = if (currentScreen == AppScreen.WEEKLY_QUALITY) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
+                        selected = currentScreen == AppScreen.WEEKLY_QUALITY,
+                        onClick = {
+                          currentScreen = AppScreen.WEEKLY_QUALITY
+                          scope.launch { drawerState.close() }
+                        },
+                        colors = NavigationDrawerItemDefaults.colors(
+                          unselectedContainerColor = Color.Transparent,
+                          selectedContainerColor = Color(0xFF1E293B),
+                          selectedTextColor = Color(0xFF38BDF8),
+                          unselectedTextColor = Color.White
+                        ),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                      )
                     }
 
                     // Admin & Management section
@@ -795,6 +811,10 @@ class MainActivity : ComponentActivity() {
                     repository = repository,
                     onNavigateBack = { currentScreen = AppScreen.HOME }
                   )
+                  AppScreen.WEEKLY_QUALITY -> WeeklyQualityEntryScreen(
+                    repository = repository,
+                    onNavigateBack = { currentScreen = AppScreen.HOME }
+                  )
                   AppScreen.ADMIN_USERS -> if (isAdminUser) {
                     AdminUsersScreen(
                       repository = repository,
@@ -885,6 +905,15 @@ fun TvSetupScreen(repository: NflRepository) {
     repository.ensureTvDisplaySetupRequest()
   }
 
+  // Read-only diagnostics so a stuck setup can be understood from the TV screen itself.
+  val syncBanner by repository.syncStatusBanner.collectAsStateWithLifecycle()
+  val deviceRequests by repository.deviceApprovalRequests.collectAsStateWithLifecycle()
+  val myRequestStatus = remember(deviceRequests, deviceId) {
+    deviceRequests.firstOrNull {
+      it.userId.equals(NflRepository.TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) && it.deviceId == deviceId
+    }?.status ?: "NOT CREATED"
+  }
+
   Surface(
     color = Color(0xFF061126),
     modifier = Modifier
@@ -969,10 +998,24 @@ fun TvSetupScreen(repository: NflRepository) {
             }
           }
           Text(
-            text = "Approve this TV in Admin Users & Access → Devices tab to activate the live factory display.",
+            text = "Approve this TV in User & Access Control → Device Requests to activate the live factory display. Approval is needed only once.",
             color = Color(0xFF94A3B8),
             fontSize = 12.sp
           )
+          Text(
+            text = "Request status on this TV: $myRequestStatus",
+            color = Color(0xFF94A3B8),
+            fontSize = 12.sp,
+            modifier = Modifier.testTag("tv_setup_request_status")
+          )
+          if (!syncBanner.isNullOrBlank()) {
+            Text(
+              text = syncBanner.orEmpty(),
+              color = Color(0xFFFBBF24),
+              fontSize = 12.sp,
+              modifier = Modifier.testTag("tv_setup_sync_banner")
+            )
+          }
         }
       }
     }
