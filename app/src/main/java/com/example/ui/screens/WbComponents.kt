@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
@@ -443,26 +444,39 @@ fun WbLineChart(
   lo: Double,
   hi: Double,
   limit: Double?,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  showValues: Boolean = false
 ) {
+  val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+  val axisStyle = androidx.compose.ui.text.TextStyle(fontSize = 10.sp, color = WbTheme.MUTED)
+  val axisWidth = 30.dp
   Column(modifier) {
     Canvas(Modifier.weight(1f).fillMaxWidth()) {
       val n = labels.size
       if (n == 0 || hi <= lo) return@Canvas
-      fun px(i: Int): Float = size.width * (i + 0.5f) / n
+      val axisPx = axisWidth.toPx()
+      val plotW = size.width - axisPx
+      fun px(i: Int): Float = axisPx + plotW * (i + 0.5f) / n
       fun py(v: Double): Float = size.height * (1f - ((v - lo) / (hi - lo)).toFloat().coerceIn(0f, 1f))
+      // grid lines with the value of each line on the left axis
       for (k in 0..4) {
         val y = size.height * k / 4f
-        drawLine(WbTheme.LINE, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+        drawLine(WbTheme.LINE, Offset(axisPx, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+        val tick = hi - (hi - lo) * k / 4.0
+        val tickText = if (hi - lo >= 8.0) String.format(java.util.Locale.US, "%.0f", tick)
+        else String.format(java.util.Locale.US, "%.1f", tick)
+        val layout = measurer.measure(tickText, axisStyle)
+        val ty = (y - layout.size.height / 2f).coerceIn(0f, size.height - layout.size.height)
+        drawText(layout, topLeft = Offset(0f, ty))
       }
       if (limit != null) {
         drawLine(
-          WbTheme.TXT, Offset(0f, py(limit)), Offset(size.width, py(limit)),
+          WbTheme.TXT, Offset(axisPx, py(limit)), Offset(size.width, py(limit)),
           strokeWidth = 1.5.dp.toPx(),
           pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 10f))
         )
       }
-      series.forEach { s ->
+      series.forEachIndexed { si, s ->
         val path = Path()
         var started = false
         s.values.forEachIndexed { i, v ->
@@ -481,9 +495,25 @@ fun WbLineChart(
           }
         }
         drawPath(path, s.color, style = Stroke(3.dp.toPx()))
+        if (showValues && n <= 16) {
+          // First series is labelled above its points, the others below, so the two lines do not collide.
+          val valueStyle = androidx.compose.ui.text.TextStyle(
+            fontSize = 10.sp, color = s.color, fontWeight = FontWeight.Bold
+          )
+          s.values.forEachIndexed { i, v ->
+            if (v != null) {
+              val layout = measurer.measure(String.format(java.util.Locale.US, "%.2f", v), valueStyle)
+              val above = si == 0
+              val ty = if (above) py(v) - layout.size.height - 5.dp.toPx() else py(v) + 6.dp.toPx()
+              val clampedY = ty.coerceIn(0f, size.height - layout.size.height)
+              val tx = (px(i) - layout.size.width / 2f).coerceIn(axisPx, size.width - layout.size.width)
+              drawText(layout, topLeft = Offset(tx, clampedY))
+            }
+          }
+        }
       }
     }
-    Row(Modifier.fillMaxWidth().padding(top = 3.dp)) {
+    Row(Modifier.fillMaxWidth().padding(start = axisWidth, top = 3.dp)) {
       labels.forEach { l ->
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
           WbText(l, 12, WbTheme.TXT, FontWeight.Bold)

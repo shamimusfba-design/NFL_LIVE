@@ -521,7 +521,8 @@ private fun WbAllPage(c: WbCtx, modifier: Modifier) {
                 WbSeries(wk.map { it.bsOqlPct }, WbTheme.BLUE)
               ),
               lo = lo, hi = hi, limit = WbThresholds.OQL_COMMITMENT,
-              modifier = Modifier.weight(1f).fillMaxWidth()
+              modifier = Modifier.weight(1f).fillMaxWidth(),
+              showValues = true
             )
           }
         }
