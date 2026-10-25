@@ -747,7 +747,7 @@ private fun HourlyTargetVsOutputChart(rows: List<com.example.model.HourlyProduct
               }
             }
             Text(
-              text = r.hourSlot.substringBefore(" ").take(2),
+              text = NflRepository.formatHourShort12h(r.hourSlot),
               fontSize = 8.sp,
               fontWeight = FontWeight.SemiBold,
               color = Color(0xFF64748B),
@@ -812,7 +812,7 @@ private fun HourVsDhuColumnChart(rows: List<com.example.model.HourlyQualityRow>)
                 )
             )
             Text(
-              text = r.hourSlot.substringBefore(" ").take(2),
+              text = NflRepository.formatHourShort12h(r.hourSlot),
               fontSize = 8.5.sp,
               fontWeight = FontWeight.SemiBold,
               color = Color(0xFF64748B),
@@ -877,7 +877,7 @@ private fun HourVsOqlColumnChart(rows: List<com.example.model.HourlyQualityRow>)
                 )
             )
             Text(
-              text = r.hourSlot.substringBefore(" ").take(2),
+              text = NflRepository.formatHourShort12h(r.hourSlot),
               fontSize = 8.5.sp,
               fontWeight = FontWeight.SemiBold,
               color = Color(0xFF64748B),
@@ -1053,7 +1053,7 @@ private fun LineHourlyDefectTableCard(
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Text("Hour Slot", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(85.dp))
+                Text("Hour Slot", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(105.dp))
                 Text("Sew Sent", color = Color(0xFFFED7AA), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
                 Text("Sew Recv", color = Color(0xFFBBF7D0), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
                 Text("Sew Bal", color = Color(0xFFFECDD3), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
@@ -1075,7 +1075,7 @@ private fun LineHourlyDefectTableCard(
                   modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Text(row.hourSlot, fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF334155), modifier = Modifier.width(85.dp))
+                  Text(NflRepository.formatHourSlot12h(row.hourSlot), fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF334155), modifier = Modifier.width(105.dp))
                   Text("${row.sewingSent}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEA580C), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
                   Text("${row.sewingReceived}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
                   Text("${row.sewingBalance}", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = if (row.sewingBalance > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))

@@ -604,7 +604,7 @@ fun ProductionEntryScreen(
                 ) {
                   Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.Schedule, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(15.dp))
-                    Text(selectedHour, fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF1E3A8A), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(repository.formatHourSlot12h(selectedHour), fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF1E3A8A), maxLines = 1, overflow = TextOverflow.Ellipsis)
                   }
                   Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Select hour slot", tint = Color(0xFF1D4ED8), modifier = Modifier.size(16.dp))
                 }
@@ -617,7 +617,7 @@ fun ProductionEntryScreen(
               ) {
                 repository.defaultHourSlots.forEach { slot ->
                   DropdownMenuItem(
-                    text = { Text(slot, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A)) },
+                    text = { Text(repository.formatHourSlot12h(slot), fontWeight = FontWeight.Bold, color = Color(0xFF0F172A)) },
                     onClick = {
                       selectedHour = slot
                       showHourDropdown = false
@@ -944,7 +944,7 @@ fun ProductionEntryScreen(
             Text(
               when {
                 isSubmitting -> "Saving..."
-                canWrite -> "Submit All ${availableLines.size} Lines Production ($selectedHour)"
+                canWrite -> "Submit All ${availableLines.size} Lines Production (${repository.formatHourSlot12h(selectedHour)})"
                 else -> "🔒 Entry Locked (View Only)"
               },
               fontWeight = FontWeight.Bold,
@@ -1095,7 +1095,7 @@ fun ProductionEntryScreen(
                 if (isSubmitting) return@Button
                 if (!canWrite || isSingleSlotLocked) {
                   validationError = if (isSingleSlotLocked) {
-                    "🔒 Line $selectedSingleLine ($selectedHour) is already submitted. Only Admin can modify submitted records with a reason."
+                    "🔒 Line $selectedSingleLine (${repository.formatHourSlot12h(selectedHour)}) is already submitted. Only Admin can modify submitted records with a reason."
                   } else {
                     "You do not have permission or are outside the 06:00 AM–Midnight BD entry window."
                   }

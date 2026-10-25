@@ -1,0 +1,16 @@
+{
+  "name": "NFL LIVE Desktop — Northern Fashions Ltd.",
+  "short_name": "NFL LIVE",
+  "description": "Northern Fashions Ltd. Live Production, Hourly DHU, Bi-Hourly OQL Audit, Weekly BS OQL & TV Dashboard (Desktop PWA)",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0A1931",
+  "theme_color": "#0A2558",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2942/2942789.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

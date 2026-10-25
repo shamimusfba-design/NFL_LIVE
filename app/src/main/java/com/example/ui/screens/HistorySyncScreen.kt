@@ -151,7 +151,7 @@ fun HistorySyncScreen(
                       verticalAlignment = Alignment.CenterVertically
                     ) {
                       Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
-                        Text("Line ${item.lineId} • ${item.hourSlot}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Line ${item.lineId} • ${repository.formatHourSlot12h(item.hourSlot)}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         Text("Style: ${item.styleNumber} • ${item.date}", fontSize = 11.sp, color = Color(0xFF78909C))
                         Text("Submission ID: ${item.submissionId.take(8)}... (Rev ${item.revision}) • By: ${item.modifiedBy}", fontSize = 10.sp, color = Color(0xFF90A4AE))
                         if (item.remarks.isNotBlank()) {
@@ -229,7 +229,7 @@ fun HistorySyncScreen(
                           title = { Text("Admin Record Correction (Line ${item.lineId})", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF0F172A)) },
                           text = {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                              Text("Date: ${item.date} • Slot: ${item.hourSlot}", fontSize = 12.sp, color = Color(0xFF334155))
+                              Text("Date: ${item.date} • Slot: ${repository.formatHourSlot12h(item.hourSlot)}", fontSize = 12.sp, color = Color(0xFF334155))
                               OutlinedTextField(
                                 value = newQtyInput,
                                 onValueChange = { if (it.all { ch -> ch.isDigit() }) newQtyInput = it },
@@ -300,7 +300,7 @@ fun HistorySyncScreen(
                           title = { Text("Admin Delete Record (Line ${item.lineId})", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF0F172A)) },
                           text = {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                              Text("Deleting ${item.outputQty} pcs for Line ${item.lineId} (${item.date} • ${item.hourSlot}).", fontSize = 12.sp, color = Color(0xFF0F172A))
+                              Text("Deleting ${item.outputQty} pcs for Line ${item.lineId} (${item.date} • ${repository.formatHourSlot12h(item.hourSlot)}).", fontSize = 12.sp, color = Color(0xFF0F172A))
                               OutlinedTextField(
                                 value = reasonInput,
                                 onValueChange = { reasonInput = it; actionError = null },
@@ -366,7 +366,8 @@ fun HistorySyncScreen(
                       verticalAlignment = Alignment.CenterVertically
                     ) {
                       Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
-                        Text("Line ${item.lineId} • ${item.hourSlot} (${item.date})", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        val qaModeLabel = if (repository.isBiHourlyAuditSlot(item.hourSlot)) "Bi-Hourly Audit" else "Hourly DHU"
+                        Text("Line ${item.lineId} • ${repository.formatHourSlot12h(item.hourSlot)} • $qaModeLabel (${item.date})", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         Text("Checked: ${item.checkedGarments} • Defective: ${item.defectiveGarments} • Defects: ${item.totalDefects}", fontSize = 11.sp, color = Color(0xFF78909C))
                         Text(
                           "Breakdown: " + item.defects.joinToString(", ") { "${it.defectType} (${it.count})" },
@@ -445,7 +446,7 @@ fun HistorySyncScreen(
                           title = { Text("Admin QA Record Correction (Line ${item.lineId})", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF0F172A)) },
                           text = {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                              Text("Date: ${item.date} • Slot: ${item.hourSlot}", fontSize = 12.sp, color = Color(0xFF334155))
+                              Text("Date: ${item.date} • Slot: ${repository.formatHourSlot12h(item.hourSlot)}", fontSize = 12.sp, color = Color(0xFF334155))
                               OutlinedTextField(
                                 value = newCheckedInput,
                                 onValueChange = { if (it.all { ch -> ch.isDigit() }) newCheckedInput = it },
@@ -516,7 +517,7 @@ fun HistorySyncScreen(
                           title = { Text("Admin Delete QA Record (Line ${item.lineId})", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF0F172A)) },
                           text = {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                              Text("Deleting QA inspection for Line ${item.lineId} (${item.date} • ${item.hourSlot}).", fontSize = 12.sp, color = Color(0xFF0F172A))
+                              Text("Deleting QA inspection for Line ${item.lineId} (${item.date} • ${repository.formatHourSlot12h(item.hourSlot)}).", fontSize = 12.sp, color = Color(0xFF0F172A))
                               OutlinedTextField(
                                 value = reasonInput,
                                 onValueChange = { reasonInput = it; actionError = null },

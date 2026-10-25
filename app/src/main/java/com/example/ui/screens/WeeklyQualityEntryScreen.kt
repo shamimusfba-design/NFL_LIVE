@@ -64,7 +64,7 @@ fun WeeklyQualityEntryScreen(
 ) {
   val entries by repository.weeklyQuality.collectAsStateWithLifecycle()
   val currentUser by repository.currentUser.collectAsStateWithLifecycle()
-  val canEdit = currentUser?.let { it.isAdmin || (it.role == UserRole.IE && it.canMonthlyTargetWrite) } ?: false
+  val canEdit = repository.canWriteWeeklyQualityOrBiHourlyAudit(currentUser)
 
   val weeks = remember { WeeklyQualityWeek.recentWeeks(12, System.currentTimeMillis()) }
   var selectedKey by rememberSaveable { mutableStateOf(weeks.first().key) }
@@ -184,7 +184,7 @@ fun WeeklyQualityEntryScreen(
 
           if (!canEdit) {
             Text(
-              "Only an Admin or an authorized IE can enter weekly values.",
+              "Only an Admin or an authorized Auditor can enter weekly BS OQL / NFL AQC values.",
               color = Color(0xFFB91C1C), fontSize = 12.sp, fontWeight = FontWeight.SemiBold
             )
           }

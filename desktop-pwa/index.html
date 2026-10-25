@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NFL LIVE Desktop — Northern Fashions Ltd.</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-badge">NFL</div>
+      <div>
+        <div class="brand-title">NFL LIVE DESKTOP</div>
+        <div class="brand-sub">Northern Fashions Ltd. • Dev: Shamim (IPE &amp; Planning)</div>
+      </div>
+    </div>
+
+    <div class="top-controls">
+      <select id="floorFilter" style="width:auto;">
+        <option value="ALL">All Floors</option>
+        <option value="Sew 1">Sew 1</option>
+        <option value="Sew 2" selected>Sew 2</option>
+        <option value="Sew 3">Sew 3</option>
+      </select>
+
+      <select id="roleSelector" style="width:auto;">
+        <option value="ADMIN">Role: Admin (Full Access)</option>
+        <option value="AUDITOR">Role: Auditor (Bi-Hourly Audit &amp; Weekly OQL)</option>
+        <option value="QUALITY_REPORTER">Role: Quality Inspector (Hourly DHU)</option>
+        <option value="PRODUCTION_REPORTER">Role: Production Reporter</option>
+        <option value="IE">Role: IE Officer</option>
+        <option value="QUALITY_MANAGER">Role: Quality Manager (View Only)</option>
+      </select>
+
+      <span id="syncIndicator" class="role-pill">Cloud Sync Ready</span>
+      <button id="installPwaBtn" class="btn btn-primary hidden">⬇ Install Desktop App</button>
+    </div>
+  </header>
+
+  <nav class="nav-tabs">
+    <button class="nav-tab active" data-tab="dashboard">📊 Live Dashboard</button>
+    <button class="nav-tab" data-tab="production">🧵 Production Entry (12h AM/PM)</button>
+    <button class="nav-tab" data-tab="quality">🔍 Quality &amp; Bi-Hourly Audit</button>
+    <button class="nav-tab" data-tab="weekly">📈 Weekly BS OQL / NFL AQC</button>
+    <button class="nav-tab" data-tab="admin">⚙️ Admin &amp; Excel Export</button>
+  </nav>
+
+  <main class="container">
+    <div id="statusBanner" class="status-banner hidden"></div>
+
+    <!-- TAB 1: LIVE DASHBOARD -->
+    <section id="tab-dashboard" class="tab-panel">
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Today Output (Pcs)</div>
+          <div id="kpiOutput" class="kpi-value" style="color:var(--blue)">0</div>
+          <div class="kpi-sub">Live Cloud Production</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Endline DHU %</div>
+          <div id="kpiDhu" class="kpi-value" style="color:var(--green)">0.00%</div>
+          <div class="kpi-sub">1-Hr QC Inspection</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Today OQL % (Bi-Hourly Audit)</div>
+          <div id="kpiOql" class="kpi-value" style="color:var(--sky)">0.00%</div>
+          <div class="kpi-sub">2-Hr Auditor Inspection</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Latest Weekly BS OQL / AQC</div>
+          <div id="kpiWeeklyOql" class="kpi-value" style="color:var(--amber)">- / -</div>
+          <div class="kpi-sub" id="kpiWeeklyLabel">Commitment ≤ 4.5%</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Hourly &amp; Bi-Hourly Summary (12-Hour AM/PM Format)</div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Time Slot (12h AM/PM)</th>
+                <th>Type</th>
+                <th>Output (Pcs)</th>
+                <th>Checked (Pcs)</th>
+                <th>Defective (Pcs)</th>
+                <th>Total Defects</th>
+                <th>DHU %</th>
+                <th>OQL %</th>
+              </tr>
+            </thead>
+            <tbody id="hourlySummaryBody">
+              <tr><td colspan="8">No records for selected floor today.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Recent Cloud Submissions (Production &amp; Quality)</div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Line</th>
+                <th>Floor</th>
+                <th>Date</th>
+                <th>Slot (12h AM/PM)</th>
+                <th>Category</th>
+                <th>Details</th>
+                <th>Updated By</th>
+              </tr>
+            </thead>
+            <tbody id="recentRecordsBody">
+              <tr><td colspan="7">Waiting for records...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: PRODUCTION ENTRY -->
+    <section id="tab-production" class="tab-panel hidden">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🧵 Hourly Production Output Entry (12-Hour AM/PM)</div>
+        </div>
+        <div class="form-grid">
+          <div>
+            <label>Floor</label>
+            <select id="prodFloor">
+              <option value="Sew 1">Sew 1</option>
+              <option value="Sew 2" selected>Sew 2</option>
+              <option value="Sew 3">Sew 3</option>
+            </select>
+          </div>
+          <div>
+            <label>Line</label>
+            <select id="prodLine"></select>
+          </div>
+          <div>
+            <label>Date</label>
+            <input type="date" id="prodDate" />
+          </div>
+          <div>
+            <label>Hour Slot (12-Hour AM/PM)</label>
+            <select id="prodHourSlot"></select>
+          </div>
+          <div>
+            <label>Output Quantity (pcs)</label>
+            <input type="number" id="prodQty" min="0" placeholder="e.g. 85" />
+          </div>
+          <div>
+            <label>Style / Item</label>
+            <input type="text" id="prodStyle" placeholder="e.g. Nike Polo" value="Standard Item" />
+          </div>
+        </div>
+        <div style="margin-bottom:14px;">
+          <label>Remarks (Optional)</label>
+          <input type="text" id="prodRemarks" placeholder="Optional production remarks" />
+        </div>
+        <button id="submitProdBtn" class="btn btn-primary">Submit Production Entry</button>
+      </div>
+    </section>
+
+    <!-- TAB 3: QUALITY & BI-HOURLY AUDIT -->
+    <section id="tab-quality" class="tab-panel hidden">
+      <div class="card">
+        <div class="sub-tabs">
+          <button id="modeHourlyDhuBtn" class="sub-tab active">🔍 Hourly DHU &amp; Alter (1-Hr Slots)</button>
+          <button id="modeBiHourlyAuditBtn" class="sub-tab">📋 Bi-Hourly Audit (2-Hr OQL Slots • Admin &amp; Auditor)</button>
+        </div>
+
+        <div id="biHourlyPermissionNotice" class="status-banner hidden" style="background:#fef3c7;color:#92400e;">
+          🔒 Bi-Hourly Audit Entry is restricted strictly to <strong>Admin</strong> and <strong>Auditor</strong> roles (IE and Quality Manager have view-only access).
+        </div>
+
+        <div class="form-grid">
+          <div>
+            <label>Floor</label>
+            <select id="qaFloor">
+              <option value="Sew 1">Sew 1</option>
+              <option value="Sew 2" selected>Sew 2</option>
+              <option value="Sew 3">Sew 3</option>
+            </select>
+          </div>
+          <div>
+            <label>Line</label>
+            <select id="qaLine"></select>
+          </div>
+          <div>
+            <label>Date</label>
+            <input type="date" id="qaDate" />
+          </div>
+          <div>
+            <label id="qaSlotLabel">Hour Slot (1-Hr AM/PM)</label>
+            <select id="qaHourSlot"></select>
+          </div>
+          <div>
+            <label>Checked Garments (pcs)</label>
+            <input type="number" id="qaChecked" min="1" placeholder="e.g. 50" />
+          </div>
+          <div>
+            <label>Defective Garments (pcs)</label>
+            <input type="number" id="qaDefective" min="0" placeholder="e.g. 2" />
+          </div>
+        </div>
+
+        <!-- Defect Breakdown Section -->
+        <div class="card" style="background:#f8fafc;">
+          <div class="card-header">
+            <div class="card-title" style="font-size:14px;">Defect Breakdown by Type</div>
+            <button id="addDefectRowBtn" type="button" class="btn btn-outline">+ Add Defect Row</button>
+          </div>
+          <div id="defectRowsContainer"></div>
+          <div id="liveQaMetrics" style="margin-top:10px;font-weight:800;font-size:13px;color:var(--green);">
+            Computed OQL: 0.00% • Computed DHU: 0.00%
+          </div>
+        </div>
+
+        <!-- Sewing & Spot Rectification (Hidden in Bi-Hourly Audit Mode) -->
+        <div id="rectificationSection" class="form-grid">
+          <div>
+            <label>Sewing Defect Sent (pcs)</label>
+            <input type="number" id="qaSewSent" min="0" value="0" />
+          </div>
+          <div>
+            <label>Sewing Defect Recv (pcs)</label>
+            <input type="number" id="qaSewRecv" min="0" value="0" />
+          </div>
+          <div>
+            <label>Spot Sent (pcs)</label>
+            <input type="number" id="qaSpotSent" min="0" value="0" />
+          </div>
+          <div>
+            <label>Spot Recv (pcs)</label>
+            <input type="number" id="qaSpotRecv" min="0" value="0" />
+          </div>
+        </div>
+
+        <button id="submitQaBtn" class="btn btn-success">Submit Quality Entry</button>
+      </div>
+    </section>
+
+    <!-- TAB 4: WEEKLY BS OQL / NFL AQC -->
+    <section id="tab-weekly" class="tab-panel hidden">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📈 Weekly BS OQL &amp; NFL AQC Entry (Admin &amp; Auditor Only)</div>
+        </div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">
+          Commitment limit: ≤ 4.5% • Level 1 below 7% • Critical Red above 10%. Only <strong>Admin</strong> and <strong>Auditor</strong> can save weekly values (not IE or Quality Manager).
+        </p>
+
+        <div id="weeklyPermissionWarning" class="status-banner hidden" style="background:#fee2e2;color:#991b1b;">
+          🔒 Access Denied: Only Admin and Auditor roles can enter Weekly BS OQL / NFL AQC data.
+        </div>
+
+        <div class="form-grid">
+          <div>
+            <label>ISO Week Key</label>
+            <input type="text" id="weeklyKey" placeholder="e.g. 2026-W43" />
+          </div>
+          <div>
+            <label>Week Start Date (Monday ISO)</label>
+            <input type="date" id="weeklyStartDate" />
+          </div>
+          <div>
+            <label>BS OQL (%)</label>
+            <input type="number" id="weeklyBsOql" step="0.01" min="0" max="100" placeholder="e.g. 4.25" />
+          </div>
+          <div>
+            <label>NFL AQC (%)</label>
+            <input type="number" id="weeklyNflAqc" step="0.01" min="0" max="100" placeholder="e.g. 5.10" />
+          </div>
+        </div>
+        <button id="submitWeeklyBtn" class="btn btn-primary">Save Weekly BS OQL / AQC</button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Saved Weekly OQL / AQC History</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Week</th>
+              <th>Week Start</th>
+              <th>BS OQL (%)</th>
+              <th>NFL AQC (%)</th>
+              <th>Status Band</th>
+              <th>Updated By</th>
+            </tr>
+          </thead>
+          <tbody id="weeklyTableBody">
+            <tr><td colspan="6">No weekly records yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- TAB 5: ADMIN & EXCEL EXPORT -->
+    <section id="tab-admin" class="tab-panel hidden">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📥 Export Reports to Excel (CSV with 12-Hour AM/PM Slots)</div>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <button id="exportProdCsvBtn" class="btn btn-primary">⬇ Export Production Report (.CSV)</button>
+          <button id="exportQaCsvBtn" class="btn btn-success">⬇ Export Quality &amp; Bi-Hourly Audit (.CSV)</button>
+          <button id="exportWeeklyCsvBtn" class="btn btn-outline">⬇ Export Weekly BS OQL / AQC (.CSV)</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🗑️ Admin Data Reset Controls</div>
+        </div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">
+          Clear sample/demo records or perform a full operational reset across connected devices.
+        </p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <button id="clearDemoBtn" class="btn btn-outline">🧹 Clear Demo / Sample Data</button>
+          <button id="factoryResetBtn" class="btn btn-danger">⚠️ Factory Reset All Operational Records</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    NFL LIVE Desktop &amp; Mobile Sync • Northern Fashions Ltd. • Developed by Shamim (IPE &amp; Planning)
+  </footer>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

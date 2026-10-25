@@ -62,7 +62,8 @@ fun QualityEntryScreen(
   onViewHistory: () -> Unit,
   onNavigateToProduction: () -> Unit = {},
   onNavigateToMonthlySetup: () -> Unit = {},
-  onNavigateToSetup: () -> Unit = {}
+  onNavigateToSetup: () -> Unit = {},
+  onNavigateToWeeklyQuality: () -> Unit = {}
 ) {
   val focusManager = LocalFocusManager.current
   val repoFloor by repository.currentFloor.collectAsState()
@@ -71,11 +72,23 @@ fun QualityEntryScreen(
   val currentUser by repository.currentUser.collectAsState()
   val isAdminUser = currentUser?.isAdmin == true && currentUser?.role == com.example.model.UserRole.ADMIN
   val isIeUser = currentUser?.role == com.example.model.UserRole.IE
+  val isAuditorUser = currentUser?.role == com.example.model.UserRole.AUDITOR
   val isWithinTimeWindow = isAdminUser || isIeUser || repository.isWithinDailyEntryWindow()
-  val hasRoleQualityPermission = isAdminUser || isIeUser || (currentUser?.let {
-    (it.canQualityWrite || it.canOqlWrite) &&
-        it.role in setOf(com.example.model.UserRole.QUALITY_REPORTER, com.example.model.UserRole.AUDITOR, com.example.model.UserRole.IE)
-  } ?: false)
+  val canWriteBiHourlyOrWeekly = repository.canWriteWeeklyQualityOrBiHourlyAudit(currentUser)
+
+  var selectedAuditMode by rememberSaveable {
+    mutableStateOf(if (isAuditorUser) "BI_HOURLY_AUDIT" else "HOURLY_DHU")
+  }
+  val isBiHourlyMode = selectedAuditMode == "BI_HOURLY_AUDIT"
+
+  val hasRoleQualityPermission = if (isBiHourlyMode) {
+    canWriteBiHourlyOrWeekly
+  } else {
+    isAdminUser || isIeUser || (currentUser?.let {
+      (it.canQualityWrite || it.canOqlWrite) &&
+          it.role in setOf(com.example.model.UserRole.QUALITY_REPORTER, com.example.model.UserRole.AUDITOR, com.example.model.UserRole.IE)
+    } ?: false)
+  }
   val canQualityWrite = hasRoleQualityPermission && isWithinTimeWindow
   val canNavigateProd = isAdminUser || isIeUser || (currentUser?.let {
     (it.canProductionWrite || it.canFinishingWrite) &&
@@ -118,7 +131,15 @@ fun QualityEntryScreen(
 
   val currentBdDate = remember { repository.getCurrentBangladeshDateIso() }
   var selectedDate by rememberSaveable { mutableStateOf(currentBdDate) }
-  var selectedHour by rememberSaveable { mutableStateOf("10:00 - 11:00") }
+  val activeSlotList = if (isBiHourlyMode) repository.defaultBiHourlySlots else repository.defaultHourSlots
+  var selectedHour by rememberSaveable {
+    mutableStateOf(if (isAuditorUser) "08:00 - 10:00" else "10:00 - 11:00")
+  }
+  LaunchedEffect(isBiHourlyMode) {
+    if (selectedHour !in activeSlotList) {
+      selectedHour = activeSlotList.first()
+    }
+  }
   var selectedStyle by rememberSaveable { mutableStateOf("") }
   var checkedGarmentsText by rememberSaveable { mutableStateOf("") }
   var defectiveGarmentsText by rememberSaveable { mutableStateOf("") }
@@ -322,6 +343,79 @@ fun QualityEntryScreen(
             }
           }
         }
+        if (canWriteBiHourlyOrWeekly) {
+          Surface(
+            onClick = onNavigateToWeeklyQuality,
+            shape = RoundedCornerShape(8.dp),
+            color = Color(0xFFE0F2FE),
+            modifier = Modifier.weight(1f).heightIn(min = 40.dp).testTag("nav_weekly_oql_btn")
+          ) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp, vertical = 7.dp)) {
+              Text(
+                text = "📈 Weekly OQL",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF0369A1),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
+          }
+        }
+      }
+
+      // Entry Mode Tabs: Hourly DHU (1-Hr) vs Daily Bi-Hourly Audit (2-Hr)
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .background(Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
+          .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+      ) {
+        Surface(
+          onClick = {
+            selectedAuditMode = "HOURLY_DHU"
+            saveUiState = SaveUiState.Idle
+            validationError = null
+          },
+          shape = RoundedCornerShape(8.dp),
+          color = if (!isBiHourlyMode) Color(0xFF0F172A) else Color.Transparent,
+          modifier = Modifier.weight(1f).heightIn(min = 44.dp).testTag("tab_hourly_dhu")
+        ) {
+          Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp)) {
+            Text(
+              text = "🔍 Hourly DHU & Alter (1-Hr)",
+              fontSize = 11.5.sp,
+              fontWeight = FontWeight.Bold,
+              color = if (!isBiHourlyMode) Color.White else Color(0xFF334155),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
+            )
+          }
+        }
+
+        Surface(
+          onClick = {
+            selectedAuditMode = "BI_HOURLY_AUDIT"
+            saveUiState = SaveUiState.Idle
+            validationError = null
+          },
+          shape = RoundedCornerShape(8.dp),
+          color = if (isBiHourlyMode) Color(0xFF1E3A8A) else Color.Transparent,
+          modifier = Modifier.weight(1f).heightIn(min = 44.dp).testTag("tab_bi_hourly_audit")
+        ) {
+          Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp)) {
+            Text(
+              text = "📋 Bi-Hourly Audit (2-Hr OQL)",
+              fontSize = 11.5.sp,
+              fontWeight = FontWeight.Bold,
+              color = if (isBiHourlyMode) Color.White else Color(0xFF334155),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
+            )
+          }
+        }
       }
 
       // 1. Floor Selector Chips (Sew 1, Sew 2, Sew 3)
@@ -388,8 +482,21 @@ fun QualityEntryScreen(
               ) {
                 Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(18.dp))
                 Column {
-                  Text("View-Only Mode (Quality Entry Locked)", color = Color(0xFF92400E), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                  Text("You have read-only access. Only authorized QC Inspectors & Auditors can enter defect records. (Management has view-only access).", color = Color(0xFFB45309), fontSize = 11.sp)
+                  Text(
+                    if (isBiHourlyMode) "Bi-Hourly Audit Locked (Admin & Auditor Only)" else "View-Only Mode (Quality Entry Locked)",
+                    color = Color(0xFF92400E),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                  )
+                  Text(
+                    if (isBiHourlyMode) {
+                      "Only Admin and Auditor accounts have permission to enter 2-Hour Bi-Hourly Audit data (IE and Quality Manager have view-only access)."
+                    } else {
+                      "You have read-only access. Only authorized QC Inspectors & Auditors can enter defect records."
+                    },
+                    color = Color(0xFFB45309),
+                    fontSize = 11.sp
+                  )
                 }
               }
             }
@@ -516,7 +623,7 @@ fun QualityEntryScreen(
 
             // Hour box with Dropdown
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-              Text("Hour", fontSize = 12.sp, color = Color(0xFF78909C))
+              Text(if (isBiHourlyMode) "Bi-Hourly Slot (2-Hr)" else "Hour Slot (1-Hr)", fontSize = 12.sp, color = Color(0xFF78909C))
               Box {
                 OutlinedCard(
                   modifier = Modifier
@@ -546,9 +653,9 @@ fun QualityEntryScreen(
                         modifier = Modifier.size(16.dp)
                       )
                       Text(
-                        text = selectedHour,
+                        text = repository.formatHourSlot12h(selectedHour),
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontWeight = FontWeight.Bold,
                         color = Color(0xFF263238),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -568,9 +675,9 @@ fun QualityEntryScreen(
                   onDismissRequest = { showHourDropdown = false },
                   modifier = Modifier.background(Color.White)
                 ) {
-                  repository.defaultHourSlots.forEach { slot ->
+                  activeSlotList.forEach { slot ->
                     DropdownMenuItem(
-                      text = { Text(slot, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A)) },
+                      text = { Text(repository.formatHourSlot12h(slot), fontWeight = FontWeight.Bold, color = Color(0xFF0F172A)) },
                       onClick = {
                         selectedHour = slot
                         showHourDropdown = false
@@ -610,12 +717,15 @@ fun QualityEntryScreen(
                   color = Color(0xFF64748B)
                 )
               }
-              Surface(color = Color(0xFFDCFCE7), shape = RoundedCornerShape(4.dp)) {
+              Surface(
+                color = if (isBiHourlyMode) Color(0xFFDBEAFE) else Color(0xFFDCFCE7),
+                shape = RoundedCornerShape(4.dp)
+              ) {
                 Text(
-                  text = "Quality Audit",
+                  text = if (isBiHourlyMode) "Bi-Hourly Audit (2-Hr)" else "Hourly DHU QC",
                   fontSize = 11.sp,
                   fontWeight = FontWeight.ExtraBold,
-                  color = Color(0xFF166534),
+                  color = if (isBiHourlyMode) Color(0xFF1E40AF) else Color(0xFF166534),
                   modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                 )
               }
@@ -1028,17 +1138,18 @@ fun QualityEntryScreen(
             }
           }
 
-          // SEWING DEFECT & SPOT DEFECT RECTIFICATION SECTION
-          val liveSent = defectSentText.toIntOrNull() ?: 0
-          val liveRecv = defectReceivedText.toIntOrNull() ?: 0
+          // SEWING DEFECT & SPOT DEFECT RECTIFICATION SECTION (Shown in Hourly DHU Mode only)
+          val liveSent = if (isBiHourlyMode) 0 else (defectSentText.toIntOrNull() ?: 0)
+          val liveRecv = if (isBiHourlyMode) 0 else (defectReceivedText.toIntOrNull() ?: 0)
           val liveBal = (liveSent - liveRecv).coerceAtLeast(0)
 
-          Surface(
-            color = Color(0xFFF8FAFC),
-            shape = RoundedCornerShape(10.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-            modifier = Modifier.fillMaxWidth()
-          ) {
+          if (!isBiHourlyMode) {
+            Surface(
+              color = Color(0xFFF8FAFC),
+              shape = RoundedCornerShape(10.dp),
+              border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+              modifier = Modifier.fillMaxWidth()
+            ) {
             Column(
               modifier = Modifier.padding(12.dp),
               verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -1305,6 +1416,7 @@ fun QualityEntryScreen(
               }
             }
           }
+          }
 
           // Optional remarks
           OutlinedTextField(
@@ -1417,7 +1529,9 @@ fun QualityEntryScreen(
               if (isSubmitting) return@Button
               if (!canQualityWrite || isSlotLocked) {
                 validationError = if (isSlotLocked) {
-                  "🔒 Quality record for Line $selectedLine ($selectedHour) is already submitted. Only Admin can modify submitted records with a reason."
+                  "🔒 Quality record for Line $selectedLine (${repository.formatHourSlot12h(selectedHour)}) is already submitted. Only Admin can modify submitted records with a reason."
+                } else if (isBiHourlyMode) {
+                  "Only Admin or Auditor accounts can enter Daily Bi-Hourly Audit data within the 06:00 AM–Midnight BD window."
                 } else {
                   "You do not have permission or are outside the 06:00 AM–Midnight BD entry window."
                 }
@@ -1443,12 +1557,12 @@ fun QualityEntryScreen(
                 return@Button
               }
 
-              val sSent = defectSentText.toIntOrNull() ?: 0
-              val sRecv = defectReceivedText.toIntOrNull() ?: 0
+              val sSent = if (isBiHourlyMode) 0 else (defectSentText.toIntOrNull() ?: 0)
+              val sRecv = if (isBiHourlyMode) 0 else (defectReceivedText.toIntOrNull() ?: 0)
               val sBal = (sSent - sRecv).coerceAtLeast(0)
 
-              val spotS = spotSentText.toIntOrNull() ?: 0
-              val spotR = spotReceivedText.toIntOrNull() ?: 0
+              val spotS = if (isBiHourlyMode) 0 else (spotSentText.toIntOrNull() ?: 0)
+              val spotR = if (isBiHourlyMode) 0 else (spotReceivedText.toIntOrNull() ?: 0)
               val spotB = (spotS - spotR).coerceAtLeast(0)
 
               val record = QualityRecord(
@@ -1564,7 +1678,9 @@ fun QualityEntryScreen(
                 verticalAlignment = Alignment.CenterVertically
               ) {
                 Column(modifier = Modifier.weight(1f)) {
-                  Text("${entry.hourSlot} • ${entry.styleNumber}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF263238))
+                  val slot12h = repository.formatHourSlot12h(entry.hourSlot)
+                  val modeBadge = if (repository.isBiHourlyAuditSlot(entry.hourSlot)) "Bi-Hourly Audit" else "Hourly DHU"
+                  Text("$slot12h • $modeBadge • ${entry.styleNumber}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF263238))
                   Text("Checked: ${entry.checkedGarments} • Defective: ${entry.defectiveGarments}", fontSize = 11.sp, color = Color(0xFF78909C))
                 }
                 Column(horizontalAlignment = Alignment.End) {

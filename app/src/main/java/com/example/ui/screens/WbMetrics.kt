@@ -53,10 +53,10 @@ private fun periodWindow(period: PeriodScope, now: Long): Pair<Long, Long> = whe
 }
 
 private fun slotOrder(slot: String): Int =
-  Regex("\\d+").find(slot)?.value?.toIntOrNull() ?: 99
+  NflRepository.parseSlotHours24(slot)?.first ?: (Regex("\\d+").find(slot)?.value?.toIntOrNull() ?: 99)
 
 private fun slotLabel(slot: String): String =
-  (Regex("\\d+").find(slot)?.value ?: slot).padStart(2, '0')
+  NflRepository.formatHourShort12h(slot)
 
 fun buildWbMetrics(
   repo: NflRepository,

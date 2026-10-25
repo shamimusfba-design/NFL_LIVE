@@ -344,6 +344,27 @@ class NflRepository(private val context: Context) {
     "18:00 - 19:00"
   )
 
+  val defaultBiHourlySlots = listOf(
+    "08:00 - 10:00",
+    "10:00 - 12:00",
+    "13:00 - 15:00",
+    "15:00 - 17:00",
+    "17:00 - 19:00",
+    "19:00 - 21:00"
+  )
+
+  fun formatHourSlot12h(rawSlot: String): String = Companion.formatHourSlot12h(rawSlot)
+  fun formatHourShort12h(rawSlot: String): String = Companion.formatHourShort12h(rawSlot)
+  fun normalizeHourSlot24h(rawSlot: String): String = Companion.normalizeHourSlot24h(rawSlot)
+  fun isBiHourlyAuditSlot(rawSlot: String): Boolean = Companion.isBiHourlyAuditSlot(rawSlot)
+
+  fun canWriteWeeklyQualityOrBiHourlyAudit(user: UserAccount? = getAuthoritativeCurrentUser()): Boolean {
+    if (user == null || !user.isActive || user.accountStatus != AccountStatus.APPROVED || user.isViewOnly) return false
+    if (user.isAdmin && user.role == UserRole.ADMIN) return true
+    if (user.isAdmin) return true
+    return user.role == UserRole.AUDITOR && (user.canOqlWrite || user.canQualityWrite)
+  }
+
   val standardDefectTypes = listOf(
     "Skip Stitch",
     "Uncut Thread",
@@ -917,8 +938,8 @@ class NflRepository(private val context: Context) {
    */
   fun saveWeeklyQuality(weekMillis: Long, bsOqlPct: Double?, nflAqcPct: Double?): SecurityActionResult {
     val u = getAuthoritativeCurrentUser()
-    if (u == null || (!u.isAdmin && (u.role != UserRole.IE || !u.canMonthlyTargetWrite))) {
-      val msg = "Access Denied: Only authorized IE can enter Weekly OQL / AQC"
+    if (u == null || !canWriteWeeklyQualityOrBiHourlyAudit(u)) {
+      val msg = "Access Denied: Only Admin or authorized Auditor can enter Weekly BS OQL / NFL AQC"
       _syncStatusBanner.value = "⚠️ $msg"
       return SecurityActionResult(false, msg)
     }
@@ -1232,14 +1253,14 @@ class NflRepository(private val context: Context) {
   private fun productionSlotKey(lineId: String, date: String, hourSlot: String): String {
     val normLine = lineId.trim().uppercase(Locale.US)
     val normDate = sheetsStorage.normalizeToIsoDate(date)
-    val normHour = hourSlot.trim().lowercase(Locale.US)
+    val normHour = normalizeHourSlot24h(hourSlot).lowercase(Locale.US)
     return "${normLine}_${normDate}_${normHour}"
   }
 
   private fun qualitySlotKey(lineId: String, date: String, hourSlot: String): String {
     val normLine = lineId.trim().uppercase(Locale.US)
     val normDate = sheetsStorage.normalizeToIsoDate(date)
-    val normHour = hourSlot.trim().lowercase(Locale.US)
+    val normHour = normalizeHourSlot24h(hourSlot).lowercase(Locale.US)
     return "${normLine}_${normDate}_${normHour}"
   }
 
@@ -2842,8 +2863,21 @@ class NflRepository(private val context: Context) {
       _lastSecurityMessage.value = msg
       return entry
     }
+    val canonicalSlot = normalizeHourSlot24h(entry.hourSlot)
+    val isBiHourly = isBiHourlyAuditSlot(canonicalSlot)
+    if (isBiHourly && !canWriteWeeklyQualityOrBiHourlyAudit(u)) {
+      val msg = "⚠️ Access Denied: Only Admin or Auditor can enter Daily Bi-Hourly Audit data."
+      _syncStatusBanner.value = msg
+      _lastSecurityMessage.value = msg
+      addAuditLog("SECURITY", entry.lineId, "UNAUTHORIZED_BIHOURLY_AUDIT", u.id, "Blocked bi-hourly audit submission by ${u.role.displayName}")
+      return entry
+    }
     if (!u.isAdmin && u.role != UserRole.IE) {
-      val rolePermitted = u.role in setOf(UserRole.QUALITY_REPORTER, UserRole.AUDITOR, UserRole.IE)
+      val rolePermitted = if (isBiHourly) {
+        u.role == UserRole.AUDITOR && (u.canOqlWrite || u.canQualityWrite)
+      } else {
+        u.role in setOf(UserRole.QUALITY_REPORTER, UserRole.AUDITOR, UserRole.IE)
+      }
       if ((!u.canQualityWrite && !u.canOqlWrite) || !rolePermitted) {
         val msg = "⚠️ Access Denied: Role '${u.role.displayName}' cannot enter Quality data."
         _syncStatusBanner.value = msg
@@ -2865,18 +2899,18 @@ class NflRepository(private val context: Context) {
           !it.isDemo &&
               it.lineId.equals(entry.lineId, ignoreCase = true) &&
               sheetsStorage.normalizeToIsoDate(it.date) == normDate &&
-              it.hourSlot.equals(entry.hourSlot, ignoreCase = true)
+              normalizeHourSlot24h(it.hourSlot).equals(canonicalSlot, ignoreCase = true)
         }
       }
       if (alreadySubmitted) {
-        val msg = "🔒 Record Locked: Quality record for Line ${entry.lineId} (${entry.hourSlot} on $normDate) is already submitted. Only Admin/IE can correct submitted records."
+        val msg = "🔒 Record Locked: Quality record for Line ${entry.lineId} (${formatHourSlot12h(canonicalSlot)} on $normDate) is already submitted. Only Admin can correct submitted records."
         _syncStatusBanner.value = msg
         _lastSecurityMessage.value = msg
-        addAuditLog("SECURITY", entry.lineId, "BLOCKED_EDIT_SUBMITTED_QA", u.id, "Attempted overwrite of QA ${entry.hourSlot} on $normDate")
+        addAuditLog("SECURITY", entry.lineId, "BLOCKED_EDIT_SUBMITTED_QA", u.id, "Attempted overwrite of QA $canonicalSlot on $normDate")
         return entry
       }
     }
-    val targetKey = qualitySlotKey(entry.lineId, normDate, entry.hourSlot)
+    val targetKey = qualitySlotKey(entry.lineId, normDate, canonicalSlot)
     val existingRec = synchronized(stateLock) {
       _qualityEntries.value.find {
         !it.isDemo && qualitySlotKey(it.lineId, it.date, it.hourSlot) == targetKey
@@ -2901,12 +2935,13 @@ class NflRepository(private val context: Context) {
       return existingRec
     }
     val existingSubId = existingRec?.submissionId ?: entry.submissionId
-    val canonicalDocId = firebaseSync.canonicalQualityDocId(entry.copy(date = normDate))
+    val canonicalDocId = firebaseSync.canonicalQualityDocId(entry.copy(date = normDate, hourSlot = canonicalSlot))
 
     val liveEntry = entry.copy(
       id = existingRec?.id?.takeIf { it.isNotBlank() } ?: canonicalDocId,
       submissionId = existingSubId,
       date = normDate,
+      hourSlot = canonicalSlot,
       modifiedBy = u?.let { "${it.name} (${it.id})" } ?: entry.modifiedBy,
       syncStatus = SyncStatus.PENDING,
       timestamp = System.currentTimeMillis(),
@@ -5115,16 +5150,33 @@ class NflRepository(private val context: Context) {
     val defectNames = listOf("Puckering, Skip stitch", "Broken stitch", "Open seam", "Uneven seam", "Needle cut", "Puckering", "Skip stitch", "Broken stitch", "Pleat", "Dirty spot")
 
     return slots.mapIndexed { idx, slot ->
-      val slotQas = lineQas.filter { it.hourSlot.equals(slot, ignoreCase = true) }
+      val slotHours = parseSlotHours24(slot)
+      val slotQas = lineQas.filter { normalizeHourSlot24h(it.hourSlot).equals(slot, ignoreCase = true) }
       val realSlotQas = slotQas.filter { !it.isDemo }
       val effectiveQas = realSlotQas.ifEmpty { slotQas }
-      if (effectiveQas.isNotEmpty()) {
-        val checked = effectiveQas.sumOf { it.checkedGarments }.coerceAtLeast(1)
-        val defective = effectiveQas.sumOf { it.defectiveGarments }
-        val totalDefects = effectiveQas.sumOf { it.totalDefects }
-        val dhuPct = Math.round((totalDefects.toDouble() / checked.toDouble()) * 10000.0) / 100.0
-        val oqlPct = Math.round((defective.toDouble() / checked.toDouble()) * 10000.0) / 100.0
-        val topDefNames = effectiveQas
+
+      val coveringBiHourlyQas = lineQas.filter { qa ->
+        val qaHours = parseSlotHours24(qa.hourSlot)
+        isBiHourlyAuditSlot(qa.hourSlot) &&
+            slotHours != null && qaHours != null &&
+            qaHours.first <= slotHours.first && slotHours.second <= qaHours.second
+      }.let { allBi -> allBi.filter { !it.isDemo }.ifEmpty { allBi } }
+
+      if (effectiveQas.isNotEmpty() || coveringBiHourlyQas.isNotEmpty()) {
+        val dhuSource = effectiveQas.ifEmpty { coveringBiHourlyQas }
+        val oqlSource = coveringBiHourlyQas.ifEmpty { effectiveQas }
+
+        val dhuChecked = dhuSource.sumOf { it.checkedGarments }.coerceAtLeast(1)
+        val totalDefects = dhuSource.sumOf { it.totalDefects }
+        val dhuPct = if (effectiveQas.isNotEmpty()) {
+          Math.round((totalDefects.toDouble() / dhuChecked.toDouble()) * 10000.0) / 100.0
+        } else 0.0
+
+        val oqlChecked = oqlSource.sumOf { it.checkedGarments }.coerceAtLeast(1)
+        val defective = oqlSource.sumOf { it.defectiveGarments }
+        val oqlPct = Math.round((defective.toDouble() / oqlChecked.toDouble()) * 10000.0) / 100.0
+
+        val topDefNames = (effectiveQas + coveringBiHourlyQas)
           .flatMap { it.defects }
           .filter { it.count > 0 }
           .groupBy { it.defectType }
@@ -5378,18 +5430,24 @@ class NflRepository(private val context: Context) {
       } else 0.0
 
       val hasQa = qas.isNotEmpty()
-      val checked = if (hasQa) qas.sumOf { it.checkedGarments } else 0
-      val defective = if (hasQa) qas.sumOf { it.defectiveGarments } else 0
-      val defectsTotal = if (hasQa) qas.sumOf { it.totalDefects } else 0
-      val sentQas = if (hasQa) qas.sumOf { it.defectSent } else 0
-      val recvQas = if (hasQa) qas.sumOf { it.defectReceived } else 0
-      val sentSpotsQas = if (hasQa) qas.sumOf { it.spotSent } else 0
-      val recvSpotsQas = if (hasQa) qas.sumOf { it.spotReceived } else 0
+      val biHourlyQas = qas.filter { isBiHourlyAuditSlot(it.hourSlot) }
+      val hourlyDhuQas = qas.filter { !isBiHourlyAuditSlot(it.hourSlot) }
+      val dhuSourceQas = hourlyDhuQas.ifEmpty { qas }
+      val oqlSourceQas = biHourlyQas.ifEmpty { qas }
+
+      val checked = if (hasQa) dhuSourceQas.sumOf { it.checkedGarments } else 0
+      val oqlChecked = if (hasQa) oqlSourceQas.sumOf { it.checkedGarments } else 0
+      val defective = if (hasQa) oqlSourceQas.sumOf { it.defectiveGarments } else 0
+      val defectsTotal = if (hasQa) dhuSourceQas.sumOf { it.totalDefects } else 0
+      val sentQas = if (hasQa) dhuSourceQas.sumOf { it.defectSent } else 0
+      val recvQas = if (hasQa) dhuSourceQas.sumOf { it.defectReceived } else 0
+      val sentSpotsQas = if (hasQa) dhuSourceQas.sumOf { it.spotSent } else 0
+      val recvSpotsQas = if (hasQa) dhuSourceQas.sumOf { it.spotReceived } else 0
 
       val lineBal = (sentQas - recvQas).coerceAtLeast(0)
       val lineSpotBal = (sentSpotsQas - recvSpotsQas).coerceAtLeast(0)
 
-      val oqlPct = if (checked > 0) ((defective.toDouble() / checked) * 100).let { Math.round(it * 100.0) / 100.0 } else 0.0
+      val oqlPct = if (oqlChecked > 0) ((defective.toDouble() / oqlChecked) * 100).let { Math.round(it * 100.0) / 100.0 } else 0.0
       val dhuVal = if (checked > 0) ((defectsTotal.toDouble() / checked) * 100).let { Math.round(it * 100.0) / 100.0 } else 0.0
 
       val resolvedMonthlyEff = when {
@@ -6084,6 +6142,66 @@ class NflRepository(private val context: Context) {
         activeInstances.mapNotNull { it.get() }
       }
       list.forEach { it.cancelDirtyUsers() }
+    }
+
+    private fun parseSingleHour24(token: String): Int? {
+      val trimmed = token.trim().uppercase(Locale.US)
+      val h = Regex("\\d+").find(trimmed)?.value?.toIntOrNull() ?: return null
+      return when {
+        trimmed.contains("PM") -> if (h in 1..11) h + 12 else h
+        trimmed.contains("AM") -> if (h == 12) 0 else h
+        else -> h
+      }
+    }
+
+    fun parseSlotHours24(rawSlot: String): Pair<Int, Int>? {
+      val parts = rawSlot.split("-", "–")
+      if (parts.size < 2) return null
+      val startH = parseSingleHour24(parts[0]) ?: return null
+      val endH = parseSingleHour24(parts[1]) ?: return null
+      return startH to endH
+    }
+
+    fun normalizeHourSlot24h(rawSlot: String): String {
+      val parsed = parseSlotHours24(rawSlot) ?: return rawSlot.trim()
+      return String.format(Locale.US, "%02d:00 - %02d:00", parsed.first, parsed.second)
+    }
+
+    private fun formatHour12h(hour24: Int): String {
+      val h = ((hour24 % 24) + 24) % 24
+      val period = if (h >= 12) "PM" else "AM"
+      val h12 = when {
+        h == 0 -> 12
+        h > 12 -> h - 12
+        else -> h
+      }
+      return "$h12:00 $period"
+    }
+
+    fun formatHourSlot12h(rawSlot: String): String {
+      val parsed = parseSlotHours24(rawSlot) ?: return rawSlot.trim()
+      return "${formatHour12h(parsed.first)} - ${formatHour12h(parsed.second)}"
+    }
+
+    fun formatHourShort12h(rawSlot: String): String {
+      val parsed = parseSlotHours24(rawSlot)
+      val h = if (parsed != null) {
+        ((parsed.first % 24) + 24) % 24
+      } else {
+        parseSingleHour24(rawSlot) ?: return rawSlot.substringBefore(" ").take(5)
+      }
+      val period = if (h >= 12) "PM" else "AM"
+      val h12 = when {
+        h == 0 -> 12
+        h > 12 -> h - 12
+        else -> h
+      }
+      return "$h12 $period"
+    }
+
+    fun isBiHourlyAuditSlot(rawSlot: String): Boolean {
+      val parsed = parseSlotHours24(rawSlot) ?: return false
+      return (parsed.second - parsed.first) == 2
     }
   }
 }

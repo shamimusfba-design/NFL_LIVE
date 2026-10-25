@@ -126,4 +126,39 @@ class WeeklyQualityTest {
     val restarted = NflRepository(context)
     assertEquals(4.0, restarted.weeklyQuality.value.single().bsOqlPct!!, 0.0001)
   }
+
+  @Test
+  fun `12-hour AM PM formatting converts 24h and bi-hourly slots cleanly`() {
+    assertEquals("8:00 AM - 9:00 AM", NflRepository.formatHourSlot12h("08:00 - 09:00"))
+    assertEquals("12:00 PM - 1:00 PM", NflRepository.formatHourSlot12h("12:00 - 13:00"))
+    assertEquals("2:00 PM - 3:00 PM", NflRepository.formatHourSlot12h("14:00 - 15:00"))
+    assertEquals("1:00 PM - 3:00 PM", NflRepository.formatHourSlot12h("13:00 - 15:00"))
+    assertEquals("8 AM", NflRepository.formatHourShort12h("08:00 - 09:00"))
+    assertEquals("2 PM", NflRepository.formatHourShort12h("14:00 - 15:00"))
+    assertEquals("14:00 - 15:00", NflRepository.normalizeHourSlot24h("2:00 PM - 3:00 PM"))
+    assertTrue(NflRepository.isBiHourlyAuditSlot("08:00 - 10:00"))
+    assertTrue(NflRepository.isBiHourlyAuditSlot("1:00 PM - 3:00 PM"))
+    assertFalse(NflRepository.isBiHourlyAuditSlot("14:00 - 15:00"))
+  }
+
+  @Test
+  fun `auditor can save weekly BS OQL while IE and quality manager are rejected`() {
+    val repo = newRepo()
+    val now = System.currentTimeMillis()
+
+    // IE should be rejected for Weekly BS OQL
+    repo.authenticateUser("ie", "123")
+    assertFalse(repo.saveWeeklyQuality(now, 4.2, 5.0).success)
+
+    // Quality Manager should be rejected for Weekly BS OQL
+    repo.authenticateUser("qm", "123")
+    assertFalse(repo.saveWeeklyQuality(now, 4.2, 5.0).success)
+
+    // Auditor is allowed to save Weekly BS OQL
+    repo.authenticateUser("auditor", "123")
+    assertTrue(repo.saveWeeklyQuality(now, 4.25, 5.10).success)
+    val saved = repo.weeklyQuality.value.single()
+    assertEquals(4.25, saved.bsOqlPct!!, 0.0001)
+    assertEquals(5.10, saved.nflAqcPct!!, 0.0001)
+  }
 }

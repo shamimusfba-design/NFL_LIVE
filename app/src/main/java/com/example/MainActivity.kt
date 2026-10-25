@@ -321,6 +321,7 @@ class MainActivity : ComponentActivity() {
                     val canWriteNpt = isAdminUser || isIeUser || (currentUser?.let { it.canNptWrite && it.role !in setOf(UserRole.MANAGEMENT_VIEW, UserRole.PRODUCTION_MANAGER, UserRole.QUALITY_MANAGER) } ?: false)
                     val canWriteProd = isAdminUser || isIeUser || (currentUser?.let { (it.canProductionWrite || it.canFinishingWrite) && it.role in setOf(UserRole.SUPERVISOR, UserRole.PRODUCTION_REPORTER, UserRole.IE) } ?: false)
                     val canWriteQual = isAdminUser || isIeUser || (currentUser?.let { (it.canQualityWrite || it.canOqlWrite) && it.role in setOf(UserRole.QUALITY_REPORTER, UserRole.AUDITOR, UserRole.IE) } ?: false)
+                    val canWriteWeeklyQualityOrAudit = repository.canWriteWeeklyQualityOrBiHourlyAudit(currentUser)
                     val canWriteAnyEntry = canWriteProd || canWriteQual
 
                     // 2. Navigation Items
@@ -493,6 +494,9 @@ class MainActivity : ComponentActivity() {
                         ),
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
                       )
+                    }
+
+                    if (canWriteWeeklyQualityOrAudit) {
                       NavigationDrawerItem(
                         label = { Text("📈 Weekly OQL / AQC Entry", color = if (currentScreen == AppScreen.WEEKLY_QUALITY) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
                         selected = currentScreen == AppScreen.WEEKLY_QUALITY,
@@ -833,7 +837,8 @@ class MainActivity : ComponentActivity() {
                     onViewHistory = { currentScreen = AppScreen.HISTORY_SYNC },
                     onNavigateToProduction = { if (canWriteProd) currentScreen = AppScreen.PRODUCTION_ENTRY },
                     onNavigateToMonthlySetup = { if (canWriteMonthlySetup) currentScreen = AppScreen.MONTHLY_SETUP },
-                    onNavigateToSetup = { if (canWriteMorningSetup) currentScreen = AppScreen.SUPERVISOR_SETUP }
+                    onNavigateToSetup = { if (canWriteMorningSetup) currentScreen = AppScreen.SUPERVISOR_SETUP },
+                    onNavigateToWeeklyQuality = { if (repository.canWriteWeeklyQualityOrBiHourlyAudit(currentUser)) currentScreen = AppScreen.WEEKLY_QUALITY }
                   )
                   AppScreen.NPT_SUPERVISOR -> NptSupervisorScreen(
                     repository = repository,
