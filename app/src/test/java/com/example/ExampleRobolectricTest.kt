@@ -39,6 +39,8 @@ class ExampleRobolectricTest {
   fun `test 11 roles support and floor scope`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val repository = NflRepository(context)
+    // Role preview is Admin-only (fail-closed when logged out), so sign in as the seeded Admin first.
+    repository.authenticateUser("admin", "123")
 
     assertEquals(11, UserRole.entries.size)
     repository.setRole(UserRole.MECHANIC)
@@ -52,6 +54,8 @@ class ExampleRobolectricTest {
   fun `test incident lifecycle mute acknowledge resolve`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val repository = NflRepository(context)
+    // NPT incident actions require a logged-in user with NPT permission (Admin has it).
+    repository.authenticateUser("admin", "123")
 
     val inc = repository.reportIncident(
       IncidentItem(
