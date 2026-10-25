@@ -856,6 +856,135 @@ class NflRepository(private val context: Context) {
   )
   val monthlyTargets: StateFlow<List<MonthlyFactoryTarget>> = _monthlyTargets.asStateFlow()
 
+  // Weekly factory quality (BS OQL / NFL AQC): entered by hand once a week. No demo or static values.
+  private val weeklyQualityPrefs by lazy { context.getSharedPreferences("nfl_weekly_quality", Context.MODE_PRIVATE) }
+  private val _weeklyQuality = MutableStateFlow<List<WeeklyQualityEntry>>(loadWeeklyQualityLocal())
+  val weeklyQuality: StateFlow<List<WeeklyQualityEntry>> = _weeklyQuality.asStateFlow()
+
+  private fun loadWeeklyQualityLocal(): List<WeeklyQualityEntry> {
+    return try {
+      val raw = weeklyQualityPrefs.getString("entries_json", null) ?: return emptyList()
+      val arr = org.json.JSONArray(raw)
+      (0 until arr.length()).mapNotNull { i ->
+        val o = arr.optJSONObject(i) ?: return@mapNotNull null
+        val key = o.optString("weekKey")
+        if (key.isBlank()) return@mapNotNull null
+        WeeklyQualityEntry(
+          weekKey = key,
+          weekStartIso = o.optString("weekStartIso"),
+          bsOqlPct = if (o.has("bsOqlPct") && !o.isNull("bsOqlPct")) o.getDouble("bsOqlPct") else null,
+          nflAqcPct = if (o.has("nflAqcPct") && !o.isNull("nflAqcPct")) o.getDouble("nflAqcPct") else null,
+          lastUpdatedBy = o.optString("lastUpdatedBy"),
+          lastUpdatedMillis = o.optLong("lastUpdatedMillis")
+        )
+      }.sortedBy { it.weekStartIso }
+    } catch (e: Exception) {
+      emptyList()
+    }
+  }
+
+  private fun persistWeeklyQualityLocal(list: List<WeeklyQualityEntry>) {
+    try {
+      val arr = org.json.JSONArray()
+      list.forEach { e ->
+        val o = org.json.JSONObject()
+        o.put("weekKey", e.weekKey)
+        o.put("weekStartIso", e.weekStartIso)
+        e.bsOqlPct?.let { o.put("bsOqlPct", it) }
+        e.nflAqcPct?.let { o.put("nflAqcPct", it) }
+        o.put("lastUpdatedBy", e.lastUpdatedBy)
+        o.put("lastUpdatedMillis", e.lastUpdatedMillis)
+        arr.put(o)
+      }
+      weeklyQualityPrefs.edit().putString("entries_json", arr.toString()).apply()
+    } catch (e: Exception) {
+      Log.w("NflRepository", "Could not save weekly quality locally: ${e.message}")
+    }
+  }
+
+  /**
+   * Saves BS OQL and/or NFL AQC (in %) for the week containing [weekMillis].
+   * A null value keeps the value already saved for that week. Only an Admin or an authorised IE may save.
+   * The returned result is about the local save; cloud sync is reported afterwards through the sync banner.
+   */
+  fun saveWeeklyQuality(weekMillis: Long, bsOqlPct: Double?, nflAqcPct: Double?): SecurityActionResult {
+    val u = getAuthoritativeCurrentUser()
+    if (u == null || (!u.isAdmin && (u.role != UserRole.IE || !u.canMonthlyTargetWrite))) {
+      val msg = "Access Denied: Only authorized IE can enter Weekly OQL / AQC"
+      _syncStatusBanner.value = "⚠️ $msg"
+      return SecurityActionResult(false, msg)
+    }
+    if (bsOqlPct == null && nflAqcPct == null) {
+      return SecurityActionResult(false, "Enter at least one value (BS OQL or NFL AQC).")
+    }
+    fun invalid(v: Double?) = v != null && (v.isNaN() || v.isInfinite() || v < 0.0 || v > 100.0)
+    if (invalid(bsOqlPct) || invalid(nflAqcPct)) {
+      return SecurityActionResult(false, "Values must be between 0 and 100 (%).")
+    }
+    val now = System.currentTimeMillis()
+    val weekStartIso = WeeklyQualityWeek.startIsoFor(weekMillis)
+    if (weekStartIso > WeeklyQualityWeek.startIsoFor(now)) {
+      return SecurityActionResult(false, "A future week cannot be entered.")
+    }
+    val key = WeeklyQualityWeek.keyFor(weekMillis)
+    val label = WeeklyQualityWeek.labelFor(key)
+    val editor = u.name.ifBlank { u.id }
+    var saved: WeeklyQualityEntry? = null
+    synchronized(stateLock) {
+      val existing = _weeklyQuality.value.find { it.weekKey == key }
+      val merged = WeeklyQualityEntry(
+        weekKey = key,
+        weekStartIso = weekStartIso,
+        bsOqlPct = bsOqlPct ?: existing?.bsOqlPct,
+        nflAqcPct = nflAqcPct ?: existing?.nflAqcPct,
+        lastUpdatedBy = editor,
+        lastUpdatedMillis = now
+      )
+      saved = merged
+      _weeklyQuality.value = (_weeklyQuality.value.filterNot { it.weekKey == key } + merged)
+        .sortedBy { it.weekStartIso }
+    }
+    val entry = saved ?: return SecurityActionResult(false, "Could not save the weekly entry.")
+    persistWeeklyQualityLocal(_weeklyQuality.value)
+    touchDataUpdated()
+    addAuditLog(
+      "WEEKLY_QUALITY", key, "SAVE_WEEKLY_QUALITY", editor,
+      "BS OQL: ${entry.bsOqlPct ?: "-"}%, NFL AQC: ${entry.nflAqcPct ?: "-"}% (Cloud Firestore)"
+    )
+    repoScope.launch {
+      val ok = firebaseSync.pushWeeklyQualityAwait(entry)
+      _syncStatusBanner.value = if (ok) {
+        "✓ Weekly OQL / AQC for $label synced to cloud"
+      } else {
+        "⚠️ Weekly OQL / AQC for $label saved on this phone only (cloud sync failed)"
+      }
+    }
+    return SecurityActionResult(true, "Saved $label on this phone. Cloud sync in progress.")
+  }
+
+  fun upsertRemoteWeeklyQuality(remoteList: List<WeeklyQualityEntry>) {
+    if (remoteList.isEmpty()) return
+    var changed = false
+    synchronized(stateLock) {
+      val byKey = LinkedHashMap<String, WeeklyQualityEntry>()
+      _weeklyQuality.value.forEach { byKey[it.weekKey] = it }
+      remoteList.forEach { remote ->
+        val prev = byKey[remote.weekKey]
+        if (prev == null || (remote.lastUpdatedMillis >= prev.lastUpdatedMillis && prev != remote)) {
+          byKey[remote.weekKey] = remote
+          changed = true
+        }
+      }
+      if (changed) {
+        _weeklyQuality.value = byKey.values.sortedBy { it.weekStartIso }
+      }
+    }
+    if (changed) {
+      persistWeeklyQualityLocal(_weeklyQuality.value)
+      touchDataUpdated()
+    }
+  }
+
   // In-memory data
   private val _targets = MutableStateFlow<List<SupervisorLineSetup>>(emptyList())
   val targets: StateFlow<List<SupervisorLineSetup>> = _targets.asStateFlow()
@@ -997,6 +1126,9 @@ class NflRepository(private val context: Context) {
       }
       firebaseSync.onRemoteMonthlyTargetsUpdated = { remoteList ->
         upsertRemoteMonthlyTargets(remoteList)
+      }
+      firebaseSync.onRemoteWeeklyQualityUpdated = { remoteList ->
+        upsertRemoteWeeklyQuality(remoteList)
       }
       firebaseSync.onRemoteUsersUpdated = { remoteList ->
         upsertRemoteUsers(remoteList)
@@ -1526,11 +1658,17 @@ class NflRepository(private val context: Context) {
             remote.activeSessionId != localSessionId
 
         if (isTargetActiveUser && isNewerThanLocal) {
+          // Admin accounts are intentionally multi-device and do not use the shared session id / device binding
+          // (see authenticateUser). Another Admin device signing in rewrites the shared record, so session-id and
+          // device-binding differences must NOT log an Admin out. Status changes and an explicit REVOKED- session still do.
+          val isAdminSession = activeBefore?.isAdmin == true && remote.isAdmin
           val statusRevoked = remote.accountStatus != AccountStatus.APPROVED || !remote.isActive
-          val deviceRevoked = remoteBoundDevice.isNotBlank() && remoteBoundDevice != myDeviceId
-          val sessionRevoked = remote.activeSessionId.isNotBlank() &&
+          val explicitlyRevoked = remote.activeSessionId.startsWith("REVOKED-")
+          val deviceRevoked = !isAdminSession && remoteBoundDevice.isNotBlank() && remoteBoundDevice != myDeviceId
+          val sessionRevoked = explicitlyRevoked || (!isAdminSession &&
+              remote.activeSessionId.isNotBlank() &&
               savedSessionId.isNotBlank() &&
-              remote.activeSessionId != savedSessionId
+              remote.activeSessionId != savedSessionId)
           if (statusRevoked || deviceRevoked || sessionRevoked) {
             forceLogoutActiveUser = true
           }
@@ -1868,7 +2006,7 @@ class NflRepository(private val context: Context) {
   fun setRole(role: UserRole) {
     // Security rule: Only an authenticated Admin can switch active role preview
     val active = getAuthoritativeCurrentUser()
-    if (active != null && !active.isAdmin) {
+    if (active?.isAdmin != true) {
       _syncStatusBanner.value = "⚠️ Access Denied: Employees cannot assign themselves roles or permissions."
       return
     }
@@ -4450,7 +4588,7 @@ class NflRepository(private val context: Context) {
   // Incident Actions
   fun reportIncident(item: IncidentItem): IncidentItem {
     val u = _currentUser.value
-    if (u != null && !u.isAdmin && !u.canNptWrite) {
+    if (u == null || (!u.isAdmin && !u.canNptWrite)) {
       _syncStatusBanner.value = "⚠️ Access Denied: You do not have permission for NPT Entry"
       return item
     }
@@ -4528,7 +4666,7 @@ class NflRepository(private val context: Context) {
 
   fun acknowledgeIncident(id: String, ackBy: String) {
     val u = _currentUser.value
-    if (u != null && !u.isAdmin && !u.canNptWrite) {
+    if (u == null || (!u.isAdmin && !u.canNptWrite)) {
       _syncStatusBanner.value = "⚠️ Access Denied: You do not have permission to acknowledge NPT incidents"
       return
     }
@@ -4560,7 +4698,7 @@ class NflRepository(private val context: Context) {
 
   fun resolveIncident(id: String, resolvedBy: String, note: String) {
     val u = _currentUser.value
-    if (u != null && !u.isAdmin && !u.canNptWrite) {
+    if (u == null || (!u.isAdmin && !u.canNptWrite)) {
       _syncStatusBanner.value = "⚠️ Access Denied: You do not have permission to resolve NPT incidents"
       return
     }

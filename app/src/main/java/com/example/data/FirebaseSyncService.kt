@@ -88,6 +88,7 @@ class FirebaseSyncService(private val context: Context) {
   var onRemoteIncidentsUpdated: ((List<IncidentItem>) -> Unit)? = null
   var onRemoteSetupsUpdated: ((List<SupervisorLineSetup>) -> Unit)? = null
   var onRemoteMonthlyTargetsUpdated: ((List<MonthlyFactoryTarget>) -> Unit)? = null
+  var onRemoteWeeklyQualityUpdated: ((List<WeeklyQualityEntry>) -> Unit)? = null
   var onRemoteUsersUpdated: ((List<UserAccount>) -> Unit)? = null
   var onSyncStatusChanged: ((String) -> Unit)? = null
 
@@ -464,6 +465,35 @@ class FirebaseSyncService(private val context: Context) {
         }
       listeners.add(monthlyReg)
 
+      // 5b. Weekly BS OQL / NFL AQC (one small document per week, newest 26 weeks only)
+      val weeklyReg = db.collection("weekly_quality")
+        .orderBy("weekStartIso", Query.Direction.DESCENDING)
+        .limit(26)
+        .addSnapshotListener { snapshot, error ->
+          if (error != null) {
+            handleListenerError("WeeklyQuality", error)
+            return@addSnapshotListener
+          }
+          if (snapshot != null) {
+            hasPermissionError = false
+            val docChanges = snapshot.documentChanges
+            val docs = snapshot.documents
+            val isFromCache = snapshot.metadata.isFromCache
+            snapshotScope.launch {
+              recordCollectionRead(
+                collection = "weekly_quality",
+                changesCount = docChanges.size,
+                isFromCache = isFromCache
+              )
+              val list = docs.mapNotNull { doc -> parseWeeklyQualityDoc(doc) }
+              if (list.isNotEmpty()) {
+                onRemoteWeeklyQualityUpdated?.invoke(list)
+              }
+            }
+          }
+        }
+      listeners.add(weeklyReg)
+
       // 6. User accounts listener (small collection)
       val usersReg = db.collection("users")
         .addSnapshotListener { snapshot, error ->
@@ -724,6 +754,23 @@ class FirebaseSyncService(private val context: Context) {
         lineId = doc.getString("lineId") ?: "",
         monthlyTargetPcs = doc.getDouble("monthlyTargetPcs") ?: 0.0,
         monthlyAchievementPcs = doc.getDouble("monthlyAchievementPcs") ?: 0.0
+      )
+    } catch (e: Exception) {
+      null
+    }
+  }
+
+  private fun parseWeeklyQualityDoc(doc: DocumentSnapshot): WeeklyQualityEntry? {
+    return try {
+      val key = doc.getString("weekKey")?.takeIf { it.isNotBlank() } ?: doc.id
+      val start = doc.getString("weekStartIso") ?: return null
+      WeeklyQualityEntry(
+        weekKey = key,
+        weekStartIso = start,
+        bsOqlPct = doc.getDouble("bsOqlPct"),
+        nflAqcPct = doc.getDouble("nflAqcPct"),
+        lastUpdatedBy = doc.getString("lastUpdatedBy") ?: "",
+        lastUpdatedMillis = doc.getLong("lastUpdatedMillis") ?: 0L
       )
     } catch (e: Exception) {
       null
@@ -1270,6 +1317,34 @@ class FirebaseSyncService(private val context: Context) {
     serviceScope.launch {
       val ok = pushMonthlyTargetAwait(target)
       onResult?.invoke(ok, lastErrorMessage)
+    }
+  }
+
+  suspend fun pushWeeklyQualityAwait(entry: WeeklyQualityEntry): Boolean = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext false
+    try {
+      val map = hashMapOf<String, Any>(
+        "weekKey" to entry.weekKey,
+        "weekStartIso" to entry.weekStartIso,
+        "lastUpdatedBy" to entry.lastUpdatedBy,
+        "lastUpdatedMillis" to entry.lastUpdatedMillis
+      )
+      // Only write values that were actually entered; never write nulls.
+      entry.bsOqlPct?.let { map["bsOqlPct"] = it }
+      entry.nflAqcPct?.let { map["nflAqcPct"] = it }
+      withTimeout(10000L) {
+        db.collection("weekly_quality").document(entry.weekKey).set(map, SetOptions.merge()).await()
+      }
+      hasPermissionError = false
+      lastErrorMessage = null
+      true
+    } catch (e: Exception) {
+      if (e is FirebaseFirestoreException && e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+        hasPermissionError = true
+      }
+      lastErrorMessage = e.message
+      Log.w("FirebaseSync", "Firestore weekly quality push failed: ${e.message}")
+      false
     }
   }
 
