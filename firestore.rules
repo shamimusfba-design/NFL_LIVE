@@ -2,110 +2,455 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions for schema validation and least-privilege RBAC
+    // =========================================================================
+    // 1. Primitive & Schema Helpers
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
     function isNonEmptyString(val) {
-      return val is string && val.size() > 0;
+      return val is string && val.size() > 0 && val.size() <= 500;
     }
 
     function isValidPhysicalFloor(floor) {
-      return floor in ['Sew-1', 'Sew-2', 'Sew-3', 'Sew-4', 'Sew 1', 'Sew 2', 'Sew 3', 'Sew 4', 'Finishing'];
+      return floor in [
+        'Sew-1', 'Sew-2', 'Sew-3', 'Sew-4',
+        'Sew 1', 'Sew 2', 'Sew 3', 'Sew 4',
+        'SEW_1', 'SEW_2', 'SEW_3', 'SEW_4',
+        'Finishing', 'FINISHING'
+      ];
     }
 
     function isValidFloorScope(scope) {
-      return scope in ['All Floor', 'All', 'ALL', 'Sew-1', 'Sew-2', 'Sew-3', 'Sew-4', 'Sew 1', 'Sew 2', 'Sew 3', 'Sew 4', 'Finishing'];
+      return scope in [
+        'All Floor', 'All', 'ALL',
+        'Sew-1', 'Sew-2', 'Sew-3', 'Sew-4',
+        'Sew 1', 'Sew 2', 'Sew 3', 'Sew 4',
+        'SEW_1', 'SEW_2', 'SEW_3', 'SEW_4',
+        'Finishing', 'FINISHING'
+      ];
+    }
+
+    function isValidRole(role) {
+      return role in [
+        'ADMIN', 'IE', 'AUDITOR', 'SUPERVISOR',
+        'QUALITY', 'PACKING', 'MANAGEMENT', 'TV_VIEWER',
+        'PRODUCTION_REPORTER', 'QUALITY_REPORTER',
+        'PRODUCTION_MANAGER', 'QUALITY_MANAGER',
+        'MECHANIC', 'INPUT_MATERIAL', 'MANAGEMENT_VIEW'
+      ];
+    }
+
+    function isSameFloor(a, b) {
+      return a == b
+        || (a in ['Sew-1', 'Sew 1', 'SEW_1'] && b in ['Sew-1', 'Sew 1', 'SEW_1'])
+        || (a in ['Sew-2', 'Sew 2', 'SEW_2'] && b in ['Sew-2', 'Sew 2', 'SEW_2'])
+        || (a in ['Sew-3', 'Sew 3', 'SEW_3'] && b in ['Sew-3', 'Sew 3', 'SEW_3'])
+        || (a in ['Sew-4', 'Sew 4', 'SEW_4'] && b in ['Sew-4', 'Sew 4', 'SEW_4'])
+        || (a in ['Finishing', 'FINISHING'] && b in ['Finishing', 'FINISHING']);
     }
 
     function hasNoPlaintextPassword(data) {
-      return !('password' in data) || data.password == '';
+      return data.get('password', '') == '';
     }
 
-    // Users collection:
-    // - Never allow plaintext passwords in Firestore documents
-    // - Require passwordHash and passwordSalt or valid Employee ID
-    // - Public self-registration can only create PENDING_APPROVAL non-admin accounts (except initial admin 1015198 bootstrap once)
+    function getUserAssignedFloor(data) {
+      let af = data.get('assignedFloor', '');
+      let sc = data.get('authorizedFloorScope', '');
+      return af != '' ? af : (sc != '' ? sc : data.get('floor', ''));
+    }
+
+    // =========================================================================
+    // 2. Cryptographic Identity & Server-Side RBAC Resolution
+    // =========================================================================
+    function authBindingPath() {
+      return /databases/$(database)/documents/auth_bindings/$(request.auth.uid);
+    }
+
+    function hasAuthBinding() {
+      return isSignedIn() && exists(authBindingPath());
+    }
+
+    function boundEmployeeId() {
+      return get(authBindingPath()).data.get('employeeId', '');
+    }
+
+    function userDocPath(empId) {
+      return /databases/$(database)/documents/users/$(empId);
+    }
+
+    function hasBoundUserDoc() {
+      let empId = boundEmployeeId();
+      return isSignedIn()
+        && exists(authBindingPath())
+        && empId != ''
+        && exists(/databases/$(database)/documents/users/$(empId));
+    }
+
+    function callerUser() {
+      return get(/databases/$(database)/documents/users/$(boundEmployeeId())).data;
+    }
+
+    function isApprovedCaller() {
+      return hasBoundUserDoc() && callerUser().get('accountStatus', '') == 'APPROVED';
+    }
+
+    function callerRole() {
+      return callerUser().get('role', '');
+    }
+
+    function isAdmin() {
+      let empId = boundEmployeeId();
+      return isSignedIn()
+        && exists(authBindingPath())
+        && empId != ''
+        && exists(/databases/$(database)/documents/users/$(empId))
+        && get(/databases/$(database)/documents/users/$(empId)).data.get('accountStatus', '') == 'APPROVED'
+        && (
+          get(/databases/$(database)/documents/users/$(empId)).data.get('role', '') == 'ADMIN'
+          || empId == '1015198'
+        );
+    }
+
+    function isPrivilegedPlanner() {
+      let u = callerUser();
+      let role = u.get('role', '');
+      return hasBoundUserDoc()
+        && u.get('accountStatus', '') == 'APPROVED'
+        && (
+          role in ['ADMIN', 'IE', 'AUDITOR', 'PRODUCTION_MANAGER', 'QUALITY_MANAGER']
+          || boundEmployeeId() == '1015198'
+        );
+    }
+
+    function callerHasFloorAccess(targetFloor) {
+      let u = callerUser();
+      let role = u.get('role', '');
+      let uFloor = getUserAssignedFloor(u);
+      return role in ['ADMIN', 'IE', 'AUDITOR', 'PRODUCTION_MANAGER', 'QUALITY_MANAGER', 'MANAGEMENT', 'MANAGEMENT_VIEW']
+        || boundEmployeeId() == '1015198'
+        || uFloor in ['All Floor', 'All', 'ALL']
+        || isSameFloor(uFloor, targetFloor);
+    }
+
+    // =========================================================================
+    // 3. Operational Date & Historical Edit Protection (Supervisors / Floor Staff)
+    // =========================================================================
+    function isRecentTimestamp(ts) {
+      return ts is int
+        && ts >= request.time.toMillis() - 86400000
+        && ts <= request.time.toMillis() + 86400000;
+    }
+
+    function getDocTimestamp(data) {
+      return data.get('timestampMillis', data.get('timestamp', request.time.toMillis()));
+    }
+
+    function isNotHistoricalDateString(dateStr) {
+      return isNonEmptyString(dateStr)
+        && dateStr.size() == 10
+        && !(dateStr.matches('^20[0-1][0-9]-.*'))
+        && !(dateStr.matches('^202[0-5]-.*'));
+    }
+
+    function isCurrentOperationalWindowCreate() {
+      return isNotHistoricalDateString(request.resource.data.get('date', ''))
+        && isRecentTimestamp(getDocTimestamp(request.resource.data))
+        && request.resource.data.get('isLocked', false) == false;
+    }
+
+    function isCurrentOperationalWindowUpdate() {
+      return request.resource.data.get('date', '') == resource.data.get('date', '')
+        && request.resource.data.get('lineId', '') == resource.data.get('lineId', '')
+        && isSameFloor(request.resource.data.get('floor', ''), resource.data.get('floor', ''))
+        && isNotHistoricalDateString(resource.data.get('date', ''))
+        && resource.data.get('isLocked', false) == false
+        && isRecentTimestamp(getDocTimestamp(resource.data))
+        && isRecentTimestamp(getDocTimestamp(request.resource.data));
+    }
+
+    function hasValidOutputQty(data) {
+      let q = data.get('outputQty', data.get('outputPcs', -1));
+      return q is number && q >= 0;
+    }
+
+    function hasValidCheckedGarments(data) {
+      let c = data.get('checkedGarments', data.get('checkedPcs', -1));
+      return c is number && c >= 0;
+    }
+
+    // =========================================================================
+    // 4. Collection Rules
+    // =========================================================================
+
+    // Auth Bindings: maps Firebase UID -> Employee ID / TV Device ID
+    match /auth_bindings/{uid} {
+      allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create, update: if isSignedIn()
+        && (
+          (
+            request.auth.uid == uid
+            && isNonEmptyString(request.resource.data.get('employeeId', ''))
+            && request.resource.data.get('employeeId', '').size() <= 64
+            && request.resource.data.get('firebaseUid', request.resource.data.get('uid', '')) == request.auth.uid
+            && (
+              !exists(userDocPath(request.resource.data.get('employeeId', '')))
+              || get(userDocPath(request.resource.data.get('employeeId', ''))).data.get('firebaseUid', '') == ''
+              || get(userDocPath(request.resource.data.get('employeeId', ''))).data.get('firebaseUid', '') == request.auth.uid
+            )
+          )
+          || isAdmin()
+        );
+      allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+    }
+
+    // Users Collection:
+    // - No public reads
+    // - Pending / unapproved users can ONLY read their own user document
+    // - Self-registration can ONLY create PENDING_APPROVAL non-ADMIN accounts
+    // - Non-admins can NEVER change role, accountStatus, assignedFloor, or department
     match /users/{userId} {
-      allow read: if true;
-      allow create: if isNonEmptyString(request.resource.data.employeeId)
-        && isNonEmptyString(request.resource.data.name)
+      allow get: if isSignedIn() && (
+        isAdmin()
+        || (hasAuthBinding() && boundEmployeeId() == userId)
+        || resource.data.get('firebaseUid', '') == request.auth.uid
+      );
+      allow list: if isAdmin();
+
+      allow create: if isSignedIn()
+        && userId == request.resource.data.get('employeeId', '')
+        && isNonEmptyString(request.resource.data.get('employeeId', ''))
+        && isNonEmptyString(request.resource.data.get('name', ''))
+        && isValidRole(request.resource.data.get('role', ''))
+        && isValidFloorScope(getUserAssignedFloor(request.resource.data))
         && hasNoPlaintextPassword(request.resource.data)
         && (
-          // Standard employee self-registration: must start as PENDING_APPROVAL and non-ADMIN
-          (request.resource.data.accountStatus == 'PENDING_APPROVAL' && request.resource.data.role != 'ADMIN')
-          // Or First Admin bootstrap for Employee ID 1015198 if not yet created
-          || (request.resource.data.employeeId == '1015198' && !exists(/databases/$(database)/documents/users/1015198))
-          // Or Admin-created approved account
-          || request.resource.data.accountStatus == 'APPROVED'
+          // 1. Standard employee or Smart TV self-registration (must be PENDING_APPROVAL and non-ADMIN)
+          (
+            request.resource.data.get('accountStatus', '') == 'PENDING_APPROVAL'
+            && request.resource.data.get('role', '') != 'ADMIN'
+            && request.resource.data.get('isAdmin', false) == false
+            && request.resource.data.get('firebaseUid', '') == request.auth.uid
+          )
+          // 2. First-time bootstrap for Initial Admin 1015198 if not yet created
+          || (
+            userId == '1015198'
+            && request.resource.data.get('employeeId', '') == '1015198'
+            && !exists(/databases/$(database)/documents/users/1015198)
+            && request.resource.data.get('role', '') == 'ADMIN'
+            && request.resource.data.get('accountStatus', '') == 'APPROVED'
+            && request.resource.data.get('firebaseUid', '') == request.auth.uid
+          )
+          // 3. Verified Admin creating an account directly
+          || isAdmin()
         );
-      allow update: if isNonEmptyString(request.resource.data.employeeId)
+
+      allow update: if isSignedIn()
+        && request.resource.data.get('employeeId', '') == resource.data.get('employeeId', '')
         && hasNoPlaintextPassword(request.resource.data)
         && (
-          // Initial Admin 1015198 cannot be demoted or suspended
-          request.resource.data.employeeId != '1015198'
-          || (request.resource.data.role == 'ADMIN' && request.resource.data.accountStatus == 'APPROVED')
+          // Initial Admin 1015198 can never be demoted or suspended
+          userId != '1015198'
+          || (request.resource.data.get('role', '') == 'ADMIN' && request.resource.data.get('accountStatus', '') == 'APPROVED')
+        )
+        && (
+          // 1. Verified Admin can manage user roles, floor assignments, and approval status
+          isAdmin()
+          // 2. Account owner can only bind their UID or refresh FCM token/metadata without privilege changes
+          || (
+            hasAuthBinding()
+            && boundEmployeeId() == userId
+            && (resource.data.get('firebaseUid', '') == '' || resource.data.get('firebaseUid', '') == request.auth.uid)
+            && request.resource.data.get('firebaseUid', '') == request.auth.uid
+            && request.resource.data.get('role', '') == resource.data.get('role', '')
+            && request.resource.data.get('accountStatus', '') == resource.data.get('accountStatus', '')
+            && getUserAssignedFloor(request.resource.data) == getUserAssignedFloor(resource.data)
+            && request.resource.data.get('department', '') == resource.data.get('department', '')
+            && request.resource.data.get('isAdmin', false) == resource.data.get('isAdmin', false)
+          )
         );
-      allow delete: if resource.data.employeeId != '1015198';
+
+      allow delete: if isAdmin() && userId != '1015198';
     }
 
-    // Hourly Production Entries: validated schema and physical floor
+    // Hourly Production Entries
     match /production_entries/{docId} {
-      allow read: if true;
-      allow create, update: if isNonEmptyString(request.resource.data.lineId)
-        && isValidPhysicalFloor(request.resource.data.floor)
-        && isNonEmptyString(request.resource.data.date)
-        && isNonEmptyString(request.resource.data.hourSlot)
-        && (
-          ('outputQty' in request.resource.data && request.resource.data.outputQty is number && request.resource.data.outputQty >= 0)
-          || ('outputPcs' in request.resource.data && request.resource.data.outputPcs is number && request.resource.data.outputPcs >= 0)
-        );
-      allow delete: if true;
+      allow read: if isApprovedCaller();
+
+      allow create: if isApprovedCaller()
+        && callerRole() in ['ADMIN', 'IE', 'AUDITOR', 'SUPERVISOR', 'PACKING', 'PRODUCTION_REPORTER', 'PRODUCTION_MANAGER']
+        && callerHasFloorAccess(request.resource.data.get('floor', ''))
+        && isNonEmptyString(request.resource.data.get('lineId', ''))
+        && isValidPhysicalFloor(request.resource.data.get('floor', ''))
+        && isNonEmptyString(request.resource.data.get('date', ''))
+        && isNonEmptyString(request.resource.data.get('hourSlot', ''))
+        && hasValidOutputQty(request.resource.data)
+        && (isPrivilegedPlanner() || isCurrentOperationalWindowCreate());
+
+      allow update: if isApprovedCaller()
+        && callerRole() in ['ADMIN', 'IE', 'AUDITOR', 'SUPERVISOR', 'PACKING', 'PRODUCTION_REPORTER', 'PRODUCTION_MANAGER']
+        && callerHasFloorAccess(resource.data.get('floor', ''))
+        && callerHasFloorAccess(request.resource.data.get('floor', ''))
+        && isNonEmptyString(request.resource.data.get('lineId', ''))
+        && isValidPhysicalFloor(request.resource.data.get('floor', ''))
+        && isNonEmptyString(request.resource.data.get('date', ''))
+        && isNonEmptyString(request.resource.data.get('hourSlot', ''))
+        && hasValidOutputQty(request.resource.data)
+        && (isPrivilegedPlanner() || isCurrentOperationalWindowUpdate());
+
+      allow delete: if isAdmin();
     }
 
-    // Hourly Quality Entries: validated schema, physical floor, and defect breakdown cap
+    // Hourly Quality Entries
     match /quality_entries/{docId} {
-      allow read: if true;
-      allow create, update: if isNonEmptyString(request.resource.data.lineId)
-        && isValidPhysicalFloor(request.resource.data.floor)
-        && isNonEmptyString(request.resource.data.date)
-        && isNonEmptyString(request.resource.data.hourSlot)
-        && (
-          ('checkedGarments' in request.resource.data && request.resource.data.checkedGarments is number && request.resource.data.checkedGarments >= 0)
-          || ('checkedPcs' in request.resource.data && request.resource.data.checkedPcs is number && request.resource.data.checkedPcs >= 0)
-        );
-      allow delete: if true;
+      allow read: if isApprovedCaller();
+
+      allow create: if isApprovedCaller()
+        && callerRole() in ['ADMIN', 'IE', 'AUDITOR', 'QUALITY', 'QUALITY_REPORTER', 'QUALITY_MANAGER']
+        && callerHasFloorAccess(request.resource.data.get('floor', ''))
+        && isNonEmptyString(request.resource.data.get('lineId', ''))
+        && isValidPhysicalFloor(request.resource.data.get('floor', ''))
+        && isNonEmptyString(request.resource.data.get('date', ''))
+        && isNonEmptyString(request.resource.data.get('hourSlot', ''))
+        && hasValidCheckedGarments(request.resource.data)
+        && (isPrivilegedPlanner() || isCurrentOperationalWindowCreate());
+
+      allow update: if isApprovedCaller()
+        && callerRole() in ['ADMIN', 'IE', 'AUDITOR', 'QUALITY', 'QUALITY_REPORTER', 'QUALITY_MANAGER']
+        && callerHasFloorAccess(resource.data.get('floor', ''))
+        && callerHasFloorAccess(request.resource.data.get('floor', ''))
+        && isNonEmptyString(request.resource.data.get('lineId', ''))
+        && isValidPhysicalFloor(request.resource.data.get('floor', ''))
+        && isNonEmptyString(request.resource.data.get('date', ''))
+        && isNonEmptyString(request.resource.data.get('hourSlot', ''))
+        && hasValidCheckedGarments(request.resource.data)
+        && (isPrivilegedPlanner() || isCurrentOperationalWindowUpdate());
+
+      allow delete: if isAdmin();
     }
 
     // NPT / Factory Alerts & Comments
     match /factory_alerts/{docId} {
-      allow read: if true;
-      allow create, update: if isNonEmptyString(request.resource.data.lineId)
-        && isValidPhysicalFloor(request.resource.data.floor);
-      allow delete: if true;
+      allow read: if isApprovedCaller();
+
+      allow create: if isApprovedCaller()
+        && callerRole() in [
+          'ADMIN', 'IE', 'AUDITOR', 'SUPERVISOR', 'QUALITY', 'MANAGEMENT', 'PACKING',
+          'PRODUCTION_REPORTER', 'QUALITY_REPORTER', 'PRODUCTION_MANAGER',
+          'QUALITY_MANAGER', 'MECHANIC', 'INPUT_MATERIAL', 'MANAGEMENT_VIEW'
+        ]
+        && callerHasFloorAccess(request.resource.data.get('floor', ''))
+        && isNonEmptyString(request.resource.data.get('lineId', ''))
+        && isValidPhysicalFloor(request.resource.data.get('floor', ''));
+
+      allow update: if isApprovedCaller()
+        && callerRole() in [
+          'ADMIN', 'IE', 'AUDITOR', 'SUPERVISOR', 'QUALITY', 'MANAGEMENT', 'PACKING',
+          'PRODUCTION_REPORTER', 'QUALITY_REPORTER', 'PRODUCTION_MANAGER',
+          'QUALITY_MANAGER', 'MECHANIC', 'INPUT_MATERIAL', 'MANAGEMENT_VIEW'
+        ]
+        && callerHasFloorAccess(resource.data.get('floor', ''))
+        && callerHasFloorAccess(request.resource.data.get('floor', ''))
+        && isNonEmptyString(request.resource.data.get('lineId', ''))
+        && isValidPhysicalFloor(request.resource.data.get('floor', ''));
+
+      allow delete: if isAdmin();
     }
 
     // Morning Line Target Setups
     match /daily_setups/{docId} {
-      allow read: if true;
-      allow create, update: if isNonEmptyString(request.resource.data.lineId)
-        && isValidPhysicalFloor(request.resource.data.floor)
-        && isNonEmptyString(request.resource.data.date)
-        && request.resource.data.targetDailyPcs is number
-        && request.resource.data.targetDailyPcs >= 0;
-      allow delete: if true;
+      allow read: if isApprovedCaller();
+
+      allow create: if isApprovedCaller()
+        && callerRole() in ['ADMIN', 'IE', 'AUDITOR', 'SUPERVISOR', 'PRODUCTION_REPORTER', 'PRODUCTION_MANAGER']
+        && callerHasFloorAccess(request.resource.data.get('floor', ''))
+        && isNonEmptyString(request.resource.data.get('lineId', ''))
+        && isValidPhysicalFloor(request.resource.data.get('floor', ''))
+        && isNonEmptyString(request.resource.data.get('date', ''))
+        && request.resource.data.get('targetDailyPcs', -1) is number
+        && request.resource.data.get('targetDailyPcs', -1) >= 0
+        && (isPrivilegedPlanner() || isCurrentOperationalWindowCreate());
+
+      allow update: if isApprovedCaller()
+        && callerRole() in ['ADMIN', 'IE', 'AUDITOR', 'SUPERVISOR', 'PRODUCTION_REPORTER', 'PRODUCTION_MANAGER']
+        && callerHasFloorAccess(resource.data.get('floor', ''))
+        && callerHasFloorAccess(request.resource.data.get('floor', ''))
+        && isNonEmptyString(request.resource.data.get('lineId', ''))
+        && isValidPhysicalFloor(request.resource.data.get('floor', ''))
+        && isNonEmptyString(request.resource.data.get('date', ''))
+        && request.resource.data.get('targetDailyPcs', -1) is number
+        && request.resource.data.get('targetDailyPcs', -1) >= 0
+        && (isPrivilegedPlanner() || isCurrentOperationalWindowUpdate());
+
+      allow delete: if isAdmin();
     }
 
-    // Monthly Factory Targets
+    // Monthly Factory Targets (Admin / IE / Auditor / Production Manager only for writes)
     match /monthly_targets/{docId} {
-      allow read: if true;
-      allow create, update: if isValidFloorScope(request.resource.data.floor);
-      allow delete: if true;
+      allow read: if isApprovedCaller();
+      allow create, update: if isPrivilegedPlanner()
+        && isValidFloorScope(request.resource.data.get('floor', ''));
+      allow delete: if isAdmin();
     }
 
-    // Weekly Quality (BS OQL & NFL AQC)
+    // Weekly Quality Targets - BS OQL & NFL AQC (Admin / IE / Auditor only for writes)
     match /weekly_quality/{weekKey} {
-      allow read: if true;
-      allow create, update: if isNonEmptyString(request.resource.data.weekKey)
-        && isNonEmptyString(request.resource.data.weekStartIso);
-      allow delete: if true;
+      allow read: if isApprovedCaller();
+      allow create, update: if isPrivilegedPlanner()
+        && isNonEmptyString(request.resource.data.get('weekKey', ''))
+        && isNonEmptyString(request.resource.data.get('weekStartIso', ''));
+      allow delete: if isAdmin();
+    }
+
+    // Employee Registration Requests
+    match /registration_requests/{requestId} {
+      allow get: if isAdmin() || (isSignedIn() && resource.data.get('requestedByUid', '') == request.auth.uid);
+      allow list: if isAdmin();
+      allow create: if isSignedIn()
+        && request.resource.data.get('requestId', request.resource.data.get('id', '')) == requestId
+        && request.resource.data.get('requestedByUid', '') == request.auth.uid
+        && request.resource.data.get('status', '') == 'PENDING'
+        && request.resource.data.get('requestedRole', '') != 'ADMIN'
+        && isValidRole(request.resource.data.get('requestedRole', ''))
+        && isNonEmptyString(request.resource.data.get('employeeId', ''))
+        && isNonEmptyString(request.resource.data.get('name', ''))
+        && isValidFloorScope(request.resource.data.get('assignedFloor', ''));
+      allow update: if isAdmin()
+        && request.resource.data.get('employeeId', '') == resource.data.get('employeeId', '')
+        && request.resource.data.get('status', '') in ['PENDING', 'APPROVED', 'REJECTED'];
+      allow delete: if isAdmin();
+    }
+
+    // Smart TV / Device Approval Requests
+    match /device_approval_requests/{requestId} {
+      allow get: if isAdmin() || (isSignedIn() && resource.data.get('requestedByUid', '') == request.auth.uid);
+      allow list: if isAdmin();
+      allow create: if isSignedIn()
+        && request.resource.data.get('requestId', request.resource.data.get('id', '')) == requestId
+        && request.resource.data.get('requestedByUid', '') == request.auth.uid
+        && request.resource.data.get('status', '') == 'PENDING'
+        && isNonEmptyString(request.resource.data.get('deviceId', ''))
+        && isNonEmptyString(request.resource.data.get('deviceName', ''))
+        && isValidFloorScope(request.resource.data.get('requestedFloor', ''));
+      allow update: if isAdmin()
+        && request.resource.data.get('deviceId', '') == resource.data.get('deviceId', '')
+        && request.resource.data.get('status', '') in ['PENDING', 'APPROVED', 'REJECTED', 'REVOKED'];
+      allow delete: if isAdmin();
+    }
+
+    // Admin Approval Push Notification Queue
+    match /admin_notifications/{notificationId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn()
+        && request.resource.data.get('notificationId', request.resource.data.get('id', '')) == notificationId
+        && request.resource.data.get('createdByUid', '') == request.auth.uid
+        && request.resource.data.get('status', '') == 'PENDING'
+        && request.resource.data.get('requestType', '') in ['EMPLOYEE_REGISTRATION', 'TV_DEVICE_APPROVAL', 'DEVICE_APPROVAL', 'DEVICE_REPLACEMENT', 'TV_APPROVAL']
+        && isNonEmptyString(request.resource.data.get('requestId', ''))
+        && isNonEmptyString(request.resource.data.get('targetUserId', ''));
+      allow update, delete: if isAdmin();
     }
 
     // Deny all other collections by default

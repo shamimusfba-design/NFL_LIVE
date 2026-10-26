@@ -450,11 +450,11 @@ const val INITIAL_ADMIN_EMPLOYEE_ID = "1015198"
 const val PRIMARY_ADMIN_GMAIL = "shamim.sustipe15@gmail.com"
 const val MAX_APPROVED_DEVICES_PER_USER = 1
 
-enum class AccountStatus {
-  APPROVED,
-  PENDING_APPROVAL,
-  REJECTED,
-  SUSPENDED
+enum class AccountStatus(val displayName: String) {
+  APPROVED("Approved"),
+  PENDING_APPROVAL("Pending Approval"),
+  REJECTED("Rejected"),
+  SUSPENDED("Suspended")
 }
 
 data class ApprovedDevice(
@@ -503,7 +503,10 @@ data class DeviceApprovalRequest(
   val isCodeUsed: Boolean = otpUsed,
   val emailDeliveryStatus: String = "PENDING",
   val reason: String = "Device / Account Authorization"
-)
+) {
+  val id: String
+    get() = requestId
+}
 
 enum class AuthStatus {
   SUCCESS,
@@ -556,6 +559,11 @@ data class UserAccount(
   val updatedAtMillis: Long = System.currentTimeMillis(),
   val approvedBy: String = "",
   val approvedAtMillis: Long = 0L,
+  val firebaseUid: String = "",
+  val googleEmail: String = "",
+  val fcmToken: String = "",
+  val fcmDeviceId: String = "",
+  val fcmUpdatedAtMillis: Long = 0L,
 
   // 1. VISUAL / VIEW PERMISSIONS
   val canViewDashboard: Boolean = true,
@@ -1011,4 +1019,26 @@ fun findImplausibleProductionTarget(outputQty: Int, targetHourlyPcs: Int): Int? 
   if (targetHourlyPcs <= 0) return null
   return if (outputQty > targetHourlyPcs * 3) targetHourlyPcs else null
 }
+
+data class AdminApprovalDeepLink(
+  val requestId: String,
+  val requestType: String, // "EMPLOYEE_REGISTRATION" or "TV_DEVICE_APPROVAL"
+  val targetUserId: String,
+  val timestampMillis: Long = System.currentTimeMillis()
+)
+
+data class AdminNotificationPayload(
+  val notificationId: String = UUID.randomUUID().toString(),
+  val requestId: String,
+  val requestType: String, // "EMPLOYEE_REGISTRATION" or "TV_DEVICE_APPROVAL"
+  val targetUserId: String,
+  val title: String,
+  val summary: String,
+  val requestedRoleOrDevice: String = "",
+  val requestedFloor: String = "",
+  val status: String = "PENDING",
+  val createdByUid: String = "",
+  val createdAtMillis: Long = System.currentTimeMillis()
+)
+
 

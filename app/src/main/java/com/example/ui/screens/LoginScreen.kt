@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -51,6 +52,8 @@ import com.example.model.EmployeeDesignation
 import com.example.model.FloorScope
 import com.example.model.INITIAL_ADMIN_EMPLOYEE_ID
 import com.example.model.MAX_APPROVED_DEVICES_PER_USER
+import com.example.service.FirebaseAuthManager
+import kotlinx.coroutines.launch
 
 private enum class AuthScreenMode {
   LOGIN,
@@ -89,6 +92,8 @@ fun LoginScreen(
   repository: NflRepository,
   onLoginSuccess: () -> Unit
 ) {
+  val context = LocalContext.current
+  val coroutineScope = rememberCoroutineScope()
   val users by repository.users.collectAsState()
   val isFirstAdminProvisioned = remember(users) { repository.isFirstAdminProvisioned() }
 
@@ -661,6 +666,71 @@ fun LoginScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                   }
                   Text("Sign In", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                }
+
+                // Official Google Sign-In via Jetpack Credential Manager (links to Employee ID if entered)
+                OutlinedButton(
+                  onClick = {
+                    errorMsg = null
+                    infoBanner = null
+                    isLoading = true
+                    coroutineScope.launch {
+                      val googleRes = FirebaseAuthManager.signInWithGoogleButton(context)
+                      googleRes.fold(
+                        onSuccess = { firebaseUser ->
+                          val authResult = repository.authenticateWithGoogleUser(
+                            firebaseUid = firebaseUser.uid,
+                            email = firebaseUser.email.orEmpty(),
+                            displayName = firebaseUser.displayName.orEmpty(),
+                            employeeIdHint = employeeId
+                          )
+                          isLoading = false
+                          lastAuthResult = authResult
+                          when (authResult.status) {
+                            AuthStatus.SUCCESS -> onLoginSuccess()
+                            AuthStatus.PASSWORD_CHANGE_REQUIRED -> {
+                              currentTempPassword = password
+                              screenMode = AuthScreenMode.FORCE_PASSWORD_CHANGE
+                            }
+                            else -> {
+                              errorMsg = authResult.message
+                            }
+                          }
+                        },
+                        onFailure = { err ->
+                          isLoading = false
+                          errorMsg = err.message ?: "Google Sign-In could not be completed."
+                        }
+                      )
+                    }
+                  },
+                  enabled = !isLoading,
+                  border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                  colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color(0xFFF8FAFC),
+                    contentColor = Color(0xFF0F172A)
+                  ),
+                  shape = RoundedCornerShape(14.dp),
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .testTag("google_sign_in_button")
+                ) {
+                  Icon(
+                    Icons.Default.VerifiedUser,
+                    contentDescription = "Google Sign-In",
+                    modifier = Modifier.size(18.dp),
+                    tint = Color(0xFF0755F5)
+                  )
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text(
+                    text = "Sign in with Google (Cloud Auth)",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF0F172A),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                  )
                 }
 
                 // Secondary Create Account Button

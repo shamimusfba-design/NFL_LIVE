@@ -90,7 +90,15 @@ class FirebaseSyncService(private val context: Context) {
   var onRemoteMonthlyTargetsUpdated: ((List<MonthlyFactoryTarget>) -> Unit)? = null
   var onRemoteWeeklyQualityUpdated: ((List<WeeklyQualityEntry>) -> Unit)? = null
   var onRemoteUsersUpdated: ((List<UserAccount>) -> Unit)? = null
+  var onRemoteDeviceRequestsUpdated: ((List<DeviceApprovalRequest>) -> Unit)? = null
+  var onRemoteAdminNotificationsUpdated: ((List<AdminNotificationPayload>) -> Unit)? = null
   var onSyncStatusChanged: ((String) -> Unit)? = null
+
+  @Volatile
+  var activeUserIdForListener: String = ""
+
+  @Volatile
+  var isActiveUserAdmin: Boolean = false
 
   private val knownLegacyProductionDocIds = ConcurrentHashMap.newKeySet<String>()
   private val knownLegacyQualityDocIds = ConcurrentHashMap.newKeySet<String>()
@@ -494,37 +502,81 @@ class FirebaseSyncService(private val context: Context) {
         }
       listeners.add(weeklyReg)
 
-      // 6. User accounts listener (small collection)
-      val usersReg = db.collection("users")
-        .addSnapshotListener { snapshot, error ->
-          if (error != null) {
-            handleListenerError("Users", error)
-            return@addSnapshotListener
-          }
-          if (snapshot != null) {
-            hasPermissionError = false
-            val docChanges = snapshot.documentChanges
-            val docs = snapshot.documents
-            val isFromCache = snapshot.metadata.isFromCache
-            snapshotScope.launch {
-              val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
-              recordCollectionRead(
-                collection = "users",
-                changesCount = docChanges.size,
-                isFromCache = isFromCache
-              )
-              val list = docs.mapNotNull { doc -> parseUserDoc(doc) }
-              if (list.isNotEmpty()) {
-                onRemoteUsersUpdated?.invoke(list)
-              }
-              if (BuildConfig.DEBUG) {
-                val elapsedMs = SystemClock.elapsedRealtime() - startMs
-                Log.d("NflPerf", "snapshotCallback[users] docs=${docs.size} changes=${docChanges.size} took=${elapsedMs}ms thread=${Thread.currentThread().name}")
+      // 6. User accounts listener:
+      // - Admin listens to full /users, /device_approval_requests, and /admin_notifications collections
+      // - Non-admin listens only to their own /users/{employeeId} document (least-privilege RBAC)
+      if (isActiveUserAdmin) {
+        val usersReg = db.collection("users")
+          .addSnapshotListener { snapshot, error ->
+            if (error != null) {
+              handleListenerError("Users", error)
+              return@addSnapshotListener
+            }
+            if (snapshot != null) {
+              hasPermissionError = false
+              val docChanges = snapshot.documentChanges
+              val docs = snapshot.documents
+              val isFromCache = snapshot.metadata.isFromCache
+              snapshotScope.launch {
+                recordCollectionRead(
+                  collection = "users",
+                  changesCount = docChanges.size,
+                  isFromCache = isFromCache
+                )
+                val list = docs.mapNotNull { doc -> parseUserDoc(doc) }
+                if (list.isNotEmpty()) {
+                  onRemoteUsersUpdated?.invoke(list)
+                }
               }
             }
           }
-        }
-      listeners.add(usersReg)
+        listeners.add(usersReg)
+
+        val devReqReg = db.collection("device_approval_requests")
+          .addSnapshotListener { snapshot, error ->
+            if (error != null) return@addSnapshotListener
+            if (snapshot != null) {
+              val docs = snapshot.documents
+              snapshotScope.launch {
+                val list = docs.mapNotNull { doc -> parseDeviceApprovalRequestDoc(doc) }
+                if (list.isNotEmpty()) {
+                  onRemoteDeviceRequestsUpdated?.invoke(list)
+                }
+              }
+            }
+          }
+        listeners.add(devReqReg)
+
+        val adminNotifReg = db.collection("admin_notifications")
+          .whereEqualTo("status", "PENDING")
+          .addSnapshotListener { snapshot, error ->
+            if (error != null) return@addSnapshotListener
+            if (snapshot != null) {
+              val docs = snapshot.documents
+              snapshotScope.launch {
+                val list = docs.mapNotNull { doc -> parseAdminNotificationDoc(doc) }
+                if (list.isNotEmpty()) {
+                  onRemoteAdminNotificationsUpdated?.invoke(list)
+                }
+              }
+            }
+          }
+        listeners.add(adminNotifReg)
+      } else if (activeUserIdForListener.isNotBlank()) {
+        val selfDocId = activeUserIdForListener.trim().replace("/", "_")
+        val selfUserReg = db.collection("users").document(selfDocId)
+          .addSnapshotListener { snapshot, error ->
+            if (error != null) return@addSnapshotListener
+            if (snapshot != null && snapshot.exists()) {
+              snapshotScope.launch {
+                parseUserDoc(snapshot)?.let { parsedSelf ->
+                  onRemoteUsersUpdated?.invoke(listOf(parsedSelf))
+                }
+              }
+            }
+          }
+        listeners.add(selfUserReg)
+      }
 
     } catch (e: Exception) {
       Log.w("FirebaseSync", "Notice setting up Firestore listeners: ${e.message}")
@@ -871,9 +923,63 @@ class FirebaseSyncService(private val context: Context) {
         canMorningTargetWrite = doc.getBoolean("canMorningTargetWrite") ?: false,
         canMonthlyTargetWrite = doc.getBoolean("canMonthlyTargetWrite") ?: false,
         canTargetRevisionWrite = doc.getBoolean("canTargetRevisionWrite") ?: false,
-        approvedDevices = approvedDevices
+        approvedDevices = approvedDevices,
+        firebaseUid = doc.getString("firebaseUid").orEmpty(),
+        googleEmail = doc.getString("googleEmail").orEmpty(),
+        fcmToken = doc.getString("fcmToken").orEmpty(),
+        fcmDeviceId = doc.getString("fcmDeviceId").orEmpty(),
+        fcmUpdatedAtMillis = doc.getLong("fcmUpdatedAtMillis") ?: 0L
       )
     } catch (e: Exception) {
+      null
+    }
+  }
+
+  private fun parseDeviceApprovalRequestDoc(doc: DocumentSnapshot): DeviceApprovalRequest? {
+    return try {
+      val reqId = doc.getString("requestId")?.ifBlank { doc.id } ?: doc.id
+      val devId = doc.getString("deviceId").orEmpty()
+      if (devId.isBlank()) return null
+      val userId = doc.getString("userId")?.ifBlank { devId } ?: devId
+      val userName = doc.getString("deviceName") ?: doc.getString("userName") ?: devId
+      DeviceApprovalRequest(
+        requestId = reqId,
+        userId = userId,
+        userName = userName,
+        employeeId = doc.getString("employeeId")?.ifBlank { userId } ?: userId,
+        employeeName = doc.getString("employeeName")?.ifBlank { userName } ?: userName,
+        requestedFloor = doc.getString("requestedFloor") ?: "Sew-1",
+        deviceId = devId,
+        deviceName = doc.getString("deviceName") ?: userName,
+        requestType = doc.getString("requestType") ?: "TV_DEVICE_APPROVAL",
+        requestedAtMillis = doc.getLong("createdAtMillis") ?: doc.getLong("requestedAtMillis") ?: System.currentTimeMillis(),
+        status = doc.getString("status") ?: "PENDING",
+        reason = doc.getString("reason") ?: "Smart TV / Device Authorization"
+      )
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  private fun parseAdminNotificationDoc(doc: DocumentSnapshot): AdminNotificationPayload? {
+    return try {
+      val reqId = doc.getString("requestId").orEmpty()
+      val targetUserId = doc.getString("targetUserId").orEmpty()
+      if (reqId.isBlank() || targetUserId.isBlank()) return null
+      AdminNotificationPayload(
+        notificationId = doc.getString("notificationId")?.ifBlank { doc.id } ?: doc.id,
+        requestId = reqId,
+        requestType = doc.getString("requestType") ?: "EMPLOYEE_REGISTRATION",
+        targetUserId = targetUserId,
+        title = doc.getString("title") ?: "New Approval Request",
+        summary = doc.getString("summary") ?: "Pending admin review",
+        requestedRoleOrDevice = doc.getString("requestedRoleOrDevice").orEmpty(),
+        requestedFloor = doc.getString("requestedFloor").orEmpty(),
+        status = doc.getString("status") ?: "PENDING",
+        createdByUid = doc.getString("createdByUid").orEmpty(),
+        createdAtMillis = doc.getLong("createdAtMillis") ?: System.currentTimeMillis()
+      )
+    } catch (_: Exception) {
       null
     }
   }
@@ -971,8 +1077,16 @@ class FirebaseSyncService(private val context: Context) {
         val monthlySnap = db.collection("monthly_targets").get().await()
         recordCollectionRead("monthly_targets", monthlySnap.documentChanges.size, monthlySnap.metadata.isFromCache)
 
-        val usersSnap = db.collection("users").get().await()
-        recordCollectionRead("users", usersSnap.documentChanges.size, usersSnap.metadata.isFromCache)
+        val fetchedUsers = if (isActiveUserAdmin) {
+          val usersSnap = db.collection("users").get().await()
+          recordCollectionRead("users", usersSnap.documentChanges.size, usersSnap.metadata.isFromCache)
+          usersSnap.documents.mapNotNull { parseUserDoc(it) }
+        } else if (activeUserIdForListener.isNotBlank()) {
+          val selfDoc = db.collection("users").document(activeUserIdForListener.trim().replace("/", "_")).get().await()
+          listOfNotNull(if (selfDoc.exists()) parseUserDoc(selfDoc) else null)
+        } else {
+          emptyList()
+        }
 
         hasPermissionError = false
         lastErrorMessage = null
@@ -984,7 +1098,7 @@ class FirebaseSyncService(private val context: Context) {
           incidents = incSnap.documents.mapNotNull { parseIncidentDoc(it) },
           setups = setupSnap.documents.mapNotNull { parseSetupDoc(it) },
           monthlyTargets = monthlySnap.documents.mapNotNull { parseMonthlyTargetDoc(it) },
-          users = usersSnap.documents.mapNotNull { parseUserDoc(it) }
+          users = fetchedUsers
         )
       }
     } catch (e: Exception) {
@@ -1017,6 +1131,7 @@ class FirebaseSyncService(private val context: Context) {
         "remarks" to record.remarks,
         "modifiedBy" to record.modifiedBy,
         "timestamp" to record.timestamp,
+        "timestampMillis" to record.timestamp,
         "revision" to record.revision,
         "isConfirmedZero" to record.isConfirmedZero,
         "isDemo" to false,
@@ -1108,6 +1223,7 @@ class FirebaseSyncService(private val context: Context) {
         "spotBalance" to record.spotBalance,
         "modifiedBy" to record.modifiedBy,
         "timestamp" to record.timestamp,
+        "timestampMillis" to record.timestamp,
         "revision" to record.revision,
         "isConfirmedZero" to record.isConfirmedZero,
         "isDemo" to false,
@@ -1373,6 +1489,7 @@ class FirebaseSyncService(private val context: Context) {
         "requestedFloor" to user.requestedFloor.name,
         "role" to user.role.name,
         "floor" to user.floor.name,
+        "assignedFloor" to user.authorizedFloorScope.displayName,
         "authorizedFloorScope" to user.authorizedFloorScope.name,
         "assignedLine" to user.assignedLine,
         "isActive" to user.isActive,
@@ -1387,6 +1504,11 @@ class FirebaseSyncService(private val context: Context) {
         "updatedAtMillis" to System.currentTimeMillis(),
         "approvedBy" to user.approvedBy,
         "approvedAtMillis" to user.approvedAtMillis,
+        "firebaseUid" to user.firebaseUid,
+        "googleEmail" to user.googleEmail,
+        "fcmToken" to user.fcmToken,
+        "fcmDeviceId" to user.fcmDeviceId,
+        "fcmUpdatedAtMillis" to user.fcmUpdatedAtMillis,
         "canViewDashboard" to user.canViewDashboard,
         "canViewTvDashboard" to user.canViewTvDashboard,
         "canViewMonthlyEfficiency" to user.canViewMonthlyEfficiency,
@@ -1422,6 +1544,219 @@ class FirebaseSyncService(private val context: Context) {
     serviceScope.launch {
       val ok = pushUserAccountAwait(user)
       onResult?.invoke(ok, lastErrorMessage)
+    }
+  }
+
+  suspend fun bindFirebaseUidAwait(
+    firebaseUid: String,
+    employeeId: String,
+    deviceId: String
+  ): Boolean = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext false
+    if (firebaseUid.isBlank() || employeeId.isBlank()) return@withContext false
+    try {
+      val bindingMap = hashMapOf(
+        "employeeId" to employeeId.trim(),
+        "firebaseUid" to firebaseUid.trim(),
+        "deviceId" to deviceId,
+        "boundAtMillis" to System.currentTimeMillis()
+      )
+      withTimeout(8000L) {
+        db.collection("auth_bindings").document(firebaseUid.trim())
+          .set(bindingMap, SetOptions.merge())
+          .await()
+      }
+      true
+    } catch (e: Exception) {
+      Log.w("FirebaseSync", "bindFirebaseUidAwait notice: ${e.message}")
+      false
+    }
+  }
+
+  suspend fun fetchSingleUserByEmployeeIdAwait(employeeId: String): UserAccount? = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext null
+    if (employeeId.isBlank()) return@withContext null
+    try {
+      val docId = employeeId.trim().replace("/", "_")
+      val doc = withTimeout(8000L) {
+        db.collection("users").document(docId).get().await()
+      }
+      if (doc.exists()) parseUserDoc(doc) else null
+    } catch (e: Exception) {
+      null
+    }
+  }
+
+  suspend fun updateUserFcmTokenAwait(
+    employeeId: String,
+    firebaseUid: String,
+    fcmToken: String,
+    deviceId: String
+  ): Boolean = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext false
+    if (employeeId.isBlank() || fcmToken.isBlank()) return@withContext false
+    try {
+      val docId = employeeId.trim().replace("/", "_")
+      val updateMap = mutableMapOf<String, Any>(
+        "fcmToken" to fcmToken,
+        "fcmDeviceId" to deviceId,
+        "fcmUpdatedAtMillis" to System.currentTimeMillis()
+      )
+      if (firebaseUid.isNotBlank()) {
+        updateMap["firebaseUid"] = firebaseUid
+      }
+      withTimeout(8000L) {
+        db.collection("users").document(docId).set(updateMap, SetOptions.merge()).await()
+      }
+      true
+    } catch (e: Exception) {
+      Log.w("FirebaseSync", "updateUserFcmTokenAwait notice: ${e.message}")
+      false
+    }
+  }
+
+  suspend fun pushRegistrationRequestAwait(
+    user: UserAccount,
+    requestedByUid: String
+  ): Boolean = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext false
+    try {
+      val requestId = "REG_${user.id.trim()}"
+      val reqMap = hashMapOf(
+        "requestId" to requestId,
+        "employeeId" to user.id.trim(),
+        "name" to user.name,
+        "requestedRole" to user.role.name,
+        "assignedFloor" to user.requestedFloor.displayName,
+        "department" to user.department,
+        "status" to "PENDING",
+        "requestedByUid" to requestedByUid,
+        "createdAtMillis" to System.currentTimeMillis(),
+        "updatedAtMillis" to System.currentTimeMillis()
+      )
+      val notifId = "NOTIF_$requestId"
+      val notifMap = hashMapOf(
+        "notificationId" to notifId,
+        "requestId" to requestId,
+        "requestType" to "EMPLOYEE_REGISTRATION",
+        "targetUserId" to user.id.trim(),
+        "title" to "👤 New Employee Registration",
+        "summary" to "${user.name} (ID: ${user.id}) • ${user.requestedDesignation} • ${user.requestedFloor.displayName}",
+        "requestedRoleOrDevice" to user.requestedDesignation,
+        "requestedFloor" to user.requestedFloor.displayName,
+        "status" to "PENDING",
+        "createdByUid" to requestedByUid,
+        "createdAtMillis" to System.currentTimeMillis()
+      )
+      withTimeout(10000L) {
+        db.collection("registration_requests").document(requestId).set(reqMap, SetOptions.merge()).await()
+        if (requestedByUid.isNotBlank()) {
+          db.collection("admin_notifications").document(notifId).set(notifMap, SetOptions.merge()).await()
+        }
+      }
+      true
+    } catch (e: Exception) {
+      Log.w("FirebaseSync", "pushRegistrationRequestAwait notice: ${e.message}")
+      false
+    }
+  }
+
+  suspend fun pushDeviceApprovalRequestAwait(
+    request: DeviceApprovalRequest,
+    requestedByUid: String
+  ): Boolean = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext false
+    try {
+      val requestId = request.requestId.ifBlank { "DEV_${request.userId.ifBlank { request.deviceId }}" }
+      val reqMap = hashMapOf(
+        "requestId" to requestId,
+        "userId" to request.userId,
+        "userName" to request.userName,
+        "employeeId" to request.employeeId.ifBlank { request.userId },
+        "employeeName" to request.employeeName.ifBlank { request.userName },
+        "deviceId" to request.deviceId,
+        "deviceName" to request.deviceName,
+        "requestedFloor" to request.requestedFloor,
+        "requestType" to request.requestType,
+        "status" to request.status,
+        "requestedByUid" to requestedByUid,
+        "createdAtMillis" to request.requestedAtMillis,
+        "updatedAtMillis" to System.currentTimeMillis()
+      )
+      val notifId = "NOTIF_$requestId"
+      val notifMap = hashMapOf(
+        "notificationId" to notifId,
+        "requestId" to requestId,
+        "requestType" to "TV_DEVICE_APPROVAL",
+        "targetUserId" to request.userId.ifBlank { request.deviceId },
+        "title" to "📺 Smart TV / Device Approval Request",
+        "summary" to "${request.userName} • ${request.deviceName} • ${request.requestedFloor}",
+        "requestedRoleOrDevice" to request.deviceName,
+        "requestedFloor" to request.requestedFloor,
+        "status" to "PENDING",
+        "createdByUid" to requestedByUid,
+        "createdAtMillis" to System.currentTimeMillis()
+      )
+      withTimeout(10000L) {
+        db.collection("device_approval_requests").document(requestId).set(reqMap, SetOptions.merge()).await()
+        if (requestedByUid.isNotBlank()) {
+          db.collection("admin_notifications").document(notifId).set(notifMap, SetOptions.merge()).await()
+        }
+      }
+      true
+    } catch (e: Exception) {
+      Log.w("FirebaseSync", "pushDeviceApprovalRequestAwait notice: ${e.message}")
+      false
+    }
+  }
+
+  suspend fun markAdminRequestResolvedInFirestoreAwait(
+    requestKey: String,
+    requestType: String,
+    targetUserId: String,
+    newStatus: String,
+    processedByAdminId: String
+  ): Boolean = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext false
+    try {
+      val now = System.currentTimeMillis()
+      withTimeout(8000L) {
+        if (requestType == "TV_DEVICE_APPROVAL" || requestKey.startsWith("DEV_") || requestKey.startsWith("TV_")) {
+          val docId = requestKey.ifBlank { "DEV_$targetUserId" }
+          runCatching {
+            db.collection("device_approval_requests").document(docId).set(
+              mapOf(
+                "status" to newStatus,
+                "processedByAdminId" to processedByAdminId,
+                "updatedAtMillis" to now
+              ),
+              SetOptions.merge()
+            ).await()
+          }
+        } else {
+          val docId = requestKey.ifBlank { "REG_$targetUserId" }
+          runCatching {
+            db.collection("registration_requests").document(docId).set(
+              mapOf(
+                "status" to newStatus,
+                "processedByAdminId" to processedByAdminId,
+                "updatedAtMillis" to now
+              ),
+              SetOptions.merge()
+            ).await()
+          }
+        }
+        val notifId = "NOTIF_$requestKey"
+        runCatching {
+          db.collection("admin_notifications").document(notifId).set(
+            mapOf("status" to "HANDLED", "updatedAtMillis" to now),
+            SetOptions.merge()
+          ).await()
+        }
+      }
+      true
+    } catch (_: Exception) {
+      false
     }
   }
 

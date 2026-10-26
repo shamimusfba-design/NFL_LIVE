@@ -1,10 +1,16 @@
 package com.example
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,7 +35,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.NflRepository
+import com.example.model.AdminApprovalDeepLink
 import com.example.model.UserRole
+import com.example.service.AdminApprovalSyncWorker
+import com.example.service.FactoryAlertManager
 import com.example.ui.screens.*
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.NflRoyalBlue
@@ -56,13 +66,38 @@ class MainActivity : ComponentActivity() {
 
   private lateinit var repository: NflRepository
 
+  private fun extractApprovalDeepLink(sourceIntent: Intent?) {
+    val openAdmin = sourceIntent?.getBooleanExtra(FactoryAlertManager.EXTRA_OPEN_ADMIN_APPROVALS, false) == true
+    val requestId = sourceIntent?.getStringExtra(FactoryAlertManager.EXTRA_APPROVAL_REQUEST_ID).orEmpty().trim()
+    val requestType = sourceIntent?.getStringExtra(FactoryAlertManager.EXTRA_APPROVAL_REQUEST_TYPE).orEmpty().trim()
+    val targetUserId = sourceIntent?.getStringExtra(FactoryAlertManager.EXTRA_APPROVAL_TARGET_USER_ID).orEmpty().trim()
+    if (openAdmin || requestId.isNotEmpty()) {
+      repository.setPendingApprovalDeepLink(
+        AdminApprovalDeepLink(
+          requestId = requestId.ifEmpty { "pending_queue" },
+          requestType = requestType.ifEmpty { "EMPLOYEE_REGISTRATION" },
+          targetUserId = targetUserId
+        )
+      )
+    }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    if (::repository.isInitialized) {
+      extractApprovalDeepLink(intent)
+    }
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
       window.decorView.isForceDarkAllowed = false
     }
     enableEdgeToEdge()
-    repository = NflRepository(applicationContext)
+    repository = NflRepository.getInstance(applicationContext)
+    extractApprovalDeepLink(intent)
 
     setContent {
       MyApplicationTheme(darkTheme = false) {
@@ -70,6 +105,7 @@ class MainActivity : ComponentActivity() {
         val currentRole by repository.currentRole.collectAsStateWithLifecycle()
         val currentUserName by repository.currentUserName.collectAsStateWithLifecycle()
         val incidents by repository.incidents.collectAsStateWithLifecycle()
+        val pendingDeepLink by repository.pendingApprovalDeepLink.collectAsStateWithLifecycle()
 
         val users by repository.users.collectAsStateWithLifecycle()
         val deviceApprovalRequests by repository.deviceApprovalRequests.collectAsStateWithLifecycle()
@@ -84,9 +120,23 @@ class MainActivity : ComponentActivity() {
           repository.hasValidTvSession()
         }
 
-        LaunchedEffect(isTelevisionDevice, hasValidTvSession) {
-          if (isTelevisionDevice && !hasValidTvSession) {
-            repository.activateTvDeviceDirectly()
+        val notificationPermissionLauncher = rememberLauncherForActivityResult(
+          contract = ActivityResultContracts.RequestPermission()
+        ) { _ -> }
+
+        LaunchedEffect(currentUser?.id, currentUser?.isAdmin) {
+          if (currentUser?.isAdmin == true) {
+            AdminApprovalSyncWorker.schedulePeriodicSync(applicationContext)
+            AdminApprovalSyncWorker.triggerImmediateCheck(applicationContext)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+              val granted = ContextCompat.checkSelfPermission(
+                this@MainActivity,
+                Manifest.permission.POST_NOTIFICATIONS
+              ) == PackageManager.PERMISSION_GRANTED
+              if (!granted) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+              }
+            }
           }
         }
 
@@ -101,7 +151,7 @@ class MainActivity : ComponentActivity() {
               isTelevisionDevice -> AppScreen.TV_DASHBOARD
               initialUser == null -> AppScreen.LOGIN
               initialUser.id == "management" || initialUser.id.equals(NflRepository.TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) -> AppScreen.TV_DASHBOARD
-              openAdminFromNotification && initialUser.isAdmin -> AppScreen.ADMIN_USERS
+              (openAdminFromNotification || pendingDeepLink != null) && initialUser.isAdmin -> AppScreen.ADMIN_USERS
               else -> AppScreen.HOME
             }
           )
@@ -114,6 +164,13 @@ class MainActivity : ComponentActivity() {
 
         val effectiveUser = currentUser ?: repository.currentUser.value
         val isTvDisplayAccount = effectiveUser?.id?.equals(NflRepository.TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) == true
+
+        // Navigate directly to ADMIN_USERS whenever an authenticated Admin has a pending notification deep-link
+        LaunchedEffect(effectiveUser?.id, effectiveUser?.isAdmin, pendingDeepLink) {
+          if (!isTelevisionDevice && !isTvDisplayAccount && effectiveUser?.isAdmin == true && pendingDeepLink != null) {
+            currentScreen = AppScreen.ADMIN_USERS
+          }
+        }
 
         // Prevent TV device or tv_display session from ever entering entry, admin, or settings screens
         LaunchedEffect(currentScreen, isTelevisionDevice, isTvDisplayAccount) {
@@ -134,19 +191,23 @@ class MainActivity : ComponentActivity() {
         }
 
         if (isTelevisionDevice) {
-          TvDashboardScreen(
-            repository = repository,
-            onNavigateBack = { /* Smart TV stays on TV_DASHBOARD */ }
-          )
+          if (hasValidTvSession) {
+            TvDashboardScreen(
+              repository = repository,
+              onNavigateBack = { /* Smart TV stays on TV_DASHBOARD */ }
+            )
+          } else {
+            TvSetupScreen(repository = repository)
+          }
         } else if (effectiveUser == null || currentScreen == AppScreen.LOGIN) {
           LoginScreen(
             repository = repository,
             onLoginSuccess = {
               val loggedIn = repository.currentUser.value
-              currentScreen = if (loggedIn?.id == "management" || loggedIn?.id?.equals(NflRepository.TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) == true) {
-                AppScreen.TV_DASHBOARD
-              } else {
-                AppScreen.HOME
+              currentScreen = when {
+                loggedIn?.id == "management" || loggedIn?.id?.equals(NflRepository.TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) == true -> AppScreen.TV_DASHBOARD
+                loggedIn?.isAdmin == true && repository.pendingApprovalDeepLink.value != null -> AppScreen.ADMIN_USERS
+                else -> AppScreen.HOME
               }
             }
           )

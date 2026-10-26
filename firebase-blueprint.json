@@ -1,0 +1,221 @@
+{
+  "entities": {
+    "AuthBinding": {
+      "title": "AuthBinding",
+      "description": "Cryptographic binding between a Firebase Auth UID and an NFL Employee ID or TV Device ID.",
+      "type": "object",
+      "properties": {
+        "employeeId": { "type": "string" },
+        "firebaseUid": { "type": "string" },
+        "deviceId": { "type": "string" },
+        "boundAtMillis": { "type": "integer" }
+      },
+      "required": ["employeeId", "firebaseUid"]
+    },
+    "UserAccount": {
+      "title": "UserAccount",
+      "description": "Employee or Smart TV account record with server-verified role, floor, and approval status.",
+      "type": "object",
+      "properties": {
+        "employeeId": { "type": "string" },
+        "name": { "type": "string" },
+        "department": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "IE", "AUDITOR", "SUPERVISOR", "QUALITY", "PACKING", "MANAGEMENT", "TV_VIEWER"] },
+        "assignedFloor": { "type": "string" },
+        "accountStatus": { "type": "string", "enum": ["APPROVED", "PENDING_APPROVAL", "SUSPENDED", "REJECTED"] },
+        "passwordHash": { "type": "string" },
+        "passwordSalt": { "type": "string" },
+        "firebaseUid": { "type": "string" },
+        "googleEmail": { "type": "string" },
+        "fcmToken": { "type": "string" },
+        "fcmDeviceId": { "type": "string" },
+        "fcmUpdatedAtMillis": { "type": "integer" }
+      },
+      "required": ["employeeId", "name", "role", "assignedFloor", "accountStatus"]
+    },
+    "ProductionEntry": {
+      "title": "ProductionEntry",
+      "description": "Hourly sewing or finishing line production output entry.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "lineId": { "type": "string" },
+        "floor": { "type": "string" },
+        "date": { "type": "string" },
+        "hourSlot": { "type": "string" },
+        "outputQty": { "type": "integer" },
+        "targetForHour": { "type": "integer" },
+        "timestampMillis": { "type": "integer" }
+      },
+      "required": ["lineId", "floor", "date", "hourSlot", "outputQty"]
+    },
+    "QualityEntry": {
+      "title": "QualityEntry",
+      "description": "Hourly quality inspection and defect entry.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "lineId": { "type": "string" },
+        "floor": { "type": "string" },
+        "date": { "type": "string" },
+        "hourSlot": { "type": "string" },
+        "checkedGarments": { "type": "integer" },
+        "defectiveGarments": { "type": "integer" },
+        "rectifiedGarments": { "type": "integer" },
+        "rejectGarments": { "type": "integer" },
+        "timestampMillis": { "type": "integer" }
+      },
+      "required": ["lineId", "floor", "date", "hourSlot", "checkedGarments"]
+    },
+    "FactoryAlert": {
+      "title": "FactoryAlert",
+      "description": "NPT / line alert and supervisor-to-management escalation record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "lineId": { "type": "string" },
+        "floor": { "type": "string" },
+        "issueType": { "type": "string" },
+        "message": { "type": "string" },
+        "timestampMillis": { "type": "integer" }
+      },
+      "required": ["lineId", "floor"]
+    },
+    "DailyLineSetup": {
+      "title": "DailyLineSetup",
+      "description": "Daily line target, SMV, manpower, and working hours setup.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "lineId": { "type": "string" },
+        "floor": { "type": "string" },
+        "date": { "type": "string" },
+        "targetDailyPcs": { "type": "integer" },
+        "timestampMillis": { "type": "integer" }
+      },
+      "required": ["lineId", "floor", "date", "targetDailyPcs"]
+    },
+    "MonthlyTarget": {
+      "title": "MonthlyTarget",
+      "description": "Monthly floor target and working days setup.",
+      "type": "object",
+      "properties": {
+        "floor": { "type": "string" },
+        "monthlyTargetPcs": { "type": "integer" },
+        "workingDays": { "type": "integer" }
+      },
+      "required": ["floor"]
+    },
+    "WeeklyQualityRecord": {
+      "title": "WeeklyQualityRecord",
+      "description": "Weekly BS OQL and NFL AQC quality metrics.",
+      "type": "object",
+      "properties": {
+        "weekKey": { "type": "string" },
+        "weekStartIso": { "type": "string" },
+        "bsOqlPercent": { "type": "number" },
+        "nflAqcPercent": { "type": "number" }
+      },
+      "required": ["weekKey", "weekStartIso"]
+    },
+    "RegistrationRequest": {
+      "title": "RegistrationRequest",
+      "description": "Employee registration request awaiting Admin approval.",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "name": { "type": "string" },
+        "requestedRole": { "type": "string" },
+        "assignedFloor": { "type": "string" },
+        "department": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "requestedByUid": { "type": "string" },
+        "createdAtMillis": { "type": "integer" },
+        "updatedAtMillis": { "type": "integer" },
+        "processedByAdminId": { "type": "string" }
+      },
+      "required": ["requestId", "employeeId", "name", "requestedRole", "assignedFloor", "status", "requestedByUid"]
+    },
+    "DeviceApprovalRequest": {
+      "title": "DeviceApprovalRequest",
+      "description": "Smart TV or display device registration request awaiting Admin authorization.",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string" },
+        "deviceId": { "type": "string" },
+        "deviceName": { "type": "string" },
+        "requestedFloor": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED", "REVOKED"] },
+        "requestedByUid": { "type": "string" },
+        "createdAtMillis": { "type": "integer" },
+        "updatedAtMillis": { "type": "integer" },
+        "processedByAdminId": { "type": "string" }
+      },
+      "required": ["requestId", "deviceId", "deviceName", "requestedFloor", "status", "requestedByUid"]
+    },
+    "AdminNotification": {
+      "title": "AdminNotification",
+      "description": "Notification queue record for pending Admin approvals.",
+      "type": "object",
+      "properties": {
+        "notificationId": { "type": "string" },
+        "requestId": { "type": "string" },
+        "requestType": { "type": "string", "enum": ["EMPLOYEE_REGISTRATION", "TV_DEVICE_APPROVAL"] },
+        "targetUserId": { "type": "string" },
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "HANDLED"] },
+        "createdByUid": { "type": "string" },
+        "createdAtMillis": { "type": "integer" }
+      },
+      "required": ["notificationId", "requestId", "requestType", "targetUserId", "status", "createdByUid"]
+    }
+  },
+  "firestore": {
+    "/auth_bindings/{uid}": {
+      "schema": { "$ref": "#/entities/AuthBinding" },
+      "description": "Binds Firebase Auth UID to Employee ID."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserAccount" },
+      "description": "Employee and Smart TV accounts."
+    },
+    "/production_entries/{docId}": {
+      "schema": { "$ref": "#/entities/ProductionEntry" },
+      "description": "Hourly production entries."
+    },
+    "/quality_entries/{docId}": {
+      "schema": { "$ref": "#/entities/QualityEntry" },
+      "description": "Hourly quality entries."
+    },
+    "/factory_alerts/{docId}": {
+      "schema": { "$ref": "#/entities/FactoryAlert" },
+      "description": "Line and NPT alerts."
+    },
+    "/daily_setups/{docId}": {
+      "schema": { "$ref": "#/entities/DailyLineSetup" },
+      "description": "Morning line setups."
+    },
+    "/monthly_targets/{docId}": {
+      "schema": { "$ref": "#/entities/MonthlyTarget" },
+      "description": "Monthly floor targets."
+    },
+    "/weekly_quality/{weekKey}": {
+      "schema": { "$ref": "#/entities/WeeklyQualityRecord" },
+      "description": "Weekly BS OQL and NFL AQC quality targets."
+    },
+    "/registration_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/RegistrationRequest" },
+      "description": "Employee registration approval requests."
+    },
+    "/device_approval_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/DeviceApprovalRequest" },
+      "description": "Smart TV / device approval requests."
+    },
+    "/admin_notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/AdminNotification" },
+      "description": "Admin approval notification queue."
+    }
+  }
+}

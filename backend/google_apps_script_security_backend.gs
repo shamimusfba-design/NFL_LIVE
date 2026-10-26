@@ -105,7 +105,17 @@ function doPost(e) {
       return handleAdminRecordChange(ss, body, bdNow);
     }
 
-    // 5. Standard Data Append with Server-Side RBAC, 1-Device Limit & Asia/Dhaka Time Window Validation
+    // 5. Register Admin FCM Token for Spark-plan Push Notifications
+    if (action === 'registerAdminFcmToken') {
+      return handleRegisterAdminFcmToken(ss, body, bdNow);
+    }
+
+    // 6. Dispatch Real FCM HTTP v1 Push Notification to Registered Admin Devices
+    if (action === 'dispatchAdminPushNotification') {
+      return handleDispatchAdminPushNotification(ss, body, bdNow);
+    }
+
+    // 7. Standard Data Append with Server-Side RBAC, 1-Device Limit & Asia/Dhaka Time Window Validation
     return handleAuthorizedAppend(ss, body, bdNow);
   } catch (err) {
     return jsonResponse({ status: 'error', message: String(err) });
@@ -477,7 +487,113 @@ function readTab(ss, name) {
   return values.slice(1);
 }
 
+function handleRegisterAdminFcmToken(ss, body, bdNow) {
+  const employeeId = String(body.employeeId || '').trim();
+  const fcmToken = String(body.fcmToken || '').trim();
+  const deviceId = String(body.deviceId || '').trim();
+  const deviceName = String(body.deviceName || 'Admin Android').trim();
+  if (!employeeId || !fcmToken) {
+    return jsonResponse({ status: 'error', message: 'employeeId and fcmToken are required.' });
+  }
+  let sheet = ss.getSheetByName('Auth_AdminFcmTokens');
+  if (!sheet) {
+    sheet = ss.insertSheet('Auth_AdminFcmTokens');
+    sheet.appendRow(['employee_id', 'device_id', 'device_name', 'fcm_token', 'updated_at']);
+  }
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === employeeId && String(rows[i][1]) === deviceId) {
+      sheet.getRange(i + 1, 3, 1, 3).setValues([[deviceName, fcmToken, bdNow.iso]]);
+      return jsonResponse({ status: 'ok', updated: true, serverTimeMillis: bdNow.epochMillis });
+    }
+  }
+  sheet.appendRow([employeeId, deviceId, deviceName, fcmToken, bdNow.iso]);
+  return jsonResponse({ status: 'ok', registered: true, serverTimeMillis: bdNow.epochMillis });
+}
+
+function handleDispatchAdminPushNotification(ss, body, bdNow) {
+  const requestId = String(body.requestId || Utilities.getUuid()).trim();
+  const requestType = String(body.requestType || 'EMPLOYEE_REGISTRATION').trim();
+  const targetUserId = String(body.targetUserId || body.employeeId || '').trim();
+  const employeeName = String(body.employeeName || targetUserId).trim();
+  const designation = String(body.designation || body.role || '').trim();
+  const floor = String(body.floor || '').trim();
+  const deviceName = String(body.deviceName || '').trim();
+  const firebaseProjectId = PropertiesService.getScriptProperties().getProperty('FIREBASE_PROJECT_ID') || 'nfl-live-72213';
+
+  let tokenSheet = ss.getSheetByName('Auth_AdminFcmTokens');
+  const tokens = [];
+  if (tokenSheet) {
+    const rows = tokenSheet.getDataRange().getValues();
+    for (let i = 1; i < rows.length; i++) {
+      const tok = String(rows[i][3] || '').trim();
+      if (tok && tokens.indexOf(tok) === -1) {
+        tokens.push(tok);
+      }
+    }
+  }
+
+  let dispatchedCount = 0;
+  const fcmUrl = 'https://fcm.googleapis.com/v1/projects/' + firebaseProjectId + '/messages:send';
+  const dataPayload = {
+    requestId: requestId,
+    requestType: requestType,
+    targetUserId: targetUserId,
+    employeeId: targetUserId,
+    employeeName: employeeName,
+    designation: designation,
+    floor: floor,
+    deviceName: deviceName,
+    requestedAtMillis: String(bdNow.epochMillis)
+  };
+
+  for (let t = 0; t < tokens.length; t++) {
+    try {
+      const res = UrlFetchApp.fetch(fcmUrl, {
+        method: 'post',
+        contentType: 'application/json',
+        headers: {
+          Authorization: 'Bearer ' + ScriptApp.getOAuthToken()
+        },
+        muteHttpExceptions: true,
+        payload: JSON.stringify({
+          message: {
+            token: tokens[t],
+            data: dataPayload,
+            android: {
+              priority: 'HIGH',
+              notification: {
+                channel_id: 'nfl_admin_approvals_channel',
+                title: requestType === 'TV_APPROVAL'
+                  ? 'New Smart TV Approval Request'
+                  : requestType.indexOf('DEVICE') !== -1
+                    ? 'Device Approval Request: ' + employeeName
+                    : 'New Employee Registration: ' + employeeName,
+                body: targetUserId + (designation ? ' • ' + designation : '') + (deviceName ? ' • ' + deviceName : '')
+              }
+            }
+          }
+        })
+      });
+      if (res.getResponseCode() >= 200 && res.getResponseCode() < 300) {
+        dispatchedCount++;
+      }
+    } catch (e) {
+      Logger.log('FCM v1 send notice: ' + e);
+    }
+  }
+
+  appendAuditLog(ss, bdNow, 'ADMIN_PUSH', requestId, 'DISPATCH_FCM_PUSH', targetUserId, 'Type=' + requestType + ' | Sent=' + dispatchedCount, deviceName);
+  return jsonResponse({
+    status: 'ok',
+    requestId: requestId,
+    dispatchedCount: dispatchedCount,
+    serverTimeMillis: bdNow.epochMillis
+  });
+}
+
 function jsonResponse(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
+

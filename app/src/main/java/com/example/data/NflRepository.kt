@@ -6,8 +6,11 @@ import android.os.SystemClock
 import android.util.Log
 import com.example.BuildConfig
 import com.example.model.*
+import com.example.service.AdminApprovalSyncWorker
 import com.example.service.FactoryAlertManager
 import com.example.service.FactorySoundMode
+import com.example.service.FirebaseAuthManager
+import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1063,6 +1066,19 @@ class NflRepository(private val context: Context) {
   private val _lastSecurityMessage = MutableStateFlow<String?>(null)
   val lastSecurityMessage: StateFlow<String?> = _lastSecurityMessage.asStateFlow()
 
+  private val _pendingApprovalDeepLink = MutableStateFlow<AdminApprovalDeepLink?>(null)
+  val pendingApprovalDeepLink: StateFlow<AdminApprovalDeepLink?> = _pendingApprovalDeepLink.asStateFlow()
+
+  fun setPendingApprovalDeepLink(deepLink: AdminApprovalDeepLink?) {
+    _pendingApprovalDeepLink.value = deepLink
+  }
+
+  fun consumePendingApprovalDeepLink(): AdminApprovalDeepLink? {
+    val current = _pendingApprovalDeepLink.value
+    _pendingApprovalDeepLink.value = null
+    return current
+  }
+
   val firestoreReadStats: StateFlow<Map<String, CollectionReadStats>> = firebaseSync.sessionReadStats
   @Volatile private var lastMonthlyFirestoreFetchMillis: Long = 0L
 
@@ -1162,10 +1178,25 @@ class NflRepository(private val context: Context) {
       firebaseSync.onRemoteUsersUpdated = { remoteList ->
         upsertRemoteUsers(remoteList)
       }
+      firebaseSync.onRemoteDeviceRequestsUpdated = { remoteReqs ->
+        upsertRemoteDeviceApprovalRequests(remoteReqs)
+      }
+      firebaseSync.onRemoteAdminNotificationsUpdated = { remoteNotifs ->
+        handleRemoteAdminNotifications(remoteNotifs)
+      }
       firebaseSync.onSyncStatusChanged = { statusMsg ->
         _syncStatusBanner.value = statusMsg
       }
-      firebaseSync.startRealtimeListeners()
+      val activeUser = _currentUser.value
+      firebaseSync.activeUserIdForListener = activeUser?.id.orEmpty()
+      firebaseSync.isActiveUserAdmin = activeUser?.isAdmin == true
+      if (activeUser != null && activeUser.accountStatus == AccountStatus.APPROVED) {
+        firebaseSync.startRealtimeListeners()
+        if (activeUser.isAdmin) {
+          AdminApprovalSyncWorker.scheduleForAdmin(context)
+        }
+        refreshFcmTokenForCurrentUser()
+      }
     }
   }
 
@@ -3746,6 +3777,8 @@ class NflRepository(private val context: Context) {
       updatedAtMillis = now
     )
 
+    val currentUid = FirebaseAuthManager.currentUid
+    val currentEmail = FirebaseAuthManager.currentEmail
     val mappedAccount = DesignationPolicy.applyDesignationTemplate(
       base = baseAccount,
       designation = designation,
@@ -3755,10 +3788,18 @@ class NflRepository(private val context: Context) {
       isActive = false,
       accountStatus = AccountStatus.PENDING_APPROVAL,
       requestedDesignation = designation.displayName,
-      requestedFloor = sanitizedPhysicalFloor
+      requestedFloor = sanitizedPhysicalFloor,
+      firebaseUid = currentUid,
+      googleEmail = currentEmail
     )
 
     updateUserInternal(mappedAccount)
+    repoScope.launch {
+      if (currentUid.isNotBlank()) {
+        firebaseSync.bindFirebaseUidAwait(currentUid, mappedAccount.id, sheetsStorage.getDeviceId())
+      }
+      firebaseSync.pushRegistrationRequestAwait(mappedAccount, currentUid)
+    }
     addAuditLog(
       type = "USER_MGMT",
       id = mappedAccount.id,
@@ -3896,16 +3937,31 @@ class NflRepository(private val context: Context) {
       approvedBy = matchedUser.approvedBy.ifBlank { INITIAL_ADMIN_EMPLOYEE_ID },
       lastActiveMillis = loginTimeMillis
     )
+    val currentUid = FirebaseAuthManager.currentUid
+    val currentEmail = FirebaseAuthManager.currentEmail
+    val cachedFcmToken = prefs.getString("cached_fcm_token", "").orEmpty()
     val finalUser = if (matchedUser.isAdmin) {
       // Admin sessions are device-local; never replace the shared account's device binding
       // or active session when another Admin device signs in.
-      matchedUser.copy(updatedAtMillis = loginTimeMillis)
+      matchedUser.copy(
+        firebaseUid = currentUid.ifBlank { matchedUser.firebaseUid },
+        googleEmail = currentEmail.ifBlank { matchedUser.googleEmail },
+        fcmToken = cachedFcmToken.ifBlank { matchedUser.fcmToken },
+        fcmDeviceId = if (cachedFcmToken.isNotBlank()) currentDeviceId else matchedUser.fcmDeviceId,
+        fcmUpdatedAtMillis = if (cachedFcmToken.isNotBlank()) loginTimeMillis else matchedUser.fcmUpdatedAtMillis,
+        updatedAtMillis = loginTimeMillis
+      )
     } else {
       matchedUser.copy(
         authorizedDeviceId = currentDeviceId,
         authorizedDeviceName = currentDeviceName,
         activeSessionId = newSessionId,
         approvedDevices = listOf(approvedDeviceEntry),
+        firebaseUid = currentUid.ifBlank { matchedUser.firebaseUid },
+        googleEmail = currentEmail.ifBlank { matchedUser.googleEmail },
+        fcmToken = cachedFcmToken.ifBlank { matchedUser.fcmToken },
+        fcmDeviceId = if (cachedFcmToken.isNotBlank()) currentDeviceId else matchedUser.fcmDeviceId,
+        fcmUpdatedAtMillis = if (cachedFcmToken.isNotBlank()) loginTimeMillis else matchedUser.fcmUpdatedAtMillis,
         updatedAtMillis = loginTimeMillis
       )
     }
@@ -3921,6 +3977,21 @@ class NflRepository(private val context: Context) {
     _currentUserName.value = finalUser.name
     _currentFloor.value = finalUser.authorizedFloorScope
     _assignedLine.value = finalUser.assignedLine
+
+    firebaseSync.activeUserIdForListener = finalUser.id
+    firebaseSync.isActiveUserAdmin = finalUser.isAdmin
+    if (firebaseSync.isAvailable()) {
+      repoScope.launch {
+        if (currentUid.isNotBlank()) {
+          firebaseSync.bindFirebaseUidAwait(currentUid, finalUser.id, currentDeviceId)
+        }
+        firebaseSync.startRealtimeListeners(forceRetry = true)
+      }
+    }
+    if (finalUser.isAdmin) {
+      AdminApprovalSyncWorker.scheduleForAdmin(context)
+    }
+    refreshFcmTokenForCurrentUser()
 
     addAuditLog(
       type = "AUTH",
@@ -3944,6 +4015,85 @@ class NflRepository(private val context: Context) {
       user = finalUser,
       activeDevicesCount = 1,
       message = "Login successful (${finalUser.name})"
+    )
+  }
+
+  /**
+   * Authenticates or links a Google Sign-In identity (via Credential Manager + Firebase Auth)
+   * with an existing approved Employee ID or Primary Admin account.
+   */
+  fun authenticateWithGoogleUser(
+    firebaseUid: String,
+    email: String,
+    displayName: String,
+    employeeIdHint: String = ""
+  ): AuthResult {
+    val cleanEmail = email.trim().lowercase(Locale.US)
+    val cleanHint = employeeIdHint.trim()
+    val matchedUser = _users.value.find { u ->
+      (cleanHint.isNotBlank() && (u.id.equals(cleanHint, ignoreCase = true) || u.employeeId.equals(cleanHint, ignoreCase = true))) ||
+        (firebaseUid.isNotBlank() && u.firebaseUid == firebaseUid) ||
+        (cleanEmail.isNotBlank() && u.googleEmail.equals(cleanEmail, ignoreCase = true)) ||
+        (cleanEmail == PRIMARY_ADMIN_GMAIL.lowercase(Locale.US) && (u.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) || u.id.equals("admin", ignoreCase = true)))
+    } ?: return AuthResult(
+      status = AuthStatus.INVALID_CREDENTIALS,
+      message = "Google account ($email) is not yet linked to an Employee ID. Sign in once with your Employee ID & password after connecting Google, or register a new Employee ID."
+    )
+
+    if (matchedUser.accountStatus == AccountStatus.PENDING_APPROVAL) {
+      return AuthResult(
+        status = AuthStatus.ACCOUNT_PENDING_APPROVAL,
+        user = matchedUser,
+        message = "Your account (${matchedUser.name} • ID: ${matchedUser.id}) is pending Admin approval."
+      )
+    }
+    if (!matchedUser.isActive || matchedUser.accountStatus != AccountStatus.APPROVED) {
+      return AuthResult(
+        status = AuthStatus.ACCOUNT_SUSPENDED,
+        user = matchedUser,
+        message = "Account ${matchedUser.id} is not active (${matchedUser.accountStatus})."
+      )
+    }
+
+    val currentDeviceId = sheetsStorage.getDeviceId()
+    val currentDeviceName = sheetsStorage.getDeviceName()
+    val loginTimeMillis = System.currentTimeMillis()
+    val newSessionId = UUID.randomUUID().toString()
+    val updatedUser = matchedUser.copy(
+      firebaseUid = firebaseUid.ifBlank { matchedUser.firebaseUid },
+      googleEmail = email.ifBlank { matchedUser.googleEmail },
+      updatedAtMillis = loginTimeMillis
+    )
+    sheetsStorage.saveLocalActiveSession(
+      employeeId = updatedUser.id,
+      sessionId = newSessionId,
+      loginTimeMillis = loginTimeMillis
+    )
+    updateUserInternal(updatedUser)
+    _currentUser.value = updatedUser
+    _currentRole.value = updatedUser.role
+    _currentUserName.value = updatedUser.name
+    _currentFloor.value = updatedUser.authorizedFloorScope
+    _assignedLine.value = updatedUser.assignedLine
+
+    firebaseSync.activeUserIdForListener = updatedUser.id
+    firebaseSync.isActiveUserAdmin = updatedUser.isAdmin
+    repoScope.launch {
+      if (firebaseUid.isNotBlank()) {
+        firebaseSync.bindFirebaseUidAwait(firebaseUid, updatedUser.id, currentDeviceId)
+      }
+      firebaseSync.startRealtimeListeners(forceRetry = true)
+    }
+    if (updatedUser.isAdmin) {
+      AdminApprovalSyncWorker.scheduleForAdmin(context)
+    }
+    refreshFcmTokenForCurrentUser()
+    addAuditLog("AUTH", updatedUser.id, "GOOGLE_LOGIN", updatedUser.name, "Authenticated via Google ($email) on $currentDeviceName")
+    return AuthResult(
+      status = AuthStatus.SUCCESS,
+      user = updatedUser,
+      activeDevicesCount = 1,
+      message = "Signed in as ${updatedUser.name} (${updatedUser.id})"
     )
   }
 
@@ -4289,6 +4439,16 @@ class NflRepository(private val context: Context) {
     )
 
     updateUserInternal(approvedUser)
+    alertManager.cancelNotification("REG_${approvedUser.id}".hashCode())
+    repoScope.launch {
+      firebaseSync.markAdminRequestResolvedInFirestoreAwait(
+        requestKey = "REG_${approvedUser.id}",
+        requestType = FactoryAlertManager.REQUEST_TYPE_EMPLOYEE_REGISTRATION,
+        targetUserId = approvedUser.id,
+        newStatus = "APPROVED",
+        processedByAdminId = admin.id
+      )
+    }
     addAuditLog(
       type = "USER_MGMT",
       id = approvedUser.id,
@@ -4322,6 +4482,16 @@ class NflRepository(private val context: Context) {
       updatedAtMillis = System.currentTimeMillis()
     )
     updateUserInternal(rejectedUser)
+    alertManager.cancelNotification("REG_${rejectedUser.id}".hashCode())
+    repoScope.launch {
+      firebaseSync.markAdminRequestResolvedInFirestoreAwait(
+        requestKey = "REG_${rejectedUser.id}",
+        requestType = FactoryAlertManager.REQUEST_TYPE_EMPLOYEE_REGISTRATION,
+        targetUserId = rejectedUser.id,
+        newStatus = "REJECTED",
+        processedByAdminId = admin.id
+      )
+    }
     addAuditLog(
       type = "USER_MGMT",
       id = rejectedUser.id,
@@ -4535,6 +4705,13 @@ class NflRepository(private val context: Context) {
     }
     sheetsStorage.clearLocalActiveSession()
     _currentUser.value = null
+    firebaseSync.activeUserIdForListener = ""
+    firebaseSync.isActiveUserAdmin = false
+    firebaseSync.cleanupListeners()
+    AdminApprovalSyncWorker.cancelForLoggedOutAdmin(context)
+    repoScope.launch {
+      FirebaseAuthManager.signOut(context)
+    }
     flushPendingPersistence()
   }
 
@@ -6266,6 +6443,11 @@ class NflRepository(private val context: Context) {
     )
     _tvSetupCloudStatus.value = "Sending request to the cloud..."
     repoScope.launch {
+      val currentUid = FirebaseAuthManager.currentUid
+      if (currentUid.isNotBlank()) {
+        firebaseSync.bindFirebaseUidAwait(currentUid, TV_DISPLAY_ACCOUNT_ID, myDeviceId)
+      }
+      firebaseSync.pushDeviceApprovalRequestAwait(pending, currentUid)
       val ok = firebaseSync.pushUserAccountAwait(marker)
       _tvSetupCloudStatus.value = if (ok) {
         "Request sent. It now appears on the Admin phone under Device Requests."
@@ -6273,6 +6455,264 @@ class NflRepository(private val context: Context) {
         "Not sent: ${firebaseSync.lastErrorMessage ?: "no internet or cloud access is blocked"}. Trying again every 30 seconds."
       }
     }
+  }
+
+  fun upsertRemoteDeviceApprovalRequests(remoteReqs: List<DeviceApprovalRequest>) {
+    if (remoteReqs.isEmpty()) return
+    var didAddPending = false
+    val newlyAdded = mutableListOf<DeviceApprovalRequest>()
+    synchronized(stateLock) {
+      val byId = LinkedHashMap<String, DeviceApprovalRequest>()
+      _deviceApprovalRequests.value.forEach { byId[it.requestId] = it }
+      remoteReqs.forEach { req ->
+        val prev = byId[req.requestId]
+        if (prev == null || prev.status != req.status) {
+          byId[req.requestId] = req
+          if (prev == null && req.status == "PENDING") {
+            didAddPending = true
+            newlyAdded.add(req)
+          }
+        }
+      }
+      _deviceApprovalRequests.value = byId.values.sortedByDescending { it.requestedAtMillis }
+    }
+    scheduleSaveDeviceRequests()
+    if (didAddPending && getAuthoritativeCurrentUser()?.isAdmin == true) {
+      newlyAdded.forEach { req ->
+        val isTv = req.userId.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) || req.requestType.contains("TV", ignoreCase = true)
+        val key = if (isTv) "TV_${req.requestId}" else "DEV_${req.requestId}"
+        alertManager.triggerAdminApprovalNotification(
+          requestKey = key,
+          title = if (isTv) "📺 First-Time Smart TV Login Request" else "📱 Employee Device Approval Request",
+          message = "${req.userName} (${req.deviceName}) requested authorization for ${req.requestedFloor}",
+          requestType = FactoryAlertManager.REQUEST_TYPE_TV_DEVICE_APPROVAL,
+          targetUserId = req.userId.ifBlank { req.deviceId }
+        )
+      }
+    }
+  }
+
+  fun handleRemoteAdminNotifications(remoteNotifs: List<AdminNotificationPayload>) {
+    if (remoteNotifs.isEmpty()) return
+    if (getAuthoritativeCurrentUser()?.isAdmin != true) return
+    remoteNotifs.filter { it.status == "PENDING" }.forEach { notif ->
+      alertManager.triggerAdminApprovalNotification(
+        requestKey = notif.requestId,
+        title = notif.title,
+        message = notif.summary,
+        requestType = notif.requestType,
+        targetUserId = notif.targetUserId
+      )
+    }
+  }
+
+  fun updateFcmToken(token: String) {
+    if (token.isBlank()) return
+    prefs.edit().putString("cached_fcm_token", token).apply()
+    val cur = getAuthoritativeCurrentUser() ?: return
+    val devId = sheetsStorage.getDeviceId()
+    val now = System.currentTimeMillis()
+    val updated = cur.copy(
+      fcmToken = token,
+      fcmDeviceId = devId,
+      fcmUpdatedAtMillis = now,
+      updatedAtMillis = now
+    )
+    updateUserInternal(updated)
+    repoScope.launch {
+      firebaseSync.updateUserFcmTokenAwait(
+        employeeId = updated.id,
+        firebaseUid = FirebaseAuthManager.currentUid.ifBlank { updated.firebaseUid },
+        fcmToken = token,
+        deviceId = devId
+      )
+    }
+  }
+
+  fun refreshFcmTokenForCurrentUser() {
+    val cur = getAuthoritativeCurrentUser() ?: return
+    try {
+      FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+        if (!token.isNullOrBlank()) {
+          updateFcmToken(token)
+        }
+      }
+    } catch (_: Exception) {
+      val cached = prefs.getString("cached_fcm_token", "").orEmpty()
+      if (cached.isNotBlank() && cur.fcmToken != cached) {
+        updateFcmToken(cached)
+      }
+    }
+  }
+
+  /**
+   * Handles incoming FCM data messages (foreground, background, or closed app wakeup).
+   * Enforces that only a device with an authenticated Admin session displays Admin approval alerts.
+   */
+  fun handleIncomingFcmPushPayload(
+    data: Map<String, String>,
+    fallbackTitle: String? = null,
+    fallbackBody: String? = null
+  ): Boolean {
+    val activeAdmin = getAuthoritativeCurrentUser()
+    if (activeAdmin == null || !activeAdmin.isAdmin || activeAdmin.accountStatus != AccountStatus.APPROVED) {
+      return false
+    }
+    val rawRequestId = data["requestId"]
+      ?: data["request_id"]
+      ?: data[FactoryAlertManager.EXTRA_APPROVAL_REQUEST_ID]
+      ?: return false
+    val requestType = data["requestType"]
+      ?: data["request_type"]
+      ?: data[FactoryAlertManager.EXTRA_APPROVAL_REQUEST_TYPE]
+      ?: if (rawRequestId.startsWith("DEV_") || rawRequestId.startsWith("TV_")) {
+        FactoryAlertManager.REQUEST_TYPE_TV_DEVICE_APPROVAL
+      } else {
+        FactoryAlertManager.REQUEST_TYPE_EMPLOYEE_REGISTRATION
+      }
+    val targetUserId = data["targetUserId"]
+      ?: data["target_user_id"]
+      ?: data[FactoryAlertManager.EXTRA_APPROVAL_TARGET_USER_ID]
+      ?: rawRequestId.removePrefix("REG_").removePrefix("DEV_").removePrefix("TV_")
+    val title = data["title"]
+      ?: fallbackTitle
+      ?: if (requestType == FactoryAlertManager.REQUEST_TYPE_TV_DEVICE_APPROVAL) {
+        "📺 Smart TV / Device Approval Request"
+      } else {
+        "👤 New Employee Registration Request"
+      }
+    val message = data["summary"]
+      ?: data["body"]
+      ?: fallbackBody
+      ?: "Tap to review request for ID $targetUserId"
+
+    return alertManager.triggerAdminApprovalNotification(
+      requestKey = rawRequestId,
+      title = title,
+      message = message,
+      requestType = requestType,
+      targetUserId = targetUserId
+    )
+  }
+
+  /**
+   * Secure, idempotent handler for Approve / Reject notification action buttons.
+   * Requires an authenticated Admin session and safely handles already-approved or already-rejected requests.
+   */
+  fun handleNotificationApprovalAction(
+    requestKey: String,
+    requestType: String,
+    targetUserId: String,
+    approve: Boolean
+  ): SecurityActionResult {
+    val admin = getAuthoritativeCurrentUser()
+    if (admin == null || !admin.isAdmin || admin.accountStatus != AccountStatus.APPROVED || !admin.isActive) {
+      return SecurityActionResult(
+        false,
+        "Access Denied: Please sign in with an authorized Admin account before approving or rejecting requests."
+      )
+    }
+
+    val cleanTargetUserId = targetUserId.ifBlank {
+      requestKey.removePrefix("REG_").removePrefix("DEV_").removePrefix("TV_")
+    }
+    val isDeviceRequest = requestType == FactoryAlertManager.REQUEST_TYPE_TV_DEVICE_APPROVAL ||
+        requestKey.startsWith("DEV_") ||
+        requestKey.startsWith("TV_")
+
+    if (isDeviceRequest) {
+      val cleanReqId = requestKey.removePrefix("DEV_").removePrefix("TV_")
+      val req = synchronized(stateLock) {
+        _deviceApprovalRequests.value.find {
+          it.requestId == cleanReqId ||
+              it.requestId == requestKey ||
+              it.userId.equals(cleanTargetUserId, ignoreCase = true) ||
+              it.deviceId == cleanTargetUserId
+        }
+      } ?: return SecurityActionResult(false, "Device approval request '$cleanReqId' was not found.")
+
+      if (req.status == "APPROVED" || req.status == "REJECTED") {
+        return SecurityActionResult(
+          true,
+          "Already processed: Device request for ${req.deviceName} is already ${req.status}."
+        )
+      }
+
+      return if (approve) {
+        adminApproveDeviceOrAccountRequest(req.requestId)
+      } else {
+        adminRejectDeviceOrAccountRequest(req.requestId)
+      }
+    } else {
+      val user = synchronized(stateLock) {
+        _users.value.find {
+          it.id.equals(cleanTargetUserId, ignoreCase = true) ||
+              it.employeeId.equals(cleanTargetUserId, ignoreCase = true)
+        }
+      } ?: return SecurityActionResult(false, "Registration request for '$cleanTargetUserId' was not found.")
+
+      if (user.accountStatus == AccountStatus.APPROVED) {
+        return SecurityActionResult(
+          true,
+          "Already processed: ${user.name} (ID: ${user.id}) is already APPROVED."
+        )
+      }
+      if (user.accountStatus == AccountStatus.REJECTED) {
+        return SecurityActionResult(
+          true,
+          "Already processed: ${user.name} (ID: ${user.id}) was already REJECTED."
+        )
+      }
+
+      return if (approve) {
+        adminApproveUserRegistration(user.id)
+      } else {
+        adminRejectUserRegistration(user.id, "Rejected via Admin notification action")
+      }
+    }
+  }
+
+  suspend fun checkPendingAdminApprovalsInBackground() {
+    val admin = getAuthoritativeCurrentUser() ?: return
+    if (!admin.isAdmin || admin.accountStatus != AccountStatus.APPROVED) return
+    if (firebaseSync.isAvailable()) {
+      firebaseSync.isActiveUserAdmin = true
+      firebaseSync.activeUserIdForListener = admin.id
+      val res = firebaseSync.fetchAllFromFirestore()
+      if (res.users.isNotEmpty()) {
+        upsertRemoteUsers(res.users)
+      }
+    }
+    val pendingUsers = synchronized(stateLock) {
+      _users.value.filter { it.accountStatus == AccountStatus.PENDING_APPROVAL }
+    }
+    pendingUsers.forEach { pending ->
+      alertManager.triggerAdminApprovalNotification(
+        requestKey = "REG_${pending.id}",
+        title = "👤 New Employee Registration Request",
+        message = "${pending.name} (ID: ${pending.id}) • ${pending.designation} • ${pending.floor.displayName}",
+        requestType = FactoryAlertManager.REQUEST_TYPE_EMPLOYEE_REGISTRATION,
+        targetUserId = pending.id
+      )
+    }
+    val pendingDevs = synchronized(stateLock) {
+      _deviceApprovalRequests.value.filter { it.status == "PENDING" }
+    }
+    pendingDevs.forEach { req ->
+      val isTv = req.userId.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true)
+      val key = if (isTv) "TV_${req.requestId}" else "DEV_${req.requestId}"
+      alertManager.triggerAdminApprovalNotification(
+        requestKey = key,
+        title = if (isTv) "📺 First-Time Smart TV Login Request" else "📱 Employee Device Approval Request",
+        message = "${req.userName} (${req.deviceName}) is waiting for approval",
+        requestType = FactoryAlertManager.REQUEST_TYPE_TV_DEVICE_APPROVAL,
+        targetUserId = req.userId
+      )
+    }
+  }
+
+  suspend fun flushPendingCloudSync() {
+    flushPendingPersistence()
   }
 
   fun shutdown() {
@@ -6283,6 +6723,14 @@ class NflRepository(private val context: Context) {
   companion object {
     const val TV_DISPLAY_ACCOUNT_ID = "tv_display"
     private val activeInstances = mutableListOf<WeakReference<NflRepository>>()
+
+    fun getInstance(context: Context): NflRepository {
+      synchronized(activeInstances) {
+        val existing = activeInstances.mapNotNull { it.get() }.lastOrNull()
+        if (existing != null) return existing
+      }
+      return NflRepository(context.applicationContext)
+    }
 
     private fun registerActiveInstance(repo: NflRepository) {
       synchronized(activeInstances) {

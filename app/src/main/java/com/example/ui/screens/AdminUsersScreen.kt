@@ -77,10 +77,34 @@ fun AdminUsersScreen(
     val currentUser by repository.currentUser.collectAsStateWithLifecycle()
     val deviceRequests by repository.deviceApprovalRequests.collectAsStateWithLifecycle()
     val auditLogs by repository.auditLogs.collectAsStateWithLifecycle()
+    val pendingDeepLink by repository.pendingApprovalDeepLink.collectAsStateWithLifecycle()
 
     var selectedTab by remember { mutableStateOf(AdminSubTab.USERS) }
     var statusFilter by remember { mutableStateOf(UserStatusFilter.ALL) }
     var searchQuery by remember { mutableStateOf("") }
+    var focusedDeepLink by remember { mutableStateOf<AdminApprovalDeepLink?>(null) }
+
+    LaunchedEffect(pendingDeepLink) {
+        val link = pendingDeepLink ?: return@LaunchedEffect
+        focusedDeepLink = link
+        val isDeviceOrTv = link.requestType.equals("DEVICE_APPROVAL", ignoreCase = true) ||
+            link.requestType.equals("DEVICE_REPLACEMENT", ignoreCase = true) ||
+            link.requestType.equals("TV_APPROVAL", ignoreCase = true) ||
+            link.requestId.startsWith("devreq_", ignoreCase = true)
+        if (isDeviceOrTv) {
+            selectedTab = AdminSubTab.DEVICE_REQUESTS
+        } else {
+            selectedTab = AdminSubTab.USERS
+            statusFilter = UserStatusFilter.ALL
+            val targetId = link.targetUserId.ifBlank {
+                link.requestId.removePrefix("reg_")
+            }
+            if (targetId.isNotBlank() && targetId != "pending_queue") {
+                searchQuery = targetId
+            }
+        }
+        repository.consumePendingApprovalDeepLink()
+    }
 
     var editingUser by remember { mutableStateOf<UserAccount?>(null) }
     var showCreateOrEditDialog by remember { mutableStateOf(false) }
@@ -150,6 +174,86 @@ fun AdminUsersScreen(
             contentPadding = PaddingValues(vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (focusedDeepLink != null) {
+                item {
+                    val link = focusedDeepLink!!
+                    val normalizedUserId = link.targetUserId.ifBlank { link.requestId.removePrefix("reg_") }
+                    val matchedUser = users.firstOrNull {
+                        it.id.equals(normalizedUserId, ignoreCase = true) ||
+                            it.employeeId.equals(normalizedUserId, ignoreCase = true)
+                    }
+                    val matchedDeviceReq = deviceRequests.firstOrNull {
+                        it.id.equals(link.requestId, ignoreCase = true) ||
+                            (normalizedUserId.isNotBlank() && it.employeeId.equals(normalizedUserId, ignoreCase = true))
+                    }
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("admin_deep_link_focus_card"),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF172554)),
+                        border = BorderStroke(1.5.dp, AdminCyan)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "OPENED FROM ADMIN PUSH NOTIFICATION",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = AdminCyan
+                                )
+                                TextButton(
+                                    onClick = {
+                                        focusedDeepLink = null
+                                        searchQuery = ""
+                                    }
+                                ) {
+                                    Text("Dismiss", color = AdminTextSecondary, fontSize = 11.sp)
+                                }
+                            }
+                            if (matchedDeviceReq != null) {
+                                Text(
+                                    text = "${matchedDeviceReq.requestType}: ${matchedDeviceReq.employeeName} (${matchedDeviceReq.employeeId}) — ${matchedDeviceReq.deviceName}",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AdminTextPrimary
+                                )
+                                Text(
+                                    text = "Current Status: ${matchedDeviceReq.status}",
+                                    fontSize = 12.sp,
+                                    color = if (matchedDeviceReq.status == "PENDING") AdminAmber else AdminGreen
+                                )
+                            } else if (matchedUser != null) {
+                                Text(
+                                    text = "Employee Registration: ${matchedUser.name} (ID: ${matchedUser.employeeId}) — ${matchedUser.designation}",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AdminTextPrimary
+                                )
+                                Text(
+                                    text = "Current Status: ${matchedUser.accountStatus.displayName}",
+                                    fontSize = 12.sp,
+                                    color = if (matchedUser.accountStatus == AccountStatus.PENDING_APPROVAL) AdminAmber else AdminGreen
+                                )
+                            } else {
+                                Text(
+                                    text = "Request ID: ${link.requestId} (${link.requestType})",
+                                    fontSize = 12.sp,
+                                    color = AdminTextPrimary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // Header Card
             item {
                 Card(

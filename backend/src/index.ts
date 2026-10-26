@@ -38,6 +38,84 @@ app.use('/api/npt', nptRouter);
 app.use('/api/supervisor', supervisorRouter);
 app.use('/api/tv', tvRouter);
 
+const adminFcmTokens = new Map<string, { employeeId: string; deviceId: string; fcmToken: string; updatedAt: string }>();
+
+app.post('/api/auth/register-fcm-token', (req, res) => {
+  const { employeeId, deviceId, fcmToken } = req.body || {};
+  if (!employeeId || !fcmToken) {
+    res.status(400).json({ status: 'error', message: 'employeeId and fcmToken are required.' });
+    return;
+  }
+  const key = `${employeeId}:${deviceId || 'default'}`;
+  adminFcmTokens.set(key, {
+    employeeId: String(employeeId),
+    deviceId: String(deviceId || 'default'),
+    fcmToken: String(fcmToken),
+    updatedAt: new Date().toISOString()
+  });
+  res.json({ status: 'ok', registeredCount: adminFcmTokens.size });
+});
+
+app.post('/api/notifications/admin-approval', async (req, res) => {
+  const {
+    requestId,
+    requestType = 'EMPLOYEE_REGISTRATION',
+    targetUserId = '',
+    employeeName = '',
+    designation = '',
+    floor = '',
+    deviceName = ''
+  } = req.body || {};
+  if (!requestId) {
+    res.status(400).json({ status: 'error', message: 'requestId is required.' });
+    return;
+  }
+  const projectId = process.env.FIREBASE_PROJECT_ID || 'nfl-live-72213';
+  const accessToken = process.env.FCM_SERVER_OAUTH_TOKEN || '';
+  const dataPayload: Record<string, string> = {
+    requestId: String(requestId),
+    requestType: String(requestType),
+    targetUserId: String(targetUserId),
+    employeeId: String(targetUserId),
+    employeeName: String(employeeName || targetUserId),
+    designation: String(designation),
+    floor: String(floor),
+    deviceName: String(deviceName),
+    requestedAtMillis: String(Date.now())
+  };
+
+  let sentCount = 0;
+  if (accessToken) {
+    for (const entry of adminFcmTokens.values()) {
+      try {
+        const resp = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            message: {
+              token: entry.fcmToken,
+              data: dataPayload,
+              android: { priority: 'HIGH' }
+            }
+          })
+        });
+        if (resp.ok) sentCount++;
+      } catch (e) {
+        console.warn('[FCM Send Notice]', e);
+      }
+    }
+  }
+  res.json({
+    status: 'ok',
+    requestId: String(requestId),
+    dispatchedCount: sentCount,
+    registeredAdminDevices: adminFcmTokens.size
+  });
+});
+
 // Global Error Handler
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('[Unhandled Error]', err);
@@ -59,3 +137,4 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 export default app;
+

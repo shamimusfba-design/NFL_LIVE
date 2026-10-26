@@ -41,6 +41,9 @@ class FactoryAlertManager(private val context: Context) {
   private val prefs: SharedPreferences =
     context.getSharedPreferences("nfl_sound_alert_prefs", Context.MODE_PRIVATE)
 
+  private val dedupPrefs: SharedPreferences =
+    context.getSharedPreferences("nfl_admin_notification_dedup_prefs", Context.MODE_PRIVATE)
+
   private val notificationManager =
     context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -58,9 +61,20 @@ class FactoryAlertManager(private val context: Context) {
     const val CHANNEL_QUALITY = "nfl_channel_quality"
     const val CHANNEL_PRODUCTION = "nfl_channel_production"
     const val CHANNEL_GENERAL = "nfl_channel_general"
+    const val CHANNEL_ADMIN_APPROVALS = "nfl_admin_approvals_channel"
+
+    const val EXTRA_OPEN_ADMIN_APPROVALS = "open_admin_approvals"
+    const val EXTRA_APPROVAL_REQUEST_ID = "approval_request_id"
+    const val EXTRA_APPROVAL_REQUEST_TYPE = "approval_request_type"
+    const val EXTRA_APPROVAL_TARGET_USER_ID = "approval_target_user_id"
+    const val EXTRA_NOTIFICATION_ID = "approval_notification_id"
+
+    const val REQUEST_TYPE_EMPLOYEE_REGISTRATION = "EMPLOYEE_REGISTRATION"
+    const val REQUEST_TYPE_TV_DEVICE_APPROVAL = "TV_DEVICE_APPROVAL"
 
     private const val PREF_SOUND_MODE = "pref_sound_mode"
     private const val PREF_MUTE_UNTIL = "pref_mute_until_millis"
+    private const val PREF_NOTIFIED_REQUEST_IDS = "notified_request_ids"
   }
 
   init {
@@ -117,9 +131,44 @@ class FactoryAlertManager(private val context: Context) {
         description = "Routine sync and administrative updates"
       }
 
+      val adminApprovalsChannel = NotificationChannel(
+        CHANNEL_ADMIN_APPROVALS,
+        "Admin Registration & TV Approvals",
+        NotificationManager.IMPORTANCE_HIGH
+      ).apply {
+        description = "Real-time employee registration and Smart TV authorization requests for Admins"
+        enableVibration(true)
+        vibrationPattern = longArrayOf(0, 400, 150, 400)
+        setSound(defaultSound, audioAttributes)
+        lockscreenVisibility = NotificationCompat.VISIBILITY_PRIVATE
+      }
+
       notificationManager.createNotificationChannels(
-        listOf(criticalChannel, qualityChannel, productionChannel, generalChannel)
+        listOf(criticalChannel, adminApprovalsChannel, qualityChannel, productionChannel, generalChannel)
       )
+    }
+  }
+
+  fun hasNotifiedRequest(requestId: String): Boolean {
+    if (requestId.isBlank()) return false
+    val set = dedupPrefs.getStringSet(PREF_NOTIFIED_REQUEST_IDS, emptySet()) ?: emptySet()
+    return requestId in set
+  }
+
+  fun markRequestNotified(requestId: String) {
+    if (requestId.isBlank()) return
+    val current = dedupPrefs.getStringSet(PREF_NOTIFIED_REQUEST_IDS, emptySet())?.toMutableSet()
+      ?: mutableSetOf()
+    current.add(requestId)
+    dedupPrefs.edit().putStringSet(PREF_NOTIFIED_REQUEST_IDS, current).apply()
+  }
+
+  fun clearRequestNotified(requestId: String) {
+    if (requestId.isBlank()) return
+    val current = dedupPrefs.getStringSet(PREF_NOTIFIED_REQUEST_IDS, emptySet())?.toMutableSet()
+      ?: mutableSetOf()
+    if (current.remove(requestId)) {
+      dedupPrefs.edit().putStringSet(PREF_NOTIFIED_REQUEST_IDS, current).apply()
     }
   }
 
@@ -366,43 +415,167 @@ class FactoryAlertManager(private val context: Context) {
   fun triggerAdminApprovalNotification(
     requestKey: String,
     title: String,
-    message: String
-  ) {
+    message: String,
+    requestType: String = inferRequestType(requestKey),
+    targetUserId: String = inferTargetUserId(requestKey),
+    forceShow: Boolean = false
+  ): Boolean {
+    if (!forceShow && hasNotifiedRequest(requestKey)) {
+      return false
+    }
+
     if (!isSoundMuted()) {
       playAudibleAlarm(AlertSeverity.HIGH)
     }
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        return false
+      }
+    }
+
+    val notificationId = requestKey.hashCode()
+
+    val openIntent = Intent(context, MainActivity::class.java).apply {
+      flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+      putExtra(EXTRA_OPEN_ADMIN_APPROVALS, true)
+      putExtra(EXTRA_APPROVAL_REQUEST_ID, requestKey)
+      putExtra(EXTRA_APPROVAL_REQUEST_TYPE, requestType)
+      putExtra(EXTRA_APPROVAL_TARGET_USER_ID, targetUserId)
+    }
+
+    val contentPendingIntent = PendingIntent.getActivity(
+      context,
+      notificationId,
+      openIntent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+    val approveIntent = Intent(context, AdminApprovalActionReceiver::class.java).apply {
+      action = AdminApprovalActionReceiver.ACTION_APPROVE_REQUEST
+      putExtra(EXTRA_APPROVAL_REQUEST_ID, requestKey)
+      putExtra(EXTRA_APPROVAL_REQUEST_TYPE, requestType)
+      putExtra(EXTRA_APPROVAL_TARGET_USER_ID, targetUserId)
+      putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+    }
+    val approvePendingIntent = PendingIntent.getBroadcast(
+      context,
+      (requestKey + "_APPROVE").hashCode(),
+      approveIntent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+    val rejectIntent = Intent(context, AdminApprovalActionReceiver::class.java).apply {
+      action = AdminApprovalActionReceiver.ACTION_REJECT_REQUEST
+      putExtra(EXTRA_APPROVAL_REQUEST_ID, requestKey)
+      putExtra(EXTRA_APPROVAL_REQUEST_TYPE, requestType)
+      putExtra(EXTRA_APPROVAL_TARGET_USER_ID, targetUserId)
+      putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+    }
+    val rejectPendingIntent = PendingIntent.getBroadcast(
+      context,
+      (requestKey + "_REJECT").hashCode(),
+      rejectIntent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+    val publicLockscreenNotification = NotificationCompat.Builder(context, CHANNEL_ADMIN_APPROVALS)
+      .setSmallIcon(R.drawable.ic_nfl_logo)
+      .setContentTitle("NFL Live Admin Alert")
+      .setContentText("Pending approval action required. Unlock to view details.")
+      .setPriority(NotificationCompat.PRIORITY_HIGH)
+      .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+      .build()
+
+    val notification = NotificationCompat.Builder(context, CHANNEL_ADMIN_APPROVALS)
+      .setSmallIcon(R.drawable.ic_nfl_logo)
+      .setContentTitle(title)
+      .setContentText(message)
+      .setStyle(
+        NotificationCompat.BigTextStyle()
+          .bigText("$message\nTap to inspect in Admin Panel or use Approve / Reject below.")
+      )
+      .setPriority(NotificationCompat.PRIORITY_HIGH)
+      .setCategory(NotificationCompat.CATEGORY_STATUS)
+      .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+      .setPublicVersion(publicLockscreenNotification)
+      .setContentIntent(contentPendingIntent)
+      .addAction(0, "Approve", approvePendingIntent)
+      .addAction(0, "Reject", rejectPendingIntent)
+      .setAutoCancel(true)
+      .build()
+
+    return try {
+      NotificationManagerCompat.from(context).notify(notificationId, notification)
+      markRequestNotified(requestKey)
+      true
+    } catch (_: SecurityException) {
+      false
+    }
+  }
+
+  fun cancelNotification(notificationId: Int) {
+    try {
+      NotificationManagerCompat.from(context).cancel(notificationId)
+    } catch (_: Exception) {}
+  }
+
+  fun postActionFeedbackNotification(
+    notificationId: Int,
+    title: String,
+    message: String,
+    requestKey: String = "",
+    requestType: String = "",
+    targetUserId: String = ""
+  ) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
         return
       }
     }
 
-    val intent = Intent(context, MainActivity::class.java).apply {
-      flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-      putExtra("open_admin_approvals", true)
+    val openIntent = Intent(context, MainActivity::class.java).apply {
+      flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+      putExtra(EXTRA_OPEN_ADMIN_APPROVALS, true)
+      if (requestKey.isNotBlank()) putExtra(EXTRA_APPROVAL_REQUEST_ID, requestKey)
+      if (requestType.isNotBlank()) putExtra(EXTRA_APPROVAL_REQUEST_TYPE, requestType)
+      if (targetUserId.isNotBlank()) putExtra(EXTRA_APPROVAL_TARGET_USER_ID, targetUserId)
     }
 
     val pendingIntent = PendingIntent.getActivity(
       context,
-      requestKey.hashCode(),
-      intent,
+      notificationId,
+      openIntent,
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
 
-    val notification = NotificationCompat.Builder(context, CHANNEL_CRITICAL)
+    val feedbackNotification = NotificationCompat.Builder(context, CHANNEL_ADMIN_APPROVALS)
       .setSmallIcon(R.drawable.ic_nfl_logo)
       .setContentTitle(title)
       .setContentText(message)
-      .setStyle(NotificationCompat.BigTextStyle().bigText("$message\nTap to open Admin Approvals & Device Requests."))
-      .setPriority(NotificationCompat.PRIORITY_HIGH)
+      .setPriority(NotificationCompat.PRIORITY_DEFAULT)
       .setContentIntent(pendingIntent)
       .setAutoCancel(true)
       .build()
 
     try {
-      NotificationManagerCompat.from(context).notify(requestKey.hashCode(), notification)
+      NotificationManagerCompat.from(context).notify(notificationId, feedbackNotification)
     } catch (_: SecurityException) {}
+  }
+
+  private fun inferRequestType(requestKey: String): String {
+    return if (requestKey.startsWith("DEV_") || requestKey.startsWith("TV_")) {
+      REQUEST_TYPE_TV_DEVICE_APPROVAL
+    } else {
+      REQUEST_TYPE_EMPLOYEE_REGISTRATION
+    }
+  }
+
+  private fun inferTargetUserId(requestKey: String): String {
+    return requestKey
+      .removePrefix("REG_")
+      .removePrefix("DEV_")
+      .removePrefix("TV_")
   }
 }
 

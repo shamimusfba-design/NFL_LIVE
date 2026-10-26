@@ -1,5 +1,14 @@
 import { initializeApp, getApps } from 'firebase/app';
 import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithCustomToken,
+  signOut as firebaseSignOut,
+  Auth,
+  User as FirebaseUser
+} from 'firebase/auth';
+import {
   getFirestore,
   collection,
   doc,
@@ -37,6 +46,7 @@ const FIREBASE_CONFIG = {
 const FIRESTORE_DATABASE_ID = 'ai-studio-android-nfllivea-664f462a-fb9e-483d-9567-6ac2c98cf7a4';
 
 let dbInstance: Firestore | null = null;
+let authInstance: Auth | null = null;
 
 function getDb(): Firestore | null {
   try {
@@ -47,6 +57,73 @@ function getDb(): Firestore | null {
   } catch (e) {
     console.warn('Firestore initialization notice:', e);
     return null;
+  }
+}
+
+export function getFirebaseAuth(): Auth | null {
+  try {
+    if (authInstance) return authInstance;
+    const app = getApps().length > 0 ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
+    authInstance = getAuth(app);
+    return authInstance;
+  } catch (e) {
+    console.warn('Firebase Auth initialization notice:', e);
+    return null;
+  }
+}
+
+export async function signInWebWithGoogle(employeeIdToBind?: string): Promise<FirebaseUser | null> {
+  const auth = getFirebaseAuth();
+  if (!auth) return null;
+  const provider = new GoogleAuthProvider();
+  const cred = await signInWithPopup(auth, provider);
+  if (cred.user && employeeIdToBind) {
+    await bindFirebaseUidToEmployee(cred.user.uid, employeeIdToBind, cred.user.email || '');
+  }
+  return cred.user;
+}
+
+export async function signInWebWithCustomToken(customToken: string, employeeIdToBind?: string): Promise<FirebaseUser | null> {
+  const auth = getFirebaseAuth();
+  if (!auth || !customToken) return null;
+  const cred = await signInWithCustomToken(auth, customToken);
+  if (cred.user && employeeIdToBind) {
+    await bindFirebaseUidToEmployee(cred.user.uid, employeeIdToBind, cred.user.email || '');
+  }
+  return cred.user;
+}
+
+export async function bindFirebaseUidToEmployee(uid: string, employeeId: string, email = ''): Promise<boolean> {
+  const db = getDb();
+  if (!db || !uid || !employeeId) return false;
+  try {
+    const cleanId = employeeId.trim().replace(/\//g, '_');
+    const now = Date.now();
+    await setDoc(
+      doc(db, 'auth_bindings', uid),
+      {
+        uid,
+        employeeId: cleanId,
+        email,
+        boundAtMillis: now,
+        updatedAtMillis: now
+      },
+      { merge: true }
+    );
+    return true;
+  } catch (e) {
+    console.warn('bindFirebaseUidToEmployee error:', e);
+    return false;
+  }
+}
+
+export async function signOutWebCloudSession(): Promise<void> {
+  const auth = getFirebaseAuth();
+  if (!auth) return;
+  try {
+    await firebaseSignOut(auth);
+  } catch (e) {
+    console.warn('signOutWebCloudSession notice:', e);
   }
 }
 
@@ -804,6 +881,17 @@ export async function approveCloudUserRegistration(
       },
       { merge: true }
     );
+    await setDoc(
+      doc(db, 'registration_requests', `reg_${clean}`),
+      {
+        id: `reg_${clean}`,
+        employeeId: clean,
+        status: 'APPROVED',
+        reviewedBy: approvedBy,
+        reviewedAtMillis: now
+      },
+      { merge: true }
+    );
     return true;
   } catch (e) {
     console.warn('approveCloudUserRegistration error:', e);
@@ -830,6 +918,17 @@ export async function rejectCloudUserRegistration(
         isActive: false,
         rejectionReason: reason || 'Rejected by Administrator',
         updatedAtMillis: now
+      },
+      { merge: true }
+    );
+    await setDoc(
+      doc(db, 'registration_requests', `reg_${clean}`),
+      {
+        id: `reg_${clean}`,
+        employeeId: clean,
+        status: 'REJECTED',
+        rejectionReason: reason || 'Rejected by Administrator',
+        reviewedAtMillis: now
       },
       { merge: true }
     );
@@ -880,10 +979,25 @@ export async function approveCloudDeviceOrTvRequest(
       },
       { merge: true }
     );
+    const reqId = `devreq_${clean}_${deviceId.replace(/\//g, '_')}`;
+    await setDoc(
+      doc(db, 'device_approval_requests', reqId),
+      {
+        id: reqId,
+        employeeId: clean,
+        deviceId,
+        deviceName,
+        status: 'APPROVED',
+        reviewedBy: approvedBy,
+        reviewedAtMillis: now
+      },
+      { merge: true }
+    );
     return true;
   } catch (e) {
     console.warn('approveCloudDeviceOrTvRequest error:', e);
     return false;
   }
 }
+
 
