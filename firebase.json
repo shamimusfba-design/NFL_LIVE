@@ -5,6 +5,20 @@
       "rules": "firestore.rules"
     }
   ],
+  "hosting": {
+    "public": "web-dashboard-and-mobile/dist",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
   "emulators": {
     "firestore": {
       "host": "127.0.0.1",

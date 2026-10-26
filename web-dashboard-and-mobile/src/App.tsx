@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   FloorId,
+  PeriodId,
   UserAccount,
   LineTargetConfig,
+  MonthlyTargetConfig,
+  WeeklyQualityRecord,
   ProductionEntryRecord,
   QualityEntryRecord,
   IncidentRecord,
@@ -21,7 +24,15 @@ import {
   pushQualityToCloud,
   pushIncidentToCloud,
   pushSetupToCloud,
-  purgeAllOperationalCloudRecords
+  pushWeeklyQualityToCloud,
+  pushMonthlyTargetToCloud,
+  softDeleteCloudRecord,
+  canonicalProdDocId,
+  canonicalQaDocId,
+  purgeAllOperationalCloudRecords,
+  approveCloudUserRegistration,
+  rejectCloudUserRegistration,
+  approveCloudDeviceOrTvRequest
 } from './services/firebaseLiveSync';
 import { MobileDashboard } from './components/MobileDashboard';
 import { TvDesktopDashboard } from './components/TvDesktopDashboard';
@@ -37,31 +48,29 @@ const STORAGE_KEYS = {
   TARGETS: 'nfl_desktop_targets_v1',
   PRODUCTIONS: 'nfl_desktop_productions_v1',
   QUALITIES: 'nfl_desktop_qualities_v1',
-  INCIDENTS: 'nfl_desktop_incidents_v1'
+  INCIDENTS: 'nfl_desktop_incidents_v1',
+  WEEKLY_QUALITY: 'nfl_desktop_weekly_quality_v1',
+  MONTHLY_TARGETS: 'nfl_desktop_monthly_targets_v1'
 };
 
 export default function App() {
-  // Master state
   const [lines, setLines] = useState<LineMasterItem[]>(ALL_FACTORY_LINES);
   const [users, setUsers] = useState<UserAccount[]>(STANDARD_USERS);
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
 
-  // Display mode: default to 'TV' (Widescreen Desktop) on PC screens >= 900px
   const [activeDeviceView, setActiveDeviceView] = useState<'MOBILE' | 'TV'>(() =>
     typeof window !== 'undefined' && window.innerWidth >= 900 ? 'TV' : 'MOBILE'
   );
 
-  // Filters
   const [selectedFloor, setSelectedFloor] = useState<FloorId>('Sew 2');
-  const [selectedPeriod, setSelectedPeriod] = useState<'Today' | 'Week' | 'Month'>('Today');
+  const [selectedPeriod, setSelectedPeriod] = useState<PeriodId>('Today');
   const todayIso = useMemo(() => getBangladeshTodayIso(), []);
 
-  // Datasets & Persistence flags
   const [isDemoMode, setIsDemoMode] = useState<boolean>(() => {
     try {
-      return localStorage.getItem(STORAGE_KEYS.SAMPLE_CLEARED) !== 'true';
+      return localStorage.getItem(STORAGE_KEYS.SAMPLE_CLEARED) === 'false';
     } catch {
-      return true;
+      return false;
     }
   });
   const [lastResetMs, setLastResetMs] = useState<number>(() => {
@@ -76,9 +85,10 @@ export default function App() {
   const [productions, setProductions] = useState<ProductionEntryRecord[]>([]);
   const [qualities, setQualities] = useState<QualityEntryRecord[]>([]);
   const [incidents, setIncidents] = useState<IncidentRecord[]>([]);
+  const [weeklyQuality, setWeeklyQuality] = useState<WeeklyQualityRecord[]>([]);
+  const [monthlyTargets, setMonthlyTargets] = useState<MonthlyTargetConfig[]>([]);
   const [cloudConnected, setCloudConnected] = useState<boolean>(false);
 
-  // Modals & Panels
   const [showIncidentModal, setShowIncidentModal] = useState(false);
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [showReportsModal, setShowReportsModal] = useState(false);
@@ -87,11 +97,9 @@ export default function App() {
   const [showInstallDesktopModal, setShowInstallDesktopModal] = useState(false);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
 
-  // Audio Alarm Synth for Phone/Desktop Alarms (Web Audio API)
   const audioCtxRef = useRef<AudioContext | null>(null);
   const alarmIntervalRef = useRef<number | null>(null);
 
-  // Capture PWA beforeinstallprompt event so Desktop Chrome/Edge users get 1-click native installation
   useEffect(() => {
     const handler = (e: any) => {
       e.preventDefault();
@@ -101,20 +109,23 @@ export default function App() {
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
-  // Initialize local + demo data on first load (respecting sample_data_cleared)
   useEffect(() => {
     try {
-      const sampleCleared = localStorage.getItem(STORAGE_KEYS.SAMPLE_CLEARED) === 'true';
+      const sampleCleared = localStorage.getItem(STORAGE_KEYS.SAMPLE_CLEARED) !== 'false';
       const savedTargets = JSON.parse(localStorage.getItem(STORAGE_KEYS.TARGETS) || '[]');
       const savedProds = JSON.parse(localStorage.getItem(STORAGE_KEYS.PRODUCTIONS) || '[]');
       const savedQuals = JSON.parse(localStorage.getItem(STORAGE_KEYS.QUALITIES) || '[]');
       const savedIncs = JSON.parse(localStorage.getItem(STORAGE_KEYS.INCIDENTS) || '[]');
+      const savedWeekly = JSON.parse(localStorage.getItem(STORAGE_KEYS.WEEKLY_QUALITY) || '[]');
+      const savedMonthly = JSON.parse(localStorage.getItem(STORAGE_KEYS.MONTHLY_TARGETS) || '[]');
 
       if (sampleCleared) {
         setTargets(savedTargets.filter((t: LineTargetConfig) => !t.isDemo));
         setProductions(savedProds.filter((p: ProductionEntryRecord) => !p.isDemo));
         setQualities(savedQuals.filter((q: QualityEntryRecord) => !q.isDemo));
         setIncidents(savedIncs.filter((i: IncidentRecord) => !i.isDemo));
+        setWeeklyQuality(savedWeekly.filter((w: WeeklyQualityRecord) => !w.isDemo));
+        setMonthlyTargets(savedMonthly);
         setIsDemoMode(false);
       } else if (
         savedTargets.length > 0 ||
@@ -122,27 +133,32 @@ export default function App() {
         savedQuals.length > 0 ||
         savedIncs.length > 0
       ) {
+        const demo = generateSyntheticDemoDataset();
         setTargets(savedTargets);
         setProductions(savedProds);
         setQualities(savedQuals);
         setIncidents(savedIncs);
+        setWeeklyQuality(savedWeekly.length > 0 ? savedWeekly : demo.weeklyQuality);
+        setMonthlyTargets(savedMonthly.length > 0 ? savedMonthly : demo.monthlyTargets);
       } else {
         const demo = generateSyntheticDemoDataset();
         setTargets(demo.targets);
         setProductions(demo.productions);
         setQualities(demo.qualities);
         setIncidents(demo.incidents);
+        setWeeklyQuality(demo.weeklyQuality);
+        setMonthlyTargets(demo.monthlyTargets);
       }
     } catch {
-      const demo = generateSyntheticDemoDataset();
-      setTargets(demo.targets);
-      setProductions(demo.productions);
-      setQualities(demo.qualities);
-      setIncidents(demo.incidents);
+      setTargets([]);
+      setProductions([]);
+      setQualities([]);
+      setIncidents([]);
+      setWeeklyQuality([]);
+      setMonthlyTargets([]);
     }
   }, []);
 
-  // Persist operational state changes to localStorage
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEYS.TARGETS, JSON.stringify(targets));
@@ -167,11 +183,24 @@ export default function App() {
     } catch {}
   }, [incidents]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.WEEKLY_QUALITY, JSON.stringify(weeklyQuality));
+    } catch {}
+  }, [weeklyQuality]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.MONTHLY_TARGETS, JSON.stringify(monthlyTargets));
+    } catch {}
+  }, [monthlyTargets]);
+
   // Connect real-time Firestore listeners (shared with Android Mobile & TV apps)
   useEffect(() => {
     const unsubscribe = startLiveFirestoreListeners({
+      onStatusChanged: status => setCloudConnected(status.startsWith('Live')),
       onConnectionChange: connected => setCloudConnected(connected),
-      onProductionUpdate: remoteProds => {
+      onProductionUpdated: remoteProds => {
         const validRemote = remoteProds.filter(r => r.timestamp > lastResetMs);
         setProductions(prev => {
           const map = new Map<string, ProductionEntryRecord>();
@@ -180,7 +209,7 @@ export default function App() {
           return Array.from(map.values()).sort((a, b) => b.timestamp - a.timestamp);
         });
       },
-      onQualityUpdate: remoteQuals => {
+      onQualityUpdated: remoteQuals => {
         const validRemote = remoteQuals.filter(r => r.timestamp > lastResetMs);
         setQualities(prev => {
           const map = new Map<string, QualityEntryRecord>();
@@ -189,7 +218,7 @@ export default function App() {
           return Array.from(map.values()).sort((a, b) => b.timestamp - a.timestamp);
         });
       },
-      onIncidentUpdate: remoteIncs => {
+      onIncidentsUpdated: remoteIncs => {
         const validRemote = remoteIncs.filter(r => r.startTimeMillis > lastResetMs);
         setIncidents(prev => {
           const map = new Map<string, IncidentRecord>();
@@ -204,7 +233,7 @@ export default function App() {
           return Array.from(map.values()).sort((a, b) => b.startTimeMillis - a.startTimeMillis);
         });
       },
-      onSetupUpdate: remoteSetups => {
+      onSetupsUpdated: remoteSetups => {
         if (remoteSetups.length === 0) return;
         setTargets(prev => {
           const map = new Map<string, LineTargetConfig>();
@@ -212,12 +241,38 @@ export default function App() {
           remoteSetups.forEach(r => map.set(`${r.lineId}_${r.date}`, r));
           return Array.from(map.values());
         });
+      },
+      onWeeklyQualityUpdate: remoteWeekly => {
+        if (remoteWeekly.length === 0) return;
+        setWeeklyQuality(prev => {
+          const map = new Map<string, WeeklyQualityRecord>();
+          prev.forEach(w => map.set(w.weekKey, w));
+          remoteWeekly.forEach(r => map.set(r.weekKey, r));
+          return Array.from(map.values()).sort((a, b) => a.weekKey.localeCompare(b.weekKey));
+        });
+      },
+      onMonthlyTargetsUpdate: remoteMonthly => {
+        if (remoteMonthly.length === 0) return;
+        setMonthlyTargets(prev => {
+          const map = new Map<string, MonthlyTargetConfig>();
+          prev.forEach(m => map.set(m.id, m));
+          remoteMonthly.forEach(r => map.set(r.id, r));
+          return Array.from(map.values());
+        });
+      },
+      onUsersUpdated: remoteUsers => {
+        if (remoteUsers.length === 0) return;
+        setUsers(prev => {
+          const map = new Map<string, UserAccount>();
+          prev.forEach(u => map.set(u.id.toLowerCase(), u));
+          remoteUsers.forEach(r => map.set(r.id.toLowerCase(), r));
+          return Array.from(map.values());
+        });
       }
     });
     return () => unsubscribe();
   }, [lastResetMs]);
 
-  // Web Audio Alarm tone generator for incident alerts
   const triggerBeep = () => {
     try {
       if (!audioCtxRef.current) {
@@ -237,12 +292,9 @@ export default function App() {
       gain.connect(ctx.destination);
       osc.start();
       osc.stop(ctx.currentTime + 0.35);
-    } catch {
-      // Audio autoplay policy fallback
-    }
+    } catch {}
   };
 
-  // Check if there are unmuted active incidents targeted at current user role
   const hasUnmutedAlarmForRole = useMemo(() => {
     if (!currentUser) return false;
     return incidents.some(inc => {
@@ -257,7 +309,6 @@ export default function App() {
     });
   }, [incidents, currentUser]);
 
-  // Handle background beeper when alarm is triggered
   useEffect(() => {
     if (hasUnmutedAlarmForRole) {
       if (!alarmIntervalRef.current) {
@@ -277,7 +328,6 @@ export default function App() {
     };
   }, [hasUnmutedAlarmForRole]);
 
-  // Target-based filtering using live Bangladesh date
   const targetedConfigs = useMemo(() => {
     return CalculationEngine.getTargetedLines(
       lines,
@@ -288,34 +338,77 @@ export default function App() {
     );
   }, [lines, targets, selectedFloor, todayIso, isDemoMode]);
 
-  // Compute line summaries & floor KPIs
   const lineSummaries = useMemo(() => {
     return CalculationEngine.computeLineSummaries(
       targetedConfigs,
       productions,
       qualities,
-      incidents
+      incidents,
+      todayIso,
+      selectedPeriod
     );
-  }, [targetedConfigs, productions, qualities, incidents]);
+  }, [targetedConfigs, productions, qualities, incidents, todayIso, selectedPeriod]);
 
   const floorKpis = useMemo(() => {
-    return CalculationEngine.computeFloorKpis(lineSummaries, incidents);
-  }, [lineSummaries, incidents]);
+    return CalculationEngine.computeFloorKpis(
+      lineSummaries,
+      incidents,
+      monthlyTargets,
+      selectedFloor
+    );
+  }, [lineSummaries, incidents, monthlyTargets, selectedFloor]);
+
+  const floorBenchmarks = useMemo(() => {
+    const scopes: Array<{ id: FloorId; label: string }> = [
+      { id: 'Sew 1', label: 'Sew 1' },
+      { id: 'Sew 2', label: 'Sew 2' },
+      { id: 'Sew 3', label: 'Sew 3' },
+      { id: 'All', label: 'Factory' }
+    ];
+    return scopes.map(sc => {
+      const cfgs = CalculationEngine.getTargetedLines(lines, targets, sc.id, todayIso, !isDemoMode);
+      const sums = CalculationEngine.computeLineSummaries(
+        cfgs,
+        productions,
+        qualities,
+        incidents,
+        todayIso,
+        selectedPeriod
+      );
+      const k = CalculationEngine.computeFloorKpis(sums, incidents, monthlyTargets, sc.id);
+      return {
+        floor: sc.label,
+        todayEff: k.todayEfficiencyPct,
+        monthEff: k.monthlyEfficiencyPct
+      };
+    });
+  }, [lines, targets, productions, qualities, incidents, monthlyTargets, todayIso, selectedPeriod, isDemoMode]);
+
+  const hourlySeries = useMemo(() => {
+    return CalculationEngine.computeHourlySeries(
+      lineSummaries,
+      productions,
+      qualities,
+      selectedFloor,
+      todayIso,
+      selectedPeriod
+    );
+  }, [lineSummaries, productions, qualities, selectedFloor, todayIso, selectedPeriod]);
 
   const topDefects = useMemo(() => {
-    return CalculationEngine.computeTopDefects(qualities);
-  }, [qualities]);
+    return CalculationEngine.computeTopDefects(qualities, selectedFloor, todayIso, selectedPeriod);
+  }, [qualities, selectedFloor, todayIso, selectedPeriod]);
 
   const highestDhuLines = useMemo(() => {
     return CalculationEngine.computeHighestDhuLines(lineSummaries);
   }, [lineSummaries]);
 
-  // Open incidents list
   const openIncidents = useMemo(() => {
-    return incidents.filter(i => i.status !== 'RESOLVED');
-  }, [incidents]);
+    return incidents.filter(
+      i => i.status !== 'RESOLVED' && (selectedFloor === 'All' || i.floor === selectedFloor)
+    );
+  }, [incidents, selectedFloor]);
 
-  // Incident Actions
   const handleReportIncident = (newInc: Omit<IncidentRecord, 'id' | 'startTimeMillis' | 'status'>) => {
     const inc: IncidentRecord = {
       ...newInc,
@@ -367,13 +460,13 @@ export default function App() {
     );
   };
 
-  // Demo Data & Factory Reset Lifecycle
   const handleLoadDemoData = () => {
     const demo = generateSyntheticDemoDataset();
     setTargets(prev => [...prev.filter(t => !t.isDemo), ...demo.targets]);
     setProductions(prev => [...prev.filter(p => !p.isDemo), ...demo.productions]);
     setQualities(prev => [...prev.filter(q => !q.isDemo), ...demo.qualities]);
     setIncidents(prev => [...prev.filter(i => !i.isDemo), ...demo.incidents]);
+    setWeeklyQuality(prev => [...prev.filter(w => !w.isDemo), ...demo.weeklyQuality]);
     setIsDemoMode(true);
     try {
       localStorage.setItem(STORAGE_KEYS.SAMPLE_CLEARED, 'false');
@@ -385,19 +478,24 @@ export default function App() {
     setProductions(prev => prev.filter(p => !p.isDemo));
     setQualities(prev => prev.filter(q => !q.isDemo));
     setIncidents(prev => prev.filter(i => !i.isDemo));
+    setWeeklyQuality(prev => prev.filter(w => !w.isDemo));
     setIsDemoMode(false);
     try {
       localStorage.setItem(STORAGE_KEYS.SAMPLE_CLEARED, 'true');
     } catch {}
   };
 
-  const handleFactoryResetAll = async () => {
+  const handleFactoryResetAll = async (): Promise<number> => {
+    // Destructive: Admin only, and the person must type RESET. Deletes production data for every device.
+    if (currentUser?.role !== 'ADMIN') return -1;
+    if ((window.prompt('This deletes ALL production, quality, incident and setup records from the cloud for every phone and TV.\nType RESET to continue.') || '').trim() !== 'RESET') return -1;
     const resetTime = Date.now();
     setLastResetMs(resetTime);
     setTargets([]);
     setProductions([]);
     setQualities([]);
     setIncidents([]);
+    setWeeklyQuality([]);
     setIsDemoMode(false);
     try {
       localStorage.setItem(STORAGE_KEYS.SAMPLE_CLEARED, 'true');
@@ -406,33 +504,84 @@ export default function App() {
       localStorage.setItem(STORAGE_KEYS.PRODUCTIONS, '[]');
       localStorage.setItem(STORAGE_KEYS.QUALITIES, '[]');
       localStorage.setItem(STORAGE_KEYS.INCIDENTS, '[]');
+      localStorage.setItem(STORAGE_KEYS.WEEKLY_QUALITY, '[]');
     } catch {}
     return await purgeAllOperationalCloudRecords();
   };
 
-  // Production and Quality Entry Handlers
-  const handleSaveProduction = (entry: Omit<ProductionEntryRecord, 'id' | 'submissionId' | 'timestamp' | 'revision'>) => {
+  const handleSaveProduction = (
+    entry: Omit<ProductionEntryRecord, 'id' | 'submissionId' | 'timestamp' | 'revision'>
+  ) => {
     const newRecord: ProductionEntryRecord = {
       ...entry,
-      id: `p-${Date.now()}`,
+      id: `p-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       submissionId: `sub-p-${Date.now()}`,
       timestamp: Date.now(),
       revision: 1
     };
-    setProductions(prev => [newRecord, ...prev]);
+    setProductions(prev => [
+      newRecord,
+      ...prev.filter(
+        p => !(p.lineId === newRecord.lineId && p.date === newRecord.date && p.hourSlot === newRecord.hourSlot)
+      )
+    ]);
     pushProductionToCloud(newRecord);
   };
 
-  const handleSaveQuality = (entry: Omit<QualityEntryRecord, 'id' | 'submissionId' | 'timestamp' | 'revision'>) => {
+  const handleSaveQuality = (
+    entry: Omit<QualityEntryRecord, 'id' | 'submissionId' | 'timestamp' | 'revision'>
+  ) => {
     const newRecord: QualityEntryRecord = {
       ...entry,
-      id: `q-${Date.now()}`,
+      id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       submissionId: `sub-q-${Date.now()}`,
       timestamp: Date.now(),
       revision: 1
     };
-    setQualities(prev => [newRecord, ...prev]);
+    setQualities(prev => [
+      newRecord,
+      ...prev.filter(
+        q => !(q.lineId === newRecord.lineId && q.date === newRecord.date && q.hourSlot === newRecord.hourSlot)
+      )
+    ]);
     pushQualityToCloud(newRecord);
+  };
+
+  const handleSaveWeeklyQuality = (record: WeeklyQualityRecord) => {
+    setWeeklyQuality(prev => {
+      const filtered = prev.filter(w => w.weekKey !== record.weekKey);
+      return [...filtered, record].sort((a, b) => a.weekKey.localeCompare(b.weekKey));
+    });
+    pushWeeklyQualityToCloud(record);
+  };
+
+  const handleSaveMonthlyTarget = (target: MonthlyTargetConfig) => {
+    setMonthlyTargets(prev => {
+      const filtered = prev.filter(m => m.id !== target.id);
+      return [...filtered, target];
+    });
+    pushMonthlyTargetToCloud(target);
+  };
+
+  const handleDeleteProduction = (id: string, reason: string) => {
+    const rec = productions.find(p => p.id === id);
+    setProductions(prev => prev.filter(p => p.id !== id));
+    if (rec && currentUser) {
+      softDeleteCloudRecord(
+        'production_entries',
+        canonicalProdDocId(rec),
+        currentUser.name,
+        reason
+      );
+    }
+  };
+
+  const handleDeleteQuality = (id: string, reason: string) => {
+    const rec = qualities.find(q => q.id === id);
+    setQualities(prev => prev.filter(q => q.id !== id));
+    if (rec && currentUser) {
+      softDeleteCloudRecord('quality_entries', canonicalQaDocId(rec), currentUser.name, reason);
+    }
   };
 
   const handleSaveSetup = (setup: LineTargetConfig) => {
@@ -466,14 +615,13 @@ export default function App() {
     incidentsCount: incidents.filter(i => i.isDemo).length
   };
 
-  const totalStats = {
-    targetsCount: targets.length,
-    productionsCount: productions.length,
-    qualitiesCount: qualities.length,
-    incidentsCount: incidents.length
+  const liveStats = {
+    targetsCount: targets.filter(t => !t.isDemo).length,
+    productionsCount: productions.filter(p => !p.isDemo).length,
+    qualitiesCount: qualities.filter(q => !q.isDemo).length,
+    incidentsCount: incidents.filter(i => !i.isDemo).length
   };
 
-  // If user is not logged in, display the Login Interface
   if (!currentUser) {
     return (
       <LoginView
@@ -487,30 +635,27 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F0F4F8] text-slate-900 font-sans flex flex-col">
+    <div className="min-h-screen bg-[#0A1522] text-slate-900 font-sans flex flex-col">
       {/* Top Application Global Desktop & Mobile Control Bar */}
-      <div className="bg-[#061938] text-white px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs border-b border-blue-900/60 shadow-sm z-40">
+      <div className="bg-[#06111D] text-white px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs border-b border-[#1B2E45] shadow-sm z-40">
         <div className="flex items-center gap-2.5 flex-wrap">
           <div className="bg-white text-[#061938] font-black text-xs px-2 py-0.5 rounded shadow tracking-wider">
             NFL
           </div>
           <span className="font-extrabold tracking-wide hidden sm:inline">
-            DESKTOP & TV SYSTEM
+            NFL LIVE WEB &amp; TV SYSTEM
           </span>
 
-          {/* Cloud Sync Badge */}
           <span
             className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
               cloudConnected
                 ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700'
                 : 'bg-slate-800 text-slate-300 border-slate-700'
             }`}
-            title="Real-time Firebase Firestore Sync Status"
           >
             {cloudConnected ? '☁️ Cloud Live' : '💾 Local + Cloud Ready'}
           </span>
 
-          {/* User Role Switcher Pill */}
           <button
             onClick={() => setShowRoleSelector(true)}
             className="flex items-center gap-1.5 bg-blue-950/80 hover:bg-blue-900 px-2.5 py-1 rounded-lg border border-blue-800 transition"
@@ -522,18 +667,15 @@ export default function App() {
             </span>
           </button>
 
-          {/* Logout Button */}
           <button
             onClick={() => setCurrentUser(null)}
             className="text-[10px] bg-red-950/70 hover:bg-red-900 text-red-200 border border-red-800/80 px-2 py-1 rounded-lg font-bold transition flex items-center gap-1"
-            title="Log out to Login screen"
           >
             <span>🚪</span>
             <span>Logout</span>
           </button>
         </div>
 
-        {/* Desktop Quick Action Toolbar + View Switcher */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {hasUnmutedAlarmForRole && (
             <button
@@ -544,12 +686,11 @@ export default function App() {
             </button>
           )}
 
-          {/* Direct Desktop Action Buttons (Always accessible in TV/Desktop 16:9 View) */}
           <button
             onClick={() => setShowEntryModal(true)}
             className="bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1 rounded-md text-[11px] font-bold transition shadow-sm"
           >
-            📝 Data Entry
+            📝 Data Entry (12h AM/PM &amp; Audit)
           </button>
 
           <button
@@ -566,18 +707,19 @@ export default function App() {
             🚨 Incidents {openIncidents.length > 0 ? `(${openIncidents.length})` : ''}
           </button>
 
-          <button
-            onClick={() => setShowAdminModal(true)}
-            className="bg-blue-800 hover:bg-blue-700 text-white px-2.5 py-1 rounded-md text-[11px] font-bold transition shadow-sm"
-            title="Admin Console, Clear Demo Data & Factory Reset"
-          >
-            ⚙️ Admin & Reset
-          </button>
+          {currentUser?.role === 'ADMIN' && (
+            <button
+              onClick={() => setShowAdminModal(true)}
+              className="bg-blue-800 hover:bg-blue-700 text-white px-2.5 py-1 rounded-md text-[11px] font-bold transition shadow-sm"
+              title="Admin Console, Clear Demo Data & Factory Reset"
+            >
+              ⚙️ Admin &amp; Reset
+            </button>
+          )}
 
           <button
             onClick={handleTriggerInstallDesktop}
             className="bg-cyan-700 hover:bg-cyan-600 text-white px-2.5 py-1 rounded-md text-[11px] font-bold transition shadow-sm"
-            title="Install Free Desktop App on Windows / Mac / Linux"
           >
             🖥️ Install Desktop App
           </button>
@@ -591,7 +733,7 @@ export default function App() {
                   : 'text-blue-300 hover:text-white'
               }`}
             >
-              🖥️ Desktop / TV (16:9)
+              🖥️ TV Wallboard (16:9)
             </button>
             <button
               onClick={() => setActiveDeviceView('MOBILE')}
@@ -601,7 +743,7 @@ export default function App() {
                   : 'text-blue-300 hover:text-white'
               }`}
             >
-              📱 Mobile View
+              📱 Compact View
             </button>
           </div>
         </div>
@@ -610,64 +752,31 @@ export default function App() {
       {/* Main View Area */}
       <main className="flex-1">
         {activeDeviceView === 'MOBILE' ? (
-          <div className="max-w-md mx-auto min-h-screen bg-white shadow-xl relative border-x border-slate-200">
+          <div className="max-w-lg mx-auto min-h-screen bg-[#0A1522] shadow-xl relative border-x border-[#1B2E45]">
             <MobileDashboard
               selectedFloor={selectedFloor}
               onSelectFloor={setSelectedFloor}
               selectedPeriod={selectedPeriod}
               onSelectPeriod={setSelectedPeriod}
               kpis={floorKpis}
+              floorBenchmarks={floorBenchmarks}
               lineSummaries={lineSummaries}
+              hourlySeries={hourlySeries}
+              weeklyQuality={weeklyQuality}
+              productions={productions}
+              qualities={qualities}
               topDefects={topDefects}
+              highestDhuLines={highestDhuLines}
               isDemoMode={isDemoMode}
               onToggleDemo={() => {
                 if (isDemoMode) handleRemoveAllDemoData();
                 else handleLoadDemoData();
               }}
               openIncidents={openIncidents}
+              allIncidents={incidents}
               onOpenIncidentPanel={() => setShowIncidentModal(true)}
               onNavigateToReports={() => setShowReportsModal(true)}
             />
-
-            {/* Mobile Bottom Navigation */}
-            <div className="fixed bottom-0 max-w-md w-full bg-white border-t border-slate-200 flex justify-around py-2 z-40 shadow-lg text-[10px] font-bold text-slate-500">
-              <button
-                onClick={() => {}}
-                className="flex flex-col items-center gap-0.5 text-[#1976D2]"
-              >
-                <span className="text-base">📊</span>
-                <span>Dashboard</span>
-              </button>
-
-              <button
-                onClick={() => setShowEntryModal(true)}
-                className="flex flex-col items-center gap-0.5 hover:text-slate-800"
-              >
-                <span className="text-base">📝</span>
-                <span>Entry</span>
-              </button>
-
-              <button
-                onClick={() => setShowReportsModal(true)}
-                className="flex flex-col items-center gap-0.5 hover:text-slate-800"
-              >
-                <span className="text-base">📄</span>
-                <span>Reports</span>
-              </button>
-
-              <button
-                onClick={() => setShowIncidentModal(true)}
-                className="flex flex-col items-center gap-0.5 hover:text-slate-800 relative"
-              >
-                <span className="text-base">🚨</span>
-                <span>Incidents</span>
-                {openIncidents.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-600 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black">
-                    {openIncidents.length}
-                  </span>
-                )}
-              </button>
-            </div>
           </div>
         ) : (
           <TvDesktopDashboard
@@ -676,7 +785,12 @@ export default function App() {
             selectedPeriod={selectedPeriod}
             onSelectPeriod={setSelectedPeriod}
             kpis={floorKpis}
+            floorBenchmarks={floorBenchmarks}
             lineSummaries={lineSummaries}
+            hourlySeries={hourlySeries}
+            weeklyQuality={weeklyQuality}
+            productions={productions}
+            qualities={qualities}
             topDefects={topDefects}
             highestDhuLines={highestDhuLines}
             isDemoMode={isDemoMode}
@@ -685,6 +799,7 @@ export default function App() {
               else handleLoadDemoData();
             }}
             openIncidents={openIncidents}
+            allIncidents={incidents}
             onOpenIncidentPanel={() => setShowIncidentModal(true)}
           />
         )}
@@ -696,7 +811,7 @@ export default function App() {
           <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl border border-slate-200">
             <div className="flex justify-between items-center border-b pb-2">
               <h3 className="text-sm font-black text-slate-900">
-                Select Authorized Role & User
+                Select Authorized Role &amp; User
               </h3>
               <button
                 onClick={() => setShowRoleSelector(false)}
@@ -706,7 +821,7 @@ export default function App() {
               </button>
             </div>
             <p className="text-xs text-slate-600">
-              Permissions and incident notifications are strictly routed based on your active role:
+              Permissions (including Admin &amp; Auditor access for Bi-Hourly Audit and Weekly BS OQL / NFL AQC) are enforced based on your active role:
             </p>
             <div className="max-h-80 overflow-y-auto space-y-1.5">
               {users.map(u => (
@@ -758,9 +873,13 @@ export default function App() {
         <EntryForms
           lines={lines}
           currentUserName={currentUser.name}
+          currentUserRole={currentUser.role}
+          weeklyRecords={weeklyQuality}
           onSaveProduction={handleSaveProduction}
           onSaveQuality={handleSaveQuality}
           onSaveSetup={handleSaveSetup}
+          onSaveWeeklyQuality={handleSaveWeeklyQuality}
+          onSaveMonthlyTarget={handleSaveMonthlyTarget}
           onClose={() => setShowEntryModal(false)}
         />
       )}
@@ -771,8 +890,14 @@ export default function App() {
           selectedFloor={selectedFloor}
           kpis={floorKpis}
           lineSummaries={lineSummaries}
+          productions={productions}
+          qualities={qualities}
+          weeklyQuality={weeklyQuality}
           incidents={incidents}
           topDefects={topDefects}
+          currentUserRole={currentUser.role}
+          onDeleteProduction={handleDeleteProduction}
+          onDeleteQuality={handleDeleteQuality}
           onClose={() => setShowReportsModal(false)}
         />
       )}
@@ -783,12 +908,20 @@ export default function App() {
           lines={lines}
           users={users}
           demoStats={demoStats}
-          totalStats={totalStats}
-          cloudConnected={cloudConnected}
+          liveStats={liveStats}
           onLoadDemoData={handleLoadDemoData}
           onRemoveAllDemoData={handleRemoveAllDemoData}
           onFactoryResetAll={handleFactoryResetAll}
           onToggleLineActive={handleToggleLineActive}
+          onApproveRegistration={async userId => {
+            await approveCloudUserRegistration(userId, currentUser.name);
+          }}
+          onRejectRegistration={async userId => {
+            await rejectCloudUserRegistration(userId, 'Rejected by Administrator');
+          }}
+          onApproveDeviceOrTv={async (userId, deviceId, deviceName) => {
+            await approveCloudDeviceOrTvRequest(userId, deviceId, deviceName, currentUser.name);
+          }}
           onClose={() => setShowAdminModal(false)}
         />
       )}
@@ -813,28 +946,13 @@ export default function App() {
                 <b>100% Free Desktop Options Included:</b>
                 <ul className="list-disc pl-5 mt-1 space-y-1">
                   <li>
-                    <b>Option A (Instant Standalone PC File):</b> Open{' '}
-                    <code className="bg-white px-1.5 py-0.5 rounded border font-mono">
-                      NFL_LIVE_Desktop_App.html
-                    </code>{' '}
-                    on any Windows or Mac computer in Chrome or Edge. No server or installation needed!
+                    <b>Option A (Standalone PWA Folder):</b> Open <code className="font-mono">desktop-pwa/index.html</code> or deploy <code className="font-mono">web-dashboard-and-mobile/</code>.
                   </li>
                   <li>
-                    <b>Option B (Install as Native Desktop App Icon):</b> In Google Chrome or Microsoft Edge on your PC, click the{' '}
-                    <b>Install App icon (⊕)</b> on the right side of the address bar (or menu <b>⋮ → Save and share → Install page as app...</b>) to pin <b>NFL LIVE Desktop</b> directly to your Windows Taskbar and Desktop.
-                  </li>
-                  <li>
-                    <b>Option C (Free Cloud Hosting):</b> Run{' '}
-                    <code className="bg-white px-1.5 py-0.5 rounded border font-mono">
-                      npm run build
-                    </code>{' '}
-                    inside <code className="font-mono">web-dashboard-and-mobile/</code> and deploy to <b>Firebase Hosting</b>, <b>GitHub Pages</b>, or <b>Vercel</b> for $0/month.
+                    <b>Option B (Install as Native Desktop App Icon):</b> In Chrome or Edge, click the <b>Install App icon (⊕)</b> on the right side of the address bar to pin <b>NFL LIVE Desktop</b> to your Windows Taskbar and Desktop.
                   </li>
                 </ul>
               </div>
-              <p className="text-[11px] text-slate-500">
-                All Desktop versions automatically sync in real time with the same Firebase Firestore database (<code className="font-mono">nfl-live-72213</code>) used by your Android Phones and Smart TVs.
-              </p>
             </div>
             <div className="flex justify-end">
               <button

@@ -1466,6 +1466,8 @@ class ExampleRobolectricTest {
   fun `test removeAllDemoData and resetAllOperationalData clear records persist to disk and disable synthetic fallbacks`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val repo = NflRepository(context)
+    // Factory reset is Admin-only (enforced in the repository), so sign in as the seeded Admin first.
+    repo.authenticateUser("admin", "123")
     repo.loadSeedDemoData(force = true)
     assertTrue(repo.productionEntries.value.any { it.isDemo })
 
@@ -1528,7 +1530,50 @@ class ExampleRobolectricTest {
     val reloadedRepo = NflRepository(context)
     assertTrue(reloadedRepo.productionEntries.value.isEmpty())
   }
+
+  @Test
+  fun `test clock skew resilient employee registration and first time tv login handshake`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val adminRepo = NflRepository(context)
+    adminRepo.authenticateUser("admin", "123")
+
+    // 1. Fresh install defaults to sample_data_cleared = true (zero demo data)
+    assertTrue(adminRepo.isSampleDataCleared())
+    assertFalse(adminRepo.productionEntries.value.any { it.isDemo })
+
+    // 2. Simulate clock-skewed remote PENDING_APPROVAL registration (timestamp = 100L)
+    val pendingEmployee = UserAccount(
+      id = "EMP-NEW-901",
+      employeeId = "EMP-NEW-901",
+      name = "Rashedul Islam",
+      designation = EmployeeDesignation.PRODUCTION_SUPERVISOR.displayName,
+      department = EmployeeDesignation.PRODUCTION_SUPERVISOR.department,
+      role = UserRole.SUPERVISOR,
+      floor = FloorScope.SEW_2,
+      accountStatus = AccountStatus.PENDING_APPROVAL,
+      isActive = false,
+      updatedAtMillis = 100L
+    )
+    adminRepo.upsertRemoteUsers(listOf(pendingEmployee))
+    val receivedEmp = adminRepo.users.value.find { it.id == "EMP-NEW-901" }
+    assertTrue(receivedEmp != null)
+    assertEquals(AccountStatus.PENDING_APPROVAL, receivedEmp?.accountStatus)
+
+    // 3. Simulate Smart TV sending TV_PENDING with an older timestamp than Admin's local tv_display record
+    val existingTv = adminRepo.users.value.find { it.id == NflRepository.TV_DISPLAY_ACCOUNT_ID }!!
+    adminRepo.upsertRemoteUsers(listOf(existingTv.copy(updatedAtMillis = 500_000L)))
+    val tvPendingRemote = existingTv.copy(
+      rejectionReason = "TV_PENDING:TV-REQ-8899:TV-DEV-8899:Sony Bravia 4K:8899",
+      updatedAtMillis = 100_000L // Older than 500_000L due to TV clock skew
+    )
+    adminRepo.upsertRemoteUsers(listOf(tvPendingRemote))
+
+    val tvReqOnAdmin = adminRepo.deviceApprovalRequests.value.find { it.requestId == "TV-REQ-8899" }
+    assertTrue("TV_PENDING request must appear in Admin Device Requests even under clock skew", tvReqOnAdmin != null)
+    assertEquals("PENDING", tvReqOnAdmin?.status)
+  }
 }
+
 
 
 

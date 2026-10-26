@@ -11,6 +11,19 @@
   --text: #0f172a;
   --muted: #64748b;
   --border: #e2e8f0;
+
+  /* Exact Claude TV Wallboard Theme (WbTheme from WbComponents.kt) */
+  --wb-bg: #0A1522;
+  --wb-panel: #101E30;
+  --wb-line: #1B2E45;
+  --wb-txt: #EAF0F7;
+  --wb-muted: #8FA3B8;
+  --wb-red: #FF6B6B;
+  --wb-amber: #F5B73B;
+  --wb-green: #3DD68C;
+  --wb-blue: #5AA9FF;
+  --wb-orange: #F59E6B;
+  --wb-dim: #2A4560;
 }
 
 * {
@@ -28,15 +41,17 @@ body {
   flex-direction: column;
 }
 
+/* App Topbar */
 .topbar {
   background: var(--navy);
   color: #fff;
-  padding: 12px 24px;
+  padding: 10px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  gap: 12px;
+  flex-wrap: wrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
 }
 
 .brand {
@@ -49,14 +64,15 @@ body {
   background: #fff;
   color: var(--navy);
   font-weight: 900;
-  font-size: 16px;
+  font-size: 15px;
   padding: 6px 10px;
   border-radius: 6px;
+  letter-spacing: 0.5px;
 }
 
 .brand-title {
-  font-size: 18px;
-  font-weight: 800;
+  font-size: 17px;
+  font-weight: 900;
   letter-spacing: 0.4px;
 }
 
@@ -68,26 +84,36 @@ body {
 .top-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
+}
+
+.top-controls select {
+  width: auto;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: #0f2e6e;
+  color: #fff;
+  border: 1px solid #3b82f6;
 }
 
 .role-pill {
   background: #1e3a8a;
   border: 1px solid #60a5fa;
   color: #fde047;
-  padding: 6px 12px;
+  padding: 6px 10px;
   border-radius: 6px;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 800;
 }
 
+/* Primary Navigation Tabs (All 10 APK Modules) */
 .nav-tabs {
   background: #fff;
   border-bottom: 1px solid var(--border);
-  padding: 8px 24px;
+  padding: 8px 18px;
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
@@ -95,12 +121,16 @@ body {
   border: 1px solid var(--border);
   background: #f8fafc;
   color: #334155;
-  padding: 8px 16px;
+  padding: 7px 13px;
   border-radius: 8px;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 12.5px;
+  font-weight: 800;
   cursor: pointer;
   transition: all 0.15s;
+}
+
+.nav-tab:hover {
+  background: #e2e8f0;
 }
 
 .nav-tab.active {
@@ -110,39 +140,379 @@ body {
 }
 
 .container {
-  max-width: 1440px;
+  max-width: 1680px;
   width: 100%;
   margin: 0 auto;
-  padding: 20px 24px;
+  padding: 14px 18px;
   flex: 1;
 }
 
+/* ============================================================================
+   EXACT TV WALLBOARD THEME & LAYOUT (Matches TvDashboardScreen.kt & WbComponents.kt)
+   ============================================================================ */
+.wb-shell {
+  background: var(--wb-bg);
+  color: var(--wb-txt);
+  border-radius: 12px;
+  padding: 12px;
+  min-height: calc(100vh - 140px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+
+.wb-shell.fullscreen-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  border-radius: 0;
+  min-height: 100vh;
+  overflow-y: auto;
+}
+
+.wb-header {
+  background: var(--wb-panel);
+  border: 1px solid var(--wb-line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.wb-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wb-live-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--wb-green);
+  box-shadow: 0 0 8px var(--wb-green);
+  animation: wbPulse 1.6s infinite;
+}
+
+@keyframes wbPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
+}
+
+.wb-brand-title {
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  color: var(--wb-txt);
+}
+
+.wb-brand-sub {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--wb-blue);
+  letter-spacing: 0.4px;
+}
+
+.wb-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--wb-bg);
+  border: 1px solid var(--wb-line);
+  border-radius: 6px;
+  padding: 3px;
+}
+
+.wb-seg-btn {
+  background: transparent;
+  color: var(--wb-muted);
+  border: none;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.wb-seg-btn.active {
+  background: #1B3553;
+  color: var(--wb-txt);
+}
+
+.wb-seg-btn.page-active {
+  background: var(--wb-blue);
+  color: var(--wb-bg);
+}
+
+.wb-clock-box {
+  text-align: right;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.wb-clock-time {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--wb-txt);
+}
+
+.wb-clock-date {
+  font-size: 10px;
+  color: var(--wb-muted);
+}
+
+/* KPI Strip (5 Tiles on Production & Quality pages) */
+.wb-kpi-row-5 {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+/* Top 7 Summary Strip on ALL Page */
+.wb-all-top-7 {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr 1.05fr 1.25fr 0.95fr 1.05fr 0.95fr;
+  gap: 8px;
+}
+
+.wb-panel {
+  background: var(--wb-panel);
+  border: 1px solid var(--wb-line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.wb-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.wb-panel-title {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--wb-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-panel-sub {
+  font-size: 10px;
+  color: var(--wb-muted);
+  white-space: nowrap;
+}
+
+.wb-kpi-big {
+  font-size: 24px;
+  font-weight: 900;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin: 4px 0;
+}
+
+.wb-kpi-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--wb-muted);
+  gap: 6px;
+}
+
+.wb-delta {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.wb-grid-3 {
+  display: grid;
+  grid-template-columns: 1.3fr 1.3fr 1fr;
+  gap: 8px;
+}
+
+/* Rank Bars inside Wallboard */
+.wb-rank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+  flex: 1;
+}
+
+.wb-rank-row {
+  display: grid;
+  grid-template-columns: 92px 1fr 56px;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.wb-rank-label {
+  color: var(--wb-txt);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-rank-track {
+  height: 10px;
+  background: #152538;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.wb-rank-fill {
+  height: 100%;
+  border-radius: 3px;
+}
+
+.wb-rank-val {
+  text-align: right;
+  font-weight: 800;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Dual Column Chart inside Wallboard */
+.wb-col-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 170px;
+  padding-top: 18px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--wb-line);
+  position: relative;
+  overflow-x: auto;
+}
+
+.wb-col-item {
+  flex: 1;
+  min-width: 28px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.wb-col-bars {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  position: relative;
+}
+
+.wb-bar-outer {
+  width: 72%;
+  background: rgba(90, 169, 255, 0.25);
+  border-radius: 3px 3px 0 0;
+  position: absolute;
+  bottom: 0;
+}
+
+.wb-bar-inner {
+  width: 44%;
+  border-radius: 3px 3px 0 0;
+  position: absolute;
+  bottom: 0;
+  z-index: 2;
+}
+
+.wb-col-top-val {
+  font-size: 9.5px;
+  font-weight: 800;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin-bottom: 2px;
+  z-index: 3;
+}
+
+.wb-col-lbl {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: var(--wb-muted);
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+/* Wallboard Table */
+.wb-table-wrap {
+  overflow-x: auto;
+}
+
+.wb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  color: var(--wb-txt);
+}
+
+.wb-table th {
+  background: #1B3B6F;
+  color: #fff;
+  padding: 7px 8px;
+  font-size: 10.5px;
+  font-weight: 800;
+  border: 1px solid var(--wb-line);
+  text-align: center;
+}
+
+.wb-table td {
+  padding: 6px 8px;
+  border: 1px solid var(--wb-line);
+  text-align: center;
+  background: var(--wb-panel);
+}
+
+.wb-table tr:nth-child(even) td {
+  background: #0D1A2B;
+}
+
+/* ============================================================================
+   STANDARD LIGHT CARDS & FORMS FOR ENTRY / MANAGEMENT TABS
+   ============================================================================ */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 14px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .kpi-card {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 16px;
+  padding: 14px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 
 .kpi-label {
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 800;
   color: var(--muted);
   text-transform: uppercase;
 }
 
 .kpi-value {
-  font-size: 28px;
+  font-size: 25px;
   font-weight: 900;
-  margin: 6px 0 2px;
+  margin: 5px 0 2px;
 }
 
 .kpi-sub {
@@ -154,8 +524,8 @@ body {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 18px;
-  margin-bottom: 18px;
+  padding: 16px;
+  margin-bottom: 16px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 
@@ -163,66 +533,63 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
-  gap: 12px;
+  margin-bottom: 12px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .card-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 800;
 }
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 14px;
-  margin-bottom: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(195px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 label {
   display: block;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
   color: #334155;
-  margin-bottom: 5px;
+  margin-bottom: 4px;
 }
 
-input, select {
+input, select, textarea {
   width: 100%;
-  padding: 10px 12px;
+  padding: 9px 11px;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--text);
   background: #fff;
 }
 
 .btn {
-  padding: 10px 18px;
+  padding: 9px 16px;
   border-radius: 8px;
   border: none;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 800;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.btn-primary {
-  background: var(--blue);
-  color: #fff;
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
-.btn-success {
-  background: var(--green);
-  color: #fff;
-}
-
-.btn-danger {
-  background: var(--red);
-  color: #fff;
-}
-
+.btn-primary { background: var(--blue); color: #fff; }
+.btn-success { background: var(--green); color: #fff; }
+.btn-danger { background: var(--red); color: #fff; }
+.btn-amber { background: var(--amber); color: #fff; }
 .btn-outline {
   background: #f8fafc;
   border: 1px solid #cbd5e1;
@@ -235,16 +602,16 @@ input, select {
   background: #e2e8f0;
   padding: 4px;
   border-radius: 10px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .sub-tab {
   flex: 1;
   text-align: center;
-  padding: 10px;
+  padding: 9px;
   border-radius: 8px;
   font-weight: 800;
-  font-size: 13px;
+  font-size: 12.5px;
   cursor: pointer;
   border: none;
   background: transparent;
@@ -256,26 +623,26 @@ input, select {
   color: #fff;
 }
 
-table {
+table.std-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
-th, td {
-  padding: 10px 12px;
+table.std-table th, table.std-table td {
+  padding: 9px 10px;
   text-align: left;
   border-bottom: 1px solid var(--border);
 }
 
-th {
+table.std-table th {
   background: #0f172a;
   color: #fff;
   font-weight: 700;
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
-tr:nth-child(even) {
+table.std-table tr:nth-child(even) {
   background: #f8fafc;
 }
 
@@ -292,11 +659,48 @@ tr:nth-child(even) {
 .badge-red { background: #fee2e2; color: #991b1b; }
 .badge-blue { background: #dbeafe; color: #1e40af; }
 
+.chip-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.week-chip {
+  padding: 6px 11px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.week-chip.active {
+  background: var(--navy);
+  color: #fff;
+  border-color: var(--navy);
+}
+
 .defect-row {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
   margin-bottom: 8px;
+}
+
+.batch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.batch-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8fafc;
 }
 
 .hidden {
@@ -308,16 +712,28 @@ tr:nth-child(even) {
   border-radius: 8px;
   font-size: 13px;
   font-weight: 700;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
   background: #e0f2fe;
   color: #0369a1;
 }
 
 .footer {
   text-align: center;
-  padding: 14px;
-  font-size: 12px;
+  padding: 12px;
+  font-size: 11.5px;
   color: var(--muted);
   border-top: 1px solid var(--border);
   background: #fff;
+}
+
+@media (max-width: 1180px) {
+  .wb-kpi-row-5 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .wb-all-top-7 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .wb-grid-3 {
+    grid-template-columns: 1fr;
+  }
 }

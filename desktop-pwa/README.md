@@ -1,5 +1,12 @@
 # NFL LIVE Desktop Web & Installable PWA (Free)
 
+> **IMPORTANT - LOCAL ONLY.** This `desktop-pwa` page is NOT connected to Firebase and has NO login.
+> Everything typed here is stored only in this browser on this PC (localStorage). It does not send data to the phones or the TV,
+> and it does not show their data. Role limits mentioned below (Admin / Auditor) are NOT enforced here.
+> For live, shared data use the `web-dashboard-and-mobile` web dashboard (it reads the same Cloud Firestore data and asks for the
+> Employee ID and password).
+
+
 This directory (`desktop-pwa/`) provides a 100% free Desktop Web & Installable Desktop PWA version of **NFL LIVE** for office PCs and laptops.
 
 ## Key Features

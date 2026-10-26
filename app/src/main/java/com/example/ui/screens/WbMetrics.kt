@@ -76,13 +76,13 @@ fun buildWbMetrics(
   // De-duplicate by (line, date, hour) exactly like the repository does: real beats demo, newest wins.
   val prodMap = LinkedHashMap<String, ProductionRecord>()
   prods.forEach { r ->
-    val k = key(r.lineId) + "|" + r.date + "|" + r.hourSlot.trim().lowercase(Locale.US)
+    val k = key(r.lineId) + "|" + r.date + "|" + NflRepository.normalizeHourSlot24h(r.hourSlot).lowercase(Locale.US)
     val e = prodMap[k]
     if (e == null || (e.isDemo && !r.isDemo) || (!e.isDemo && !r.isDemo && r.timestamp >= e.timestamp)) prodMap[k] = r
   }
   val qualMap = LinkedHashMap<String, QualityRecord>()
   quals.forEach { r ->
-    val k = key(r.lineId) + "|" + r.date + "|" + r.hourSlot.trim().lowercase(Locale.US)
+    val k = key(r.lineId) + "|" + r.date + "|" + NflRepository.normalizeHourSlot24h(r.hourSlot).lowercase(Locale.US)
     val e = qualMap[k]
     if (e == null || (e.isDemo && !r.isDemo) || (!e.isDemo && !r.isDemo && r.timestamp >= e.timestamp)) qualMap[k] = r
   }
@@ -120,8 +120,8 @@ fun buildWbMetrics(
   // Hourly view only makes sense for a single day.
   val hourlySupported = period == PeriodScope.TODAY || period == PeriodScope.YESTERDAY
   val hours = if (hourlySupported) {
-    val outBySlot = prodIn.groupBy { it.hourSlot.trim() }
-    val qaBySlot = qualIn.groupBy { it.hourSlot.trim() }
+    val outBySlot = prodIn.groupBy { NflRepository.normalizeHourSlot24h(it.hourSlot) }
+    val qaBySlot = qualIn.groupBy { NflRepository.normalizeHourSlot24h(it.hourSlot) }
     (outBySlot.keys + qaBySlot.keys).distinct().sortedBy { slotOrder(it) }.map { slot ->
       val q = qaBySlot[slot].orEmpty()
       val c = q.sumOf { it.checkedGarments }

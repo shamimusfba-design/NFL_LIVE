@@ -184,7 +184,7 @@ fun WeeklyQualityEntryScreen(
 
           if (!canEdit) {
             Text(
-              "Only an Admin or an authorized Auditor can enter weekly BS OQL / NFL AQC values.",
+              "Only an Admin, Auditor, or IE can enter weekly BS OQL / NFL AQC values.",
               color = Color(0xFFB91C1C), fontSize = 12.sp, fontWeight = FontWeight.SemiBold
             )
           }

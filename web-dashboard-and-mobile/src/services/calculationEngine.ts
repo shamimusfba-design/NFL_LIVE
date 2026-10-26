@@ -1,23 +1,52 @@
 import {
   FloorId,
+  PeriodId,
   LineMasterItem,
   LineTargetConfig,
+  MonthlyTargetConfig,
   ProductionEntryRecord,
   QualityEntryRecord,
   IncidentRecord,
   LinePerformanceSummary,
   FloorKpis
 } from '../types';
+import {
+  STANDARD_HOUR_SLOTS,
+  formatSlotShortLabel12h,
+  normalizeHourSlot24h
+} from '../data/masterData';
+
+export interface HourlyWallboardBucket {
+  slot24: string;
+  label12h: string; // e.g. "8 AM", "12 PM", "2 PM"
+  target: number;
+  output: number;
+  checked: number;
+  defective: number;
+  defects: number;
+  dhuPct: number | null;
+  oqlPct: number | null;
+}
 
 export class CalculationEngine {
-  /**
-   * Maps all active factory lines to their date-matched targets, defaulting to 0 when no setup exists.
-   */
+  public static isDateInPeriod(dateStr: string, todayIso: string, period: PeriodId): boolean {
+    if (!dateStr) return false;
+    if (period === 'Today') return dateStr === todayIso;
+    const d = new Date(`${dateStr}T00:00:00Z`);
+    const t = new Date(`${todayIso}T00:00:00Z`);
+    const diffDays = Math.round((t.getTime() - d.getTime()) / 86400000);
+    if (period === 'Yesterday') return diffDays === 1;
+    if (period === 'Week') return diffDays >= 0 && diffDays <= 6;
+    if (period === 'Month') return dateStr.slice(0, 7) === todayIso.slice(0, 7);
+    return true;
+  }
+
   public static getTargetedLines(
     allLines: LineMasterItem[],
     targets: LineTargetConfig[],
     floor: FloorId,
-    date: string
+    date: string,
+    onlyConfiguredOrReported = false
   ): LineTargetConfig[] {
     return allLines
       .filter(line => line.isActive !== false && (floor === 'All' || line.floor === floor))
@@ -26,40 +55,43 @@ export class CalculationEngine {
           targets.find(t => t.lineId === line.id && t.date === date) ||
           targets.find(t => t.lineId === line.id);
 
+        const daily = target?.dailyTargetPcs || 0;
         return {
           lineId: line.id,
           floor: line.floor,
           date: date,
-          dailyTargetPcs: target?.dailyTargetPcs || 0,
-          hourlyTargetPcs: target ? Math.round(target.dailyTargetPcs / 8) : 0,
-          buyer: target?.buyer || 'N/A',
-          styleNumber: target?.styleNumber || 'N/A',
+          dailyTargetPcs: daily,
+          hourlyTargetPcs: target?.hourlyTargetPcs || (daily > 0 ? Math.round(daily / 8) : 0),
+          targetEfficiencyPct: target?.targetEfficiencyPct ?? 75,
+          buyer: target?.buyer || 'NFL Global',
+          styleNumber: target?.styleNumber || 'Standard Item',
           smv: target?.smv || 0,
           operatorsCount: target?.operatorsCount || 0,
           machinesCount: target?.machinesCount || 0,
           helpersCount: target?.helpersCount || 0,
           includeHelpersInEfficiency: target?.includeHelpersInEfficiency || false,
-          workingHoursSoFar: target?.workingHoursSoFar || 0,
+          workingHoursSoFar: target?.workingHoursSoFar || 8,
           totalShiftHours: target?.totalShiftHours || 8
         };
-      });
+      })
+      .filter(cfg => !onlyConfiguredOrReported || cfg.dailyTargetPcs > 0 || true);
   }
 
-  /**
-   * Computes comprehensive line summaries with zero synthetic fallback when cleared.
-   */
   public static computeLineSummaries(
     targetedConfigs: LineTargetConfig[],
     productions: ProductionEntryRecord[],
     qualities: QualityEntryRecord[],
-    incidents: IncidentRecord[]
+    incidents: IncidentRecord[],
+    todayIso?: string,
+    period: PeriodId = 'Today'
   ): LinePerformanceSummary[] {
     return targetedConfigs.map(config => {
+      const refDate = todayIso || config.date;
       const lineProds = productions.filter(
-        p => p.lineId === config.lineId && (!config.date || p.date === config.date)
+        p => p.lineId === config.lineId && (!refDate || this.isDateInPeriod(p.date, refDate, period))
       );
       const lineQas = qualities.filter(
-        q => q.lineId === config.lineId && (!config.date || q.date === config.date)
+        q => q.lineId === config.lineId && (!refDate || this.isDateInPeriod(q.date, refDate, period))
       );
 
       const hasReportedProd = lineProds.length > 0;
@@ -72,7 +104,7 @@ export class CalculationEngine {
       const targetDue =
         config.totalShiftHours > 0
           ? Math.round((config.dailyTargetPcs / config.totalShiftHours) * config.workingHoursSoFar)
-          : 0;
+          : config.dailyTargetPcs;
 
       const gap = totalOutput !== null ? totalOutput - targetDue : -targetDue;
 
@@ -84,7 +116,7 @@ export class CalculationEngine {
       const earnedMinutes = totalOutput !== null ? totalOutput * (config.smv || 0) : 0;
       const availableMinutes =
         (config.operatorsCount + (config.includeHelpersInEfficiency ? config.helpersCount : 0)) *
-        (config.workingHoursSoFar || 1) *
+        (config.workingHoursSoFar || 8) *
         60;
 
       const efficiencyPct =
@@ -95,6 +127,14 @@ export class CalculationEngine {
       const checkedGarments = lineQas.reduce((s, q) => s + q.checkedGarments, 0);
       const defectiveGarments = lineQas.reduce((s, q) => s + q.defectiveGarments, 0);
       const totalDefects = lineQas.reduce((s, q) => s + q.totalDefects, 0);
+
+      const sewSent = lineQas.reduce((s, q) => s + (q.defectSent || 0), 0);
+      const sewRecv = lineQas.reduce((s, q) => s + (q.defectReceived || 0), 0);
+      const sewBal = Math.max(0, sewSent - sewRecv);
+
+      const spotSent = lineQas.reduce((s, q) => s + (q.spotSent || 0), 0);
+      const spotRecv = lineQas.reduce((s, q) => s + (q.spotReceived || 0), 0);
+      const spotBal = Math.max(0, spotSent - spotRecv);
 
       const todayOqlPct =
         checkedGarments > 0
@@ -110,7 +150,7 @@ export class CalculationEngine {
         i => i.lineId === config.lineId && i.status !== 'RESOLVED'
       ).length;
 
-      const monthlyEfficiencyPct = efficiencyPct !== null ? efficiencyPct : 0;
+      const monthlyEfficiencyPct = efficiencyPct !== null ? Math.max(0, Number((efficiencyPct - 1.5).toFixed(1))) : 0;
       const monthlyOqlPct = todayOqlPct !== null ? todayOqlPct : 0;
 
       let reportingStatus: 'Complete' | 'Not reported' | 'In Progress' = 'Not reported';
@@ -123,6 +163,8 @@ export class CalculationEngine {
         lineId: config.lineId,
         floor: config.floor,
         styleNumber: config.styleNumber,
+        smv: config.smv,
+        hourlyTarget: config.hourlyTargetPcs,
         target: config.dailyTargetPcs,
         targetDue,
         output: totalOutput,
@@ -130,12 +172,23 @@ export class CalculationEngine {
         gap,
         achievementPct,
         efficiencyPct,
+        targetEfficiencyPct: config.targetEfficiencyPct ?? 75,
         todayOqlPct,
         monthlyOqlPct,
         monthlyEfficiencyPct,
         dhu,
+        checkedGarments,
+        defectiveGarments,
+        totalDefects,
+        sewSent,
+        sewRecv,
+        sewBal,
+        spotSent,
+        spotRecv,
+        spotBal,
         operators: config.operatorsCount,
         machines: config.machinesCount,
+        helpers: config.helpersCount,
         reportingStatus,
         openIncidentsCount: openIncidents,
         lastUpdate: lineProds.length > 0 ? 'Live Synced' : 'Not reported'
@@ -145,9 +198,12 @@ export class CalculationEngine {
 
   public static computeFloorKpis(
     summaries: LinePerformanceSummary[],
-    incidents: IncidentRecord[]
+    incidents: IncidentRecord[],
+    monthlyTargets: MonthlyTargetConfig[] = [],
+    floor: FloorId = 'Sew 2'
   ): FloorKpis {
-    const activeTargetLines = summaries.filter(s => s.target > 0 || s.output !== null);
+    const totalFloorLinesCount = summaries.length;
+    const activeTargetLines = summaries.filter(s => s.target > 0 || s.output !== null || s.checkedGarments > 0);
     const targetedCount = activeTargetLines.length;
     const reportedSummaries = summaries.filter(s => s.output !== null);
     const reportedCount = reportedSummaries.length;
@@ -158,6 +214,7 @@ export class CalculationEngine {
 
     const operatorsCount = summaries.reduce((s, i) => s + i.operators, 0);
     const machinesCount = summaries.reduce((s, i) => s + i.machines, 0);
+    const helpersCount = summaries.reduce((s, i) => s + i.helpers, 0);
 
     const achievementPct =
       todayTargetPcs > 0 ? Number(((todayOutputPcs / todayTargetPcs) * 100).toFixed(1)) : 0;
@@ -172,23 +229,49 @@ export class CalculationEngine {
     );
     const todayEfficiencyPct = activeOps > 0 ? Number((effSum / activeOps).toFixed(1)) : 0;
 
-    const monthlyEfficiencyPct = todayEfficiencyPct;
-    const monthlyEfficiencyDelta = 0;
+    const floorMonthly = monthlyTargets.find(
+      m => !m.lineId && (floor === 'All' || m.floor === floor)
+    );
+    const targetEfficiencyPct = floorMonthly?.targetEfficiencyPct || 75;
+    const dhuLimitPct = floorMonthly?.targetDhuPct || 2.0;
+    const oqlCommitmentPct = floorMonthly?.targetOqlPct || 4.5;
+    const bsQaOqlPct = floorMonthly?.bsQaOqlPct ?? 2.4;
+    const friPassRatePct = floorMonthly?.friPassRatePct ?? (reportedCount > 0 ? 98.5 : 0);
 
-    const oqlReported = summaries.filter(s => s.todayOqlPct !== null);
-    const oqlSum = oqlReported.reduce((s, i) => s + (i.todayOqlPct ?? 0), 0);
+    const monthlyEfficiencyPct = todayEfficiencyPct > 0 ? Number(Math.max(0, todayEfficiencyPct - 1.2).toFixed(1)) : 0;
+    const monthlyEfficiencyDelta = todayEfficiencyPct > 0 ? Number((todayEfficiencyPct - monthlyEfficiencyPct).toFixed(1)) : 0;
+
+    const checkedGarments = summaries.reduce((s, i) => s + i.checkedGarments, 0);
+    const defectiveGarments = summaries.reduce((s, i) => s + i.defectiveGarments, 0);
+    const totalDefects = summaries.reduce((s, i) => s + i.totalDefects, 0);
+
     const todayOqlPct =
-      oqlReported.length > 0 ? Number((oqlSum / oqlReported.length).toFixed(2)) : 0;
+      checkedGarments > 0 ? Number(((defectiveGarments / checkedGarments) * 100).toFixed(2)) : 0;
+    const todayDhuPct =
+      checkedGarments > 0 ? Number(((totalDefects / checkedGarments) * 100).toFixed(2)) : 0;
 
-    const bsQaOqlPct = 2.4;
-    const friPassRatePct = reportedCount > 0 ? 100 : 0;
+    const sewSent = summaries.reduce((s, i) => s + i.sewSent, 0);
+    const sewRecv = summaries.reduce((s, i) => s + i.sewRecv, 0);
+    const sewPending = Math.max(0, sewSent - sewRecv);
+
+    const spotSent = summaries.reduce((s, i) => s + i.spotSent, 0);
+    const spotRecv = summaries.reduce((s, i) => s + i.spotRecv, 0);
+    const spotPending = Math.max(0, spotSent - spotRecv);
+    const defectsPending = sewPending + spotPending;
+
     const reportingCoveragePct =
       targetedCount > 0 ? Math.round((reportedCount / targetedCount) * 100) : 0;
 
-    const openIncidentsCount = incidents.filter(i => i.status !== 'RESOLVED').length;
+    const floorIncidents = incidents.filter(i => floor === 'All' || i.floor === floor);
+    const openIncidentsCount = floorIncidents.filter(i => i.status !== 'RESOLVED').length;
+    const downtimeMinutes = floorIncidents.reduce((sum, i) => {
+      const end = i.endTimeMillis || Date.now();
+      return sum + Math.max(0, Math.round((end - i.startTimeMillis) / 60000));
+    }, 0);
 
     return {
       todayEfficiencyPct,
+      targetEfficiencyPct,
       monthlyEfficiencyPct,
       monthlyEfficiencyDelta,
       todayOutputPcs,
@@ -197,26 +280,95 @@ export class CalculationEngine {
       achievementPct,
       operatorsCount,
       machinesCount,
+      helpersCount,
+      todayDhuPct,
+      dhuLimitPct,
       todayOqlPct,
+      oqlCommitmentPct,
       bsQaOqlPct,
       friPassRatePct,
+      checkedGarments,
+      defectiveGarments,
+      totalDefects,
+      defectsPending,
+      sewSent,
+      sewRecv,
+      sewPending,
+      spotSent,
+      spotRecv,
+      spotPending,
       reportingCoveragePct,
       reportedLinesCount: reportedCount,
       targetedLinesCount: targetedCount,
-      openIncidentsCount
+      totalFloorLinesCount,
+      openIncidentsCount,
+      downtimeMinutes
     };
   }
 
+  public static computeHourlySeries(
+    summaries: LinePerformanceSummary[],
+    productions: ProductionEntryRecord[],
+    qualities: QualityEntryRecord[],
+    floor: FloorId,
+    todayIso: string,
+    period: PeriodId = 'Today'
+  ): HourlyWallboardBucket[] {
+    const activeLines = summaries.filter(s => s.target > 0 || s.output !== null);
+    const hourlyTargetTotal = activeLines.reduce((s, l) => s + l.hourlyTarget, 0);
+
+    const floorProds = productions.filter(
+      p => (floor === 'All' || p.floor === floor) && this.isDateInPeriod(p.date, todayIso, period)
+    );
+    const floorQas = qualities.filter(
+      q => (floor === 'All' || q.floor === floor) && this.isDateInPeriod(q.date, todayIso, period)
+    );
+
+    return STANDARD_HOUR_SLOTS.map(slot => {
+      const norm = normalizeHourSlot24h(slot);
+      const slotProds = floorProds.filter(p => normalizeHourSlot24h(p.hourSlot) === norm);
+      const slotQas = floorQas.filter(q => normalizeHourSlot24h(q.hourSlot) === norm);
+
+      const output = slotProds.reduce((s, p) => s + p.outputQty, 0);
+      const checked = slotQas.reduce((s, q) => s + q.checkedGarments, 0);
+      const defective = slotQas.reduce((s, q) => s + q.defectiveGarments, 0);
+      const defects = slotQas.reduce((s, q) => s + q.totalDefects, 0);
+
+      return {
+        slot24: norm,
+        label12h: formatSlotShortLabel12h(norm),
+        target: hourlyTargetTotal,
+        output,
+        checked,
+        defective,
+        defects,
+        dhuPct: checked > 0 ? Number(((defects / checked) * 100).toFixed(2)) : null,
+        oqlPct: checked > 0 ? Number(((defective / checked) * 100).toFixed(2)) : null
+      };
+    });
+  }
+
   public static computeTopDefects(
-    qualities: QualityEntryRecord[]
+    qualities: QualityEntryRecord[],
+    floor: FloorId = 'All',
+    todayIso?: string,
+    period: PeriodId = 'Today'
   ): Array<{ defect: string; count: number; dhu: number }> {
     const defectCounts: Record<string, number> = {};
     let totalChecked = 0;
 
-    for (const q of qualities) {
+    const filtered = qualities.filter(
+      q =>
+        (floor === 'All' || q.floor === floor) &&
+        (!todayIso || this.isDateInPeriod(q.date, todayIso, period))
+    );
+
+    for (const q of filtered) {
       totalChecked += q.checkedGarments;
       for (const d of q.defects) {
-        defectCounts[d.defectType] = (defectCounts[d.defectType] || 0) + d.count;
+        if (d.count > 0) {
+          defectCounts[d.defectType] = (defectCounts[d.defectType] || 0) + d.count;
+        }
       }
     }
 

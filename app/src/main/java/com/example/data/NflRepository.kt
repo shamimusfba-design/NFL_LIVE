@@ -362,7 +362,7 @@ class NflRepository(private val context: Context) {
     if (user == null || !user.isActive || user.accountStatus != AccountStatus.APPROVED || user.isViewOnly) return false
     if (user.isAdmin && user.role == UserRole.ADMIN) return true
     if (user.isAdmin) return true
-    return user.role == UserRole.AUDITOR && (user.canOqlWrite || user.canQualityWrite)
+    return user.role in setOf(UserRole.AUDITOR, UserRole.IE) && (user.canOqlWrite || user.canQualityWrite)
   }
 
   val standardDefectTypes = listOf(
@@ -939,7 +939,7 @@ class NflRepository(private val context: Context) {
   fun saveWeeklyQuality(weekMillis: Long, bsOqlPct: Double?, nflAqcPct: Double?): SecurityActionResult {
     val u = getAuthoritativeCurrentUser()
     if (u == null || !canWriteWeeklyQualityOrBiHourlyAudit(u)) {
-      val msg = "Access Denied: Only Admin or authorized Auditor can enter Weekly BS OQL / NFL AQC"
+      val msg = "Access Denied: Only Admin, Auditor, or IE can enter Weekly BS OQL / NFL AQC"
       _syncStatusBanner.value = "⚠️ $msg"
       return SecurityActionResult(false, msg)
     }
@@ -1681,12 +1681,33 @@ class NflRepository(private val context: Context) {
           if (isTargetActiveUser) (activeBefore?.updatedAtMillis ?: 0L) else 0L
         )
 
-        // Ignore older records (updatedAtMillis <= local) and never let an older record overwrite a newer one
+        // Ensure first-time TV setup requests, TV approvals for this device, employee device requests,
+        // and new employee registration requests are never dropped due to device clock skew.
+        val isTvPendingOrApprovedForThisDevice = key == TV_DISPLAY_ACCOUNT_ID && !isFromGoogleSheets && (
+            (remote.rejectionReason.startsWith("TV_PENDING:") && prev?.rejectionReason != remote.rejectionReason) ||
+            (remote.accountStatus == AccountStatus.APPROVED &&
+                remote.isActive &&
+                remote.rejectionReason.isBlank() &&
+                !remote.activeSessionId.startsWith("REVOKED-") &&
+                (remote.authorizedDeviceId == myDeviceId || remote.approvedDevices.any { it.deviceId == myDeviceId }))
+        )
+        val isNewPendingRegistration = !isFromGoogleSheets &&
+            remote.accountStatus == AccountStatus.PENDING_APPROVAL &&
+            (prev == null || prev.accountStatus != AccountStatus.PENDING_APPROVAL)
+        val isEmployeeDevicePending = !isFromGoogleSheets &&
+            remote.rejectionReason.startsWith("DEV_PENDING:") &&
+            prev?.rejectionReason != remote.rejectionReason
+
+        // Ignore older records (updatedAtMillis <= local) unless it is a clock-skew-exempt registration/device/TV handshake
         val isOlderOrEqualToTimestampedLocal = (prev != null || isTargetActiveUser) && (
             remote.updatedAtMillis < localTs ||
             (localTs > 0L && remote.updatedAtMillis <= localTs)
         )
-        if (isOlderOrEqualToTimestampedLocal) {
+        if (isOlderOrEqualToTimestampedLocal &&
+            !isTvPendingOrApprovedForThisDevice &&
+            !isNewPendingRegistration &&
+            !isEmployeeDevicePending
+        ) {
           return@forEach
         }
 
@@ -1727,73 +1748,110 @@ class NflRepository(private val context: Context) {
           }
         }
 
-        if (prev == null || prev != remote) {
-          val rawMerged = when {
-            prev != null && !isSessionChanged && remote.authorizedDeviceId.isBlank() && prev.authorizedDeviceId.isNotBlank() &&
-                remote.accountStatus == AccountStatus.APPROVED && remote.isActive -> {
-              remote.copy(
-                authorizedDeviceId = prev.authorizedDeviceId,
-                authorizedDeviceName = prev.authorizedDeviceName,
-                approvedDevices = if (remote.approvedDevices.isEmpty()) prev.approvedDevices else remote.approvedDevices,
-                activeSessionId = remote.activeSessionId.ifBlank { prev.activeSessionId }
-              )
-            }
-            prev != null && !isSessionChanged && remote.activeSessionId.isBlank() && prev.activeSessionId.isNotBlank() &&
-                remote.accountStatus == AccountStatus.APPROVED && remote.isActive -> {
-              remote.copy(activeSessionId = prev.activeSessionId)
-            }
-            prev != null && !isSessionChanged && remote.approvedDevices.isEmpty() && prev.approvedDevices.isNotEmpty() && remote.authorizedDeviceId.isNotBlank() -> {
-              remote.copy(approvedDevices = prev.approvedDevices.take(MAX_APPROVED_DEVICES_PER_USER))
-            }
-            else -> remote
+        val rawMerged = when {
+          prev != null && !isSessionChanged && remote.authorizedDeviceId.isBlank() && prev.authorizedDeviceId.isNotBlank() &&
+              remote.accountStatus == AccountStatus.APPROVED && remote.isActive -> {
+            remote.copy(
+              authorizedDeviceId = prev.authorizedDeviceId,
+              authorizedDeviceName = prev.authorizedDeviceName,
+              approvedDevices = if (remote.approvedDevices.isEmpty()) prev.approvedDevices else remote.approvedDevices,
+              activeSessionId = remote.activeSessionId.ifBlank { prev.activeSessionId }
+            )
           }
-          val merged = if (key == TV_DISPLAY_ACCOUNT_ID) enforceTvDisplayPermissions(rawMerged) else rawMerged
+          prev != null && !isSessionChanged && remote.activeSessionId.isBlank() && prev.activeSessionId.isNotBlank() &&
+              remote.accountStatus == AccountStatus.APPROVED && remote.isActive -> {
+            remote.copy(activeSessionId = prev.activeSessionId)
+          }
+          prev != null && !isSessionChanged && remote.approvedDevices.isEmpty() && prev.approvedDevices.isNotEmpty() && remote.authorizedDeviceId.isNotBlank() -> {
+            remote.copy(approvedDevices = prev.approvedDevices.take(MAX_APPROVED_DEVICES_PER_USER))
+          }
+          else -> remote
+        }
+        val merged = if (key == TV_DISPLAY_ACCOUNT_ID) enforceTvDisplayPermissions(rawMerged) else rawMerged
+
+        if (prev == null || prev != merged) {
           byId[key] = merged
           changed = true
+        }
 
-          // Handle TV Display pending setup marker or remote approval activation
-          if (key == TV_DISPLAY_ACCOUNT_ID && !isFromGoogleSheets) {
-            if (merged.rejectionReason.startsWith("TV_PENDING:")) {
-              val parts = merged.rejectionReason.split(":")
-              if (parts.size >= 5) {
-                val reqId = parts[1]
-                val reqDevId = parts[2]
-                val reqDevName = parts[3]
-                val reqShortCode = parts[4]
-                val existingReq = _deviceApprovalRequests.value.find {
-                  it.requestId == reqId || (it.userId.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) && it.deviceId == reqDevId && it.status == "PENDING")
-                }
-                if (existingReq == null) {
-                  val newReq = DeviceApprovalRequest(
-                    requestId = reqId,
-                    userId = TV_DISPLAY_ACCOUNT_ID,
-                    userName = "Smart TV Display",
-                    role = UserRole.MANAGEMENT_VIEW,
-                    designation = "TV Display (View-Only)",
-                    department = "Management",
-                    requestedFloor = FloorScope.ALL.displayName,
-                    deviceId = reqDevId,
-                    deviceName = reqDevName,
-                    requestedAtMillis = merged.updatedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis(),
-                    status = "PENDING",
-                    requestType = "TV_DISPLAY_SETUP",
-                    reason = "TV Display Setup (Code: $reqShortCode)"
-                  )
-                  _deviceApprovalRequests.update { listOf(newReq) + it }
-                  didChangeDeviceRequests = true
-                }
+        // Handle Employee Device Replacement pending marker across devices
+        if (merged.rejectionReason.startsWith("DEV_PENDING:") && !isFromGoogleSheets) {
+          val parts = merged.rejectionReason.split(":")
+          if (parts.size >= 5) {
+            val reqId = parts[1]
+            val reqDevId = parts[2]
+            val reqDevName = parts[3]
+            val reqType = parts[4].ifBlank { "DEVICE_REPLACEMENT" }
+            val existingReq = _deviceApprovalRequests.value.find {
+              it.requestId == reqId || (it.userId.equals(merged.id, ignoreCase = true) && it.deviceId == reqDevId && it.status == "PENDING")
+            }
+            if (existingReq == null) {
+              val newReq = DeviceApprovalRequest(
+                requestId = reqId,
+                userId = merged.id,
+                userName = merged.name,
+                role = merged.role,
+                designation = merged.designation,
+                department = merged.department,
+                requestedFloor = merged.floor.displayName,
+                deviceId = reqDevId,
+                deviceName = reqDevName,
+                previousDeviceId = merged.authorizedDeviceId,
+                previousDeviceName = merged.authorizedDeviceName,
+                requestedAtMillis = merged.updatedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis(),
+                status = "PENDING",
+                requestType = reqType,
+                reason = "Employee Device Request ($reqDevName)"
+              )
+              _deviceApprovalRequests.update { listOf(newReq) + it }
+              didChangeDeviceRequests = true
+            }
+          }
+        }
+
+        // Handle TV Display pending setup marker or remote approval activation
+        if (key == TV_DISPLAY_ACCOUNT_ID && !isFromGoogleSheets) {
+          if (merged.rejectionReason.startsWith("TV_PENDING:")) {
+            val parts = merged.rejectionReason.split(":")
+            if (parts.size >= 5) {
+              val reqId = parts[1]
+              val reqDevId = parts[2]
+              val reqDevName = parts[3]
+              val reqShortCode = parts[4]
+              val existingReq = _deviceApprovalRequests.value.find {
+                it.requestId == reqId || (it.userId.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) && it.deviceId == reqDevId && it.status == "PENDING")
+              }
+              if (existingReq == null) {
+                val newReq = DeviceApprovalRequest(
+                  requestId = reqId,
+                  userId = TV_DISPLAY_ACCOUNT_ID,
+                  userName = "Smart TV Display",
+                  role = UserRole.MANAGEMENT_VIEW,
+                  designation = "TV Display (View-Only)",
+                  department = "Management",
+                  requestedFloor = FloorScope.ALL.displayName,
+                  deviceId = reqDevId,
+                  deviceName = reqDevName,
+                  requestedAtMillis = merged.updatedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis(),
+                  status = "PENDING",
+                  requestType = "TV_DISPLAY_SETUP",
+                  reason = "TV Display Setup (Code: $reqShortCode)"
+                )
+                _deviceApprovalRequests.update { listOf(newReq) + it }
+                didChangeDeviceRequests = true
               }
             }
-            val isApprovedForThisTv = merged.accountStatus == AccountStatus.APPROVED &&
-                merged.isActive &&
-                !merged.activeSessionId.startsWith("REVOKED-") &&
-                (merged.authorizedDeviceId == myDeviceId || merged.approvedDevices.any { it.deviceId == myDeviceId })
-            val hasPendingLocalTvReq = _deviceApprovalRequests.value.any {
-              it.userId.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) && it.deviceId == myDeviceId && it.status == "PENDING"
-            }
-            if (isApprovedForThisTv && (hasPendingLocalTvReq || _currentUser.value?.id.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true))) {
-              activateTvDisplaySession(merged)
-            }
+          }
+          val isApprovedForThisTv = merged.accountStatus == AccountStatus.APPROVED &&
+              merged.isActive &&
+              merged.rejectionReason.isBlank() &&
+              !merged.activeSessionId.startsWith("REVOKED-") &&
+              (merged.authorizedDeviceId == myDeviceId || merged.approvedDevices.any { it.deviceId == myDeviceId })
+          val hasPendingLocalTvReq = _deviceApprovalRequests.value.any {
+            it.userId.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) && it.deviceId == myDeviceId && it.status == "PENDING"
+          }
+          if (isApprovedForThisTv && (hasPendingLocalTvReq || !hasValidTvSession())) {
+            activateTvDisplaySession(merged)
           }
         }
       }
@@ -1870,13 +1928,20 @@ class NflRepository(private val context: Context) {
           firebaseSync.startRealtimeListeners(forceRetry = true)
         }
 
-        // (b) Push ONLY records whose syncStatus != SYNCED
+        // (b) Push ONLY records whose syncStatus != SYNCED (plus any local PENDING_APPROVAL user registrations)
         val pendingProds = _productionEntries.value.filter { !it.isDemo && it.syncStatus != SyncStatus.SYNCED }
         val pendingQas = _qualityEntries.value.filter { !it.isDemo && it.syncStatus != SyncStatus.SYNCED }
+        val pendingUserRegs = _users.value.filter { it.accountStatus == AccountStatus.PENDING_APPROVAL }
 
         val syncedProdIds = mutableSetOf<String>()
         val syncedQaIds = mutableSetOf<String>()
         val hasWebApp = sheetsStorage.hasValidWebAppUrl()
+
+        if (firebaseSync.isAvailable()) {
+          pendingUserRegs.forEach { pendingUser ->
+            firebaseSync.pushUserAccountAwait(pendingUser)
+          }
+        }
 
         pendingProds.forEach { prod ->
           val fOk = if (firebaseSync.isAvailable()) firebaseSync.pushProductionRecordAwait(prod) else false
@@ -2200,7 +2265,7 @@ class NflRepository(private val context: Context) {
   }
 
   fun isSampleDataCleared(): Boolean =
-    prefs.getBoolean("sample_data_cleared", false)
+    prefs.getBoolean("sample_data_cleared", true)
 
   fun getLastOperationalResetMillis(): Long =
     prefs.getLong("last_operational_reset_millis", 0L)
@@ -2208,7 +2273,7 @@ class NflRepository(private val context: Context) {
   // Idempotent demo data seeder with full dynamic dates and hourly distributions
   // Preserves all real saved records and never overwrites or duplicates slots that have real data.
   fun loadSeedDemoData(force: Boolean = true) {
-    if (!force && prefs.getBoolean("sample_data_cleared", false)) return
+    if (!force && prefs.getBoolean("sample_data_cleared", true)) return
     if (force) {
       prefs.edit()
         .putBoolean("sample_data_cleared", false)
@@ -2560,6 +2625,17 @@ class NflRepository(private val context: Context) {
     clearCloud: Boolean = true,
     onComplete: ((Int, Boolean) -> Unit)? = null
   ) {
+    // Destructive (deletes records on this phone and, with clearCloud, in Cloud Firestore for every device).
+    // The screens only show the button to Admins, but the rule is enforced here too.
+    val actor = getAuthoritativeCurrentUser()
+    if (actor?.isAdmin != true) {
+      val msg = "⚠️ Access Denied: Only an Administrator can reset operational data."
+      _syncStatusBanner.value = msg
+      _lastSecurityMessage.value = msg
+      addAuditLog("SECURITY", "ALL", "UNAUTHORIZED_FACTORY_RESET", actor?.id ?: "anonymous", "Blocked factory reset attempt")
+      onComplete?.invoke(0, false)
+      return
+    }
     val resetMillis = System.currentTimeMillis()
     synchronized(persistenceLock) {
       prodSaveJob?.cancel(); prodSaveJob = null
@@ -2710,7 +2786,7 @@ class NflRepository(private val context: Context) {
         _productionEntries.update { current ->
           current.map {
             if (it.submissionId == liveEntry.submissionId) {
-              it.copy(syncStatus = if (synced) SyncStatus.SYNCED else SyncStatus.PENDING)
+              it.copy(syncStatus = if (synced || it.syncStatus == SyncStatus.SYNCED) SyncStatus.SYNCED else SyncStatus.PENDING)
             } else it
           }
         }
@@ -2866,7 +2942,7 @@ class NflRepository(private val context: Context) {
     val canonicalSlot = normalizeHourSlot24h(entry.hourSlot)
     val isBiHourly = isBiHourlyAuditSlot(canonicalSlot)
     if (isBiHourly && !canWriteWeeklyQualityOrBiHourlyAudit(u)) {
-      val msg = "⚠️ Access Denied: Only Admin or Auditor can enter Daily Bi-Hourly Audit data."
+      val msg = "⚠️ Access Denied: Only Admin, Auditor, or IE can enter Daily Bi-Hourly Audit data."
       _syncStatusBanner.value = msg
       _lastSecurityMessage.value = msg
       addAuditLog("SECURITY", entry.lineId, "UNAUTHORIZED_BIHOURLY_AUDIT", u.id, "Blocked bi-hourly audit submission by ${u.role.displayName}")
@@ -2874,7 +2950,7 @@ class NflRepository(private val context: Context) {
     }
     if (!u.isAdmin && u.role != UserRole.IE) {
       val rolePermitted = if (isBiHourly) {
-        u.role == UserRole.AUDITOR && (u.canOqlWrite || u.canQualityWrite)
+        u.role in setOf(UserRole.AUDITOR, UserRole.IE) && (u.canOqlWrite || u.canQualityWrite)
       } else {
         u.role in setOf(UserRole.QUALITY_REPORTER, UserRole.AUDITOR, UserRole.IE)
       }
@@ -2996,7 +3072,7 @@ class NflRepository(private val context: Context) {
         _qualityEntries.update { current ->
           current.map {
             if (it.submissionId == liveEntry.submissionId) {
-              it.copy(syncStatus = if (synced) SyncStatus.SYNCED else SyncStatus.PENDING)
+              it.copy(syncStatus = if (synced || it.syncStatus == SyncStatus.SYNCED) SyncStatus.SYNCED else SyncStatus.PENDING)
             } else it
           }
         }
@@ -3930,7 +4006,12 @@ class NflRepository(private val context: Context) {
     }
     scheduleSaveDeviceRequests()
 
+    val userWithDevMarker = user.copy(
+      rejectionReason = "DEV_PENDING:${updatedReq.requestId}:$deviceId:$deviceName:${updatedReq.requestType}",
+      updatedAtMillis = System.currentTimeMillis()
+    )
     repoScope.launch {
+      firebaseSync.pushUserAccountAwait(userWithDevMarker)
       val emailResult = sheetsStorage.sendVerificationEmailOnBackend(
         request = updatedReq,
         rawOtpCode = rawOtp,
@@ -3982,7 +4063,12 @@ class NflRepository(private val context: Context) {
       _deviceApprovalRequests.update { listOf(req) + it }
     }
     scheduleSaveDeviceRequests()
+    val userWithDevMarker = user.copy(
+      rejectionReason = "DEV_PENDING:${req.requestId}:$deviceId:$deviceName:$requestType",
+      updatedAtMillis = System.currentTimeMillis()
+    )
     repoScope.launch {
+      firebaseSync.pushUserAccountAwait(userWithDevMarker)
       sheetsStorage.sendVerificationEmailOnBackend(req, rawOtp, PRIMARY_ADMIN_GMAIL)
     }
     return req
@@ -4059,6 +4145,12 @@ class NflRepository(private val context: Context) {
       }
     }
     scheduleSaveDeviceRequests()
+    val user = synchronized(stateLock) {
+      _users.value.find { it.id.equals(req.userId, ignoreCase = true) }
+    }
+    if (user != null && (user.rejectionReason.startsWith("TV_PENDING:") || user.rejectionReason.startsWith("DEV_PENDING:"))) {
+      updateUserInternal(user.copy(rejectionReason = "", updatedAtMillis = System.currentTimeMillis()))
+    }
     addAuditLog("DEVICE_SECURITY", req.userId, "REJECT_DEVICE_REQUEST", admin.name.ifBlank { "Admin" }, "Rejected device ${req.deviceName} (${req.deviceId})")
     return SecurityActionResult(true, "Device request rejected.")
   }
@@ -6112,6 +6204,48 @@ class NflRepository(private val context: Context) {
       authorizedFloorScope = FloorScope.ALL
     )
     activateTvDisplaySession(existingTvUser)
+  }
+
+  // Result of the last attempt to send this TV's setup request to the cloud (shown on the TV Setup screen).
+  private val _tvSetupCloudStatus = MutableStateFlow("Not sent yet")
+  val tvSetupCloudStatus: StateFlow<String> = _tvSetupCloudStatus.asStateFlow()
+
+  /**
+   * Sends (again) the pending TV setup marker on tv_display so Admin phones can show it under Device Requests.
+   * Safe to call repeatedly: one small write each time. Does nothing when this TV has no pending request.
+   */
+  fun republishTvSetupRequest() {
+    if (hasValidTvSession()) return
+    val myDeviceId = sheetsStorage.getDeviceId()
+    val pending = synchronized(stateLock) {
+      _deviceApprovalRequests.value.firstOrNull {
+        it.userId.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) && it.deviceId == myDeviceId && it.status == "PENDING"
+      }
+    } ?: return
+    val shortCode = pending.reason.substringAfter("Code: ", "").substringBefore(")").ifBlank { getTvShortDeviceCode() }
+    val base = synchronized(stateLock) {
+      _users.value.find { it.id.equals(TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) }
+    } ?: UserAccount(
+      id = TV_DISPLAY_ACCOUNT_ID,
+      employeeId = TV_DISPLAY_ACCOUNT_ID,
+      name = "Smart TV Display",
+      role = UserRole.MANAGEMENT_VIEW,
+      floor = FloorScope.ALL,
+      authorizedFloorScope = FloorScope.ALL
+    )
+    val marker = enforceTvDisplayPermissions(base).copy(
+      rejectionReason = "TV_PENDING:${pending.requestId}:${pending.deviceId}:${pending.deviceName}:$shortCode",
+      updatedAtMillis = pending.requestedAtMillis.takeIf { it > 0L } ?: System.currentTimeMillis()
+    )
+    _tvSetupCloudStatus.value = "Sending request to the cloud..."
+    repoScope.launch {
+      val ok = firebaseSync.pushUserAccountAwait(marker)
+      _tvSetupCloudStatus.value = if (ok) {
+        "Request sent. It now appears on the Admin phone under Device Requests."
+      } else {
+        "Not sent: ${firebaseSync.lastErrorMessage ?: "no internet or cloud access is blocked"}. Trying again every 30 seconds."
+      }
+    }
   }
 
   fun shutdown() {

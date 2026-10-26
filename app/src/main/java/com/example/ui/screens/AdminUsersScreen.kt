@@ -275,7 +275,7 @@ fun AdminUsersScreen(
                             )
                             AdminStatTile(
                                 title = "Device Req",
-                                value = pendingDeviceRequests.size.toString(),
+                                value = (pendingDeviceRequests.size + pendingUsersCount).toString(),
                                 accent = AdminCyan,
                                 modifier = Modifier
                                     .weight(1f)
@@ -413,7 +413,7 @@ fun AdminUsersScreen(
                         val isSelected = selectedTab == tab
                         val badgeCount = when (tab) {
                             AdminSubTab.USERS -> pendingUsersCount
-                            AdminSubTab.DEVICE_REQUESTS -> pendingDeviceRequests.size
+                            AdminSubTab.DEVICE_REQUESTS -> pendingDeviceRequests.size + pendingUsersCount
                             else -> 0
                         }
                         FilterChip(
@@ -612,7 +612,16 @@ fun AdminUsersScreen(
                 AdminSubTab.DEVICE_REQUESTS -> {
                     item {
                         AdminDeviceRequestsSection(
+                            pendingUsers = users.filter { it.accountStatus == AccountStatus.PENDING_APPROVAL },
                             requests = deviceRequests,
+                            onApproveUser = { user ->
+                                val res = repository.adminApproveUserRegistration(employeeId = user.id)
+                                statusBanner = res.message
+                            },
+                            onRejectUser = { user ->
+                                rejectingUser = user
+                                rejectionReasonInput = "Rejected by Administrator"
+                            },
                             onApproveRequest = { reqId ->
                                 val res = repository.adminApproveDeviceOrAccountRequest(reqId)
                                 statusBanner = res.message
@@ -748,6 +757,8 @@ fun AdminUsersScreen(
     }
 
     if (showFactoryResetDialog) {
+        var resetConfirmInput by remember { mutableStateOf("") }
+        val canConfirmReset = resetConfirmInput.trim() == "RESET"
         AlertDialog(
             onDismissRequest = { showFactoryResetDialog = false },
             title = {
@@ -759,21 +770,36 @@ fun AdminUsersScreen(
                 )
             },
             text = {
-                Text(
-                    "This will permanently clear ALL Production, Quality, NPT Incidents, and Daily Line Setups from both this device AND Cloud Firestore so your factory starts clean at 0.\n\nEmployee Accounts, Roles, and Factory Line Master will be preserved.",
-                    fontSize = 12.sp
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "This will permanently clear ALL Production, Quality, NPT Incidents, and Daily Line Setups from both this device AND Cloud Firestore so your factory starts clean at 0.\n\nEmployee Accounts, Roles, and Factory Line Master will be preserved.\n\nType RESET below to confirm:",
+                        fontSize = 12.sp
+                    )
+                    OutlinedTextField(
+                        value = resetConfirmInput,
+                        onValueChange = { resetConfirmInput = it },
+                        placeholder = { Text("Type RESET") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("admin_factory_reset_confirm_input")
+                    )
+                }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        showFactoryResetDialog = false
-                        statusBanner = "Purging local & Cloud Firestore operational records..."
-                        repository.resetAllOperationalData(clearCloud = true) { deletedCount, _ ->
-                            statusBanner = "✓ Factory Reset Complete! Local & $deletedCount Cloud Firestore records cleared."
+                        if (canConfirmReset) {
+                            showFactoryResetDialog = false
+                            statusBanner = "Purging local & Cloud Firestore operational records..."
+                            repository.resetAllOperationalData(clearCloud = true) { deletedCount, _ ->
+                                statusBanner = "✓ Factory Reset Complete! Local & $deletedCount Cloud Firestore records cleared."
+                            }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = AdminRed)
+                    enabled = canConfirmReset,
+                    colors = ButtonDefaults.buttonColors(containerColor = AdminRed),
+                    modifier = Modifier.testTag("admin_factory_reset_confirm_btn")
                 ) {
                     Text("Confirm Factory Reset", color = Color.White, fontWeight = FontWeight.Bold)
                 }
@@ -1562,7 +1588,10 @@ private fun PermissionToggleRow(
 
 @Composable
 private fun AdminDeviceRequestsSection(
+    pendingUsers: List<UserAccount>,
     requests: List<DeviceApprovalRequest>,
+    onApproveUser: (UserAccount) -> Unit,
+    onRejectUser: (UserAccount) -> Unit,
     onApproveRequest: (String) -> Unit,
     onRejectRequest: (String) -> Unit
 ) {
@@ -1578,21 +1607,99 @@ private fun AdminDeviceRequestsSection(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            if (pendingUsers.isNotEmpty()) {
+                Text(
+                    text = "NEW EMPLOYEE REGISTRATION REQUESTS (${pendingUsers.size})",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Black,
+                    color = AdminAmber
+                )
+                pendingUsers.forEach { user ->
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = AdminSecondaryBg,
+                        border = BorderStroke(1.dp, AdminAmber.copy(alpha = 0.6f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${user.name} (ID: ${user.id})",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AdminTextPrimary
+                                )
+                                Text(
+                                    text = "PENDING APPROVAL",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = AdminAmber
+                                )
+                            }
+                            Text(
+                                text = "Designation: ${user.designation.ifBlank { user.role.displayName }} • Floor: ${user.floor.displayName}",
+                                fontSize = 11.sp,
+                                color = AdminCyan
+                            )
+                            if (user.authorizedDeviceName.isNotBlank() || user.authorizedDeviceId.isNotBlank()) {
+                                Text(
+                                    text = "Device: ${user.authorizedDeviceName.ifBlank { "Android Phone" }} (${user.authorizedDeviceId.takeLast(8)})",
+                                    fontSize = 11.sp,
+                                    color = AdminTextSecondary
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { onApproveUser(user) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AdminGreen),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        "Approve Registration",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color.Black
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { onRejectUser(user) },
+                                    border = BorderStroke(1.dp, AdminRed),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        "Reject",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = AdminRed
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                HorizontalDivider(color = AdminBorderCol, modifier = Modifier.padding(vertical = 4.dp))
+            }
+
             Text(
-                text = "DEVICE REPLACEMENT & SECURITY REQUESTS",
+                text = "DEVICE REPLACEMENT & TV DISPLAY REQUESTS",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Black,
                 color = AdminTextPrimary
             )
             Text(
-                text = "Each Employee ID is restricted to 1 authorized phone/device. Approving a replacement binds the new device and revokes the old device immediately.",
+                text = "Each Employee ID is restricted to 1 authorized phone/device. Approving a replacement or Smart TV Display binds the device immediately.",
                 fontSize = 11.sp,
                 color = AdminTextSecondary
             )
 
             if (requests.isEmpty()) {
                 Text(
-                    text = "No device replacement requests found.",
+                    text = "No device replacement or TV setup requests found.",
                     fontSize = 12.sp,
                     color = AdminTextSecondary,
                     modifier = Modifier.padding(vertical = 12.dp)

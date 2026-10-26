@@ -20,6 +20,9 @@ interface AdminViewProps {
   onRemoveAllDemoData: () => void;
   onFactoryResetAll?: () => Promise<number>;
   onToggleLineActive: (lineId: string) => void;
+  onApproveRegistration?: (userId: string) => Promise<void>;
+  onRejectRegistration?: (userId: string) => Promise<void>;
+  onApproveDeviceOrTv?: (userId: string, deviceId: string, deviceName: string) => Promise<void>;
   onClose: () => void;
 }
 
@@ -32,9 +35,22 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onRemoveAllDemoData,
   onFactoryResetAll,
   onToggleLineActive,
+  onApproveRegistration,
+  onRejectRegistration,
+  onApproveDeviceOrTv,
   onClose
 }) => {
-  const [adminTab, setAdminTab] = useState<'DEMO' | 'LINES' | 'USERS'>('DEMO');
+  const pendingRegistrations = users.filter(u => u.accountStatus === 'PENDING_APPROVAL');
+  const pendingDeviceOrTvUsers = users.filter(
+    u =>
+      u.rejectionReason?.startsWith('TV_PENDING:') ||
+      u.rejectionReason?.startsWith('DEV_PENDING:')
+  );
+  const totalPendingRequests = pendingRegistrations.length + pendingDeviceOrTvUsers.length;
+
+  const [adminTab, setAdminTab] = useState<'DEMO' | 'LINES' | 'USERS'>(
+    totalPendingRequests > 0 ? 'USERS' : 'DEMO'
+  );
   const [confirmRemoval, setConfirmRemoval] = useState(false);
   const [confirmFactoryReset, setConfirmFactoryReset] = useState(false);
   const [isResettingCloud, setIsResettingCloud] = useState(false);
@@ -71,6 +87,11 @@ export const AdminView: React.FC<AdminViewProps> = ({
     setIsResettingCloud(true);
     try {
       const deletedCount = await onFactoryResetAll();
+      if (deletedCount < 0) {
+        setConfirmFactoryReset(false);
+        setActionMessage('Factory Reset was cancelled. Nothing was deleted.');
+        return;
+      }
       setConfirmFactoryReset(false);
       setActionMessage(
         `✓ Factory Reset Complete! Wiped all local records and ${deletedCount} Cloud Firestore documents. User accounts & Line Master preserved.`
@@ -124,13 +145,18 @@ export const AdminView: React.FC<AdminViewProps> = ({
           </button>
           <button
             onClick={() => setAdminTab('USERS')}
-            className={`pb-2.5 px-4 border-b-2 transition ${
+            className={`pb-2.5 px-4 border-b-2 transition flex items-center gap-1.5 ${
               adminTab === 'USERS'
                 ? 'border-[#002D62] text-[#002D62]'
                 : 'border-transparent text-slate-500'
             }`}
           >
-            Users & Roles ({users.length})
+            <span>Users, TV &amp; Device Approvals ({users.length})</span>
+            {totalPendingRequests > 0 && (
+              <span className="bg-amber-500 text-slate-950 font-black text-[10px] px-1.5 py-0.5 rounded-full">
+                {totalPendingRequests} Pending
+              </span>
+            )}
           </button>
         </div>
 
@@ -325,38 +351,140 @@ export const AdminView: React.FC<AdminViewProps> = ({
             </div>
           )}
 
-          {/* TAB 3: USERS & ROLES */}
+          {/* TAB 3: USERS, PENDING REGISTRATIONS & TV/DEVICE REQUESTS */}
           {adminTab === 'USERS' && (
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-              <div className="p-3 bg-slate-100 text-xs font-bold text-slate-800 border-b">
-                Configured System Accounts & Role Routing
-              </div>
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-50 text-slate-600 border-b">
-                  <tr>
-                    <th className="py-2 px-3">Name</th>
-                    <th className="py-2 px-3">Employee ID</th>
-                    <th className="py-2 px-3">Role</th>
-                    <th className="py-2 px-3">Scope</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {users.map(u => (
-                    <tr key={u.id}>
-                      <td className="py-2 px-3 font-bold text-slate-900">{u.name}</td>
-                      <td className="py-2 px-3 text-slate-600 font-mono">{u.username}</td>
-                      <td className="py-2 px-3">
-                        <span className="bg-blue-100 text-blue-900 font-bold text-[10px] px-2 py-0.5 rounded">
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 text-slate-600">
-                        {u.floor || 'All'} {u.assignedLine ? `(${u.assignedLine})` : ''}
-                      </td>
-                    </tr>
+            <div className="space-y-4">
+              {pendingRegistrations.length > 0 && (
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-2.5 shadow-sm">
+                  <div className="text-xs font-black text-amber-950">
+                    ⏳ Pending Employee Registration Requests ({pendingRegistrations.length})
+                  </div>
+                  {pendingRegistrations.map(u => (
+                    <div
+                      key={u.id}
+                      className="bg-white border border-amber-200 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2 text-xs"
+                    >
+                      <div>
+                        <div className="font-black text-slate-900">
+                          {u.name} <span className="font-mono text-slate-600">(ID: {u.id})</span>
+                        </div>
+                        <div className="text-[11px] text-slate-600">
+                          Designation: <b>{u.designation || u.role}</b> • Floor: <b>{u.floor || 'All'}</b>
+                          {u.authorizedDeviceName ? ` • Device: ${u.authorizedDeviceName}` : ''}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={async () => {
+                            await onApproveRegistration?.(u.id);
+                            setActionMessage(`✓ Approved employee registration for ${u.name} (${u.id}).`);
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3 py-1.5 rounded-lg shadow"
+                        >
+                          Approve Registration
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await onRejectRegistration?.(u.id);
+                            setActionMessage(`Rejected employee registration for ${u.name} (${u.id}).`);
+                          }}
+                          className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              )}
+
+              {pendingDeviceOrTvUsers.length > 0 && (
+                <div className="bg-cyan-50 border border-cyan-300 rounded-xl p-4 space-y-2.5 shadow-sm">
+                  <div className="text-xs font-black text-cyan-950">
+                    📺 Pending Smart TV &amp; Device Replacement Requests ({pendingDeviceOrTvUsers.length})
+                  </div>
+                  {pendingDeviceOrTvUsers.map(u => {
+                    const parts = (u.rejectionReason || '').split(':');
+                    const isTv = u.rejectionReason?.startsWith('TV_PENDING:');
+                    const devId = parts[2] || u.authorizedDeviceId || '';
+                    const devName = parts[3] || u.authorizedDeviceName || (isTv ? 'Smart TV Display' : 'Android Phone');
+                    const codeOrType = parts[4] || '';
+                    return (
+                      <div
+                        key={`${u.id}-${devId}`}
+                        className="bg-white border border-cyan-200 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2 text-xs"
+                      >
+                        <div>
+                          <div className="font-black text-slate-900">
+                            {isTv ? '📺 First-Time Smart TV Login Request' : `📱 Device Request: ${u.name} (${u.id})`}
+                          </div>
+                          <div className="text-[11px] text-slate-600">
+                            Device: <b>{devName}</b> ({devId.slice(-8)})
+                            {codeOrType ? ` • ${isTv ? `TV Code: ${codeOrType}` : codeOrType}` : ''}
+                          </div>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            await onApproveDeviceOrTv?.(u.id, devId, devName);
+                            setActionMessage(
+                              `✓ Approved ${isTv ? 'Smart TV Display' : `device ${devName} for ${u.name}`}!`
+                            );
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3 py-1.5 rounded-lg shadow"
+                        >
+                          {isTv ? 'Approve Smart TV' : 'Approve Device'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                <div className="p-3 bg-slate-100 text-xs font-bold text-slate-800 border-b">
+                  Configured System Accounts &amp; Role Routing
+                </div>
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 text-slate-600 border-b">
+                    <tr>
+                      <th className="py-2 px-3">Name</th>
+                      <th className="py-2 px-3">Employee ID</th>
+                      <th className="py-2 px-3">Role</th>
+                      <th className="py-2 px-3">Status</th>
+                      <th className="py-2 px-3">Scope</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {users.map(u => (
+                      <tr key={u.id}>
+                        <td className="py-2 px-3 font-bold text-slate-900">{u.name}</td>
+                        <td className="py-2 px-3 text-slate-600 font-mono">{u.username}</td>
+                        <td className="py-2 px-3">
+                          <span className="bg-blue-100 text-blue-900 font-bold text-[10px] px-2 py-0.5 rounded">
+                            {u.role}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3">
+                          <span
+                            className={`font-bold text-[10px] px-2 py-0.5 rounded ${
+                              u.accountStatus === 'PENDING_APPROVAL'
+                                ? 'bg-amber-100 text-amber-900'
+                                : u.accountStatus === 'REJECTED'
+                                ? 'bg-red-100 text-red-900'
+                                : 'bg-emerald-100 text-emerald-900'
+                            }`}
+                          >
+                            {u.accountStatus || 'APPROVED'}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-slate-600">
+                          {u.floor || 'All'} {u.assignedLine ? `(${u.assignedLine})` : ''}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>

@@ -1006,19 +1006,36 @@ fun HomeScreen(
   }
 
   if (showFactoryResetDialog && isAdminUser) {
+    var resetConfirmInput by remember { mutableStateOf("") }
+    val canConfirmReset = resetConfirmInput.trim() == "RESET"
     AlertDialog(
       onDismissRequest = { showFactoryResetDialog = false },
       title = { Text("Factory Reset All Operational Records?", fontWeight = FontWeight.Black, color = Color(0xFFB91C1C)) },
       text = {
-        Text("This will permanently clear ALL Production, Quality, NPT Incidents, and Daily Line Setups from both this device AND Cloud Firestore so your factory starts clean at 0.\n\nEmployee Accounts, Roles, and Factory Line Master will be preserved.")
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text("This will permanently clear ALL Production, Quality, NPT Incidents, and Daily Line Setups from both this device AND Cloud Firestore so your factory starts clean at 0.\n\nEmployee Accounts, Roles, and Factory Line Master will be preserved.\n\nType RESET below to confirm:")
+          OutlinedTextField(
+            value = resetConfirmInput,
+            onValueChange = { resetConfirmInput = it },
+            placeholder = { Text("Type RESET") },
+            singleLine = true,
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("home_factory_reset_confirm_input")
+          )
+        }
       },
       confirmButton = {
         Button(
           onClick = {
-            repository.resetAllOperationalData(clearCloud = true)
-            showFactoryResetDialog = false
+            if (canConfirmReset) {
+              repository.resetAllOperationalData(clearCloud = true)
+              showFactoryResetDialog = false
+            }
           },
-          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C))
+          enabled = canConfirmReset,
+          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C)),
+          modifier = Modifier.testTag("home_factory_reset_confirm_btn")
         ) {
           Text("Confirm Factory Reset", color = Color.White, fontWeight = FontWeight.Bold)
         }

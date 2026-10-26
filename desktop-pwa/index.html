@@ -3,134 +3,180 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NFL LIVE Desktop — Northern Fashions Ltd.</title>
+  <title>NFL LIVE Web &amp; TV Wallboard — Northern Fashions Ltd.</title>
   <link rel="manifest" href="./manifest.json" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
+  <div style="background:#b45309;color:#fff;padding:8px 14px;font:600 13px sans-serif;text-align:center">LOCAL ONLY: this page is not connected to the phones, the TV or Firebase, and it has no login. Data stays in this browser. Use the web dashboard for live data.</div>
   <header class="topbar">
     <div class="brand">
-      <div class="brand-badge">NFL</div>
+      <div class="brand-badge">NFL LIVE</div>
       <div>
-        <div class="brand-title">NFL LIVE DESKTOP</div>
-        <div class="brand-sub">Northern Fashions Ltd. • Dev: Shamim (IPE &amp; Planning)</div>
+        <div class="brand-title">NFL LIVE — WEB &amp; TV COMMAND CENTER</div>
+        <div class="brand-sub">Northern Fashions Ltd. • Full APK Feature Parity + 4-Page TV Wallboard</div>
       </div>
     </div>
 
     <div class="top-controls">
-      <select id="floorFilter" style="width:auto;">
-        <option value="ALL">All Floors</option>
+      <select id="floorFilter" title="Select Floor">
         <option value="Sew 1">Sew 1</option>
         <option value="Sew 2" selected>Sew 2</option>
         <option value="Sew 3">Sew 3</option>
+        <option value="ALL">All Floors</option>
       </select>
 
-      <select id="roleSelector" style="width:auto;">
-        <option value="ADMIN">Role: Admin (Full Access)</option>
+      <select id="periodFilter" title="Select Period">
+        <option value="TODAY" selected>Today</option>
+        <option value="YESTERDAY">Yesterday</option>
+        <option value="WEEK">Week</option>
+        <option value="MONTH">Month</option>
+      </select>
+
+      <select id="roleSelector" title="Select User Role">
+        <option value="ADMIN">Role: Admin (1015198 • Full Access)</option>
         <option value="AUDITOR">Role: Auditor (Bi-Hourly Audit &amp; Weekly OQL)</option>
         <option value="QUALITY_REPORTER">Role: Quality Inspector (Hourly DHU)</option>
         <option value="PRODUCTION_REPORTER">Role: Production Reporter</option>
-        <option value="IE">Role: IE Officer</option>
-        <option value="QUALITY_MANAGER">Role: Quality Manager (View Only)</option>
+        <option value="SUPERVISOR">Role: Line Supervisor</option>
+        <option value="IE">Role: IE Officer (View Only for Weekly/Bi-Hourly)</option>
+        <option value="QUALITY_MANAGER">Role: Quality Manager (View Only for Weekly/Bi-Hourly)</option>
+        <option value="TV_DISPLAY">Role: Smart TV Wallboard</option>
       </select>
 
-      <span id="syncIndicator" class="role-pill">Cloud Sync Ready</span>
-      <button id="installPwaBtn" class="btn btn-primary hidden">⬇ Install Desktop App</button>
+      <span id="syncIndicator" class="role-pill">☁️ Cloud Sync Ready</span>
+      <button id="fullscreenTvBtn" class="btn btn-primary" style="padding:6px 11px;font-size:11.5px;">📺 Fullscreen TV</button>
+      <button id="installPwaBtn" class="btn btn-success hidden" style="padding:6px 11px;font-size:11.5px;">⬇ Install App</button>
     </div>
   </header>
 
   <nav class="nav-tabs">
-    <button class="nav-tab active" data-tab="dashboard">📊 Live Dashboard</button>
+    <button class="nav-tab active" data-tab="dashboard">📺 TV Wallboard Dashboard (4 Pages)</button>
+    <button class="nav-tab" data-tab="setup">⚙️ Morning Line Setup</button>
     <button class="nav-tab" data-tab="production">🧵 Production Entry (12h AM/PM)</button>
     <button class="nav-tab" data-tab="quality">🔍 Quality &amp; Bi-Hourly Audit</button>
     <button class="nav-tab" data-tab="weekly">📈 Weekly BS OQL / NFL AQC</button>
-    <button class="nav-tab" data-tab="admin">⚙️ Admin &amp; Excel Export</button>
+    <button class="nav-tab" data-tab="monthly">📅 Monthly Targets &amp; FRI</button>
+    <button class="nav-tab" data-tab="npt">🚨 NPT &amp; Stoppages</button>
+    <button class="nav-tab" data-tab="deepdive">🔎 Line Deep Dive</button>
+    <button class="nav-tab" data-tab="admin">📥 History, Admin &amp; Excel</button>
   </nav>
 
   <main class="container">
     <div id="statusBanner" class="status-banner hidden"></div>
 
-    <!-- TAB 1: LIVE DASHBOARD -->
+    <!-- ==================== TAB 1: EXACT 4-PAGE TV WALLBOARD DASHBOARD ==================== -->
     <section id="tab-dashboard" class="tab-panel">
-      <div class="kpi-grid">
-        <div class="kpi-card">
-          <div class="kpi-label">Today Output (Pcs)</div>
-          <div id="kpiOutput" class="kpi-value" style="color:var(--blue)">0</div>
-          <div class="kpi-sub">Live Cloud Production</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Endline DHU %</div>
-          <div id="kpiDhu" class="kpi-value" style="color:var(--green)">0.00%</div>
-          <div class="kpi-sub">1-Hr QC Inspection</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Today OQL % (Bi-Hourly Audit)</div>
-          <div id="kpiOql" class="kpi-value" style="color:var(--sky)">0.00%</div>
-          <div class="kpi-sub">2-Hr Auditor Inspection</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Latest Weekly BS OQL / AQC</div>
-          <div id="kpiWeeklyOql" class="kpi-value" style="color:var(--amber)">- / -</div>
-          <div class="kpi-sub" id="kpiWeeklyLabel">Commitment ≤ 4.5%</div>
-        </div>
-      </div>
+      <div id="wbShell" class="wb-shell">
+        <!-- TV Header Bar -->
+        <div class="wb-header">
+          <div class="wb-brand">
+            <div class="wb-live-dot"></div>
+            <div>
+              <div class="wb-brand-title">NFL LIVE · TV WALLBOARD</div>
+              <div id="wbStatusSubtitle" class="wb-brand-sub">Sew 2 · All · Today · 12-Hour AM/PM</div>
+            </div>
+          </div>
 
+          <!-- 4 Wallboard Pages: Production | Quality | All | Table -->
+          <div class="wb-btn-group" id="wbPageButtons">
+            <button class="wb-seg-btn" data-wbpage="PRODUCTION">Production</button>
+            <button class="wb-seg-btn" data-wbpage="QUALITY">Quality</button>
+            <button class="wb-seg-btn page-active" data-wbpage="ALL">All</button>
+            <button class="wb-seg-btn" data-wbpage="TABLE">Table</button>
+          </div>
+
+          <!-- Floor Switcher inside Wallboard -->
+          <div class="wb-btn-group" id="wbFloorButtons">
+            <button class="wb-seg-btn" data-wbfloor="Sew 1">Sew 1</button>
+            <button class="wb-seg-btn active" data-wbfloor="Sew 2">Sew 2</button>
+            <button class="wb-seg-btn" data-wbfloor="Sew 3">Sew 3</button>
+            <button class="wb-seg-btn" data-wbfloor="ALL">All Floors</button>
+          </div>
+
+          <!-- Auto-Slide Toggle -->
+          <div class="wb-btn-group">
+            <button id="wbAutoSlideBtn" class="wb-seg-btn active">Auto-slide 30s · next 30s</button>
+          </div>
+
+          <div class="wb-clock-box">
+            <div id="wbClockTime" class="wb-clock-time">12:00 PM</div>
+            <div id="wbClockDate" class="wb-clock-date">Synced Live</div>
+          </div>
+        </div>
+
+        <!-- Dynamic Wallboard Page Body rendered by app.js -->
+        <div id="wbPageContainer" style="display:flex;flex-direction:column;gap:10px;flex:1;"></div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 2: MORNING LINE SETUP ==================== -->
+    <section id="tab-setup" class="tab-panel hidden">
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Hourly &amp; Bi-Hourly Summary (12-Hour AM/PM Format)</div>
+          <div class="card-title">⚙️ Supervisor Morning Line Setup (SMV, Manpower &amp; Target)</div>
         </div>
-        <div style="overflow-x:auto;">
-          <table>
-            <thead>
-              <tr>
-                <th>Time Slot (12h AM/PM)</th>
-                <th>Type</th>
-                <th>Output (Pcs)</th>
-                <th>Checked (Pcs)</th>
-                <th>Defective (Pcs)</th>
-                <th>Total Defects</th>
-                <th>DHU %</th>
-                <th>OQL %</th>
-              </tr>
-            </thead>
-            <tbody id="hourlySummaryBody">
-              <tr><td colspan="8">No records for selected floor today.</td></tr>
-            </tbody>
-          </table>
+        <div class="form-grid">
+          <div>
+            <label>Floor</label>
+            <select id="setupFloor">
+              <option value="Sew 1">Sew 1</option>
+              <option value="Sew 2" selected>Sew 2</option>
+              <option value="Sew 3">Sew 3</option>
+            </select>
+          </div>
+          <div>
+            <label>Line</label>
+            <select id="setupLine"></select>
+          </div>
+          <div>
+            <label>Date</label>
+            <input type="date" id="setupDate" />
+          </div>
+          <div>
+            <label>Item / Style</label>
+            <input type="text" id="setupStyle" value="SS T shirt" />
+          </div>
+          <div>
+            <label>SMV (Standard Minute Value)</label>
+            <input type="number" id="setupSmv" step="0.1" value="8.5" />
+          </div>
+          <div>
+            <label>Operators Count</label>
+            <input type="number" id="setupOps" min="1" value="20" />
+          </div>
+          <div>
+            <label>Helpers Count</label>
+            <input type="number" id="setupHelpers" min="0" value="2" />
+          </div>
+          <div>
+            <label>Working Hours</label>
+            <input type="number" id="setupHours" min="1" max="14" value="8" />
+          </div>
+          <div>
+            <label>Target Efficiency (%)</label>
+            <input type="number" id="setupTargetEff" min="10" max="100" value="75" />
+          </div>
+          <div>
+            <label>Daily Target (Pcs)</label>
+            <input type="number" id="setupDailyTarget" min="10" value="520" />
+          </div>
         </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">Recent Cloud Submissions (Production &amp; Quality)</div>
-        </div>
-        <div style="overflow-x:auto;">
-          <table>
-            <thead>
-              <tr>
-                <th>Line</th>
-                <th>Floor</th>
-                <th>Date</th>
-                <th>Slot (12h AM/PM)</th>
-                <th>Category</th>
-                <th>Details</th>
-                <th>Updated By</th>
-              </tr>
-            </thead>
-            <tbody id="recentRecordsBody">
-              <tr><td colspan="7">Waiting for records...</td></tr>
-            </tbody>
-          </table>
+        <div style="display:flex;gap:10px;">
+          <button id="autoCalcSetupBtn" type="button" class="btn btn-outline">⚡ Auto-Calculate Target from SMV</button>
+          <button id="saveSetupBtn" type="button" class="btn btn-primary">Save Morning Line Setup</button>
         </div>
       </div>
     </section>
 
-    <!-- TAB 2: PRODUCTION ENTRY -->
+    <!-- ==================== TAB 3: PRODUCTION ENTRY (SINGLE + BATCH MATRIX) ==================== -->
     <section id="tab-production" class="tab-panel hidden">
       <div class="card">
-        <div class="card-header">
-          <div class="card-title">🧵 Hourly Production Output Entry (12-Hour AM/PM)</div>
+        <div class="sub-tabs">
+          <button id="prodModeSingleBtn" class="sub-tab active">🧵 Single Line Production Entry</button>
+          <button id="prodModeBatchBtn" class="sub-tab">⚡ All Lines Batch Matrix Mode (12-Hour AM/PM)</button>
         </div>
+
         <div class="form-grid">
           <div>
             <label>Floor</label>
@@ -140,7 +186,7 @@
               <option value="Sew 3">Sew 3</option>
             </select>
           </div>
-          <div>
+          <div id="prodLineWrap">
             <label>Line</label>
             <select id="prodLine"></select>
           </div>
@@ -152,16 +198,19 @@
             <label>Hour Slot (12-Hour AM/PM)</label>
             <select id="prodHourSlot"></select>
           </div>
-          <div>
+          <div id="prodQtyWrap">
             <label>Output Quantity (pcs)</label>
             <input type="number" id="prodQty" min="0" placeholder="e.g. 85" />
           </div>
           <div>
             <label>Style / Item</label>
-            <input type="text" id="prodStyle" placeholder="e.g. Nike Polo" value="Standard Item" />
+            <input type="text" id="prodStyle" value="SS T shirt" />
           </div>
         </div>
-        <div style="margin-bottom:14px;">
+
+        <div id="batchMatrixContainer" class="batch-grid hidden"></div>
+
+        <div style="margin-bottom:12px;">
           <label>Remarks (Optional)</label>
           <input type="text" id="prodRemarks" placeholder="Optional production remarks" />
         </div>
@@ -169,16 +218,16 @@
       </div>
     </section>
 
-    <!-- TAB 3: QUALITY & BI-HOURLY AUDIT -->
+    <!-- ==================== TAB 4: QUALITY & BI-HOURLY AUDIT ==================== -->
     <section id="tab-quality" class="tab-panel hidden">
       <div class="card">
         <div class="sub-tabs">
-          <button id="modeHourlyDhuBtn" class="sub-tab active">🔍 Hourly DHU &amp; Alter (1-Hr Slots)</button>
-          <button id="modeBiHourlyAuditBtn" class="sub-tab">📋 Bi-Hourly Audit (2-Hr OQL Slots • Admin &amp; Auditor)</button>
+          <button id="modeHourlyDhuBtn" class="sub-tab active">🔍 Hourly DHU &amp; Alter (1-Hr AM/PM Slots)</button>
+          <button id="modeBiHourlyAuditBtn" class="sub-tab">📋 Daily Bi-Hourly Audit (2-Hr OQL • Admin &amp; Auditor)</button>
         </div>
 
         <div id="biHourlyPermissionNotice" class="status-banner hidden" style="background:#fef3c7;color:#92400e;">
-          🔒 Bi-Hourly Audit Entry is restricted strictly to <strong>Admin</strong> and <strong>Auditor</strong> roles (IE and Quality Manager have view-only access).
+          🔒 Daily Bi-Hourly Audit (2-Hr OQL) Entry is restricted strictly to <strong>Admin</strong> and <strong>Auditor</strong> roles (IE and Quality Manager have view-only access).
         </div>
 
         <div class="form-grid">
@@ -212,7 +261,6 @@
           </div>
         </div>
 
-        <!-- Defect Breakdown Section -->
         <div class="card" style="background:#f8fafc;">
           <div class="card-header">
             <div class="card-title" style="font-size:14px;">Defect Breakdown by Type</div>
@@ -224,7 +272,6 @@
           </div>
         </div>
 
-        <!-- Sewing & Spot Rectification (Hidden in Bi-Hourly Audit Mode) -->
         <div id="rectificationSection" class="form-grid">
           <div>
             <label>Sewing Defect Sent (pcs)</label>
@@ -248,19 +295,22 @@
       </div>
     </section>
 
-    <!-- TAB 4: WEEKLY BS OQL / NFL AQC -->
+    <!-- ==================== TAB 5: WEEKLY BS OQL / NFL AQC ==================== -->
     <section id="tab-weekly" class="tab-panel hidden">
       <div class="card">
         <div class="card-header">
           <div class="card-title">📈 Weekly BS OQL &amp; NFL AQC Entry (Admin &amp; Auditor Only)</div>
         </div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">
+        <p style="font-size:13px;color:var(--muted);margin-bottom:10px;">
           Commitment limit: ≤ 4.5% • Level 1 below 7% • Critical Red above 10%. Only <strong>Admin</strong> and <strong>Auditor</strong> can save weekly values (not IE or Quality Manager).
         </p>
 
         <div id="weeklyPermissionWarning" class="status-banner hidden" style="background:#fee2e2;color:#991b1b;">
           🔒 Access Denied: Only Admin and Auditor roles can enter Weekly BS OQL / NFL AQC data.
         </div>
+
+        <label>Quick Select Recent ISO Week (Last 12 Weeks):</label>
+        <div id="weekChipsContainer" class="chip-row"></div>
 
         <div class="form-grid">
           <div>
@@ -273,11 +323,11 @@
           </div>
           <div>
             <label>BS OQL (%)</label>
-            <input type="number" id="weeklyBsOql" step="0.01" min="0" max="100" placeholder="e.g. 4.25" />
+            <input type="number" id="weeklyBsOql" step="0.01" min="0" max="100" placeholder="e.g. 3.85" />
           </div>
           <div>
             <label>NFL AQC (%)</label>
-            <input type="number" id="weeklyNflAqc" step="0.01" min="0" max="100" placeholder="e.g. 5.10" />
+            <input type="number" id="weeklyNflAqc" step="0.01" min="0" max="100" placeholder="e.g. 4.20" />
           </div>
         </div>
         <button id="submitWeeklyBtn" class="btn btn-primary">Save Weekly BS OQL / AQC</button>
@@ -285,9 +335,9 @@
 
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Saved Weekly OQL / AQC History</div>
+          <div class="card-title">Saved Weekly BS OQL / NFL AQC History</div>
         </div>
-        <table>
+        <table class="std-table">
           <thead>
             <tr>
               <th>Week</th>
@@ -298,14 +348,145 @@
               <th>Updated By</th>
             </tr>
           </thead>
-          <tbody id="weeklyTableBody">
-            <tr><td colspan="6">No weekly records yet.</td></tr>
-          </tbody>
+          <tbody id="weeklyTableBody"></tbody>
         </table>
       </div>
     </section>
 
-    <!-- TAB 5: ADMIN & EXCEL EXPORT -->
+    <!-- ==================== TAB 6: MONTHLY TARGETS & FRI ==================== -->
+    <section id="tab-monthly" class="tab-panel hidden">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📅 Monthly Floor Targets, BS QA OQL &amp; FRI Pass Setup</div>
+        </div>
+        <div class="form-grid">
+          <div>
+            <label>Floor</label>
+            <select id="moFloor">
+              <option value="Sew 1">Sew 1</option>
+              <option value="Sew 2" selected>Sew 2</option>
+              <option value="Sew 3">Sew 3</option>
+            </select>
+          </div>
+          <div>
+            <label>Target Efficiency (%)</label>
+            <input type="number" id="moTargetEff" step="0.5" value="75" />
+          </div>
+          <div>
+            <label>DHU Limit (%)</label>
+            <input type="number" id="moDhuLimit" step="0.1" value="2.0" />
+          </div>
+          <div>
+            <label>OQL Commitment (%)</label>
+            <input type="number" id="moOqlTarget" step="0.1" value="4.5" />
+          </div>
+          <div>
+            <label>BS QA OQL (%)</label>
+            <input type="number" id="moBsOql" step="0.01" value="2.4" />
+          </div>
+          <div>
+            <label>BS QA FRI Pass Rate (%)</label>
+            <input type="number" id="moFriPass" step="0.1" value="98.5" />
+          </div>
+        </div>
+        <button id="saveMonthlyBtn" class="btn btn-primary">Save Monthly Floor Benchmarks</button>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 7: NPT & STOPPAGES ==================== -->
+    <section id="tab-npt" class="tab-panel hidden">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🚨 Report Line Stoppage / NPT Incident</div>
+        </div>
+        <div class="form-grid">
+          <div>
+            <label>Floor</label>
+            <select id="nptFloor">
+              <option value="Sew 1">Sew 1</option>
+              <option value="Sew 2" selected>Sew 2</option>
+              <option value="Sew 3">Sew 3</option>
+            </select>
+          </div>
+          <div>
+            <label>Line</label>
+            <select id="nptLine"></select>
+          </div>
+          <div>
+            <label>Category</label>
+            <select id="nptCategory">
+              <option value="MACHINE_BREAKDOWN">Machine Breakdown</option>
+              <option value="INPUT_MATERIAL">Input Material Shortage</option>
+              <option value="QUALITY_PROBLEM">Quality Problem</option>
+              <option value="LINE_BALANCING">Line Balancing</option>
+              <option value="LOW_PRODUCTION">Low Production</option>
+            </select>
+          </div>
+          <div>
+            <label>Description / Cause</label>
+            <input type="text" id="nptDesc" placeholder="e.g. SNLS-04 thread breakage" />
+          </div>
+        </div>
+        <button id="reportNptBtn" class="btn btn-danger">🚨 Report Stoppage Alert</button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Active &amp; Recent Line Stoppages</div>
+        </div>
+        <table class="std-table">
+          <thead>
+            <tr>
+              <th>Line</th>
+              <th>Floor</th>
+              <th>Category</th>
+              <th>Description</th>
+              <th>Elapsed</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="nptTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 8: LINE DEEP DIVE ==================== -->
+    <section id="tab-deepdive" class="tab-panel hidden">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🔎 Line Deep Dive (12-Hour AM/PM Hourly Ledger &amp; Rectification)</div>
+          <div style="display:flex;gap:8px;">
+            <select id="ddFloor" style="width:auto;">
+              <option value="Sew 1">Sew 1</option>
+              <option value="Sew 2" selected>Sew 2</option>
+              <option value="Sew 3">Sew 3</option>
+            </select>
+            <select id="ddLine" style="width:auto;"></select>
+          </div>
+        </div>
+        <div id="deepDiveSummary" class="kpi-grid"></div>
+        <table class="std-table">
+          <thead>
+            <tr>
+              <th>Slot (12h AM/PM)</th>
+              <th>Type</th>
+              <th>Output (Pcs)</th>
+              <th>Checked</th>
+              <th>Defective</th>
+              <th>Defects</th>
+              <th>OQL %</th>
+              <th>DHU %</th>
+              <th>Sew Sent/Recv</th>
+              <th>Spot Sent/Recv</th>
+            </tr>
+          </thead>
+          <tbody id="deepDiveTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 9: ADMIN, HISTORY & EXCEL EXPORT ==================== -->
     <section id="tab-admin" class="tab-panel hidden">
       <div class="card">
         <div class="card-header">
@@ -322,19 +503,40 @@
         <div class="card-header">
           <div class="card-title">🗑️ Admin Data Reset Controls</div>
         </div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">
-          Clear sample/demo records or perform a full operational reset across connected devices.
-        </p>
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <button id="loadDemoBtn" class="btn btn-primary">🔄 Load Demo Dataset</button>
           <button id="clearDemoBtn" class="btn btn-outline">🧹 Clear Demo / Sample Data</button>
           <button id="factoryResetBtn" class="btn btn-danger">⚠️ Factory Reset All Operational Records</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📜 Recent Cloud &amp; Local Submissions (12-Hour AM/PM Format)</div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="std-table">
+            <thead>
+              <tr>
+                <th>Line</th>
+                <th>Floor</th>
+                <th>Date</th>
+                <th>Slot (12h AM/PM)</th>
+                <th>Category</th>
+                <th>Details</th>
+                <th>Updated By</th>
+                <th>Admin Action</th>
+              </tr>
+            </thead>
+            <tbody id="recentRecordsBody"></tbody>
+          </table>
         </div>
       </div>
     </section>
   </main>
 
   <footer class="footer">
-    NFL LIVE Desktop &amp; Mobile Sync • Northern Fashions Ltd. • Developed by Shamim (IPE &amp; Planning)
+    NFL LIVE Web, Desktop &amp; Smart TV Wallboard • Northern Fashions Ltd. • Developed by Shamim (IPE &amp; Planning)
   </footer>
 
   <script type="module" src="./app.js"></script>

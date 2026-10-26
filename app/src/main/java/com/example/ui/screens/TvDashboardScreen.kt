@@ -277,7 +277,7 @@ private fun WbProductionPage(c: WbCtx, modifier: Modifier) {
           else {
             val vmax = maxOf(hs.maxOf { it.output }.toDouble(), if (c.isToday) ht else 0.0, 1.0) * 1.15
             WbColumnChart(
-              labels = hs.map { it.label + "h" },
+              labels = hs.map { if (it.label.contains("AM") || it.label.contains("PM")) it.label else it.label + "h" },
               back = hs.map<WbHour, Double?> { null },
               front = hs.map<WbHour, Double?> { it.output.toDouble() },
               vmax = vmax,
@@ -388,7 +388,7 @@ private fun WbQualityPage(c: WbCtx, modifier: Modifier) {
           else {
             val mx = hs.flatMap { listOfNotNull(it.dhu, it.oql) }.maxOrNull() ?: 1.0
             WbLineChart(
-              labels = hs.map { it.label + "h" },
+              labels = hs.map { if (it.label.contains("AM") || it.label.contains("PM")) it.label else it.label + "h" },
               series = listOf(WbSeries(hs.map { it.dhu }, WbTheme.RED), WbSeries(hs.map { it.oql }, WbTheme.ORANGE)),
               lo = 0.0, hi = maxOf(mx, c.dhuLimit) * 1.2, limit = c.dhuLimit,
               modifier = Modifier.weight(1f).fillMaxWidth()

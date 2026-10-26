@@ -483,14 +483,14 @@ fun QualityEntryScreen(
                 Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(18.dp))
                 Column {
                   Text(
-                    if (isBiHourlyMode) "Bi-Hourly Audit Locked (Admin & Auditor Only)" else "View-Only Mode (Quality Entry Locked)",
+                    if (isBiHourlyMode) "Bi-Hourly Audit Locked (Admin, Auditor & IE Only)" else "View-Only Mode (Quality Entry Locked)",
                     color = Color(0xFF92400E),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                   )
                   Text(
                     if (isBiHourlyMode) {
-                      "Only Admin and Auditor accounts have permission to enter 2-Hour Bi-Hourly Audit data (IE and Quality Manager have view-only access)."
+                      "Only Admin, Auditor, and IE accounts have permission to enter 2-Hour Bi-Hourly Audit data (Quality Manager has view-only access)."
                     } else {
                       "You have read-only access. Only authorized QC Inspectors & Auditors can enter defect records."
                     },
@@ -1531,7 +1531,7 @@ fun QualityEntryScreen(
                 validationError = if (isSlotLocked) {
                   "🔒 Quality record for Line $selectedLine (${repository.formatHourSlot12h(selectedHour)}) is already submitted. Only Admin can modify submitted records with a reason."
                 } else if (isBiHourlyMode) {
-                  "Only Admin or Auditor accounts can enter Daily Bi-Hourly Audit data within the 06:00 AM–Midnight BD window."
+                  "Only Admin, Auditor, or IE accounts can enter Daily Bi-Hourly Audit data within the 06:00 AM–Midnight BD window."
                 } else {
                   "You do not have permission or are outside the 06:00 AM–Midnight BD entry window."
                 }

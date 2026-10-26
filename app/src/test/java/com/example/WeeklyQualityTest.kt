@@ -142,17 +142,18 @@ class WeeklyQualityTest {
   }
 
   @Test
-  fun `auditor can save weekly BS OQL while IE and quality manager are rejected`() {
+  fun `auditor and IE can save weekly BS OQL while quality manager is rejected`() {
     val repo = newRepo()
     val now = System.currentTimeMillis()
-
-    // IE should be rejected for Weekly BS OQL
-    repo.authenticateUser("ie", "123")
-    assertFalse(repo.saveWeeklyQuality(now, 4.2, 5.0).success)
 
     // Quality Manager should be rejected for Weekly BS OQL
     repo.authenticateUser("qm", "123")
     assertFalse(repo.saveWeeklyQuality(now, 4.2, 5.0).success)
+
+    // IE is allowed to save Weekly BS OQL
+    repo.authenticateUser("ie", "123")
+    assertTrue(repo.saveWeeklyQuality(now, 4.10, 4.90).success)
+    assertEquals(4.10, repo.weeklyQuality.value.single().bsOqlPct!!, 0.0001)
 
     // Auditor is allowed to save Weekly BS OQL
     repo.authenticateUser("auditor", "123")

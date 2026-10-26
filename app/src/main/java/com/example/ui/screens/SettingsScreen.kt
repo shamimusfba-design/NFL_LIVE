@@ -505,22 +505,39 @@ fun SettingsScreen(
   }
 
   if (confirmFactoryResetDialog) {
+    var resetConfirmInput by remember { mutableStateOf("") }
+    val canConfirmReset = resetConfirmInput.trim() == "RESET"
     AlertDialog(
       onDismissRequest = { confirmFactoryResetDialog = false },
       title = { Text("Factory Reset All Operational Records?", fontWeight = FontWeight.Bold, color = Color(0xFFB91C1C)) },
       text = {
-        Text("This will permanently wipe all $totalLiveRows live/test operational records and $totalDemoRows demo records (Production, Quality, NPT Incidents, and Daily Line Setups) from BOTH local storage and Cloud Firestore.\n\nUser accounts, roles, and Factory Line Master will be preserved.")
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text("This will permanently wipe all $totalLiveRows live/test operational records and $totalDemoRows demo records (Production, Quality, NPT Incidents, and Daily Line Setups) from BOTH local storage and Cloud Firestore.\n\nUser accounts, roles, and Factory Line Master will be preserved.\n\nType RESET below to confirm:")
+          OutlinedTextField(
+            value = resetConfirmInput,
+            onValueChange = { resetConfirmInput = it },
+            placeholder = { Text("Type RESET") },
+            singleLine = true,
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("settings_factory_reset_confirm_input")
+          )
+        }
       },
       confirmButton = {
         Button(
           onClick = {
-            confirmFactoryResetDialog = false
-            repository.resetAllOperationalData(clearCloud = true) { deletedCloudCount, _ ->
-              statusMessage = "✓ Factory Reset Complete! Local & $deletedCloudCount Cloud Firestore records cleared."
+            if (canConfirmReset) {
+              confirmFactoryResetDialog = false
+              repository.resetAllOperationalData(clearCloud = true) { deletedCloudCount, _ ->
+                statusMessage = "✓ Factory Reset Complete! Local & $deletedCloudCount Cloud Firestore records cleared."
+              }
+              statusMessage = "✓ Factory Reset triggered! Clearing local and Cloud Firestore records..."
             }
-            statusMessage = "✓ Factory Reset triggered! Clearing local and Cloud Firestore records..."
           },
-          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C))
+          enabled = canConfirmReset,
+          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB91C1C)),
+          modifier = Modifier.testTag("settings_factory_reset_confirm_btn")
         ) {
           Text("Confirm Factory Reset", fontWeight = FontWeight.Bold)
         }

@@ -1,7 +1,9 @@
 export type FloorId = 'Sew 1' | 'Sew 2' | 'Sew 3' | 'All';
+export type PeriodId = 'Today' | 'Yesterday' | 'Week' | 'Month';
 
 export type UserRole =
   | 'ADMIN'
+  | 'AUDITOR'
   | 'PRODUCTION_REPORTER'
   | 'QUALITY_REPORTER'
   | 'SUPERVISOR'
@@ -19,6 +21,14 @@ export interface UserAccount {
   role: UserRole;
   floor?: FloorId;
   assignedLine?: string;
+  designation?: string;
+  department?: string;
+  accountStatus?: string;
+  isActive?: boolean;
+  authorizedDeviceId?: string;
+  authorizedDeviceName?: string;
+  rejectionReason?: string;
+  updatedAtMillis?: number;
 }
 
 export interface LineMasterItem {
@@ -35,15 +45,38 @@ export interface LineTargetConfig {
   date: string;
   dailyTargetPcs: number;
   hourlyTargetPcs: number;
+  targetEfficiencyPct?: number;
   buyer: string;
   styleNumber: string;
-  smv: number; // Standard Minute Value (Strict SMV terminology)
+  smv: number;
   operatorsCount: number;
   machinesCount: number;
   helpersCount: number;
   includeHelpersInEfficiency: boolean;
-  workingHoursSoFar: number; // For elapsed target due calculation
+  workingHoursSoFar: number;
   totalShiftHours: number;
+  isDemo?: boolean;
+}
+
+export interface MonthlyTargetConfig {
+  id: string;
+  floor: FloorId;
+  lineId: string; // blank for floor-level target
+  monthYear: string; // e.g. "2026-10"
+  targetEfficiencyPct: number;
+  targetDhuPct: number;
+  targetOqlPct: number;
+  bsQaOqlPct: number;
+  friPassRatePct: number;
+}
+
+export interface WeeklyQualityRecord {
+  weekKey: string; // e.g. "2026-W43"
+  weekStartIso: string; // Monday ISO date
+  bsOqlPct: number | null;
+  nflAqcPct: number | null;
+  lastUpdatedBy: string;
+  lastUpdatedMillis: number;
   isDemo?: boolean;
 }
 
@@ -81,6 +114,10 @@ export interface QualityEntryRecord {
   defectiveGarments: number;
   defects: QualityDefectItem[];
   totalDefects: number;
+  defectSent?: number;
+  defectReceived?: number;
+  spotSent?: number;
+  spotReceived?: number;
   isConfirmedZero: boolean;
   remarks?: string;
   reportedBy: string;
@@ -125,19 +162,32 @@ export interface LinePerformanceSummary {
   lineId: string;
   floor: 'Sew 1' | 'Sew 2' | 'Sew 3';
   styleNumber: string;
+  smv: number;
+  hourlyTarget: number;
   target: number;
   targetDue: number;
-  output: number | null; // null means not reported!
+  output: number | null;
   isConfirmedZero: boolean;
   gap: number;
   achievementPct: number | null;
   efficiencyPct: number | null;
+  targetEfficiencyPct: number;
   todayOqlPct: number | null;
   monthlyOqlPct: number;
   monthlyEfficiencyPct: number;
   dhu: number | null;
+  checkedGarments: number;
+  defectiveGarments: number;
+  totalDefects: number;
+  sewSent: number;
+  sewRecv: number;
+  sewBal: number;
+  spotSent: number;
+  spotRecv: number;
+  spotBal: number;
   operators: number;
   machines: number;
+  helpers: number;
   reportingStatus: 'Complete' | 'Not reported' | 'In Progress';
   openIncidentsCount: number;
   lastUpdate: string;
@@ -145,6 +195,7 @@ export interface LinePerformanceSummary {
 
 export interface FloorKpis {
   todayEfficiencyPct: number;
+  targetEfficiencyPct: number;
   monthlyEfficiencyPct: number;
   monthlyEfficiencyDelta: number;
   todayOutputPcs: number;
@@ -153,11 +204,27 @@ export interface FloorKpis {
   achievementPct: number;
   operatorsCount: number;
   machinesCount: number;
+  helpersCount: number;
+  todayDhuPct: number;
+  dhuLimitPct: number;
   todayOqlPct: number;
+  oqlCommitmentPct: number;
   bsQaOqlPct: number;
   friPassRatePct: number;
+  checkedGarments: number;
+  defectiveGarments: number;
+  totalDefects: number;
+  defectsPending: number;
+  sewSent: number;
+  sewRecv: number;
+  sewPending: number;
+  spotSent: number;
+  spotRecv: number;
+  spotPending: number;
   reportingCoveragePct: number;
   reportedLinesCount: number;
   targetedLinesCount: number;
+  totalFloorLinesCount: number;
   openIncidentsCount: number;
+  downtimeMinutes: number;
 }

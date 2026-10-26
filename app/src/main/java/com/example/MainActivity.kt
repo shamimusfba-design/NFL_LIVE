@@ -904,7 +904,13 @@ fun TvSetupScreen(repository: NflRepository) {
 
   LaunchedEffect(Unit) {
     repository.ensureTvDisplaySetupRequest()
+    // The first send can fail (no internet, access blocked). Keep trying while this screen is open.
+    repeat(20) {
+      repository.republishTvSetupRequest()
+      kotlinx.coroutines.delay(30_000L)
+    }
   }
+  val cloudStatus by repository.tvSetupCloudStatus.collectAsStateWithLifecycle()
 
   // Read-only diagnostics so a stuck setup can be understood from the TV screen itself.
   val syncBanner by repository.syncStatusBanner.collectAsStateWithLifecycle()
@@ -1002,6 +1008,12 @@ fun TvSetupScreen(repository: NflRepository) {
             text = "Approve this TV in User & Access Control → Device Requests to activate the live factory display. Approval is needed only once.",
             color = Color(0xFF94A3B8),
             fontSize = 12.sp
+          )
+          Text(
+            text = "Cloud: $cloudStatus",
+            color = Color(0xFF94A3B8),
+            fontSize = 12.sp,
+            modifier = Modifier.testTag("tv_setup_cloud_status")
           )
           Text(
             text = "Request status on this TV: $myRequestStatus",

@@ -1,24 +1,84 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   FloorId,
+  PeriodId,
   FloorKpis,
   LinePerformanceSummary,
-  IncidentRecord
+  IncidentRecord,
+  WeeklyQualityRecord,
+  ProductionEntryRecord,
+  QualityEntryRecord
 } from '../types';
+import { HourlyWallboardBucket } from '../services/calculationEngine';
+import { formatHourSlot12h, isBiHourlyAuditSlot } from '../data/masterData';
+
+export type WbPageId = 'PRODUCTION' | 'QUALITY' | 'ALL' | 'TABLE';
+
+const WB_INTERVALS = [30, 60, 10, 15, 0];
+
+const WB_THEME = {
+  BG: '#0A1522',
+  PANEL: '#101E30',
+  LINE: '#1B2E45',
+  TXT: '#EAF0F7',
+  MUTED: '#8FA3B8',
+  RED: '#FF6B6B',
+  AMBER: '#F5B73B',
+  GREEN: '#3DD68C',
+  BLUE: '#5AA9FF',
+  ORANGE: '#F59E6B',
+  GREY: '#7C8B9E',
+  DIM: '#2A4560'
+};
 
 interface TvDesktopDashboardProps {
   selectedFloor: FloorId;
   onSelectFloor: (floor: FloorId) => void;
-  selectedPeriod: 'Today' | 'Week' | 'Month';
-  onSelectPeriod: (p: 'Today' | 'Week' | 'Month') => void;
+  selectedPeriod: PeriodId;
+  onSelectPeriod: (p: PeriodId) => void;
   kpis: FloorKpis;
+  floorBenchmarks?: Array<{ floor: string; todayEff: number; monthEff: number }>;
   lineSummaries: LinePerformanceSummary[];
+  hourlySeries: HourlyWallboardBucket[];
+  weeklyQuality: WeeklyQualityRecord[];
+  productions: ProductionEntryRecord[];
+  qualities: QualityEntryRecord[];
   topDefects: Array<{ defect: string; count: number; dhu: number }>;
   highestDhuLines: Array<{ line: string; dhu: number }>;
   isDemoMode: boolean;
   onToggleDemo: () => void;
   openIncidents: IncidentRecord[];
+  allIncidents?: IncidentRecord[];
   onOpenIncidentPanel: () => void;
+}
+
+function effColor(val: number | null, target = 75): string {
+  if (val === null) return WB_THEME.GREY;
+  const ratio = target > 0 ? val / target : 0;
+  if (ratio >= 1.0) return WB_THEME.GREEN;
+  if (ratio >= 0.85) return WB_THEME.AMBER;
+  return WB_THEME.RED;
+}
+
+function achColor(pct: number | null): string {
+  if (pct === null) return WB_THEME.GREY;
+  if (pct >= 95) return WB_THEME.GREEN;
+  if (pct >= 80) return WB_THEME.AMBER;
+  return WB_THEME.RED;
+}
+
+function dhuColor(dhu: number | null, limit = 2.0): string {
+  if (dhu === null) return WB_THEME.GREY;
+  if (dhu <= limit) return WB_THEME.GREEN;
+  if (dhu <= limit * 2.5) return WB_THEME.AMBER;
+  return WB_THEME.RED;
+}
+
+function oqlColor(oql: number | null, target = 4.5): string {
+  if (oql === null) return WB_THEME.GREY;
+  if (oql <= target) return WB_THEME.GREEN;
+  if (oql <= 7.0) return WB_THEME.AMBER;
+  return WB_THEME.RED;
 }
 
 export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
@@ -27,646 +87,1495 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   selectedPeriod,
   onSelectPeriod,
   kpis,
+  floorBenchmarks = [],
   lineSummaries,
+  hourlySeries,
+  weeklyQuality,
+  productions,
+  qualities,
   topDefects,
   highestDhuLines,
   isDemoMode,
   onToggleDemo,
   openIncidents,
+  allIncidents = [],
   onOpenIncidentPanel
 }) => {
-  const [autoRotate, setAutoRotate] = useState(false);
-  const [refreshSeconds, setRefreshSeconds] = useState(30);
+  const [page, setPage] = useState<WbPageId>('ALL');
+  const [intervalIdx, setIntervalIdx] = useState(0);
+  const interval = WB_INTERVALS[intervalIdx];
+  const [countdown, setCountdown] = useState(WB_INTERVALS[0]);
+  const [deepDiveLine, setDeepDiveLine] = useState<LinePerformanceSummary | null>(null);
 
-  // Auto-refresh countdown every second
+  // Auto-slide Production -> Quality -> All (pauses on Table or when interval === 0)
   useEffect(() => {
-    const timer = setInterval(() => {
-      setRefreshSeconds(s => (s > 1 ? s - 1 : 30));
+    const timer = window.setInterval(() => {
+      if (interval > 0 && page !== 'TABLE') {
+        setCountdown(prev => {
+          if (prev > 1) return prev - 1;
+          setPage(curr => {
+            if (curr === 'PRODUCTION') return 'QUALITY';
+            if (curr === 'QUALITY') return 'ALL';
+            if (curr === 'ALL') return 'PRODUCTION';
+            return 'TABLE';
+          });
+          return interval;
+        });
+      }
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [interval, page]);
 
-  // Timed auto-rotation between floors if enabled on Smart TV
-  useEffect(() => {
-    if (!autoRotate) return;
-    const floors: FloorId[] = ['Sew 1', 'Sew 2', 'Sew 3', 'All'];
-    const timer = setInterval(() => {
-      const nextIndex = (floors.indexOf(selectedFloor) + 1) % floors.length;
-      onSelectFloor(floors[nextIndex]);
-    }, 20000); // 20s rotation
-    return () => clearInterval(timer);
-  }, [autoRotate, selectedFloor, onSelectFloor]);
+  const activeLines = useMemo(
+    () => lineSummaries.filter(l => l.target > 0 || l.output !== null || l.checkedGarments > 0),
+    [lineSummaries]
+  );
+
+  // Status counts for Today status strip
+  const onTargetCount = activeLines.filter(l => (l.achievementPct ?? -1) >= 95).length;
+  const slightBehindCount = activeLines.filter(
+    l => l.achievementPct !== null && l.achievementPct >= 80 && l.achievementPct < 95
+  ).length;
+  const farBehindCount = activeLines.filter(
+    l => l.achievementPct !== null && l.achievementPct < 80
+  ).length;
+  const noOutputCount = activeLines.filter(l => l.output === null).length;
+  const notRunningCount = Math.max(0, lineSummaries.length - activeLines.length);
+
+  // Downtime by Cause
+  const downtimeByCause = useMemo(() => {
+    const map: Record<string, number> = {};
+    const list = allIncidents.length > 0 ? allIncidents : openIncidents;
+    list
+      .filter(i => selectedFloor === 'All' || i.floor === selectedFloor)
+      .forEach(i => {
+        const mins = Math.max(1, Math.round(((i.endTimeMillis || Date.now()) - i.startTimeMillis) / 60000));
+        const label = i.category.replace(/_/g, ' ');
+        map[label] = (map[label] || 0) + mins;
+      });
+    return Object.entries(map)
+      .map(([cause, mins]) => ({ cause, mins }))
+      .sort((a, b) => b.mins - a.mins)
+      .slice(0, 5);
+  }, [allIncidents, openIncidents, selectedFloor]);
+
+  // Worst lines for main defect
+  const mainDefectName = topDefects[0]?.defect || 'Uncut thread';
+  const mainDefectWorstLines = useMemo(() => {
+    const map: Record<string, number> = {};
+    qualities
+      .filter(q => selectedFloor === 'All' || q.floor === selectedFloor)
+      .forEach(q => {
+        q.defects.forEach(d => {
+          if (d.defectType.toLowerCase() === mainDefectName.toLowerCase()) {
+            map[q.lineId] = (map[q.lineId] || 0) + d.count;
+          }
+        });
+      });
+    return Object.entries(map)
+      .map(([line, count]) => ({ line, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [qualities, selectedFloor, mainDefectName]);
+
+  const sortedWeekly = useMemo(() => {
+    return [...weeklyQuality]
+      .filter(w => w.bsOqlPct !== null || w.nflAqcPct !== null)
+      .sort((a, b) => a.weekKey.localeCompare(b.weekKey))
+      .slice(-8);
+  }, [weeklyQuality]);
 
   return (
-    <div className="min-h-screen bg-[#F0F4F8] text-slate-800 flex flex-col p-3 space-y-3 select-none">
-      {/* Top Header Bar matching Image 2 */}
-      <header className="bg-[#002D62] text-white px-5 py-3 rounded-xl shadow-md flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          {/* NOS Live company badge */}
-          <div className="bg-white text-[#002D62] font-black text-sm px-2.5 py-1 rounded shadow tracking-wider flex items-center gap-1.5">
-            <span>NOS Live</span>
+    <div
+      style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.TXT }}
+      className="min-h-[calc(100vh-42px)] flex flex-col p-2.5 gap-2 select-none font-sans tabular-nums"
+    >
+      {/* ==================== HEADER BAR (Matches TvDashboardScreen.kt) ==================== */}
+      <div className="flex flex-wrap items-center justify-between gap-2 min-h-[40px]">
+        <div className="flex items-center gap-2">
+          <div className="bg-white text-[#002D62] px-2.5 py-1 rounded flex items-center gap-1.5 font-black text-sm shadow">
+            <span>🏭</span>
+            <span>NFL LIVE</span>
           </div>
-          <div>
-            <h1 className="text-lg font-black tracking-wide">
-              NOS Live — Northern Operating System Live
-            </h1>
-            <div className="text-xs text-blue-200">
-              Garment Manufacturing Floor Monitor • Smart TV 16:9 Command Center
-            </div>
-          </div>
+          <span className="text-xs font-bold" style={{ color: WB_THEME.MUTED }}>
+            TV Wallboard &amp; Command Center
+          </span>
         </div>
 
-        <div className="flex items-center gap-4">
-          <button
-            onClick={onToggleDemo}
-            className={`text-xs font-black px-3 py-1 rounded shadow transition ${
-              isDemoMode ? 'bg-[#003B7A] text-blue-200 border border-blue-400' : 'bg-green-600 text-white'
-            }`}
-          >
-            {isDemoMode ? 'DESIGN PREVIEW • DEMO DATA' : 'LIVE PRODUCTION DATA'}
-          </button>
-
-          <div className="text-right text-xs">
-            <div className="text-blue-200 flex items-center gap-1 justify-end">
-              <span>Last refresh:</span>
-              <span className="font-bold text-white">18:49</span>
-              <span className="cursor-pointer hover:rotate-180 transition">🔄</span>
-            </div>
-            <div className="text-[11px] text-blue-300">Next update in {refreshSeconds}s</div>
-          </div>
-
-          <div className="flex items-center gap-2 bg-[#00234D] p-1.5 rounded-lg border border-blue-900">
-            <span className="text-xs text-blue-200 font-semibold px-1">📅 09 Oct 2026</span>
-            {(['Today', 'Week', 'Month'] as const).map(p => (
-              <button
-                key={p}
-                onClick={() => onSelectPeriod(p)}
-                className={`text-xs font-bold px-3 py-1 rounded transition ${
-                  selectedPeriod === p ? 'bg-[#1976D2] text-white shadow' : 'text-blue-300 hover:text-white'
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-
-          {/* TV Auto-rotate toggle */}
-          <button
-            onClick={() => setAutoRotate(!autoRotate)}
-            className={`text-xs font-bold px-2.5 py-1 rounded border transition ${
-              autoRotate
-                ? 'bg-amber-500 border-amber-400 text-slate-900'
-                : 'border-blue-700 text-blue-300 hover:text-white'
-            }`}
-            title="Auto-rotate floors every 20s on TV display"
-          >
-            {autoRotate ? '⏸ Auto-Rotate: ON' : '▶ TV Rotate'}
-          </button>
-        </div>
-      </header>
-
-      {/* Second Row: Floor Filter Bar */}
-      <div className="bg-white px-5 py-2 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-black text-slate-700 uppercase tracking-wider">Floor:</span>
-          {(['Sew 1', 'Sew 2', 'Sew 3', 'All'] as FloorId[]).map(floor => (
+        {/* 4-Page Segment: Production | Quality | All | Table */}
+        <div
+          style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
+          className="flex items-center p-0.5 rounded-md border gap-0.5"
+        >
+          {(
+            [
+              { id: 'PRODUCTION', label: 'Production' },
+              { id: 'QUALITY', label: 'Quality' },
+              { id: 'ALL', label: 'All' },
+              { id: 'TABLE', label: 'Table' }
+            ] as Array<{ id: WbPageId; label: string }>
+          ).map(item => (
             <button
-              key={floor}
-              onClick={() => onSelectFloor(floor)}
-              className={`px-4 py-1.5 rounded-lg text-xs font-black transition shadow-sm ${
-                selectedFloor === floor
-                  ? 'bg-[#1976D2] text-white ring-2 ring-blue-300'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
+              key={item.id}
+              onClick={() => {
+                setPage(item.id);
+                setCountdown(interval > 0 ? interval : WB_INTERVALS[0]);
+              }}
+              style={{
+                backgroundColor: page === item.id ? WB_THEME.BLUE : 'transparent',
+                color: page === item.id ? '#031225' : WB_THEME.MUTED
+              }}
+              className="px-3 py-1 rounded text-xs font-black transition"
             >
-              {floor}
+              {item.label}
             </button>
           ))}
         </div>
 
-        <div className="text-xs text-slate-500 font-medium">
-          Floor selection updates every KPI, chart and line table. All combines three floors.
+        {/* Floor Segment: Sew 1 | Sew 2 | Sew 3 | All Floors */}
+        <div
+          style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
+          className="flex items-center p-0.5 rounded-md border gap-0.5"
+        >
+          {(['Sew 1', 'Sew 2', 'Sew 3', 'All'] as FloorId[]).map(fl => (
+            <button
+              key={fl}
+              onClick={() => onSelectFloor(fl)}
+              style={{
+                backgroundColor: selectedFloor === fl ? WB_THEME.BLUE : 'transparent',
+                color: selectedFloor === fl ? '#031225' : WB_THEME.MUTED
+              }}
+              className="px-3 py-1 rounded text-xs font-black transition"
+            >
+              {fl === 'All' ? 'All Floors' : fl}
+            </button>
+          ))}
         </div>
 
-        {openIncidents.length > 0 && (
-          <div
-            onClick={onOpenIncidentPanel}
-            className="flex items-center gap-2 bg-red-50 border border-red-300 px-3 py-1 rounded-lg cursor-pointer hover:bg-red-100 transition animate-pulse"
+        {/* Period Segment: Today | Yesterday | Week | Month */}
+        <div
+          style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
+          className="flex items-center p-0.5 rounded-md border gap-0.5"
+        >
+          {(['Today', 'Yesterday', 'Week', 'Month'] as PeriodId[]).map(p => (
+            <button
+              key={p}
+              onClick={() => onSelectPeriod(p)}
+              style={{
+                backgroundColor: selectedPeriod === p ? WB_THEME.BLUE : 'transparent',
+                color: selectedPeriod === p ? '#031225' : WB_THEME.MUTED
+              }}
+              className="px-2.5 py-1 rounded text-xs font-black transition"
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ==================== STATUS STRIP ==================== */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="font-extrabold text-sm mr-1">
+            {selectedFloor === 'All' ? 'All Floors' : selectedFloor} ·{' '}
+            {page === 'PRODUCTION'
+              ? 'Production'
+              : page === 'QUALITY'
+              ? 'Quality'
+              : page === 'ALL'
+              ? 'All'
+              : 'Table'}{' '}
+            · {selectedPeriod}
+          </span>
+          {selectedPeriod === 'Today' ? (
+            <>
+              <span
+                style={{ backgroundColor: WB_THEME.GREEN, color: '#052E22' }}
+                className="px-2 py-0.5 rounded font-black text-[11px]"
+              >
+                {onTargetCount} on target
+              </span>
+              <span
+                style={{ backgroundColor: WB_THEME.AMBER, color: '#3B2A00' }}
+                className="px-2 py-0.5 rounded font-black text-[11px]"
+              >
+                {slightBehindCount} slightly behind
+              </span>
+              <span
+                style={{ backgroundColor: WB_THEME.RED, color: '#3B0A0A' }}
+                className="px-2 py-0.5 rounded font-black text-[11px]"
+              >
+                {farBehindCount} far behind
+              </span>
+              <span
+                style={{ backgroundColor: WB_THEME.GREY, color: '#0F172A' }}
+                className="px-2 py-0.5 rounded font-black text-[11px]"
+              >
+                {noOutputCount} no output
+              </span>
+              <span
+                style={{ backgroundColor: WB_THEME.DIM, color: WB_THEME.TXT }}
+                className="px-2 py-0.5 rounded font-black text-[11px]"
+              >
+                {notRunningCount} not running
+              </span>
+            </>
+          ) : (
+            <span
+              style={{ backgroundColor: WB_THEME.DIM, color: WB_THEME.TXT }}
+              className="px-2 py-0.5 rounded font-black text-[11px]"
+            >
+              Target % shown for Today only
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => {
+              const nextIdx = (intervalIdx + 1) % WB_INTERVALS.length;
+              setIntervalIdx(nextIdx);
+              setCountdown(WB_INTERVALS[nextIdx] > 0 ? WB_INTERVALS[nextIdx] : WB_INTERVALS[0]);
+            }}
+            style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
+            className="px-2.5 py-1 rounded border flex items-center gap-2 hover:border-amber-400 transition"
           >
-            <span className="text-red-600 font-black text-xs">
-              ⚠️ {openIncidents.length} Open Incidents
+            <span style={{ color: WB_THEME.MUTED }} className="text-[11px] font-bold">
+              {interval > 0 ? `Auto-slide ${interval}s · next ${countdown}s` : 'Auto-slide paused'}
             </span>
-            <span className="text-[10px] text-red-700 underline font-bold">Action Required</span>
-          </div>
-        )}
-      </div>
-
-      {/* 7 Top Executive KPI Cards */}
-      <div className="grid grid-cols-7 gap-2.5">
-        {/* Card 1: Today Efficiency */}
-        <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex flex-col justify-between">
-          <div className="flex justify-between items-center text-xs font-extrabold text-slate-800">
-            <span>Today Eff</span>
-            <span className={kpis.todayEfficiencyPct >= 75 ? 'text-emerald-600' : 'text-red-600'}>
-              {kpis.todayEfficiencyPct >= 75 ? 'ON TARGET' : 'UNDER'}
-            </span>
-          </div>
-          <div className="my-2">
-            <div className="text-3xl font-black text-slate-900">{kpis.todayEfficiencyPct}%</div>
-            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
-              <div
-                className="bg-blue-600 h-full rounded-full"
-                style={{ width: `${kpis.todayEfficiencyPct}%` }}
-              ></div>
+            <div className="flex items-center gap-1">
+              {(['PRODUCTION', 'QUALITY', 'ALL'] as WbPageId[]).map(p => (
+                <span
+                  key={p}
+                  style={{ backgroundColor: page === p ? WB_THEME.BLUE : WB_THEME.DIM }}
+                  className="w-5 h-1.5 rounded-sm inline-block"
+                />
+              ))}
             </div>
-          </div>
-          <div className="flex justify-between text-[10px] text-slate-500 font-medium">
-            <span>Target: 75%</span>
-            <span>Δ {(kpis.todayEfficiencyPct - 75).toFixed(1)} pp</span>
-          </div>
-        </div>
+          </button>
 
-        {/* Card 2: Monthly Efficiency */}
-        <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex flex-col justify-between">
-          <div className="flex justify-between items-center text-xs font-extrabold text-slate-800">
-            <span>Monthly Eff</span>
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
-              ▲ +{kpis.monthlyEfficiencyDelta} pp
-            </span>
-          </div>
-          <div className="my-2">
-            <div className="text-3xl font-black text-[#002D62]">{kpis.monthlyEfficiencyPct}%</div>
-            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
-              <div
-                className="bg-sky-500 h-full rounded-full"
-                style={{ width: `${kpis.monthlyEfficiencyPct}%` }}
-              ></div>
-            </div>
-          </div>
-          <div className="text-[10px] text-slate-400 font-medium">vs last month (68.1%)</div>
-        </div>
+          {isDemoMode && (
+            <button
+              onClick={onToggleDemo}
+              style={{ backgroundColor: WB_THEME.RED, color: '#3B0A0A' }}
+              className="px-2 py-0.5 rounded font-black text-[11px]"
+              title="Click to clear Demo Data"
+            >
+              DEMO DATA
+            </button>
+          )}
 
-        {/* Card 3: Operator / Machine */}
-        <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex flex-col justify-between">
-          <div className="flex justify-between items-center text-xs font-extrabold text-slate-800">
-            <span>Operators & Machines</span>
-            <span className="text-slate-400">👥</span>
-          </div>
-          <div className="my-2">
-            <div className="text-2xl font-black text-slate-900">
-              {kpis.operatorsCount} <span className="text-base font-semibold text-slate-400">/</span> {kpis.machinesCount}
-            </div>
-            <div className="text-[11px] text-slate-500 font-medium mt-1">
-              Ratio: {(kpis.operatorsCount / Math.max(1, kpis.machinesCount)).toFixed(2)} Ops/Mach
-            </div>
-          </div>
-          <div className="flex justify-between text-[10px] text-slate-600 font-bold">
-            <span className="text-amber-700">● Ops {kpis.operatorsCount}</span>
-            <span className="text-sky-700">● Mach {kpis.machinesCount}</span>
-          </div>
-        </div>
-
-        {/* Card 4: Floor & Factory Efficiency */}
-        <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex flex-col justify-between">
-          <div className="flex justify-between items-center text-xs font-extrabold text-slate-800">
-            <span>Floor Benchmark</span>
-            <div className="flex gap-1.5 text-[8px]">
-              <span className="text-blue-600">■ Today</span>
-              <span className="text-emerald-700">■ Mo</span>
-            </div>
-          </div>
-          <div className="flex items-end justify-between h-16 pt-2 px-1 border-b border-slate-100">
-            {[
-              { floor: 'Sew 1', today: 76, month: 72 },
-              { floor: 'Sew 2', today: 68, month: 63 },
-              { floor: 'Sew 3', today: 70, month: 66 },
-              { floor: 'Fac', today: 71, month: 67 }
-            ].map(f => (
-              <div key={f.floor} className="flex flex-col items-center gap-0.5">
-                <div className="flex items-end gap-0.5 h-12">
-                  <div className="w-2 bg-blue-500 rounded-t" style={{ height: `${f.today}%` }}></div>
-                  <div className="w-2 bg-emerald-600 rounded-t" style={{ height: `${f.month}%` }}></div>
-                </div>
-                <span className="text-[8px] font-bold text-slate-600">{f.floor}</span>
-              </div>
-            ))}
-          </div>
-          <div className="text-[9px] text-slate-400 text-center font-medium mt-0.5">Cross-floor comparison</div>
-        </div>
-
-        {/* Card 5: BS QA OQL */}
-        <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex flex-col justify-between">
-          <div className="flex justify-between items-center text-xs font-extrabold text-slate-800">
-            <span>BS QA OQL</span>
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">SPEC</span>
-          </div>
-          <div className="my-2 text-center">
-            <div className="text-3xl font-black text-[#FF7A00]">{kpis.bsQaOqlPct.toFixed(2)}%</div>
-            <div className="text-[11px] font-bold text-slate-600 mt-1">Baseline Standard</div>
-          </div>
-          <div className="text-[10px] text-slate-400 text-center font-medium">Buyer tolerance threshold</div>
-        </div>
-
-        {/* Card 6: Today OQL */}
-        <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex flex-col justify-between">
-          <div className="flex justify-between items-center text-xs font-extrabold text-slate-800">
-            <span>Today OQL</span>
-            <span className={kpis.todayOqlPct <= 5 ? 'text-emerald-600' : 'text-red-600'}>
-              {kpis.todayOqlPct <= 5 ? 'PASS' : 'ALERT'}
-            </span>
-          </div>
-          <div className="my-2">
-            <div className="text-3xl font-black text-slate-900">{kpis.todayOqlPct}%</div>
-            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
-              <div
-                className="h-full rounded-full"
-                style={{
-                  width: `${kpis.todayOqlPct}%`,
-                  backgroundColor: kpis.todayOqlPct <= 2.0 ? '#10B981' : kpis.todayOqlPct <= 5.0 ? '#F59E0B' : '#EF4444'
-                }}
-              ></div>
-            </div>
-          </div>
-          <div className="flex justify-around text-[9px] text-slate-500 font-bold">
-            <span className="text-green-600">● ≤2% Good</span>
-            <span className="text-amber-600">● 2–5% Watch</span>
-          </div>
-        </div>
-
-        {/* Card 7: BS QA FRI Pass Rate */}
-        <div className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-sm flex flex-col justify-between">
-          <div className="flex justify-between items-center text-xs font-extrabold text-slate-800">
-            <span>FRI Pass Rate</span>
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">100%</span>
-          </div>
-          <div className="my-2 text-center">
-            <div className="text-3xl font-black text-[#10B981]">{kpis.friPassRatePct}%</div>
-            <div className="text-[11px] font-bold text-slate-700 mt-1">First Pass Rate</div>
-          </div>
-          <div className="text-[9px] text-slate-400 text-center font-medium">Final Inspection Passed</div>
-        </div>
-      </div>
-
-      {/* Chart Grid (6 charts matching Image 2) */}
-      <div className="grid grid-cols-3 gap-3">
-        {/* Chart 1: Live Target vs Achievement */}
-        <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-sm">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-xs font-extrabold text-slate-900">
-              Live Target vs Achievement — {selectedFloor}
-            </h3>
-            <div className="flex gap-3 text-[10px] font-bold">
-              <span className="flex items-center gap-1 text-slate-600">
-                <span className="w-2.5 h-2.5 bg-[#2196F3] rounded-sm"></span> Target
-              </span>
-              <span className="flex items-center gap-1 text-slate-600">
-                <span className="w-2.5 h-2.5 bg-[#10B981] rounded-sm"></span> Output
-              </span>
-            </div>
-          </div>
-          <div className="h-44 flex items-end justify-between gap-1 pt-6 pb-2 border-b border-slate-200">
-            {lineSummaries.slice(0, 9).map(line => {
-              const maxVal = 700;
-              const targetH = Math.round((line.target / maxVal) * 120);
-              const outputH = line.output !== null ? Math.round((line.output / maxVal) * 120) : 0;
-              return (
-                <div key={line.lineId} className="flex flex-col items-center flex-1">
-                  <div className="flex items-end gap-1 h-32 justify-center w-full">
-                    <div className="w-3 bg-[#2196F3] rounded-t relative" style={{ height: `${targetH}px` }}>
-                      <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-[8px] font-bold text-slate-600">
-                        {line.target}
-                      </span>
-                    </div>
-                    <div className="w-3 bg-[#10B981] rounded-t relative" style={{ height: `${outputH}px` }}>
-                      {line.output !== null && (
-                        <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-[8px] font-bold text-green-700">
-                          {line.output}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-black text-slate-800 mt-1">{line.lineId}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Chart 2: Line-wise OQL — Today vs Month */}
-        <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-sm">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-xs font-extrabold text-slate-900">Line-wise OQL — Today vs Month</h3>
-            <div className="flex gap-3 text-[10px] font-bold">
-              <span className="flex items-center gap-1 text-slate-600">
-                <span className="w-2.5 h-2.5 bg-[#2196F3] rounded-sm"></span> Today
-              </span>
-              <span className="flex items-center gap-1 text-slate-600">
-                <span className="w-2.5 h-2.5 bg-[#FF9800] rounded-sm"></span> Month
-              </span>
-            </div>
-          </div>
-          <div className="h-44 flex items-end justify-between gap-1 pt-6 pb-2 border-b border-slate-200">
-            {lineSummaries.slice(0, 9).map(line => {
-              const maxVal = 7;
-              const todayOql = line.todayOqlPct ?? 0;
-              const monthOql = line.monthlyOqlPct;
-              const todayH = Math.round((todayOql / maxVal) * 120);
-              const monthH = Math.round((monthOql / maxVal) * 120);
-              return (
-                <div key={line.lineId} className="flex flex-col items-center flex-1">
-                  <div className="flex items-end gap-1 h-32 justify-center w-full">
-                    <div className="w-3 bg-[#2196F3] rounded-t relative" style={{ height: `${todayH}px` }}>
-                      <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-[8px] font-bold text-slate-600">
-                        {todayOql}%
-                      </span>
-                    </div>
-                    <div className="w-3 bg-[#FF9800] rounded-t relative" style={{ height: `${monthH}px` }}>
-                      <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-[8px] font-bold text-slate-600">
-                        {monthOql}%
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-black text-slate-800 mt-1">{line.lineId}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Chart 3: Top 5 Defects — Sew 2 (Today) */}
-        <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-sm flex flex-col justify-between">
-          <div className="flex justify-between items-center mb-1">
-            <h3 className="text-xs font-extrabold text-slate-900">
-              Top 5 Defects — {selectedFloor} (Today)
-            </h3>
-            <span className="text-[10px] text-slate-400 font-bold">DHU</span>
-          </div>
-          <div className="space-y-2 my-auto">
-            {topDefects.map(d => (
-              <div key={d.defect} className="space-y-0.5">
-                <div className="flex justify-between text-xs font-bold text-slate-700">
-                  <span>{d.defect}</span>
-                  <span className="text-slate-900">{d.dhu.toFixed(2)}</span>
-                </div>
-                <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
-                  <div
-                    className="bg-[#FF7A00] h-full rounded-full"
-                    style={{ width: `${Math.min(100, Math.round((d.dhu / 0.5) * 100))}%` }}
-                  ></div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="flex justify-between text-[9px] text-slate-400 font-bold px-1 pt-2 border-t border-slate-100">
-            <span>0.00</span>
-            <span>0.10</span>
-            <span>0.20</span>
-            <span>0.30</span>
-            <span>0.40</span>
-            <span>0.50</span>
-          </div>
-        </div>
-
-        {/* Chart 4: Line Efficiency — Today vs Month */}
-        <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-sm">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="text-xs font-extrabold text-slate-900">Line Efficiency — Today vs Month</h3>
-            <div className="flex gap-3 text-[10px] font-bold">
-              <span className="flex items-center gap-1 text-slate-600">
-                <span className="w-2.5 h-2.5 bg-[#2196F3] rounded-sm"></span> Today
-              </span>
-              <span className="flex items-center gap-1 text-slate-600">
-                <span className="w-2.5 h-2.5 bg-[#FF9800] rounded-sm"></span> Month
-              </span>
-            </div>
-          </div>
-          <div className="h-44 flex items-end justify-between gap-1 pt-6 pb-2 border-b border-slate-200">
-            {lineSummaries.slice(0, 9).map(line => {
-              const todayEff = line.efficiencyPct ?? 0;
-              const monthEff = line.monthlyEfficiencyPct;
-              const todayH = Math.round((todayEff / 100) * 120);
-              const monthH = Math.round((monthEff / 100) * 120);
-              return (
-                <div key={line.lineId} className="flex flex-col items-center flex-1">
-                  <div className="flex items-end gap-1 h-32 justify-center w-full">
-                    <div className="w-3 bg-[#2196F3] rounded-t relative" style={{ height: `${todayH}px` }}>
-                      <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-[8px] font-bold text-slate-600">
-                        {todayEff}%
-                      </span>
-                    </div>
-                    <div className="w-3 bg-[#FF9800] rounded-t relative" style={{ height: `${monthH}px` }}>
-                      <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-[8px] font-bold text-slate-600">
-                        {monthEff}%
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-black text-slate-800 mt-1">{line.lineId}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Chart 5: Weekly Quality Trend — Sew 2 (Line Chart) */}
-        <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-sm flex flex-col justify-between">
-          <div className="flex justify-between items-center mb-1">
-            <h3 className="text-xs font-extrabold text-slate-900">
-              Weekly Quality Trend — {selectedFloor}
-            </h3>
-            <div className="flex gap-3 text-[10px] font-bold">
-              <span className="flex items-center gap-1 text-blue-600">● BS OQL</span>
-              <span className="flex items-center gap-1 text-amber-600">● NFL AQC</span>
-            </div>
-          </div>
-          <div className="relative h-40 w-full pt-4">
-            <svg className="w-full h-32" viewBox="0 0 280 100">
-              {/* Grid lines */}
-              <line x1="10" y1="20" x2="270" y2="20" stroke="#F1F5F9" strokeWidth="1" />
-              <line x1="10" y1="50" x2="270" y2="50" stroke="#F1F5F9" strokeWidth="1" />
-              <line x1="10" y1="80" x2="270" y2="80" stroke="#F1F5F9" strokeWidth="1" />
-
-              {/* NFL AQC Trend (Amber line descending from 6.1% to 4.8%) */}
-              <polyline
-                fill="none"
-                stroke="#FF7A00"
-                strokeWidth="2.5"
-                points="20,30 55,34 90,38 125,42 160,45 195,47 230,50 265,52"
-              />
-              {/* BS OQL Trend (Blue line descending from 3.9% to 3.1%) */}
-              <polyline
-                fill="none"
-                stroke="#0284C7"
-                strokeWidth="2.5"
-                points="20,60 55,62 90,64 125,66 160,68 195,70 230,71 265,73"
-              />
-
-              {/* Points */}
-              <circle cx="20" cy="30" r="3" fill="#FF7A00" />
-              <circle cx="265" cy="52" r="3" fill="#FF7A00" />
-              <circle cx="20" cy="60" r="3" fill="#0284C7" />
-              <circle cx="265" cy="73" r="3" fill="#0284C7" />
-            </svg>
-            <div className="flex justify-between text-[9px] text-slate-500 font-bold px-2">
-              <span>02 Oct</span>
-              <span>03 Oct</span>
-              <span>04 Oct</span>
-              <span>05 Oct</span>
-              <span>06 Oct</span>
-              <span>07 Oct</span>
-              <span>08 Oct</span>
-              <span>09 Oct</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Chart 6: 5 Lines with Highest DHU */}
-        <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-sm flex flex-col justify-between">
-          <div className="flex justify-between items-center mb-1">
-            <h3 className="text-xs font-extrabold text-slate-900">
-              5 Lines with Highest DHU — {selectedFloor} (Today)
-            </h3>
-            <span className="text-[10px] text-slate-400 font-bold">DHU</span>
-          </div>
-          <div className="space-y-2 my-auto">
-            {highestDhuLines.map((l, idx) => {
-              const colors = ['#EF4444', '#F97316', '#F59E0B', '#EAB308', '#FACC15'];
-              return (
-                <div key={l.line} className="space-y-0.5">
-                  <div className="flex justify-between text-xs font-bold text-slate-700">
-                    <span>{l.line}</span>
-                    <span className="text-slate-900">{l.dhu.toFixed(2)}</span>
-                  </div>
-                  <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        backgroundColor: colors[idx % colors.length],
-                        width: `${Math.min(100, Math.round((l.dhu / 2.0) * 100))}%`
-                      }}
-                    ></div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex justify-between text-[9px] text-slate-400 font-bold px-1 pt-2 border-t border-slate-100">
-            <span>0.00</span>
-            <span>0.50</span>
-            <span>1.00</span>
-            <span>1.50</span>
-            <span>2.00</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Table: Targeted Line Performance matching Image 2 */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-        <div className="bg-[#002D62] text-white px-4 py-2.5 flex items-center justify-between">
-          <h2 className="text-sm font-black tracking-wide">
-            {selectedFloor} — Targeted Line Performance
-          </h2>
-          <span className="text-xs text-blue-200">
-            {lineSummaries.length} positively targeted lines
+          <span
+            style={{ backgroundColor: WB_THEME.PANEL, color: WB_THEME.GREEN, borderColor: WB_THEME.LINE }}
+            className="px-2 py-0.5 rounded border font-black text-[11px]"
+          >
+            Synced Live
           </span>
         </div>
+      </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-[#0A3D78] text-white font-extrabold">
-              <tr>
-                {selectedFloor === 'All' && <th className="py-2.5 px-3">Floor</th>}
-                <th className="py-2.5 px-3">Line</th>
-                <th className="py-2.5 px-3">Item Name</th>
-                <th className="py-2.5 px-3 text-right">SMV</th>
-                <th className="py-2.5 px-3 text-right">Target</th>
-                <th className="py-2.5 px-3 text-right">Output</th>
-                <th className="py-2.5 px-3 text-right">Achievement</th>
-                <th className="py-2.5 px-3 text-right">Efficiency</th>
-                <th className="py-2.5 px-3 text-right">OQL</th>
-                <th className="py-2.5 px-3 text-right">DHU</th>
-                <th className="py-2.5 px-3 text-center">Reporting</th>
+      {/* ==================== PAGE 1: PRODUCTION ==================== */}
+      {page === 'PRODUCTION' && (
+        <div className="flex-1 flex flex-col gap-2">
+          {/* 5 KPI Tiles */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <WbTile
+              label={`EFFICIENCY · target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
+              value={kpis.reportedLinesCount > 0 ? `${kpis.todayEfficiencyPct.toFixed(1)}%` : '—'}
+              color={effColor(kpis.reportedLinesCount > 0 ? kpis.todayEfficiencyPct : null, kpis.targetEfficiencyPct)}
+              sub={`Month ${kpis.monthlyEfficiencyPct.toFixed(1)}% · Δ ${kpis.monthlyEfficiencyDelta >= 0 ? '+' : ''}${kpis.monthlyEfficiencyDelta.toFixed(1)} pp`}
+            />
+            <WbTile
+              label="OUTPUT vs TARGET"
+              value={kpis.todayOutputPcs.toLocaleString()}
+              unit={`/ ${kpis.todayTargetPcs.toLocaleString()} pcs`}
+              color={achColor(kpis.achievementPct)}
+              sub={`${kpis.achievementPct.toFixed(0)}% of target · gap ${(kpis.todayOutputPcs - kpis.todayTargetPcs >= 0 ? '+' : '')}${(kpis.todayOutputPcs - kpis.todayTargetPcs).toLocaleString()} pcs`}
+            />
+            <WbTile
+              label="LINES REPORTED"
+              value={`${kpis.reportedLinesCount}`}
+              unit={`/ ${kpis.totalFloorLinesCount}`}
+              color={kpis.reportedLinesCount === kpis.totalFloorLinesCount && kpis.totalFloorLinesCount > 0 ? WB_THEME.GREEN : WB_THEME.AMBER}
+              sub={`${noOutputCount} lines with no output · ${notRunningCount} not running`}
+            />
+            <WbTile
+              label="DOWNTIME (elapsed)"
+              value={`${kpis.downtimeMinutes}`}
+              unit="min"
+              color={kpis.openIncidentsCount > 0 ? WB_THEME.RED : kpis.downtimeMinutes > 0 ? WB_THEME.AMBER : WB_THEME.GREEN}
+              sub={`${kpis.openIncidentsCount} open · ${allIncidents.length} total today`}
+            />
+            <WbTile
+              label="OPERATORS / MACHINES"
+              value={`${kpis.operatorsCount} / ${kpis.machinesCount}`}
+              color={WB_THEME.BLUE}
+              sub={`Helpers ${kpis.helpersCount} · Ratio ${kpis.machinesCount > 0 ? (kpis.operatorsCount / kpis.machinesCount).toFixed(2) : '0.00'}`}
+            />
+          </div>
+
+          {/* Row 1 Panels */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[220px]">
+            <WbPanel
+              title="Live Target vs Achievement"
+              sub="Column: target (grey) vs output (status) · % below"
+              right={
+                <div className="flex gap-1">
+                  <WbBadge text="≥95%" bg={WB_THEME.GREEN} fg="#052E22" />
+                  <WbBadge text="80-95%" bg={WB_THEME.AMBER} fg="#3B2A00" />
+                  <WbBadge text="<80%" bg={WB_THEME.RED} fg="#3B0A0A" />
+                </div>
+              }
+              className="lg:col-span-5"
+            >
+              <LiveTargetVsAchievementChart lines={activeLines} onSelectLine={setDeepDiveLine} />
+            </WbPanel>
+
+            <WbPanel
+              title="Efficiency by Line"
+              sub={`Front: ${selectedPeriod} · Back: Month · Dashed: target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
+              className="lg:col-span-4"
+            >
+              <EfficiencyByLineChart lines={activeLines} targetEff={kpis.targetEfficiencyPct} onSelectLine={setDeepDiveLine} />
+            </WbPanel>
+
+            <WbPanel
+              title="Lowest Efficiency Lines"
+              sub="Action focus · vs line target"
+              className="lg:col-span-3"
+            >
+              <HorizontalRankBars
+                rows={[...activeLines]
+                  .filter(l => l.efficiencyPct !== null)
+                  .sort((a, b) => (a.efficiencyPct ?? 0) - (b.efficiencyPct ?? 0))
+                  .slice(0, 5)
+                  .map(l => ({
+                    label: l.lineId,
+                    value: l.efficiencyPct ?? 0,
+                    text: `${(l.efficiencyPct ?? 0).toFixed(0)}%`,
+                    color: effColor(l.efficiencyPct, l.targetEfficiencyPct)
+                  }))}
+                maxVal={100}
+              />
+            </WbPanel>
+          </div>
+
+          {/* Row 2 Panels */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
+            <WbPanel
+              title="Hourly Output vs Target"
+              sub="12-Hour AM/PM slots (8 AM – 6 PM) · Target (back) vs Output (front)"
+              className="lg:col-span-6"
+            >
+              <HourlyOutputWallboardChart buckets={hourlySeries} />
+            </WbPanel>
+
+            <WbPanel
+              title="Downtime by Cause (min)"
+              sub={`Total ${kpis.downtimeMinutes} min`}
+              className="lg:col-span-3"
+            >
+              <HorizontalRankBars
+                rows={downtimeByCause.map(d => ({
+                  label: d.cause,
+                  value: d.mins,
+                  text: `${d.mins}m`,
+                  color: WB_THEME.AMBER
+                }))}
+              />
+            </WbPanel>
+
+            <WbPanel
+              title="Open Stoppages"
+              sub="Lines currently stopped or slowed"
+              right={
+                <WbBadge
+                  text={`${openIncidents.length} open`}
+                  bg={openIncidents.length > 0 ? WB_THEME.RED : WB_THEME.GREEN}
+                  fg={openIncidents.length > 0 ? '#3B0A0A' : '#052E22'}
+                />
+              }
+              className="lg:col-span-3"
+            >
+              <OpenStoppagesList incidents={openIncidents} onClick={onOpenIncidentPanel} />
+            </WbPanel>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== PAGE 2: QUALITY ==================== */}
+      {page === 'QUALITY' && (
+        <div className="flex-1 flex flex-col gap-2">
+          {/* 5 KPI Tiles */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <WbTile
+              label={`DHU · limit ${kpis.dhuLimitPct.toFixed(1)}`}
+              value={kpis.checkedGarments > 0 ? kpis.todayDhuPct.toFixed(2) : '—'}
+              color={dhuColor(kpis.checkedGarments > 0 ? kpis.todayDhuPct : null, kpis.dhuLimitPct)}
+              sub={`${kpis.totalDefects} defects / ${kpis.checkedGarments} checked`}
+            />
+            <WbTile
+              label={`OQL · commitment ${kpis.oqlCommitmentPct.toFixed(1)}%`}
+              value={kpis.checkedGarments > 0 ? `${kpis.todayOqlPct.toFixed(2)}%` : '—'}
+              color={oqlColor(kpis.checkedGarments > 0 ? kpis.todayOqlPct : null, kpis.oqlCommitmentPct)}
+              sub={`BS QA OQL ${kpis.bsQaOqlPct.toFixed(2)}% · FRI Pass ${kpis.friPassRatePct.toFixed(1)}%`}
+            />
+            <WbTile
+              label="FIRST-TIME RIGHT (derived)"
+              value={
+                kpis.checkedGarments > 0
+                  ? `${Math.max(0, 100 - (kpis.defectiveGarments / kpis.checkedGarments) * 100).toFixed(1)}%`
+                  : '—'
+              }
+              color={WB_THEME.GREEN}
+              sub={`${Math.max(0, kpis.checkedGarments - kpis.defectiveGarments)} clean / ${kpis.checkedGarments} checked`}
+            />
+            <WbTile
+              label="DEFECTS PENDING"
+              value={`${kpis.defectsPending}`}
+              unit="pcs"
+              color={kpis.defectsPending > 15 ? WB_THEME.RED : kpis.defectsPending > 0 ? WB_THEME.AMBER : WB_THEME.GREEN}
+              sub={`Sewing ${kpis.sewPending} (sent ${kpis.sewSent}) · Spot ${kpis.spotPending} (sent ${kpis.spotSent})`}
+            />
+            <WbTile
+              label="CHECKED"
+              value={kpis.checkedGarments.toLocaleString()}
+              unit="pcs"
+              color={WB_THEME.BLUE}
+              sub={`${kpis.defectiveGarments} defective pcs · ${kpis.totalDefects} total defects`}
+            />
+          </div>
+
+          {/* Row 1 Panels */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[220px]">
+            <WbPanel
+              title="DHU by Line"
+              sub={`Dashed: limit ${kpis.dhuLimitPct.toFixed(1)}`}
+              className="lg:col-span-4"
+            >
+              <MetricByLineBarChart
+                lines={activeLines}
+                getValue={l => l.dhu}
+                getColor={v => dhuColor(v, kpis.dhuLimitPct)}
+                formatVal={v => v.toFixed(1)}
+                limitVal={kpis.dhuLimitPct}
+                onSelectLine={setDeepDiveLine}
+              />
+            </WbPanel>
+
+            <WbPanel
+              title="OQL by Line"
+              sub={`Dashed: commitment ${kpis.oqlCommitmentPct.toFixed(1)}%`}
+              className="lg:col-span-4"
+            >
+              <MetricByLineBarChart
+                lines={activeLines}
+                getValue={l => l.todayOqlPct}
+                getColor={v => oqlColor(v, kpis.oqlCommitmentPct)}
+                formatVal={v => `${v.toFixed(1)}%`}
+                limitVal={kpis.oqlCommitmentPct}
+                onSelectLine={setDeepDiveLine}
+              />
+            </WbPanel>
+
+            <WbPanel
+              title="Top Defects (Pareto)"
+              sub="Count and DHU contribution"
+              className="lg:col-span-4"
+            >
+              <HorizontalRankBars
+                rows={topDefects.map(d => ({
+                  label: d.defect,
+                  value: d.count,
+                  text: `${d.count} (${d.dhu.toFixed(2)})`,
+                  color: WB_THEME.RED
+                }))}
+              />
+            </WbPanel>
+          </div>
+
+          {/* Row 2 Panels */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
+            <WbPanel
+              title="Hourly DHU and OQL"
+              sub="12-Hour AM/PM trend · Orange: DHU · Blue: OQL%"
+              className="lg:col-span-5"
+            >
+              <HourlyQualityLineChart buckets={hourlySeries} limit={kpis.oqlCommitmentPct} />
+            </WbPanel>
+
+            <WbPanel
+              title="Defect Rectification Pending"
+              sub="Unreturned pcs · Orange: Sewing · Blue: Spot"
+              right={
+                <WbBadge
+                  text={`${kpis.defectsPending} pcs pending`}
+                  bg={kpis.defectsPending > 0 ? WB_THEME.AMBER : WB_THEME.GREEN}
+                  fg="#052E22"
+                />
+              }
+              className="lg:col-span-4"
+            >
+              <RectificationPendingChart lines={activeLines} onSelectLine={setDeepDiveLine} />
+            </WbPanel>
+
+            <WbPanel
+              title="Main Defect, Worst Lines"
+              sub={`Top contributor: ${mainDefectName}`}
+              className="lg:col-span-3"
+            >
+              <HorizontalRankBars
+                rows={
+                  mainDefectWorstLines.length > 0
+                    ? mainDefectWorstLines.map(r => ({
+                        label: r.line,
+                        value: r.count,
+                        text: `${r.count}`,
+                        color: WB_THEME.ORANGE
+                      }))
+                    : highestDhuLines.map(r => ({
+                        label: r.line,
+                        value: r.dhu,
+                        text: r.dhu.toFixed(1),
+                        color: WB_THEME.ORANGE
+                      }))
+                }
+              />
+            </WbPanel>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== PAGE 3: ALL (EXECUTIVE COMBINED WALLBOARD) ==================== */}
+      {page === 'ALL' && (
+        <div className="flex-1 flex flex-col gap-2">
+          {/* Top 7 Summary Panels */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+            {/* 1. Today Live Efficiency Gauge */}
+            <WbSummaryCard
+              title="Today Live Efficiency"
+              badge={kpis.todayEfficiencyPct >= kpis.targetEfficiencyPct ? 'GOOD' : 'LOW'}
+              badgeColor={effColor(kpis.todayEfficiencyPct, kpis.targetEfficiencyPct)}
+            >
+              <SemicircleGauge
+                value={kpis.todayEfficiencyPct}
+                max={100}
+                label={`${kpis.todayEfficiencyPct.toFixed(1)}%`}
+                color={effColor(kpis.todayEfficiencyPct, kpis.targetEfficiencyPct)}
+                sub={`Target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
+              />
+            </WbSummaryCard>
+
+            {/* 2. Monthly Efficiency */}
+            <WbSummaryCard
+              title="Monthly Efficiency"
+              badge={`${kpis.monthlyEfficiencyDelta >= 0 ? '+' : ''}${kpis.monthlyEfficiencyDelta.toFixed(1)} pp`}
+              badgeColor={kpis.monthlyEfficiencyDelta >= 0 ? WB_THEME.GREEN : WB_THEME.RED}
+            >
+              <div className="flex flex-col justify-between h-full pt-1">
+                <div style={{ color: WB_THEME.BLUE }} className="text-3xl font-black">
+                  {kpis.monthlyEfficiencyPct.toFixed(1)}%
+                </div>
+                <div className="w-full h-1.5 rounded bg-[#0A1522] overflow-hidden my-1">
+                  <div
+                    style={{
+                      width: `${Math.min(100, kpis.monthlyEfficiencyPct)}%`,
+                      backgroundColor: WB_THEME.BLUE
+                    }}
+                    className="h-full"
+                  />
+                </div>
+                <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-bold">
+                  Target: {kpis.targetEfficiencyPct.toFixed(0)}%
+                </div>
+              </div>
+            </WbSummaryCard>
+
+            {/* 3. Operator vs Machine */}
+            <WbSummaryCard title="Operator vs Machine">
+              <div className="flex items-center justify-between h-full gap-2">
+                <div>
+                  <div className="text-xl font-black">
+                    {kpis.operatorsCount}/{kpis.machinesCount}
+                  </div>
+                  <div style={{ color: WB_THEME.ORANGE }} className="text-[10px] font-bold">
+                    ● Ops {kpis.operatorsCount}
+                  </div>
+                  <div style={{ color: WB_THEME.BLUE }} className="text-[10px] font-bold">
+                    ● Mach {kpis.machinesCount}
+                  </div>
+                </div>
+                <div className="w-12 h-12 rounded-full border-4 border-[#5AA9FF] flex items-center justify-center text-[10px] font-black">
+                  {kpis.machinesCount > 0 ? (kpis.operatorsCount / kpis.machinesCount).toFixed(1) : '1.0'}x
+                </div>
+              </div>
+            </WbSummaryCard>
+
+            {/* 4. Floor & Factory Efficiency */}
+            <WbSummaryCard title="Floor & Factory Eff">
+              <div className="flex items-end justify-between h-16 pt-2 px-1">
+                {(floorBenchmarks.length > 0
+                  ? floorBenchmarks
+                  : [
+                      { floor: 'Sew 1', todayEff: 76, monthEff: 72 },
+                      { floor: 'Sew 2', todayEff: kpis.todayEfficiencyPct || 68, monthEff: kpis.monthlyEfficiencyPct || 65 },
+                      { floor: 'Sew 3', todayEff: 71, monthEff: 68 },
+                      { floor: 'Factory', todayEff: 72, monthEff: 69 }
+                    ]
+                ).map(b => (
+                  <div key={b.floor} className="flex flex-col items-center gap-0.5">
+                    <div className="flex items-end gap-0.5 h-10">
+                      <div
+                        style={{
+                          height: `${Math.min(100, Math.max(10, b.todayEff))}%`,
+                          backgroundColor: WB_THEME.BLUE
+                        }}
+                        className="w-2.5 rounded-t-sm"
+                        title={`Today: ${b.todayEff}%`}
+                      />
+                      <div
+                        style={{
+                          height: `${Math.min(100, Math.max(10, b.monthEff))}%`,
+                          backgroundColor: WB_THEME.GREEN
+                        }}
+                        className="w-2.5 rounded-t-sm"
+                        title={`Month: ${b.monthEff}%`}
+                      />
+                    </div>
+                    <span style={{ color: WB_THEME.MUTED }} className="text-[9px] font-bold">
+                      {b.floor}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </WbSummaryCard>
+
+            {/* 5. BS QA OQL */}
+            <WbSummaryCard
+              title="BS QA OQL"
+              badge={kpis.bsQaOqlPct <= kpis.oqlCommitmentPct ? 'PASS' : 'HIGH'}
+              badgeColor={oqlColor(kpis.bsQaOqlPct, kpis.oqlCommitmentPct)}
+            >
+              <div className="flex flex-col justify-between h-full pt-1">
+                <div
+                  style={{ color: oqlColor(kpis.bsQaOqlPct, kpis.oqlCommitmentPct) }}
+                  className="text-3xl font-black"
+                >
+                  {kpis.bsQaOqlPct.toFixed(2)}%
+                </div>
+                <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-bold">
+                  Target ≤ {kpis.oqlCommitmentPct.toFixed(1)}%
+                </div>
+              </div>
+            </WbSummaryCard>
+
+            {/* 6. Today Live OQL Gauge */}
+            <WbSummaryCard
+              title="Today Live OQL"
+              badge={kpis.todayOqlPct <= kpis.oqlCommitmentPct ? 'STANDARD' : 'HIGH'}
+              badgeColor={oqlColor(kpis.todayOqlPct, kpis.oqlCommitmentPct)}
+            >
+              <SemicircleGauge
+                value={kpis.todayOqlPct}
+                max={12}
+                label={`${kpis.todayOqlPct.toFixed(2)}%`}
+                color={oqlColor(kpis.todayOqlPct, kpis.oqlCommitmentPct)}
+                sub={`Limit ≤ ${kpis.oqlCommitmentPct.toFixed(1)}%`}
+              />
+            </WbSummaryCard>
+
+            {/* 7. BS QA FRI Pass */}
+            <WbSummaryCard
+              title="BS QA FRI Pass"
+              badge={kpis.friPassRatePct >= 95 ? 'EXCELLENT' : 'WATCH'}
+              badgeColor={kpis.friPassRatePct >= 95 ? WB_THEME.GREEN : WB_THEME.AMBER}
+            >
+              <div className="flex flex-col justify-between h-full pt-1">
+                <div style={{ color: WB_THEME.GREEN }} className="text-3xl font-black">
+                  {kpis.friPassRatePct.toFixed(1)}%
+                </div>
+                <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-bold">
+                  Final Random Inspection
+                </div>
+              </div>
+            </WbSummaryCard>
+          </div>
+
+          {/* Row 1 Panels */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
+            <WbPanel
+              title="Live Target vs Achievement"
+              sub="Grey: Target · Colored: Output · % below"
+              className="lg:col-span-5"
+            >
+              <LiveTargetVsAchievementChart lines={activeLines} onSelectLine={setDeepDiveLine} />
+            </WbPanel>
+
+            <WbPanel
+              title="OQL by Line"
+              sub={`Dashed: commitment ${kpis.oqlCommitmentPct.toFixed(1)}%`}
+              className="lg:col-span-4"
+            >
+              <MetricByLineBarChart
+                lines={activeLines}
+                getValue={l => l.todayOqlPct}
+                getColor={v => oqlColor(v, kpis.oqlCommitmentPct)}
+                formatVal={v => `${v.toFixed(1)}%`}
+                limitVal={kpis.oqlCommitmentPct}
+                onSelectLine={setDeepDiveLine}
+              />
+            </WbPanel>
+
+            <WbPanel
+              title="Top 5 Defects (DHU)"
+              sub={`Checked ${kpis.checkedGarments} pcs · Total ${kpis.totalDefects} defects`}
+              className="lg:col-span-3"
+            >
+              <HorizontalRankBars
+                rows={topDefects.map(d => ({
+                  label: d.defect,
+                  value: d.dhu,
+                  text: `${d.dhu.toFixed(2)} (${d.count})`,
+                  color: WB_THEME.RED
+                }))}
+              />
+            </WbPanel>
+          </div>
+
+          {/* Row 2 Panels */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
+            <WbPanel
+              title="Efficiency by Line"
+              sub={`Front: ${selectedPeriod} · Back: Month · Dashed: target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
+              className="lg:col-span-5"
+            >
+              <EfficiencyByLineChart lines={activeLines} targetEff={kpis.targetEfficiencyPct} onSelectLine={setDeepDiveLine} />
+            </WbPanel>
+
+            <WbPanel
+              title="Weekly BS OQL and NFL AQC"
+              sub="Weekly trend (%) · Dashed: 4.5% commitment · Level 1 <7% · Red >10%"
+              right={
+                <div className="flex gap-1">
+                  <WbBadge text="BS OQL" bg={WB_THEME.BLUE} fg="#031225" />
+                  <WbBadge text="NFL AQC" bg={WB_THEME.ORANGE} fg="#3B1A00" />
+                </div>
+              }
+              className="lg:col-span-4"
+            >
+              <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} />
+            </WbPanel>
+
+            <WbPanel
+              title="Poor 5 DHU Lines"
+              sub={`Highest defect rate · limit ${kpis.dhuLimitPct.toFixed(1)}`}
+              className="lg:col-span-3"
+            >
+              <HorizontalRankBars
+                rows={highestDhuLines.map(r => ({
+                  label: r.line,
+                  value: r.dhu,
+                  text: r.dhu.toFixed(2),
+                  color: dhuColor(r.dhu, kpis.dhuLimitPct)
+                }))}
+              />
+            </WbPanel>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== PAGE 4: TABLE (15-COLUMN LIVE LINE PERFORMANCE TABLE) ==================== */}
+      {page === 'TABLE' && (
+        <div className="flex-1 bg-slate-100 text-slate-900 rounded-lg overflow-auto p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h3 className="text-sm font-black text-[#002D62]">
+                Live Line Performance Table ({selectedFloor === 'All' ? 'All Floors' : selectedFloor} · {selectedPeriod})
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Click any line row to open its 12-Hour AM/PM Line Deep Dive &amp; Rectification Ledger
+              </p>
+            </div>
+          </div>
+          <table className="w-full text-xs border-collapse bg-white rounded-lg overflow-hidden shadow">
+            <thead>
+              <tr className="bg-[#002D62] text-white text-[11px] font-black">
+                <th className="py-2 px-2 text-left">Line</th>
+                <th className="py-2 px-2 text-left">Item</th>
+                <th className="py-2 px-2 text-right">SMV</th>
+                <th className="py-2 px-2 text-right">Hourly Tgt</th>
+                <th className="py-2 px-2 text-right">Day Tgt</th>
+                <th className="py-2 px-2 text-right">Day Output</th>
+                <th className="py-2 px-2 text-right">Efficiency</th>
+                <th className="py-2 px-2 text-right">Achieve %</th>
+                <th className="py-2 px-2 text-right">Day DHU</th>
+                <th className="py-2 px-2 text-right">Day OQL</th>
+                <th className="py-2 px-2 text-right bg-amber-900/60">Sew Sent</th>
+                <th className="py-2 px-2 text-right bg-amber-900/60">Sew Recv</th>
+                <th className="py-2 px-2 text-right bg-amber-900/60">Sew Bal</th>
+                <th className="py-2 px-2 text-right bg-sky-900/60">Spot Sent</th>
+                <th className="py-2 px-2 text-right bg-sky-900/60">Spot Recv</th>
+                <th className="py-2 px-2 text-right bg-sky-900/60">Spot Bal</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {lineSummaries.map(line => {
-                const isReported = line.output !== null;
-
-                return (
-                  <tr key={line.lineId} className="hover:bg-slate-50 transition">
-                    {selectedFloor === 'All' && (
-                      <td className="py-2.5 px-3 font-semibold text-slate-500">{line.floor}</td>
-                    )}
-                    <td className="py-2.5 px-3 font-black text-slate-900">{line.lineId}</td>
-                    <td className="py-2.5 px-3 text-slate-700">{line.styleNumber || 'Polo Shirt'}</td>
-                    <td className="py-2.5 px-3 text-right text-sky-600 font-bold">14.50</td>
-                    <td className="py-2.5 px-3 text-right text-slate-800 font-bold">{line.target}</td>
-                    <td className="py-2.5 px-3 text-right">
-                      {isReported ? (
-                        <span className="font-extrabold text-slate-900">{line.output}</span>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-3 text-right">
-                      {isReported && line.achievementPct !== null ? (
-                        <span
-                          className={`font-black ${
-                            line.achievementPct >= 85
-                              ? 'text-green-600'
-                              : line.achievementPct >= 75
-                              ? 'text-blue-600'
-                              : 'text-amber-600'
-                          }`}
-                        >
-                          {line.achievementPct}%
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-3 text-right">
-                      {isReported && line.efficiencyPct !== null ? (
-                        <span className="font-extrabold text-blue-900">{line.efficiencyPct}%</span>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-3 text-right">
-                      {isReported && line.todayOqlPct !== null ? (
-                        <span className="font-bold text-amber-700">{line.todayOqlPct}%</span>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-3 text-right">
-                      {isReported && line.dhu !== null ? (
-                        <span className="font-bold text-red-600">{line.dhu}</span>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-3 text-center">
-                      {isReported ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-black text-green-700 bg-green-100 px-2.5 py-0.5 rounded-full">
-                          ✓ Complete
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-black text-red-700 bg-red-100 px-2.5 py-0.5 rounded-full">
-                          ! Not reported
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+            <tbody className="divide-y divide-slate-200 font-semibold">
+              {lineSummaries.map(l => (
+                <tr
+                  key={l.lineId}
+                  onClick={() => setDeepDiveLine(l)}
+                  className="hover:bg-blue-50 cursor-pointer transition"
+                >
+                  <td className="py-1.5 px-2 font-black text-[#002D62]">{l.lineId}</td>
+                  <td className="py-1.5 px-2 text-slate-700">{l.styleNumber}</td>
+                  <td className="py-1.5 px-2 text-right">{l.smv > 0 ? l.smv.toFixed(1) : '—'}</td>
+                  <td className="py-1.5 px-2 text-right">{l.hourlyTarget || '—'}</td>
+                  <td className="py-1.5 px-2 text-right">{l.target || '—'}</td>
+                  <td className="py-1.5 px-2 text-right font-black">
+                    {l.output !== null ? l.output : '—'}
+                  </td>
+                  <td
+                    className={`py-1.5 px-2 text-right font-black ${
+                      l.efficiencyPct === null
+                        ? 'text-slate-400'
+                        : l.efficiencyPct >= l.targetEfficiencyPct
+                        ? 'text-emerald-600'
+                        : 'text-red-600'
+                    }`}
+                  >
+                    {l.efficiencyPct !== null ? `${l.efficiencyPct.toFixed(1)}%` : '—'}
+                  </td>
+                  <td
+                    className={`py-1.5 px-2 text-right font-black ${
+                      l.achievementPct === null
+                        ? 'text-slate-400'
+                        : l.achievementPct >= 95
+                        ? 'text-emerald-600'
+                        : l.achievementPct >= 80
+                        ? 'text-amber-600'
+                        : 'text-red-600'
+                    }`}
+                  >
+                    {l.achievementPct !== null ? `${l.achievementPct.toFixed(0)}%` : '—'}
+                  </td>
+                  <td className="py-1.5 px-2 text-right font-bold">
+                    {l.dhu !== null ? `${l.dhu.toFixed(2)}%` : '—'}
+                  </td>
+                  <td className="py-1.5 px-2 text-right font-bold">
+                    {l.todayOqlPct !== null ? `${l.todayOqlPct.toFixed(2)}%` : '—'}
+                  </td>
+                  <td className="py-1.5 px-2 text-right">{l.sewSent}</td>
+                  <td className="py-1.5 px-2 text-right">{l.sewRecv}</td>
+                  <td className={`py-1.5 px-2 text-right font-black ${l.sewBal > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                    {l.sewBal}
+                  </td>
+                  <td className="py-1.5 px-2 text-right">{l.spotSent}</td>
+                  <td className="py-1.5 px-2 text-right">{l.spotRecv}</td>
+                  <td className={`py-1.5 px-2 text-right font-black ${l.spotBal > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                    {l.spotBal}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
+      )}
 
-        <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 font-medium">
-          Only lines with a positive target for the selected date are shown • Scroll for all targeted lines
+      {/* ==================== LINE DEEP DIVE MODAL (12-HOUR AM/PM SLOTS) ==================== */}
+      {deepDiveLine && (
+        <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
+          <div
+            style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE, color: WB_THEME.TXT }}
+            className="w-full max-w-4xl max-h-[90vh] rounded-xl border p-5 flex flex-col gap-4 overflow-y-auto shadow-2xl"
+          >
+            <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: WB_THEME.LINE }}>
+              <div>
+                <h3 className="text-lg font-black">
+                  Line {deepDiveLine.lineId} Deep Dive ({deepDiveLine.floor}) — {deepDiveLine.styleNumber}
+                </h3>
+                <p style={{ color: WB_THEME.MUTED }} className="text-xs">
+                  SMV {deepDiveLine.smv.toFixed(1)} · Operators {deepDiveLine.operators} · Helpers {deepDiveLine.helpers} · Daily Target {deepDiveLine.target} pcs ({deepDiveLine.hourlyTarget}/hr)
+                </p>
+              </div>
+              <button
+                onClick={() => setDeepDiveLine(null)}
+                className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm"
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+              <WbTile
+                label="EFFICIENCY"
+                value={deepDiveLine.efficiencyPct !== null ? `${deepDiveLine.efficiencyPct.toFixed(1)}%` : '—'}
+                color={effColor(deepDiveLine.efficiencyPct, deepDiveLine.targetEfficiencyPct)}
+                sub={`Target ${deepDiveLine.targetEfficiencyPct}%`}
+              />
+              <WbTile
+                label="OUTPUT vs TARGET"
+                value={`${deepDiveLine.output ?? 0}`}
+                unit={`/ ${deepDiveLine.target}`}
+                color={achColor(deepDiveLine.achievementPct)}
+                sub={`Achieve ${deepDiveLine.achievementPct ?? 0}%`}
+              />
+              <WbTile
+                label="DAY DHU %"
+                value={deepDiveLine.dhu !== null ? `${deepDiveLine.dhu.toFixed(2)}%` : '—'}
+                color={dhuColor(deepDiveLine.dhu)}
+                sub={`${deepDiveLine.totalDefects} defects / ${deepDiveLine.checkedGarments} chk`}
+              />
+              <WbTile
+                label="DAY OQL %"
+                value={deepDiveLine.todayOqlPct !== null ? `${deepDiveLine.todayOqlPct.toFixed(2)}%` : '—'}
+                color={oqlColor(deepDiveLine.todayOqlPct)}
+                sub={`${deepDiveLine.defectiveGarments} defective pcs`}
+              />
+              <WbTile
+                label="ALTER & SPOT PENDING"
+                value={`${deepDiveLine.sewBal + deepDiveLine.spotBal}`}
+                unit="pcs"
+                color={deepDiveLine.sewBal + deepDiveLine.spotBal > 0 ? WB_THEME.AMBER : WB_THEME.GREEN}
+                sub={`Sew Bal ${deepDiveLine.sewBal} · Spot Bal ${deepDiveLine.spotBal}`}
+              />
+            </div>
+
+            <div className="text-xs font-black uppercase tracking-wider" style={{ color: WB_THEME.MUTED }}>
+              Hourly &amp; Bi-Hourly Records (12-Hour AM/PM Format)
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.MUTED }} className="text-left">
+                    <th className="p-2">Time Slot (12h AM/PM)</th>
+                    <th className="p-2">Type</th>
+                    <th className="p-2 text-right">Output Pcs</th>
+                    <th className="p-2 text-right">Checked</th>
+                    <th className="p-2 text-right">Defective</th>
+                    <th className="p-2 text-right">Defects</th>
+                    <th className="p-2 text-right">Sew Sent/Recv</th>
+                    <th className="p-2 text-right">Spot Sent/Recv</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y" style={{ borderColor: WB_THEME.LINE }}>
+                  {productions
+                    .filter(p => p.lineId === deepDiveLine.lineId)
+                    .slice(0, 12)
+                    .map(p => {
+                      const matchQa = qualities.find(
+                        q => q.lineId === p.lineId && q.date === p.date && q.hourSlot === p.hourSlot
+                      );
+                      return (
+                        <tr key={p.id}>
+                          <td className="p-2 font-black">{formatHourSlot12h(p.hourSlot)}</td>
+                          <td className="p-2">1-Hr Production &amp; QC</td>
+                          <td className="p-2 text-right font-bold" style={{ color: WB_THEME.GREEN }}>
+                            {p.outputQty}
+                          </td>
+                          <td className="p-2 text-right">{matchQa?.checkedGarments ?? '—'}</td>
+                          <td className="p-2 text-right">{matchQa?.defectiveGarments ?? '—'}</td>
+                          <td className="p-2 text-right">{matchQa?.totalDefects ?? '—'}</td>
+                          <td className="p-2 text-right">
+                            {matchQa ? `${matchQa.defectSent || 0} / ${matchQa.defectReceived || 0}` : '—'}
+                          </td>
+                          <td className="p-2 text-right">
+                            {matchQa ? `${matchQa.spotSent || 0} / ${matchQa.spotReceived || 0}` : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  {qualities
+                    .filter(q => q.lineId === deepDiveLine.lineId && isBiHourlyAuditSlot(q.hourSlot))
+                    .map(q => (
+                      <tr key={q.id}>
+                        <td className="p-2 font-black" style={{ color: WB_THEME.BLUE }}>
+                          {formatHourSlot12h(q.hourSlot)}
+                        </td>
+                        <td className="p-2 font-bold" style={{ color: WB_THEME.BLUE }}>
+                          2-Hr Bi-Hourly Audit (OQL)
+                        </td>
+                        <td className="p-2 text-right">—</td>
+                        <td className="p-2 text-right font-bold">{q.checkedGarments}</td>
+                        <td className="p-2 text-right font-bold">{q.defectiveGarments}</td>
+                        <td className="p-2 text-right font-bold">{q.totalDefects}</td>
+                        <td className="p-2 text-right">—</td>
+                        <td className="p-2 text-right">—</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
+      )}
+    </div>
+  );
+};
+
+/* ==================== SUB-COMPONENTS MATCHING WbComponents.kt ==================== */
+
+const WbTile: React.FC<{
+  label: string;
+  value: string;
+  unit?: string;
+  color: string;
+  sub: string;
+}> = ({ label, value, unit, color, sub }) => (
+  <div
+    style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
+    className="rounded-lg border p-2.5 flex flex-col justify-between relative overflow-hidden"
+  >
+    <div style={{ backgroundColor: color }} className="absolute left-0 top-0 bottom-0 w-1" />
+    <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-extrabold uppercase tracking-wider pl-1.5">
+      {label}
+    </div>
+    <div className="flex items-baseline gap-1.5 my-1 pl-1.5">
+      <span style={{ color }} className="text-2xl font-black leading-none">
+        {value}
+      </span>
+      {unit && (
+        <span style={{ color: WB_THEME.MUTED }} className="text-xs font-bold">
+          {unit}
+        </span>
+      )}
+    </div>
+    <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold pl-1.5 truncate">
+      {sub}
+    </div>
+  </div>
+);
+
+const WbSummaryCard: React.FC<{
+  title: string;
+  badge?: string;
+  badgeColor?: string;
+  children: React.ReactNode;
+}> = ({ title, badge, badgeColor, children }) => (
+  <div
+    style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
+    className="rounded-lg border p-2.5 flex flex-col justify-between min-h-[115px]"
+  >
+    <div className="flex items-center justify-between gap-1">
+      <span className="text-[11px] font-extrabold truncate">{title}</span>
+      {badge && (
+        <span
+          style={{ backgroundColor: badgeColor || WB_THEME.BLUE, color: '#031225' }}
+          className="px-1.5 py-0.5 rounded text-[9px] font-black"
+        >
+          {badge}
+        </span>
+      )}
+    </div>
+    <div className="flex-1 flex flex-col justify-center">{children}</div>
+  </div>
+);
+
+const WbPanel: React.FC<{
+  title: string;
+  sub?: string;
+  right?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+}> = ({ title, sub, right, className = '', children }) => (
+  <div
+    style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
+    className={`rounded-lg border p-2.5 flex flex-col justify-between ${className}`}
+  >
+    <div className="flex items-start justify-between gap-2 mb-1.5">
+      <div>
+        <div className="text-xs font-black tracking-wide">{title}</div>
+        {sub && (
+          <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold">
+            {sub}
+          </div>
+        )}
       </div>
+      {right}
+    </div>
+    <div className="flex-1 flex flex-col justify-end min-h-[140px]">{children}</div>
+  </div>
+);
+
+const WbBadge: React.FC<{ text: string; bg: string; fg: string }> = ({ text, bg, fg }) => (
+  <span style={{ backgroundColor: bg, color: fg }} className="px-1.5 py-0.5 rounded text-[9px] font-black">
+    {text}
+  </span>
+);
+
+const SemicircleGauge: React.FC<{
+  value: number;
+  max: number;
+  label: string;
+  color: string;
+  sub: string;
+}> = ({ value, max, label, color, sub }) => {
+  const pct = Math.max(0, Math.min(1, max > 0 ? value / max : 0));
+  const dashArray = 125.6;
+  const dashOffset = dashArray * (1 - pct);
+  return (
+    <div className="flex flex-col items-center justify-center">
+      <svg viewBox="0 0 100 56" className="w-28 h-14 overflow-visible">
+        <path
+          d="M 10 50 A 40 40 0 0 1 90 50"
+          fill="none"
+          stroke={WB_THEME.DIM}
+          strokeWidth="10"
+          strokeLinecap="round"
+        />
+        <path
+          d="M 10 50 A 40 40 0 0 1 90 50"
+          fill="none"
+          stroke={color}
+          strokeWidth="10"
+          strokeLinecap="round"
+          strokeDasharray={dashArray}
+          strokeDashoffset={dashOffset}
+        />
+        <text x="50" y="48" textAnchor="middle" fill={color} fontSize="15" fontWeight="900">
+          {label}
+        </text>
+      </svg>
+      <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-bold -mt-1">
+        {sub}
+      </div>
+    </div>
+  );
+};
+
+const LiveTargetVsAchievementChart: React.FC<{
+  lines: LinePerformanceSummary[];
+  onSelectLine: (l: LinePerformanceSummary) => void;
+}> = ({ lines, onSelectLine }) => {
+  const maxVal = Math.max(100, ...lines.map(l => Math.max(l.target, l.output ?? 0)));
+  return (
+    <div className="flex items-end justify-between gap-1 h-full pt-4 overflow-x-auto">
+      {lines.map(l => {
+        const tgtH = Math.round((l.target / maxVal) * 100);
+        const outH = Math.round(((l.output ?? 0) / maxVal) * 100);
+        const col = achColor(l.achievementPct);
+        return (
+          <div
+            key={l.lineId}
+            onClick={() => onSelectLine(l)}
+            className="flex flex-col items-center flex-1 min-w-[26px] h-full justify-end cursor-pointer group"
+          >
+            <div className="text-[9px] font-black mb-0.5" style={{ color: col }}>
+              {l.output ?? '—'}
+            </div>
+            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
+              <div
+                style={{ height: `${tgtH}%`, backgroundColor: WB_THEME.DIM }}
+                className="w-2 rounded-t-sm"
+                title={`Target: ${l.target}`}
+              />
+              <div
+                style={{ height: `${outH}%`, backgroundColor: col }}
+                className="w-2.5 rounded-t-sm"
+                title={`Output: ${l.output ?? 0}`}
+              />
+            </div>
+            <div className="text-[9px] font-black mt-0.5">{l.lineId}</div>
+            <div style={{ color: col }} className="text-[8px] font-bold">
+              {l.achievementPct !== null ? `${l.achievementPct.toFixed(0)}%` : '—'}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const EfficiencyByLineChart: React.FC<{
+  lines: LinePerformanceSummary[];
+  targetEff: number;
+  onSelectLine: (l: LinePerformanceSummary) => void;
+}> = ({ lines, targetEff, onSelectLine }) => {
+  return (
+    <div className="relative flex items-end justify-between gap-1 h-full pt-4 overflow-x-auto">
+      {/* Dashed Target Line */}
+      <div
+        style={{ bottom: `${Math.min(95, Math.max(15, targetEff))}%`, borderColor: WB_THEME.AMBER }}
+        className="absolute left-0 right-0 border-t border-dashed pointer-events-none z-10"
+      />
+      {lines.map(l => {
+        const eff = l.efficiencyPct ?? 0;
+        const mo = l.monthlyEfficiencyPct ?? 0;
+        const col = effColor(l.efficiencyPct, l.targetEfficiencyPct);
+        return (
+          <div
+            key={l.lineId}
+            onClick={() => onSelectLine(l)}
+            className="flex flex-col items-center flex-1 min-w-[24px] h-full justify-end cursor-pointer"
+          >
+            <div style={{ color: col }} className="text-[9px] font-black mb-0.5">
+              {l.efficiencyPct !== null ? `${eff.toFixed(0)}%` : '—'}
+            </div>
+            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
+              <div
+                style={{ height: `${Math.min(100, mo)}%`, backgroundColor: WB_THEME.DIM }}
+                className="w-2 rounded-t-sm"
+              />
+              <div
+                style={{ height: `${Math.min(100, eff)}%`, backgroundColor: col }}
+                className="w-2.5 rounded-t-sm"
+              />
+            </div>
+            <div className="text-[9px] font-black mt-0.5">{l.lineId}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const MetricByLineBarChart: React.FC<{
+  lines: LinePerformanceSummary[];
+  getValue: (l: LinePerformanceSummary) => number | null;
+  getColor: (v: number | null) => string;
+  formatVal: (v: number) => string;
+  limitVal: number;
+  onSelectLine: (l: LinePerformanceSummary) => void;
+}> = ({ lines, getValue, getColor, formatVal, limitVal, onSelectLine }) => {
+  const maxVal = Math.max(limitVal * 2, 8, ...lines.map(l => getValue(l) ?? 0));
+  return (
+    <div className="flex items-end justify-between gap-1 h-full pt-4 overflow-x-auto">
+      {lines.map(l => {
+        const val = getValue(l);
+        const hPct = val !== null ? Math.min(100, Math.round((val / maxVal) * 100)) : 0;
+        const col = getColor(val);
+        return (
+          <div
+            key={l.lineId}
+            onClick={() => onSelectLine(l)}
+            className="flex flex-col items-center flex-1 min-w-[24px] h-full justify-end cursor-pointer"
+          >
+            <div style={{ color: col }} className="text-[9px] font-black mb-0.5">
+              {val !== null ? formatVal(val) : '—'}
+            </div>
+            <div className="w-full h-24 flex items-end justify-center border-b" style={{ borderColor: WB_THEME.LINE }}>
+              <div style={{ height: `${hPct}%`, backgroundColor: col }} className="w-3 rounded-t-sm" />
+            </div>
+            <div className="text-[9px] font-black mt-0.5">{l.lineId}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const HourlyOutputWallboardChart: React.FC<{ buckets: HourlyWallboardBucket[] }> = ({ buckets }) => {
+  const maxVal = Math.max(100, ...buckets.map(b => Math.max(b.target, b.output)));
+  return (
+    <div className="flex items-end justify-between gap-1.5 h-full pt-3">
+      {buckets.map(b => {
+        const tgtH = Math.round((b.target / maxVal) * 100);
+        const outH = Math.round((b.output / maxVal) * 100);
+        const pct = b.target > 0 ? Math.round((b.output / b.target) * 100) : 0;
+        const col = b.output === 0 ? WB_THEME.DIM : achColor(pct);
+        return (
+          <div key={b.slot24} className="flex flex-col items-center flex-1 h-full justify-end">
+            <div style={{ color: col }} className="text-[9px] font-black mb-0.5">
+              {b.output > 0 ? b.output : '—'}
+            </div>
+            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
+              <div style={{ height: `${tgtH}%`, backgroundColor: WB_THEME.DIM }} className="w-2.5 rounded-t-sm" />
+              <div style={{ height: `${outH}%`, backgroundColor: col }} className="w-3 rounded-t-sm" />
+            </div>
+            <div className="text-[9px] font-black mt-0.5">{b.label12h}</div>
+            <div style={{ color: col }} className="text-[8px] font-bold">
+              {b.output > 0 && b.target > 0 ? `${pct}%` : ''}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const HourlyQualityLineChart: React.FC<{ buckets: HourlyWallboardBucket[]; limit: number }> = ({
+  buckets
+}) => {
+  return (
+    <div className="flex items-end justify-between gap-1.5 h-full pt-3">
+      {buckets.map(b => {
+        const maxQ = 12;
+        const dhuH = b.dhuPct !== null ? Math.min(100, Math.round((b.dhuPct / maxQ) * 100)) : 0;
+        const oqlH = b.oqlPct !== null ? Math.min(100, Math.round((b.oqlPct / maxQ) * 100)) : 0;
+        return (
+          <div key={b.slot24} className="flex flex-col items-center flex-1 h-full justify-end">
+            <div className="text-[8px] font-black mb-0.5" style={{ color: WB_THEME.BLUE }}>
+              {b.oqlPct !== null ? `${b.oqlPct.toFixed(1)}%` : '—'}
+            </div>
+            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
+              <div
+                style={{ height: `${dhuH}%`, backgroundColor: WB_THEME.ORANGE }}
+                className="w-2.5 rounded-t-sm"
+                title={`DHU: ${b.dhuPct ?? 0}%`}
+              />
+              <div
+                style={{ height: `${oqlH}%`, backgroundColor: WB_THEME.BLUE }}
+                className="w-2.5 rounded-t-sm"
+                title={`OQL: ${b.oqlPct ?? 0}%`}
+              />
+            </div>
+            <div className="text-[9px] font-black mt-0.5">{b.label12h}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const RectificationPendingChart: React.FC<{
+  lines: LinePerformanceSummary[];
+  onSelectLine: (l: LinePerformanceSummary) => void;
+}> = ({ lines, onSelectLine }) => {
+  const pendingLines = lines.filter(l => l.sewBal + l.spotBal > 0).slice(0, 10);
+  if (pendingLines.length === 0) {
+    return (
+      <div style={{ color: WB_THEME.GREEN }} className="flex items-center justify-center h-full text-xs font-black">
+        ✓ Zero unreturned sewing or spot garments pending
+      </div>
+    );
+  }
+  const maxP = Math.max(5, ...pendingLines.map(l => l.sewBal + l.spotBal));
+  return (
+    <div className="flex items-end justify-around gap-1.5 h-full pt-3">
+      {pendingLines.map(l => {
+        const total = l.sewBal + l.spotBal;
+        const sewH = Math.round((l.sewBal / maxP) * 100);
+        const spotH = Math.round((l.spotBal / maxP) * 100);
+        return (
+          <div
+            key={l.lineId}
+            onClick={() => onSelectLine(l)}
+            className="flex flex-col items-center flex-1 h-full justify-end cursor-pointer"
+          >
+            <div style={{ color: WB_THEME.AMBER }} className="text-[9px] font-black mb-0.5">
+              {total}
+            </div>
+            <div className="w-full h-24 flex flex-col justify-end items-center border-b" style={{ borderColor: WB_THEME.LINE }}>
+              <div style={{ height: `${spotH}%`, backgroundColor: WB_THEME.BLUE }} className="w-3.5 rounded-t-sm" />
+              <div style={{ height: `${sewH}%`, backgroundColor: WB_THEME.ORANGE }} className="w-3.5" />
+            </div>
+            <div className="text-[9px] font-black mt-0.5">{l.lineId}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: number }> = ({
+  records
+}) => {
+  if (records.length === 0) {
+    return (
+      <div style={{ color: WB_THEME.MUTED }} className="flex items-center justify-center h-full text-xs font-bold">
+        No Weekly BS OQL / NFL AQC records entered yet
+      </div>
+    );
+  }
+  const maxVal = Math.max(10, ...records.map(r => Math.max(r.bsOqlPct ?? 0, r.nflAqcPct ?? 0)));
+  return (
+    <div className="flex items-end justify-between gap-2 h-full pt-3">
+      {records.map(r => {
+        const bsH = r.bsOqlPct !== null ? Math.round((r.bsOqlPct / maxVal) * 100) : 0;
+        const aqcH = r.nflAqcPct !== null ? Math.round((r.nflAqcPct / maxVal) * 100) : 0;
+        return (
+          <div key={r.weekKey} className="flex flex-col items-center flex-1 h-full justify-end">
+            <div className="text-[8px] font-black mb-0.5" style={{ color: WB_THEME.BLUE }}>
+              {r.bsOqlPct !== null ? `${r.bsOqlPct.toFixed(1)}%` : ''}
+            </div>
+            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
+              <div
+                style={{ height: `${bsH}%`, backgroundColor: WB_THEME.BLUE }}
+                className="w-2.5 rounded-t-sm"
+                title={`BS OQL: ${r.bsOqlPct ?? '—'}%`}
+              />
+              <div
+                style={{ height: `${aqcH}%`, backgroundColor: WB_THEME.ORANGE }}
+                className="w-2.5 rounded-t-sm"
+                title={`NFL AQC: ${r.nflAqcPct ?? '—'}%`}
+              />
+            </div>
+            <div className="text-[9px] font-black mt-0.5">{r.weekKey.replace(/^\d{4}-/, '')}</div>
+            <div className="text-[8px] font-bold" style={{ color: WB_THEME.ORANGE }}>
+              {r.nflAqcPct !== null ? `${r.nflAqcPct.toFixed(1)}%` : ''}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const HorizontalRankBars: React.FC<{
+  rows: Array<{ label: string; value: number; text: string; color: string }>;
+  maxVal?: number;
+}> = ({ rows, maxVal }) => {
+  if (rows.length === 0) {
+    return (
+      <div style={{ color: WB_THEME.MUTED }} className="flex items-center justify-center h-full text-xs font-bold">
+        No records
+      </div>
+    );
+  }
+  const computedMax = maxVal || Math.max(1, ...rows.map(r => r.value));
+  return (
+    <div className="flex flex-col justify-around h-full gap-1.5">
+      {rows.map(r => {
+        const pct = Math.min(100, Math.max(6, Math.round((r.value / computedMax) * 100)));
+        return (
+          <div key={r.label} className="flex items-center gap-2 text-xs">
+            <span className="w-20 font-black truncate text-[11px]">{r.label}</span>
+            <div className="flex-1 h-3 rounded bg-[#0A1522] overflow-hidden">
+              <div style={{ width: `${pct}%`, backgroundColor: r.color }} className="h-full rounded" />
+            </div>
+            <span style={{ color: r.color }} className="w-16 text-right font-black text-[11px]">
+              {r.text}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const OpenStoppagesList: React.FC<{
+  incidents: IncidentRecord[];
+  onClick: () => void;
+}> = ({ incidents, onClick }) => {
+  if (incidents.length === 0) {
+    return (
+      <div style={{ color: WB_THEME.GREEN }} className="flex items-center justify-center h-full text-xs font-black">
+        ✓ All lines running smoothly (0 active stoppages)
+      </div>
+    );
+  }
+  return (
+    <div onClick={onClick} className="flex flex-col gap-1.5 overflow-y-auto max-h-36 cursor-pointer">
+      {incidents.map(inc => {
+        const mins = Math.max(1, Math.round((Date.now() - inc.startTimeMillis) / 60000));
+        return (
+          <div
+            key={inc.id}
+            style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.RED }}
+            className="p-2 rounded border-l-4 flex items-center justify-between text-xs"
+          >
+            <div className="truncate pr-2">
+              <div className="font-black">
+                Line {inc.lineId} · {inc.category.replace(/_/g, ' ')}
+              </div>
+              <div style={{ color: WB_THEME.MUTED }} className="text-[10px] truncate">
+                {inc.description}
+              </div>
+            </div>
+            <span style={{ color: WB_THEME.RED }} className="font-black whitespace-nowrap">
+              {mins}m
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 };

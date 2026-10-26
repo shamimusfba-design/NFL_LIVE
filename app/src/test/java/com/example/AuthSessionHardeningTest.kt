@@ -134,4 +134,16 @@ class AuthSessionHardeningTest {
     assertNotNull(restarted.currentUser.value)
     assertEquals("admin", restarted.currentUser.value?.id)
   }
+
+  @Test
+  fun `logged out user cannot factory reset operational data`() {
+    val repo = newRepo()
+    repo.logout()
+    repo.loadSeedDemoData(force = true)
+    val before = repo.productionEntries.value.size
+    var success: Boolean? = null
+    repo.resetAllOperationalData(clearCloud = false) { _, ok -> success = ok }
+    assertEquals(false, success)
+    assertEquals(before, repo.productionEntries.value.size)
+  }
 }
