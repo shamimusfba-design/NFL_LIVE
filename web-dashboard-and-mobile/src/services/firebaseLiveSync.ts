@@ -54,18 +54,29 @@ function sanitizeKeyPart(raw: string): string {
   return (raw || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '_');
 }
 
+function cleanHourSlotKey(raw: string): string {
+  const normSlot = normalizeHourSlot24h(raw);
+  return (normSlot || '').trim().replace(/\s+/g, '').replace(/:/g, '').replace(/\//g, '_');
+}
+
 export function canonicalProdDocId(entry: ProductionEntryRecord): string {
-  const normSlot = normalizeHourSlot24h(entry.hourSlot);
-  return `${sanitizeKeyPart(entry.lineId)}_${(entry.date || '').trim()}_${sanitizeKeyPart(normSlot)}`;
+  const cleanLine = (entry.lineId || '').trim().toUpperCase().replace(/\//g, '_');
+  const cleanDate = (entry.date || '').trim().replace(/\//g, '_');
+  const cleanHour = cleanHourSlotKey(entry.hourSlot);
+  return `PROD_${cleanLine}_${cleanDate}_${cleanHour}`;
 }
 
 export function canonicalQaDocId(entry: QualityEntryRecord): string {
-  const normSlot = normalizeHourSlot24h(entry.hourSlot);
-  return `${sanitizeKeyPart(entry.lineId)}_${(entry.date || '').trim()}_${sanitizeKeyPart(normSlot)}`;
+  const cleanLine = (entry.lineId || '').trim().toUpperCase().replace(/\//g, '_');
+  const cleanDate = (entry.date || '').trim().replace(/\//g, '_');
+  const cleanHour = cleanHourSlotKey(entry.hourSlot);
+  return `QA_${cleanLine}_${cleanDate}_${cleanHour}`;
 }
 
 export function canonicalSetupDocId(setup: LineTargetConfig): string {
-  return `${sanitizeKeyPart(setup.floor)}_${sanitizeKeyPart(setup.lineId)}_${(setup.date || '').trim()}`;
+  const cleanLine = (setup.lineId || '').trim().replace(/\//g, '_');
+  const cleanDate = (setup.date || '').trim().replace(/\//g, '_');
+  return `${cleanLine}_${cleanDate}`;
 }
 
 export interface LiveCloudCallbacks {
@@ -614,7 +625,12 @@ export async function pushMonthlyTargetToCloud(target: MonthlyTargetConfig): Pro
   const db = getDb();
   if (!db) return false;
   try {
-    const docId = `${sanitizeKeyPart(target.floor)}_${sanitizeKeyPart(target.lineId)}_${sanitizeKeyPart(target.monthYear)}`;
+    const cleanFloor = (target.floor || '').trim().replace(/\//g, '_');
+    const cleanLine = (target.lineId || '').trim().replace(/\//g, '_');
+    const docId =
+      cleanLine && cleanLine.toUpperCase() !== 'ALL'
+        ? `${cleanFloor}_${cleanLine}`
+        : cleanFloor;
     await setDoc(
       doc(db, 'monthly_targets', docId),
       {
@@ -776,6 +792,9 @@ export async function approveCloudUserRegistration(
     await setDoc(
       doc(db, 'users', clean),
       {
+        id: clean,
+        employeeId: clean,
+        password: '',
         accountStatus: 'APPROVED',
         isActive: true,
         rejectionReason: '',
@@ -804,6 +823,9 @@ export async function rejectCloudUserRegistration(
     await setDoc(
       doc(db, 'users', clean),
       {
+        id: clean,
+        employeeId: clean,
+        password: '',
         accountStatus: 'REJECTED',
         isActive: false,
         rejectionReason: reason || 'Rejected by Administrator',
@@ -833,6 +855,10 @@ export async function approveCloudDeviceOrTvRequest(
     await setDoc(
       doc(db, 'users', clean),
       {
+        id: clean,
+        employeeId: clean,
+        name: clean === 'tv_display' ? 'Factory Floor Smart TV' : clean,
+        password: '',
         accountStatus: 'APPROVED',
         isActive: true,
         authorizedDeviceId: deviceId,

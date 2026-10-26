@@ -32,7 +32,7 @@ service cloud.firestore {
           // Standard employee self-registration: must start as PENDING_APPROVAL and non-ADMIN
           (request.resource.data.accountStatus == 'PENDING_APPROVAL' && request.resource.data.role != 'ADMIN')
           // Or First Admin bootstrap for Employee ID 1015198 if not yet created
-          || (request.resource.data.employeeId == '1015198' && !exists(/databases/$(database)/documents/users/U-1015198))
+          || (request.resource.data.employeeId == '1015198' && !exists(/databases/$(database)/documents/users/1015198))
           // Or Admin-created approved account
           || request.resource.data.accountStatus == 'APPROVED'
         );
@@ -51,6 +51,8 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if isNonEmptyString(request.resource.data.lineId)
         && isValidPhysicalFloor(request.resource.data.floor)
+        && isNonEmptyString(request.resource.data.date)
+        && isNonEmptyString(request.resource.data.hourSlot)
         && (
           ('outputQty' in request.resource.data && request.resource.data.outputQty is number && request.resource.data.outputQty >= 0)
           || ('outputPcs' in request.resource.data && request.resource.data.outputPcs is number && request.resource.data.outputPcs >= 0)
@@ -63,6 +65,8 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if isNonEmptyString(request.resource.data.lineId)
         && isValidPhysicalFloor(request.resource.data.floor)
+        && isNonEmptyString(request.resource.data.date)
+        && isNonEmptyString(request.resource.data.hourSlot)
         && (
           ('checkedGarments' in request.resource.data && request.resource.data.checkedGarments is number && request.resource.data.checkedGarments >= 0)
           || ('checkedPcs' in request.resource.data && request.resource.data.checkedPcs is number && request.resource.data.checkedPcs >= 0)
@@ -83,6 +87,7 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if isNonEmptyString(request.resource.data.lineId)
         && isValidPhysicalFloor(request.resource.data.floor)
+        && isNonEmptyString(request.resource.data.date)
         && request.resource.data.targetDailyPcs is number
         && request.resource.data.targetDailyPcs >= 0;
       allow delete: if true;

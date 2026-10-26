@@ -362,4 +362,47 @@ class FactoryAlertManager(private val context: Context) {
       NotificationManagerCompat.from(context).notify(incident.id.hashCode(), notification)
     } catch (_: SecurityException) {}
   }
+
+  fun triggerAdminApprovalNotification(
+    requestKey: String,
+    title: String,
+    message: String
+  ) {
+    if (!isSoundMuted()) {
+      playAudibleAlarm(AlertSeverity.HIGH)
+    }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        return
+      }
+    }
+
+    val intent = Intent(context, MainActivity::class.java).apply {
+      flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+      putExtra("open_admin_approvals", true)
+    }
+
+    val pendingIntent = PendingIntent.getActivity(
+      context,
+      requestKey.hashCode(),
+      intent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+    val notification = NotificationCompat.Builder(context, CHANNEL_CRITICAL)
+      .setSmallIcon(R.drawable.ic_nfl_logo)
+      .setContentTitle(title)
+      .setContentText(message)
+      .setStyle(NotificationCompat.BigTextStyle().bigText("$message\nTap to open Admin Approvals & Device Requests."))
+      .setPriority(NotificationCompat.PRIORITY_HIGH)
+      .setContentIntent(pendingIntent)
+      .setAutoCancel(true)
+      .build()
+
+    try {
+      NotificationManagerCompat.from(context).notify(requestKey.hashCode(), notification)
+    } catch (_: SecurityException) {}
+  }
 }
+

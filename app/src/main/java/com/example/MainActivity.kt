@@ -90,6 +90,10 @@ class MainActivity : ComponentActivity() {
           }
         }
 
+        val openAdminFromNotification = remember {
+          intent?.getBooleanExtra("open_admin_approvals", false) == true
+        }
+
         var currentScreen by remember {
           val initialUser = currentUser ?: repository.currentUser.value
           mutableStateOf(
@@ -97,6 +101,7 @@ class MainActivity : ComponentActivity() {
               isTelevisionDevice -> AppScreen.TV_DASHBOARD
               initialUser == null -> AppScreen.LOGIN
               initialUser.id == "management" || initialUser.id.equals(NflRepository.TV_DISPLAY_ACCOUNT_ID, ignoreCase = true) -> AppScreen.TV_DASHBOARD
+              openAdminFromNotification && initialUser.isAdmin -> AppScreen.ADMIN_USERS
               else -> AppScreen.HOME
             }
           )

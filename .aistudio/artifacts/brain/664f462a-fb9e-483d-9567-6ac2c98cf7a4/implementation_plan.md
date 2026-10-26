@@ -1,109 +1,41 @@
-# NFL LIVE — Tomorrow's Factory Go-Live Readiness Plan (Phone, Smart TV & Live Web)
+# NFL LIVE — Release Readiness Audit Validation & Hardening Plan
 
-This plan prepares the complete **NFL LIVE** ecosystem—Android Mobile App, Smart TV 4-Page Wallboard, and Live Desktop Web Dashboard—for tomorrow's live factory launch, including end-to-end verification and hardening of **Employee Registration Requests** and **First-Time Smart TV Login Approval**, zero synthetic demo clutter, **IE** role access for Weekly BS OQL / NFL AQC, and **Firebase Hosting** setup.
+## 1. Validation Summary of ChatGPT's Audit Findings
 
-## User Review & Critical Decisions
-
-> [!IMPORTANT]
-> **Audit of Registration Requests & First-Time TV Login (New Findings & Fixes Included):**
-> Upon auditing the live Firestore sync path between Employee Phones, Smart TVs, and the Admin Panel, we identified and included critical hardening fixes so neither Registration Requests nor First-Time TV Logins can ever be missed:
-
-- **Confirmed Fix A — First-Time Smart TV Login (`TV_PENDING` Clock-Skew Immunity)**:
-  - *Issue Found*: Smart TVs often have system clocks that drift a few seconds ahead of or behind an Admin's phone, and the TV's 30-second republish loop updates `updatedAtMillis` on every retry. Strict timestamp filtering (`remote.updatedAtMillis <= localTs`) could cause the Admin phone to ignore a TV's `TV_PENDING` request if the TV clock is behind, OR cause the TV to ignore the Admin's `APPROVED` response (and overwrite it 30 seconds later) if the TV clock is ahead.
-  - *Fix Included*: Bypass timestamp-drop guards for `TV_PENDING:` markers on Admin devices and for matching `APPROVED` (`authorizedDeviceId == myDeviceId && rejectionReason == ""`) updates on the TV, and stop `republishTvSetupRequest()` immediately once the TV is approved.
-- **Confirmed Fix B — Employee Registration Requests (`PENDING_APPROVAL`) & Device Replacement Requests (`DEV_PENDING`)**:
-  - *Issue Found*:
-    1. If a newly registering employee's phone has a slightly earlier clock or brief network hiccup, or if an Admin checks the **Device Requests** tab instead of the **Pending Users** tab, a request could be overlooked.
-    2. When an existing employee logs in from a new phone, the device approval request was stored locally on that phone without publishing a `DEV_PENDING:` marker to Firestore.
-    3. The Desktop Web Admin Console (`AdminView`) did not yet display live `PENDING_APPROVAL` registrations or `TV_PENDING:` requests with Approve/Reject actions.
-  - *Fix Included*:
-    1. Always merge remote `PENDING_APPROVAL` user documents and re-push any unsynced local `PENDING_APPROVAL` registration during Manual Sync.
-    2. Publish `DEV_PENDING:` markers to Firestore for employee device changes so they appear in the Admin's **Device Requests** tab just like TV requests.
-    3. Show Pending Employee Registrations in **both** the **Pending Users** list and the **Device Requests** tab on Android, AND add live **Approve / Reject** controls for both Employee Registrations and Smart TV Setup Requests in the Desktop Web Admin Console.
-- **Confirmed Decision 1 — Firebase Hosting Setup for Live Web Dashboard**: Configure Firebase Hosting (`nfl-live-72213.web.app`) with SPA routing and a pure-JS SHA-256 fallback so login works across both HTTPS and local office networks.
-- **Confirmed Decision 2 — Admin, Auditor & IE Access for Weekly BS OQL / NFL AQC**: Allow **Admin**, **Auditor**, and **IE** roles to enter Weekly BS OQL and NFL AQC values across Android and Web.
-- **Confirmed Decision 3 — Clean Zero-Data Default on Fresh Launch**: Default `sample_data_cleared` to `true` on fresh installs across Android and Web so all devices start tomorrow at `0` with only real Cloud Firestore records.
+| Audit Item | Validation Result | Action to Take |
+| :--- | :--- | :--- |
+| **Web vs. Android Firestore Document IDs** | **Confirmed Bug**: Both apps connect to the same named Firestore database (`ai-studio-android-nfllivea-664f462a-fb9e-483d-9567-6ac2c98cf7a4`), but `web-dashboard-and-mobile` formats document IDs differently (`K1_2026-10-26_08_00_-_09_00`, `SEW_2_K1_2026-10-26`, `SEW_2__2026-10`) than Android (`PROD_K1_2026-10-26_0800-0900`, `QA_K1_2026-10-26_0800-0900`, `K1_2026-10-26`, `Sew 2`). | Align all canonical document IDs in `web-dashboard-and-mobile/src/services/firebaseLiveSync.ts` to match Android's exact `FirebaseSyncService.kt` format so edits on Web and Android update the exact same document without duplicates. |
+| **Web Role Switcher Privilege Escalation** | **Confirmed Security Hole**: In `web-dashboard-and-mobile/src/App.tsx`, clicking the top-bar user badge opens a Role Switcher modal that allows any non-Admin user to switch their active session to `System Admin (ADMIN)` without entering a password. | Lock the Role Switcher in `web-dashboard-and-mobile/src/App.tsx` so only a user who authenticated as `ADMIN` can preview other roles; non-Admin users see their locked session badge without role escalation. |
+| **Firestore Security Rules (`firestore.rules`) & Employee ID Login** | **Confirmed Schema Hardening Needed**: Keeping Employee ID + SHA-256 password login ensures zero breakage on factory phones and TVs. However, `firestore.rules` had a typo on the initial Admin document path (`users/U-1015198` instead of `users/1015198`), and `firebaseLiveSync.ts` Web Admin approval payloads needed `id`, `employeeId`, and `name` fields so `setDoc(..., { merge: true })` never fails Firestore `create` validation if a document (`tv_display` or a seeded user) does not yet exist in the cloud. | Harden `firestore.rules` with strict schema/field checks (`lineId`, `date`, `hourSlot`, `floor`, non-negative numbers, protected `1015198` Admin account, no plaintext passwords), update `firebaseLiveSync.ts` approval payloads, and deploy rules via `deploy_firebase`. |
+| **Admin Phone System Notifications for Registrations & TV Setup** | **Confirmed Gap**: Pending employee registrations (`PENDING_APPROVAL`), employee device replacement requests (`DEV_PENDING:`), and first-time Smart TV requests (`TV_PENDING:`) appear in the Admin UI, but `FactoryAlertManager` did not post an Android system notification or audible alert when a new request arrived. | Add `triggerAdminApprovalNotification` in `FactoryAlertManager.kt` and invoke it in `NflRepository.upsertRemoteUsers()` whenever a logged-in Admin phone receives a new registration, device replacement, or Smart TV setup request. Tapping the notification opens `MainActivity` directly into the Admin Approval screen. |
+| **Standalone `desktop-pwa/` Warning Banner** | **Confirmed**: Keep `desktop-pwa/` separate with its prominent `LOCAL ONLY — NOT CONNECTED TO FIREBASE` warning banner, and remove the misleading Admin privilege escalation from its header notes. | Keep `desktop-pwa/` separate with its clear warning banner as requested. |
+| **GitHub Actions CI Pipeline (`.github/workflows/build-debug-apk.yml`)** | **Confirmed Gap**: `.github/workflows/build-debug-apk.yml` only ran `:app:assembleDebug` and did not execute Android unit tests (`:app:testDebugUnitTest`) or verify the `web-dashboard-and-mobile` production build (`npm run build`). | Update `.github/workflows/build-debug-apk.yml` (and `.github/workflows/android-build.yml`) to run `:app:testDebugUnitTest`, build `web-dashboard-and-mobile` (`npm ci && npm run build`), and upload both the `NOS-Live-app-debug.apk` and the built `web-dashboard-dist` artifact ready for Firebase Hosting. |
 
 ---
 
-## 1. Overview & Core Concept
+## 2. Planned Code Changes
 
-- **What It Does**: Synchronizes real-time garment factory production, 1-hour DHU quality inspections, 2-hour Bi-Hourly OQL audits, Weekly BS OQL / NFL AQC benchmarks, Morning Line Setups, NPT Stoppage Alerts, Employee Registrations, and Smart TV Display Approvals across Android phones, Smart TV wallboards, and office PC browsers.
-- **Target Audience / Persona**:
-  - **Floor Reporters & Supervisors**: Self-register on the Android app (`PENDING_APPROVAL`), get approved by Admin in 1 tap, and enter hourly output, quality checks, and stoppage alerts.
-  - **Smart TV Wallboards**: Boot directly into the passwordless **TV Setup Screen**, display a 6-character Device Code + live `"Cloud: Request sent..."` status, and automatically transition to the 4-page 16:9 live wallboard the moment an Admin approves the TV.
-  - **Auditors, IE Head & Admins**: Enter Bi-Hourly OQL audits, Weekly BS OQL / NFL AQC values, and approve employee/TV requests from either the Android Admin Panel or the Desktop Web Dashboard.
+### A. Align Web & Android Canonical Firestore Document IDs (`web-dashboard-and-mobile/src/services/firebaseLiveSync.ts`)
+- Update `canonicalProdDocId(entry)` to generate `PROD_${cleanLine}_${cleanDate}_${cleanHour}` (matching `FirebaseSyncService.canonicalProductionDocId`).
+- Update `canonicalQaDocId(entry)` to generate `QA_${cleanLine}_${cleanDate}_${cleanHour}` (matching `FirebaseSyncService.canonicalQualityDocId`).
+- Update `canonicalSetupDocId(setup)` to generate `${cleanLine}_${cleanDate}` (matching `FirebaseSyncService.pushLineSetupAwait`).
+- Update `pushMonthlyTargetToCloud(target)` to use `${target.floor}` (or `${target.floor}_${target.lineId}`) and include `bsOqlPct` alongside `bsQaOqlPct` (matching `FirebaseSyncService.pushMonthlyTargetAwait`).
+- Ensure `approveCloudUserRegistration`, `rejectCloudUserRegistration`, and `approveCloudDeviceOrTvRequest` always write `id`, `employeeId`, `name`, and `password: ''` so Firestore security rules pass whether updating or creating the document.
 
----
+### B. Lock Web Role Switcher Against Non-Admin Escalation (`web-dashboard-and-mobile/src/App.tsx`)
+- Track `authenticatedAdmin` state (true only when the user actually logged in through `LoginView` with an `ADMIN` account).
+- Only allow opening the Role Preview Switcher (`showRoleSelector`) when `authenticatedAdmin` is `true`; for all other roles, clicking the user badge displays their locked role/floor assignment without allowing role switching.
 
-## 2. User Experience & Visual Design
+### C. Add Android System Notifications for Admin Approvals (`FactoryAlertManager.kt`, `NflRepository.kt`, `MainActivity.kt`)
+- Add `triggerAdminApprovalNotification(requestKey: String, title: String, body: String)` to `FactoryAlertManager.kt`, posting a high-priority notification on `CHANNEL_CRITICAL` with an intent extra `open_admin_approvals = true` and a chime when sound is enabled.
+- In `NflRepository.upsertRemoteUsers()`, when the active user on the phone is an Admin (`activeBefore?.isAdmin == true`), trigger `alertManager.triggerAdminApprovalNotification(...)` whenever a new `PENDING_APPROVAL` employee registration, `TV_PENDING:` Smart TV setup request, or `DEV_PENDING:` device replacement request is detected.
+- In `MainActivity.kt`, inspect `intent?.getBooleanExtra("open_admin_approvals", false)` so tapping the notification navigates straight to the Admin Users & Device Requests screen.
 
-- **Key User Flows**:
-  1. **First-Time Smart TV Login Flow**:
-     - TV opens in TV Mode $\rightarrow$ displays 6-character code (e.g., `A9F42C`) and `"Cloud: Request sent. It now appears on the Admin phone under Device Requests."`
-     - Admin opens **User & Access Control** on Android Phone (or **Admin & Reset $\rightarrow$ Users & Requests** on Web) $\rightarrow$ sees `Smart TV Display (Code: A9F42C)` $\rightarrow$ taps **Approve**.
-     - TV receives the Firestore snapshot in real time, binds its `deviceId`, saves its local session, and immediately switches to the 4-page live factory wallboard permanently (approval is required only once).
-  2. **New Employee Registration Flow**:
-     - Employee taps **Register New Account** on the login screen $\rightarrow$ enters Name, Employee ID, Designation, Floor (`Sew-1`, `Sew-2`, `Sew-3`, or `Finishing`), and Password $\rightarrow$ submits as `PENDING_APPROVAL`.
-     - Admin immediately sees the badge count increment under **Pending** and **Device Req** on Android (and in the Web Admin modal) $\rightarrow$ taps **Approve** (with optional floor/designation override).
-     - Employee can immediately sign in on their phone and the Web Dashboard.
-  3. **Clean Day-1 Startup (Phone, TV & Web)**:
-     - Every device starts with clean zeroed KPIs (`—` / `0 pcs`) and listens only to live Cloud Firestore records.
-  4. **Weekly BS OQL & Bi-Hourly Audit Entry**:
-     - **Admin**, **Auditor**, and **IE** users enter Weekly BS OQL & NFL AQC percentages, immediately updating the 12-week trend chart on the TV Wallboard and Web Dashboard.
+### D. Harden `firestore.rules` & Deploy to Firebase
+- Fix the initial Admin document path check to `/databases/$(database)/documents/users/1015198`.
+- Enforce required schema fields (`lineId`, `date`, `hourSlot`, `floor`, `hasNoPlaintextPassword`) across `users`, `production_entries`, `quality_entries`, `factory_alerts`, `daily_setups`, `monthly_targets`, and `weekly_quality`.
+- Deploy the updated rules immediately via `deploy_firebase`.
 
----
-
-## 3. Key Product Decisions & Trade-Offs
-
-- **Decision 1: Clock-Skew-Immune Handshake for `TV_PENDING` and `PENDING_APPROVAL`**
-  - *Chosen Approach*: Treat state-transition markers (`TV_PENDING:`, `DEV_PENDING:`, `PENDING_APPROVAL`, and TV `APPROVED` device binding) as high-priority state transitions in `upsertRemoteUsers` that are never discarded due to clock drift between TVs and phones.
-  - *Why*: Android Smart TVs frequently have system clocks skewed by several seconds or minutes compared to mobile phones on cellular time; immunity to clock drift guarantees 100% reliable first-time TV pairing and registration visibility.
-- **Decision 2: Dual-Surface Approval (Android Admin Panel + Web Admin Console)**
-  - *Chosen Approach*: Surface both `PENDING_APPROVAL` employee registrations and `TV_PENDING` / `DEV_PENDING` device requests in the Android Admin Panel (across both the Pending Users and Device Requests views) AND in the Live Web Dashboard's Admin modal.
-  - *Why*: Whether you are on the factory floor with your Android phone or at your desk on a PC browser, you can approve new employees and Smart TVs in one click.
-- **Decision 3: Default Clean Startup (`sample_data_cleared = true`) & IE Weekly OQL Access**
-  - *Chosen Approach*: Start fresh installs with zero demo data by default and include `UserRole.IE` alongside `UserRole.ADMIN` and `UserRole.AUDITOR` for Weekly BS OQL / NFL AQC entry.
-  - *Why*: Ensures tomorrow's launch has no fake numbers and allows the IE Head to enter weekly quality benchmarks directly.
-
----
-
-## 4. Technical Architecture & Data Strategy
-
-### Architecture & Approval Handshake Diagram
-
-```
-┌──────────────────────────────────┐         ┌──────────────────────────────────┐
-│     New Employee Phone           │         │       Smart TV (First Boot)      │
-│  registerEmployee()              │         │  ensureTvDisplaySetupRequest()   │
-│  • status = PENDING_APPROVAL     │         │  republishTvSetupRequest() (30s) │
-│  • salted SHA-256 passwordHash   │         │  • marker = TV_PENDING:req:id... │
-└────────────────┬─────────────────┘         └────────────────┬─────────────────┘
-                 │                                            │
-                 │  Writes users/{employeeId}                 │  Writes users/tv_display
-                 ▼                                            ▼
-┌───────────────────────────────────────────────────────────────────────────────┐
-│                Cloud Firestore (nfl-live-72213 / users collection)            │
-└────────────────┬────────────────────────────────────────────▲─────────────────┘
-                 │                                            │
-                 │  Real-time Snapshot (Clock-Skew Immune)    │  Writes APPROVED +
-                 ▼                                            │  authorizedDeviceId
-┌─────────────────────────────────────────────────────────────┴─────────────────┐
-│           Admin Phone (AdminUsersScreen) & Web Dashboard (AdminView)          │
-│  • Shows Pending Employee Registrations (Approve / Reject)                    │
-│  • Shows Pending TV Display & Device Requests with 6-digit Code (Approve)     │
-└───────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Interactive Component & State Mapping
-
-1. **First-Time TV Login & Approval State Machine**:
-   - TV writes `rejectionReason = "TV_PENDING:<reqId>:<deviceId>:<deviceName>:<shortCode>"` on `users/tv_display`.
-   - Admin phone / Web receives `users/tv_display`, extracts the `TV_PENDING` marker (even if `remote.updatedAtMillis <= localTs`), and displays it in **Device Requests**.
-   - Admin taps **Approve** $\rightarrow$ writes `accountStatus = APPROVED`, `isActive = true`, `authorizedDeviceId = <tvDeviceId>`, `rejectionReason = ""` to `users/tv_display`.
-   - TV receives the approved `users/tv_display` document, immediately stops the 30-second republish loop, calls `activateTvDisplaySession()`, and opens `TvDashboardScreen`.
-2. **Employee Registration & Device Request State Machine**:
-   - Employee submits registration $\rightarrow$ writes `users/{employeeId}` with `accountStatus = PENDING_APPROVAL`.
-   - Admin sees the request in both **Pending Users** and **Device Requests** on Android (and in **Users & Requests** on Web) $\rightarrow$ taps **Approve** $\rightarrow$ sets `accountStatus = APPROVED`, `isActive = true`.
-3. **Automated Robolectric Verification**:
-   - Add dedicated tests verifying that a remote `PENDING_APPROVAL` registration and a remote `TV_PENDING` request (even with skewed timestamps) appear in the Admin repository state and transition to active approved sessions upon Admin approval.
+### E. Upgrade GitHub Actions CI (`.github/workflows/build-debug-apk.yml`)
+- Add steps to run `gradle --no-daemon :app:testDebugUnitTest`, build `web-dashboard-and-mobile` (`npm ci && npm run build`), and upload both `NOS-Live-app-debug` and `NFL-Live-Web-Dashboard-dist` as downloadable artifacts on every push to `main`.
+- Verify everything locally with `npm run build` (in `web-dashboard-and-mobile`), `gradle :app:testDebugUnitTest`, and `compile_applet`.

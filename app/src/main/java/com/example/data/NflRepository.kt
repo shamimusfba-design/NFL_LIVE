@@ -1772,6 +1772,15 @@ class NflRepository(private val context: Context) {
         if (prev == null || prev != merged) {
           byId[key] = merged
           changed = true
+          if (isNewPendingRegistration && activeBefore?.isAdmin == true) {
+            val regMsg = "${merged.name} (ID: ${merged.id}) requested ${merged.designation.ifBlank { merged.role.displayName }} approval (${merged.floor.displayName})"
+            _syncStatusBanner.value = "👤 New Registration Request: $regMsg"
+            alertManager.triggerAdminApprovalNotification(
+              requestKey = "REG_${merged.id}",
+              title = "👤 New Employee Registration Request",
+              message = regMsg
+            )
+          }
         }
 
         // Handle Employee Device Replacement pending marker across devices
@@ -1805,6 +1814,15 @@ class NflRepository(private val context: Context) {
               )
               _deviceApprovalRequests.update { listOf(newReq) + it }
               didChangeDeviceRequests = true
+              if (activeBefore?.isAdmin == true) {
+                val devMsg = "${merged.name} (ID: ${merged.id}) requested approval for device $reqDevName"
+                _syncStatusBanner.value = "📱 New Device Request: $devMsg"
+                alertManager.triggerAdminApprovalNotification(
+                  requestKey = "DEV_$reqId",
+                  title = "📱 Employee Device Approval Request",
+                  message = devMsg
+                )
+              }
             }
           }
         }
@@ -1839,6 +1857,15 @@ class NflRepository(private val context: Context) {
                 )
                 _deviceApprovalRequests.update { listOf(newReq) + it }
                 didChangeDeviceRequests = true
+                if (activeBefore?.isAdmin == true) {
+                  val tvMsg = "Smart TV ($reqDevName • Code: $reqShortCode) is waiting for display approval"
+                  _syncStatusBanner.value = "📺 $tvMsg"
+                  alertManager.triggerAdminApprovalNotification(
+                    requestKey = "TV_$reqId",
+                    title = "📺 First-Time Smart TV Login Request",
+                    message = tvMsg
+                  )
+                }
               }
             }
           }

@@ -1,4 +1,4 @@
-name: Build NOS Live Debug APK
+name: Build NOS Live Debug APK & Web Dashboard
 
 on:
   push:
@@ -11,6 +11,8 @@ on:
       - 'build.gradle.kts'
       - 'settings.gradle.kts'
       - 'gradle.properties'
+      - 'web-dashboard-and-mobile/**'
+      - 'firestore.rules'
       - '.github/workflows/build-debug-apk.yml'
   workflow_dispatch:
 
@@ -46,6 +48,9 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
 
+      - name: Run Android unit & RBAC regression tests
+        run: gradle --no-daemon :app:testDebugUnitTest
+
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 
@@ -59,3 +64,25 @@ jobs:
           path: NOS-Live-app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Set up Node.js 20 for Web Dashboard
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web-dashboard-and-mobile/package-lock.json
+
+      - name: Install and build Firebase-connected Web Dashboard
+        working-directory: web-dashboard-and-mobile
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload Web Dashboard production bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: NFL-Live-Web-Dashboard-dist
+          path: web-dashboard-and-mobile/dist
+          if-no-files-found: error
+          retention-days: 30
+

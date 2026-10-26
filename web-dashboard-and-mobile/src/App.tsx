@@ -94,6 +94,7 @@ export default function App() {
   const [showReportsModal, setShowReportsModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showRoleSelector, setShowRoleSelector] = useState(false);
+  const [isAuthenticatedAdmin, setIsAuthenticatedAdmin] = useState(false);
   const [showInstallDesktopModal, setShowInstallDesktopModal] = useState(false);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
 
@@ -626,7 +627,10 @@ export default function App() {
     return (
       <LoginView
         users={users}
-        onLogin={u => setCurrentUser(u)}
+        onLogin={u => {
+          setCurrentUser(u);
+          setIsAuthenticatedAdmin(u.role === 'ADMIN');
+        }}
         onUpdateAdmin={newAdmin => {
           setUsers(prev => [newAdmin, ...prev.filter(u => u.username !== newAdmin.username)]);
         }}
@@ -657,8 +661,19 @@ export default function App() {
           </span>
 
           <button
-            onClick={() => setShowRoleSelector(true)}
-            className="flex items-center gap-1.5 bg-blue-950/80 hover:bg-blue-900 px-2.5 py-1 rounded-lg border border-blue-800 transition"
+            onClick={() => {
+              if (isAuthenticatedAdmin) {
+                setShowRoleSelector(true);
+              }
+            }}
+            title={
+              isAuthenticatedAdmin
+                ? 'Admin Role Preview Switcher'
+                : `Logged in as ${currentUser.name} (${currentUser.role})`
+            }
+            className={`flex items-center gap-1.5 bg-blue-950/80 px-2.5 py-1 rounded-lg border border-blue-800 transition ${
+              isAuthenticatedAdmin ? 'hover:bg-blue-900 cursor-pointer' : 'cursor-default'
+            }`}
           >
             <span className="text-[10px] text-blue-300">User:</span>
             <span className="font-bold text-white">{currentUser.name}</span>
@@ -668,7 +683,11 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => setCurrentUser(null)}
+            onClick={() => {
+              setCurrentUser(null);
+              setIsAuthenticatedAdmin(false);
+              setShowRoleSelector(false);
+            }}
             className="text-[10px] bg-red-950/70 hover:bg-red-900 text-red-200 border border-red-800/80 px-2 py-1 rounded-lg font-bold transition flex items-center gap-1"
           >
             <span>🚪</span>
@@ -805,8 +824,8 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL 1: ROLE SWITCHER */}
-      {showRoleSelector && (
+      {/* MODAL 1: ROLE SWITCHER (ADMIN ONLY) */}
+      {showRoleSelector && isAuthenticatedAdmin && (
         <div className="fixed inset-0 bg-slate-950/70 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl border border-slate-200">
             <div className="flex justify-between items-center border-b pb-2">

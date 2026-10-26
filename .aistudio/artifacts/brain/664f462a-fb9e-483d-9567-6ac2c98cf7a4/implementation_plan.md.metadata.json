@@ -1,6 +1,6 @@
 {
-  "summary":  "Updated Go-Live Readiness Plan adding end-to-end hardening for Employee Registration Requests (PENDING_APPROVAL) and First-Time Smart TV Login (TV_PENDING), clock-skew immunity between TV and Admin phone, unified Admin Panel approval on both Android and Web, IE role access for Weekly BS OQL/AQC, clean zero-demo startup, and Firebase Hosting setup.",
-  "updatedAt":  "2026-10-26T08:46:42.789871723Z",
+  "summary":  "Release Readiness Audit Validation & Hardening Plan covering Web-to-Android canonical Firestore document ID alignment, locking the Web Role Switcher against privilege escalation, adding Android system notifications for Admin registration & TV setup requests, hardening Firestore schema rules while keeping Employee ID login, and adding Android unit tests + Web build verification to GitHub Actions.",
+  "updatedAt":  "2026-10-26T12:15:35.711316832Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
