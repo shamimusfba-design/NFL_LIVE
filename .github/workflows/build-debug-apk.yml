@@ -48,9 +48,6 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
 
-      - name: Run Android unit & RBAC regression tests
-        run: gradle --no-daemon :app:testDebugUnitTest
-
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 
@@ -86,3 +83,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # Tests run LAST so a failing test can never stop the installable APK from being built and uploaded above.
+      # A failing test still turns this run red, so it stays visible.
+      - name: Run Android unit & RBAC regression tests
+        run: gradle --no-daemon :app:testDebugUnitTest
