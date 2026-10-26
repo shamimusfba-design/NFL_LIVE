@@ -140,6 +140,14 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
   timeout.set(Duration.ofSeconds(180))
+  // NflFirestoreRulesTest talks to a running Firebase emulator (127.0.0.1:8085 and :9099), which does not exist on
+  // the CI machine or on a normal laptop, so it always fails there. It only runs when you pass -PrunEmulatorTests
+  // (for example inside "firebase emulators:exec").
+  if (!project.hasProperty("runEmulatorTests")) {
+    filter {
+      excludeTestsMatching("com.example.NflFirestoreRulesTest")
+    }
+  }
   testLogging {
     events("passed", "skipped", "failed")
     showStandardStreams = true
