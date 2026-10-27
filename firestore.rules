@@ -103,7 +103,7 @@ service cloud.firestore {
     // The owner of the Firebase project. Identified by the Firebase UID only (copied from Authentication -> Users),
     // never by an e-mail address, so nobody can claim it by registering an address.
     function isOwner() {
-      return isSignedIn() && request.auth.uid == 'OWNER_FIREBASE_UID';
+      return isSignedIn() && request.auth.uid == 'S1dFrhehIqfF3alKUP8h3ARe6aX2';
     }
 
     function isAdmin() {

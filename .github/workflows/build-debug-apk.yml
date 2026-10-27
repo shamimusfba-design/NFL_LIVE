@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # lets the run publish a short diagnostics file to the ci-logs branch
 
 jobs:
   build-debug-apk:
@@ -49,7 +49,9 @@ jobs:
             -dname "CN=Android Debug,O=Android,C=US"
 
       - name: Build debug APK
-        run: gradle --no-daemon :app:assembleDebug
+        run: |
+          set -o pipefail
+          gradle --no-daemon :app:assembleDebug 2>&1 | tee build.log
 
       - name: Rename APK for easy download
         run: cp app/build/outputs/apk/debug/app-debug.apk NOS-Live-app-debug.apk
@@ -86,4 +88,47 @@ jobs:
       # Tests run LAST so a failing test can never stop the installable APK from being built and uploaded above.
       # A failing test still turns this run red, so it stays visible.
       - name: Run Android unit & RBAC regression tests
-        run: gradle --no-daemon :app:testDebugUnitTest
+        run: |
+          set -o pipefail
+          gradle --no-daemon :app:testDebugUnitTest 2>&1 | tee test.log
+
+      # Always runs: writes the compile errors and failing tests to the ci-logs branch so they can be read without the Actions log viewer.
+      - name: Publish diagnostics to ci-logs branch
+        if: always()
+        run: |
+          mkdir -p /tmp/diag
+          {
+            echo "run #$GITHUB_RUN_NUMBER  branch $GITHUB_REF_NAME  commit $GITHUB_SHA"
+            echo
+            echo "=== compile / build errors (build.log) ==="
+            if [ -f build.log ]; then grep -hE '^e: |^w: .*(deprecat)|error:|FAILURE: Build failed|What went wrong|Execution failed' -A4 build.log | head -220; fi
+            echo
+            echo "=== last 40 lines of build.log ==="
+            [ -f build.log ] && tail -40 build.log
+            echo
+            echo "=== failing unit tests ==="
+            python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          n = bad = 0
+          for f in glob.glob('app/build/test-results/testDebugUnitTest/*.xml'):
+              r = ET.parse(f).getroot()
+              n += int(r.get('tests', 0))
+              for tc in r.iter('testcase'):
+                  for kind in ('failure', 'error'):
+                      for x in tc.findall(kind):
+                          bad += 1
+                          print('FAILED', tc.get('classname'), '::', tc.get('name'))
+                          print('   ', (x.get('message') or '')[:400].replace('\n', ' '))
+          print('tests run:', n, ' failed:', bad)
+          PY
+            echo
+            echo "=== last 25 lines of test.log ==="
+            [ -f test.log ] && tail -25 test.log
+          } > /tmp/diag/latest.txt 2>&1 || true
+          cd /tmp/diag
+          git init -q -b ci-logs
+          git config user.name "ci-diagnostics"
+          git config user.email "noreply@github.com"
+          git add -A
+          git commit -q -m "diagnostics for run $GITHUB_RUN_NUMBER on $GITHUB_REF_NAME"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-logs || true
