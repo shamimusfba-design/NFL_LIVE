@@ -6,6 +6,7 @@ import {
   signInWithCustomToken,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut as firebaseSignOut,
   Auth,
   User as FirebaseUser
@@ -162,6 +163,26 @@ export async function signInWebEmployee(idOrEmail: string, password: string): Pr
     return { ok: true, user: cred.user };
   } catch (err: any) {
     return describeAuthError(err, false);
+  }
+}
+
+/**
+ * Sends a password-reset link to a real e-mail address (the project owner / Administrator).
+ * Employee accounts have no mailbox: for them the Administrator resets the account.
+ */
+export async function sendOwnerPasswordReset(email: string): Promise<{ ok: boolean; message: string }> {
+  const auth = getFirebaseAuth();
+  if (!auth) return { ok: false, message: 'Cloud is not available. Check the internet connection.' };
+  const clean = email.trim();
+  if (!clean.includes('@')) return { ok: false, message: 'Type your e-mail address in the Employee ID box first.' };
+  try {
+    await sendPasswordResetEmail(auth, clean);
+    return { ok: true, message: 'If this e-mail has an account, a password reset link was sent. Check your inbox and spam folder.' };
+  } catch (err: any) {
+    const code = String(err?.code || '');
+    if (code === 'auth/invalid-email') return { ok: false, message: 'That e-mail address is not valid.' };
+    if (code === 'auth/network-request-failed') return { ok: false, message: 'No internet connection. Try again.' };
+    return { ok: false, message: 'Could not send the reset link. Try again later.' };
   }
 }
 

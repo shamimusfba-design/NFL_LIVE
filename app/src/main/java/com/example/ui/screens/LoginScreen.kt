@@ -491,6 +491,20 @@ fun LoginScreen(
                   shape = RoundedCornerShape(12.dp)
                 )
 
+                TextButton(
+                  onClick = {
+                    errorMsg = null
+                    if (employeeId.contains("@")) {
+                      coroutineScope.launch { infoBanner = FirebaseAuthManager.sendPasswordReset(employeeId) }
+                    } else {
+                      infoBanner = "Employees: ask the Administrator to reset your password. Administrator: type your e-mail address in the Employee ID box, then tap Forgot password."
+                    }
+                  },
+                  modifier = Modifier.align(Alignment.End).testTag("login_forgot_password")
+                ) {
+                  Text("Forgot password?", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8))
+                }
+
                 // Device Replacement / Pending Verification Panel
                 val requiresVerification = lastAuthResult?.status in setOf(
                   AuthStatus.DEVICE_LIMIT_REACHED,

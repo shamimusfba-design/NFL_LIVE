@@ -167,6 +167,27 @@ object FirebaseAuthManager {
     }
   }
 
+  /**
+   * Sends a password-reset link to a real e-mail address (the project owner / Administrator).
+   * Employee accounts have no mailbox: for them the Administrator resets the account.
+   */
+  suspend fun sendPasswordReset(email: String): String {
+    val firebaseAuth = auth ?: return "Cloud is not available on this device."
+    val clean = email.trim()
+    if (!clean.contains("@")) return "Type your e-mail address in the Employee ID box first."
+    return try {
+      firebaseAuth.sendPasswordResetEmail(clean).await()
+      "If this e-mail has an account, a password reset link was sent. Check your inbox and spam folder."
+    } catch (e: com.google.firebase.FirebaseNetworkException) {
+      "No internet connection. Try again."
+    } catch (e: com.google.firebase.auth.FirebaseAuthInvalidCredentialsException) {
+      "That e-mail address is not valid."
+    } catch (e: Exception) {
+      Log.w(TAG, "Password reset failed: ${e.message}")
+      "Could not send the reset link. Try again later."
+    }
+  }
+
   /** Creates the Firebase account of a new employee. It has no access until the Administrator approves it. */
   suspend fun createEmployeeAccount(employeeId: String, password: String): EmployeeAuthResult {
     val firebaseAuth = auth ?: return EmployeeAuthResult.Failure("Cloud sign-in is not available on this device.")

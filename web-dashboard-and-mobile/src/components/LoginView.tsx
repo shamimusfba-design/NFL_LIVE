@@ -3,6 +3,7 @@ import { UserAccount, UserRole, FloorId } from '../types';
 import {
   signInWebEmployee,
   createWebEmployeeAccount,
+  sendOwnerPasswordReset,
   fetchOwnUserRecord,
   bootstrapOwnerAdminRecord,
   bindFirebaseUidToEmployee,
@@ -245,6 +246,20 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (busy) return;
+    setErrorMessage(null);
+    const input = usernameInput.trim();
+    if (!input.includes('@')) {
+      setInfoMessage('Employees: ask the Administrator to reset your password. Administrator: type your e-mail address in the Employee ID box, then press Forgot password.');
+      return;
+    }
+    setBusy(true);
+    const res = await sendOwnerPasswordReset(input);
+    setBusy(false);
+    if (res.ok) { setInfoMessage(res.message); } else { setInfoMessage(null); setErrorMessage(res.message); }
+  };
+
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
@@ -314,6 +329,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
             <form onSubmit={handleLoginSubmit} style={{ display: 'grid', gap: 14 }} autoComplete="off">
               <Field icon={ICON.id} value={usernameInput} placeholder="Employee ID" onChange={v => { setUsernameInput(v); setErrorMessage(null); }} />
               <Field icon={ICON.lock} type="password" autoComplete="new-password" value={passwordInput} placeholder="Password" onChange={v => { setPasswordInput(v); setErrorMessage(null); }} />
+              <button type="button" onClick={handleForgotPassword} style={{ background: 'none', border: 0, color: '#1D4ED8', fontWeight: 700, fontSize: 13, textAlign: 'right', cursor: 'pointer', padding: 0 }}>Forgot password?</button>
               {infoMessage && <Message kind="info" text={infoMessage} />}
               {errorMessage && <Message kind="error" text={errorMessage} />}
               <button type="submit" disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.65 : 1 }}>
