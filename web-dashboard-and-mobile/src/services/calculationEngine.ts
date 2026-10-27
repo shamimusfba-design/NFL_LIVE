@@ -69,7 +69,8 @@ export class CalculationEngine {
           operatorsCount: target?.operatorsCount || 0,
           machinesCount: target?.machinesCount || 0,
           helpersCount: target?.helpersCount || 0,
-          includeHelpersInEfficiency: target?.includeHelpersInEfficiency || false,
+          finishingStaffCount: target?.finishingStaffCount || 0,
+          includeHelpersInEfficiency: true,
           workingHoursSoFar: target?.workingHoursSoFar || 8,
           totalShiftHours: target?.totalShiftHours || 8
         };
@@ -115,7 +116,7 @@ export class CalculationEngine {
 
       const earnedMinutes = totalOutput !== null ? totalOutput * (config.smv || 0) : 0;
       const availableMinutes =
-        (config.operatorsCount + (config.includeHelpersInEfficiency ? config.helpersCount : 0)) *
+        (config.operatorsCount + config.helpersCount + (config.finishingStaffCount ?? 0)) *
         (config.workingHoursSoFar || 8) *
         60;
 

@@ -44,6 +44,8 @@ import { ReportsView } from './components/ReportsView';
 import { AdminView } from './components/AdminView';
 import { LoginView } from './components/LoginView';
 import { NflLogo } from './components/NflLogo';
+import { LoadingScreen } from './components/LoadingScreen';
+import { ENTRY_MODULES, canUseEntryModule, EntryModuleId } from './data/entryModules';
 import { accountFromRecord } from './services/sessionUser';
 
 const STORAGE_KEYS = {
@@ -97,6 +99,7 @@ export default function App() {
 
   const [showIncidentModal, setShowIncidentModal] = useState(false);
   const [showEntryModal, setShowEntryModal] = useState(false);
+  const [entryModule, setEntryModule] = useState<EntryModuleId | undefined>(undefined);
   const [showReportsModal, setShowReportsModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showRoleSelector, setShowRoleSelector] = useState(false);
@@ -105,7 +108,6 @@ export default function App() {
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const alarmIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
     const handler = (e: any) => {
@@ -333,24 +335,47 @@ export default function App() {
     });
   }, [incidents, currentUser]);
 
+  // The alert sounds ONLY for an incident that is new, once, for about 3 seconds, with vibration on a phone.
+  // Incidents that were already there when the page opened never make a sound.
+  const seenIncidentsRef = useRef<Set<string>>(
+    (() => {
+      try { return new Set<string>(JSON.parse(localStorage.getItem('nfl_seen_incidents') || '[]')); } catch { return new Set<string>(); }
+    })()
+  );
+  const alertArmedRef = useRef(false);
+
+  const playNewIncidentAlert = () => {
+    for (let k = 0; k < 6; k++) window.setTimeout(triggerBeep, k * 500); // 6 beeps over about 3 seconds
+    try { (navigator as any).vibrate?.([350, 150, 350, 150, 350]); } catch {}
+  };
+
   useEffect(() => {
-    if (hasUnmutedAlarmForRole) {
-      if (!alarmIntervalRef.current) {
-        alarmIntervalRef.current = window.setInterval(triggerBeep, 2500);
-      }
-    } else {
-      if (alarmIntervalRef.current) {
-        clearInterval(alarmIntervalRef.current);
-        alarmIntervalRef.current = null;
-      }
-    }
-    return () => {
-      if (alarmIntervalRef.current) {
-        clearInterval(alarmIntervalRef.current);
-        alarmIntervalRef.current = null;
-      }
-    };
-  }, [hasUnmutedAlarmForRole]);
+    alertArmedRef.current = false;
+    if (!currentUser) return;
+    // Give the cloud a few seconds to load the existing incidents silently before alerts are switched on.
+    const timer = window.setTimeout(() => { alertArmedRef.current = true; }, 8000);
+    return () => window.clearTimeout(timer);
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const seen = seenIncidentsRef.current;
+    const fresh = incidents.filter(inc => {
+      if (seen.has(inc.id)) return false;
+      if (inc.status === 'RESOLVED' || inc.isMutedOnCurrentDevice) return false;
+      if (currentUser.role === 'ADMIN') return true;
+      if (inc.category === 'MACHINE_BREAKDOWN' && currentUser.role === 'MECHANIC') return true;
+      if (inc.category === 'QUALITY_PROBLEM' && currentUser.role === 'QUALITY_MANAGER') return true;
+      if (inc.category === 'LINE_BALANCING' && currentUser.role === 'IE') return true;
+      if (inc.category === 'INPUT_MATERIAL' && currentUser.role === 'INPUT_MATERIAL') return true;
+      if (inc.category === 'LOW_PRODUCTION' && currentUser.role === 'PRODUCTION_MANAGER') return true;
+      return false;
+    });
+    if (fresh.length === 0) return;
+    fresh.forEach(inc => seen.add(inc.id));
+    try { localStorage.setItem('nfl_seen_incidents', JSON.stringify(Array.from(seen).slice(-500))); } catch {}
+    if (alertArmedRef.current) playNewIncidentAlert();
+  }, [incidents, currentUser]);
 
   const targetedConfigs = useMemo(() => {
     return CalculationEngine.getTargetedLines(
@@ -649,11 +674,7 @@ export default function App() {
   const closeMenu = () => setMenuOpen(false);
 
   if (authChecking) {
-    return (
-      <div style={{ minHeight: '100vh', background: '#061B43', display: 'grid', placeItems: 'center', color: '#94A3B8', fontSize: 13, letterSpacing: 1 }}>
-        Loading...
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (!currentUser) {
@@ -708,16 +729,18 @@ export default function App() {
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h10a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM11 18h2" /></svg>
             <span className="flex-1">Compact view</span>
           </button>
+          <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">Data entry</div>
+          {ENTRY_MODULES.filter(m => canUseEntryModule(m.id, currentUser?.role)).map(m => (
+            <button
+              key={m.id}
+              onClick={() => { closeMenu(); setEntryModule(m.id); setShowEntryModal(true); }}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d={m.icon} /></svg>
+              <span className="flex-1">{m.label}</span>
+            </button>
+          ))}
           <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">Work</div>
-      
-          <button
-            onClick={() => { closeMenu(); setShowEntryModal(true) }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3l7 7-11 11H3v-7L14 3z" /></svg>
-            <span className="flex-1">Data Entry</span>
-          </button>
-      
           <button
             onClick={() => { closeMenu(); setShowIncidentModal(true) }}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
@@ -798,9 +821,10 @@ export default function App() {
           {hasUnmutedAlarmForRole && (
             <button
               onClick={() => setShowIncidentModal(true)}
-              className="animate-pulse rounded-lg bg-red-600 px-2.5 py-1 text-[11px] font-black text-white"
+              title="Open incidents"
+              className="rounded-lg bg-red-600 px-2.5 py-1 text-[11px] font-black text-white"
             >
-              ALARM
+              {openIncidents.length} open
             </button>
           )}
           <span
@@ -945,7 +969,9 @@ export default function App() {
           onSaveSetup={handleSaveSetup}
           onSaveWeeklyQuality={handleSaveWeeklyQuality}
           onSaveMonthlyTarget={handleSaveMonthlyTarget}
-          onClose={() => setShowEntryModal(false)}
+          module={entryModule}
+          targets={targets}
+          onClose={() => { setShowEntryModal(false); setEntryModule(undefined); }}
         />
       )}
 

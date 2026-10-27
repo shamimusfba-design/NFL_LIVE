@@ -53,6 +53,8 @@ export interface LineTargetConfig {
   machinesCount: number;
   helpersCount: number;
   includeHelpersInEfficiency: boolean;
+  /** Finishing staff of the line. Efficiency counts operators + helpers + finishing staff. */
+  finishingStaffCount?: number;
   workingHoursSoFar: number;
   totalShiftHours: number;
   isDemo?: boolean;

@@ -9,6 +9,8 @@ import {
   MonthlyTargetConfig,
   UserRole
 } from '../types';
+import { BulkTargetSetup } from './BulkTargetSetup';
+import { EntryModuleId, ENTRY_MODULES } from '../data/entryModules';
 import {
   STANDARD_STYLES,
   STANDARD_HOUR_SLOTS,
@@ -34,6 +36,9 @@ interface EntryFormsProps {
   onSaveSetup: (setup: LineTargetConfig) => void;
   onSaveWeeklyQuality?: (record: WeeklyQualityRecord) => void;
   onSaveMonthlyTarget?: (target: MonthlyTargetConfig) => void;
+  /** One module per kind of person. When set, only that module is shown. */
+  module?: EntryModuleId;
+  targets?: LineTargetConfig[];
   onClose: () => void;
 }
 
@@ -47,11 +52,19 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   onSaveSetup,
   onSaveWeeklyQuality,
   onSaveMonthlyTarget,
+  module,
+  targets = [],
   onClose
 }) => {
   const [activeTab, setActiveTab] = useState<
     'PRODUCTION' | 'QUALITY' | 'WEEKLY_OQL' | 'SETUP' | 'MONTHLY'
-  >('PRODUCTION');
+  >(
+    module === 'TARGET' ? 'SETUP'
+      : module === 'DHU' || module === 'AUDIT' ? 'QUALITY'
+      : module === 'MONTHLY' ? 'MONTHLY'
+      : module === 'WEEKLY' ? 'WEEKLY_OQL'
+      : 'PRODUCTION'
+  );
 
   // Shared state
   const [formDate, setFormDate] = useState(getBangladeshTodayIso());
@@ -69,7 +82,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const [prodSuccess, setProdSuccess] = useState<string | null>(null);
 
   // Quality State (Hourly DHU 1-Hr vs Bi-Hourly Audit 2-Hr OQL)
-  const [qaMode, setQaMode] = useState<'HOURLY_DHU' | 'BI_HOURLY_AUDIT'>('HOURLY_DHU');
+  const [qaMode, setQaMode] = useState<'HOURLY_DHU' | 'BI_HOURLY_AUDIT'>(module === 'AUDIT' ? 'BI_HOURLY_AUDIT' : 'HOURLY_DHU');
   const [biHourlySlot, setBiHourlySlot] = useState(BI_HOURLY_AUDIT_SLOTS[0]);
   const [checkedGarments, setCheckedGarments] = useState('100');
   const [defectiveGarments, setDefectiveGarments] = useState('4');
@@ -326,7 +339,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
         <div className="bg-[#002D62] text-white px-5 py-3.5 flex items-center justify-between">
           <div>
             <h2 className="text-base font-black tracking-wide">
-              Factory Floor Data Entry (12-Hour AM/PM Format)
+              {module ? ENTRY_MODULES.find(m => m.id === module)?.label : 'Factory Floor Data Entry (12-Hour AM/PM Format)'}
             </h2>
             <div className="text-xs text-blue-200">
               Logged in as: <span className="font-bold text-white">{currentUserName}</span> ({currentUserRole})
@@ -340,7 +353,8 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
           </button>
         </div>
 
-        {/* Module Tab Switcher */}
+        {/* Module Tab Switcher (hidden when one module was chosen from the menu) */}
+        {!module && (
         <div className="flex flex-wrap border-b border-slate-200 bg-slate-50 px-4 pt-2 gap-1.5 text-xs font-bold">
           <button
             onClick={() => setActiveTab('PRODUCTION')}
@@ -394,9 +408,11 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
           </button>
         </div>
 
+        )}
+
         <div className="flex-1 overflow-y-auto p-5 bg-[#F8FAFC] space-y-4">
           {/* Shared Date / Floor / Line / Style bar (hidden on Weekly tab) */}
-          {activeTab !== 'WEEKLY_OQL' && (
+          {activeTab !== 'WEEKLY_OQL' && activeTab !== 'SETUP' && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-white p-3 rounded-xl border border-slate-200">
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 mb-1">Date</label>
@@ -601,8 +617,8 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
               onSubmit={handleQualitySubmit}
               className="space-y-4 bg-white p-5 rounded-xl border border-slate-200"
             >
-              {/* Mode Sub-Tabs */}
-              <div className="flex flex-wrap gap-2 border-b pb-3">
+              {/* Mode Sub-Tabs (hidden when Hourly DHU or Bi-Hourly OQL was chosen from the menu) */}
+              <div className={`flex flex-wrap gap-2 border-b pb-3 ${module === 'DHU' || module === 'AUDIT' ? 'hidden' : ''}`}>
                 <button
                   type="button"
                   onClick={() => setQaMode('HOURLY_DHU')}
@@ -973,133 +989,9 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
           {/* ==================== TAB 4: MORNING LINE SETUP ==================== */}
           {activeTab === 'SETUP' && (
-            <form
-              onSubmit={handleSetupSubmit}
-              className="space-y-4 bg-white p-5 rounded-xl border border-slate-200"
-            >
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Style SMV
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min={1}
-                    value={setupSmv}
-                    onChange={e => setSetupSmv(e.target.value)}
-                    className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Operators Count
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={setupOps}
-                    onChange={e => setSetupOps(e.target.value)}
-                    className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Helpers Count
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={setupHelpers}
-                    onChange={e => setSetupHelpers(e.target.value)}
-                    className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Shift Working Hours
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={14}
-                    value={setupShiftHours}
-                    onChange={e => setSetupShiftHours(e.target.value)}
-                    className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Target Efficiency (%)
-                  </label>
-                  <input
-                    type="number"
-                    min={10}
-                    max={100}
-                    value={setupTargetEff}
-                    onChange={e => setSetupTargetEff(e.target.value)}
-                    className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Daily Target (Pcs)
-                  </label>
-                  <div className="flex gap-1.5">
-                    <input
-                      type="number"
-                      min={10}
-                      value={setupDailyTarget}
-                      onChange={e => setSetupDailyTarget(e.target.value)}
-                      className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
-                    />
-                    <button
-                      type="button"
-                      onClick={autoCalcTarget}
-                      className="px-2.5 py-1 rounded-lg bg-blue-100 text-[#002D62] text-[11px] font-black whitespace-nowrap"
-                      title="Auto-calculate Daily Target from SMV & Manpower"
-                    >
-                      Auto
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 text-xs text-slate-700 font-semibold bg-slate-50 p-3 rounded-lg border border-slate-200">
-                <input
-                  type="checkbox"
-                  id="includeHelpers"
-                  checked={setupIncludeHelpers}
-                  onChange={e => setSetupIncludeHelpers(e.target.checked)}
-                />
-                <label htmlFor="includeHelpers" className="cursor-pointer">
-                  Include helpers in available minutes denominator for efficiency calculations
-                </label>
-              </div>
-
-              {setupSuccess && (
-                <div className="p-2.5 bg-green-50 text-green-800 text-xs font-bold rounded-lg border border-green-200">
-                  ✓ Morning Line Setup &amp; SMV configuration saved!
-                </div>
-              )}
-
-              <div className="flex justify-end pt-2">
-                <button
-                  type="submit"
-                  className="bg-[#002D62] hover:bg-blue-900 text-white font-black text-xs px-6 py-2.5 rounded-xl shadow transition"
-                >
-                  Save Morning Line Setup
-                </button>
-              </div>
-            </form>
+            <BulkTargetSetup lines={lines} targets={targets} date={formDate} onSaveSetup={onSaveSetup} />
           )}
 
-          {/* ==================== TAB 5: MONTHLY TARGET & BS QA FRI SETUP ==================== */}
           {activeTab === 'MONTHLY' && (
             <form
               onSubmit={handleMonthlySubmit}
