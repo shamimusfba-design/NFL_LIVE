@@ -55,6 +55,10 @@ import com.example.model.MAX_APPROVED_DEVICES_PER_USER
 import com.example.service.FirebaseAuthManager
 import kotlinx.coroutines.launch
 
+/** The old local "first admin" set-up and the Google-account shortcut are closed: only Employee ID + password (checked by Firebase) signs in. */
+private const val LOCAL_FIRST_ADMIN_SETUP_ENABLED = false
+private const val GOOGLE_SIGN_IN_ENABLED = false
+
 private enum class AuthScreenMode {
   LOGIN,
   REGISTER,
@@ -364,7 +368,7 @@ fun LoginScreen(
             when (screenMode) {
               AuthScreenMode.LOGIN -> {
                 // Compact First Admin Setup Banner (only shown if 1015198 is not yet provisioned)
-                if (!isFirstAdminProvisioned) {
+                if (LOCAL_FIRST_ADMIN_SETUP_ENABLED && !isFirstAdminProvisioned) {
                   Surface(
                     color = Color(0xFFFFFBEB),
                     shape = RoundedCornerShape(10.dp),
@@ -592,12 +596,13 @@ fun LoginScreen(
                             otpStatusSuccess = verifyRes.success
                             otpStatusMessage = verifyRes.message
                             if (verifyRes.success) {
-                              val retryAuth = repository.authenticateUser(employeeId, password)
-                              if (retryAuth.status == AuthStatus.SUCCESS) {
-                                onLoginSuccess()
-                              } else if (retryAuth.status == AuthStatus.PASSWORD_CHANGE_REQUIRED) {
-                                currentTempPassword = password
-                                screenMode = AuthScreenMode.FORCE_PASSWORD_CHANGE
+                              coroutineScope.launch {
+                                val retryAuth = repository.signInWithEmployeeCredentials(employeeId, password)
+                                if (retryAuth.status == AuthStatus.SUCCESS) {
+                                  onLoginSuccess()
+                                } else {
+                                  errorMsg = retryAuth.message
+                                }
                               }
                             }
                           },
@@ -624,18 +629,15 @@ fun LoginScreen(
                     isLoading = true
                     errorMsg = null
                     infoBanner = null
-                    val authResult = repository.authenticateUser(employeeId, password)
-                    isLoading = false
-                    lastAuthResult = authResult
-                    when (authResult.status) {
-                      AuthStatus.SUCCESS -> onLoginSuccess()
-                      AuthStatus.PASSWORD_CHANGE_REQUIRED -> {
-                        currentTempPassword = password
-                        infoBanner = "First-time Admin login verified. Please set a new permanent password."
-                        screenMode = AuthScreenMode.FORCE_PASSWORD_CHANGE
-                      }
-                      else -> {
-                        errorMsg = authResult.message
+                    coroutineScope.launch {
+                      val authResult = repository.signInWithEmployeeCredentials(employeeId, password)
+                      isLoading = false
+                      lastAuthResult = authResult
+                      when (authResult.status) {
+                        AuthStatus.SUCCESS -> onLoginSuccess()
+                        else -> {
+                          errorMsg = authResult.message
+                        }
                       }
                     }
                   },
@@ -669,6 +671,7 @@ fun LoginScreen(
                 }
 
                 // Official Google Sign-In via Jetpack Credential Manager (links to Employee ID if entered)
+                if (GOOGLE_SIGN_IN_ENABLED) {
                 OutlinedButton(
                   onClick = {
                     errorMsg = null
@@ -731,6 +734,7 @@ fun LoginScreen(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                   )
+                }
                 }
 
                 // Secondary Create Account Button
@@ -1037,25 +1041,29 @@ fun LoginScreen(
                 Button(
                   onClick = {
                     errorMsg = null
-                    val res = repository.registerEmployee(
-                      fullName = regFullName,
-                      employeeId = regEmployeeId,
-                      designation = regDesignation,
-                      physicalFloor = effectivePhysicalFloor,
-                      password = regPassword,
-                      confirmPassword = regConfirmPassword
-                    )
-                    if (res.success) {
-                      employeeId = regEmployeeId.trim()
-                      password = ""
-                      regFullName = ""
-                      regEmployeeId = ""
-                      regPassword = ""
-                      regConfirmPassword = ""
-                      infoBanner = res.message
-                      screenMode = AuthScreenMode.LOGIN
-                    } else {
-                      errorMsg = res.message
+                    isLoading = true
+                    coroutineScope.launch {
+                      val res = repository.registerEmployeeSecure(
+                        fullName = regFullName,
+                        employeeId = regEmployeeId,
+                        designation = regDesignation,
+                        physicalFloor = effectivePhysicalFloor,
+                        password = regPassword,
+                        confirmPassword = regConfirmPassword
+                      )
+                      isLoading = false
+                      if (res.success) {
+                        employeeId = regEmployeeId.trim()
+                        password = ""
+                        regFullName = ""
+                        regEmployeeId = ""
+                        regPassword = ""
+                        regConfirmPassword = ""
+                        infoBanner = res.message
+                        screenMode = AuthScreenMode.LOGIN
+                      } else {
+                        errorMsg = res.message
+                      }
                     }
                   },
                   colors = ButtonDefaults.buttonColors(

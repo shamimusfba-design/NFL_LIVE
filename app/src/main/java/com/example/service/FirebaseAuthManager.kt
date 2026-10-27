@@ -133,6 +133,58 @@ object FirebaseAuthManager {
     }
   }
 
+  /** Result of an employee sign-in or account creation. The message is safe to show on screen. */
+  sealed class EmployeeAuthResult {
+    data class Success(val user: FirebaseUser) : EmployeeAuthResult()
+    data class Failure(val message: String, val alreadyExists: Boolean = false) : EmployeeAuthResult()
+  }
+
+  /** The hidden Firebase e-mail of an employee. It is never shown and never receives mail. */
+  fun employeeEmail(employeeId: String): String =
+    employeeId.trim().lowercase(java.util.Locale.US) + "@staff.nfl-live.app"
+
+  suspend fun signInEmployee(employeeId: String, password: String): EmployeeAuthResult =
+    signInWithEmailInternal(employeeEmail(employeeId), password)
+
+  /** For the project owner only: signs in with a real e-mail address. */
+  suspend fun signInWithEmail(email: String, password: String): EmployeeAuthResult =
+    signInWithEmailInternal(email.trim(), password)
+
+  private suspend fun signInWithEmailInternal(email: String, password: String): EmployeeAuthResult {
+    val firebaseAuth = auth ?: return EmployeeAuthResult.Failure("Cloud sign-in is not available on this device.")
+    return try {
+      val user = firebaseAuth.signInWithEmailAndPassword(email, password).await().user
+      if (user != null) EmployeeAuthResult.Success(user) else EmployeeAuthResult.Failure("Sign-in failed. Please try again.")
+    } catch (e: com.google.firebase.FirebaseNetworkException) {
+      EmployeeAuthResult.Failure("No internet connection. Signing in needs internet.")
+    } catch (e: com.google.firebase.FirebaseTooManyRequestsException) {
+      EmployeeAuthResult.Failure("Too many attempts. Wait a few minutes and try again.")
+    } catch (e: com.google.firebase.auth.FirebaseAuthException) {
+      EmployeeAuthResult.Failure("Employee ID or password is not correct.")
+    } catch (e: Exception) {
+      Log.w(TAG, "Email sign-in failed: ${e.message}")
+      EmployeeAuthResult.Failure("Sign-in failed. Please check the internet and try again.")
+    }
+  }
+
+  /** Creates the Firebase account of a new employee. It has no access until the Administrator approves it. */
+  suspend fun createEmployeeAccount(employeeId: String, password: String): EmployeeAuthResult {
+    val firebaseAuth = auth ?: return EmployeeAuthResult.Failure("Cloud sign-in is not available on this device.")
+    return try {
+      val user = firebaseAuth.createUserWithEmailAndPassword(employeeEmail(employeeId), password).await().user
+      if (user != null) EmployeeAuthResult.Success(user) else EmployeeAuthResult.Failure("Could not create the account. Please try again.")
+    } catch (e: com.google.firebase.auth.FirebaseAuthUserCollisionException) {
+      EmployeeAuthResult.Failure("This Employee ID already has an account. Sign in instead. If you forgot the password, ask the Administrator.", alreadyExists = true)
+    } catch (e: com.google.firebase.auth.FirebaseAuthWeakPasswordException) {
+      EmployeeAuthResult.Failure("The password is too weak. Use at least 6 characters.")
+    } catch (e: com.google.firebase.FirebaseNetworkException) {
+      EmployeeAuthResult.Failure("No internet connection. Registering needs internet.")
+    } catch (e: Exception) {
+      Log.w(TAG, "Account creation failed: ${e.message}")
+      EmployeeAuthResult.Failure("Could not create the account. Please check the internet and try again.")
+    }
+  }
+
   private suspend fun executeCredentialRequest(
     activityContext: Context,
     request: GetCredentialRequest

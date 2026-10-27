@@ -1464,6 +1464,18 @@ class FirebaseSyncService(private val context: Context) {
     }
   }
 
+  /** Reads one user record. success(null) = no such record; failure = could not read (offline or not allowed). */
+  suspend fun fetchUserAwait(employeeId: String): Result<UserAccount?> = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext Result.failure<UserAccount?>(IllegalStateException("Cloud is not available"))
+    try {
+      val doc = withTimeout(10000L) { db.collection("users").document(employeeId.trim().replace("/", "_")).get().await() }
+      Result.success(if (doc.exists()) parseUserDoc(doc) else null)
+    } catch (ex: Exception) {
+      Log.w("FirebaseSync", "fetchUserAwait notice: ${ex.message}")
+      Result.failure<UserAccount?>(ex)
+    }
+  }
+
   suspend fun pushUserAccountAwait(user: UserAccount): Boolean = withContext(Dispatchers.IO) {
     val db = firestore ?: return@withContext false
     try {

@@ -56,7 +56,13 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      // The old shared logins exist only inside unit tests. The real app has them switched off.
+      all { it.systemProperty("nfl.legacyLogin", "true") }
+    }
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true

@@ -523,6 +523,12 @@ class NflRepository(private val context: Context) {
   )
 
   private val defaultSeedPasswordHash = GoogleSheetsStorageService.sha256("123")
+
+  /**
+   * The old shared logins (admin / 123 and the other default accounts) are CLOSED in the real app.
+   * They exist only inside unit tests, which switch them on with -Dnfl.legacyLogin=true (see app/build.gradle.kts).
+   */
+  private fun legacyLocalLoginEnabled(): Boolean = System.getProperty("nfl.legacyLogin") == "true"
   private val bootstrapLock = Any()
 
   // User Accounts & Role Management (Designation-wise accounts with explicit RBAC permissions)
@@ -870,7 +876,7 @@ class NflRepository(private val context: Context) {
         canMonthlyTargetWrite = false,
         canTargetRevisionWrite = false
       )
-    )
+    ).filter { legacyLocalLoginEnabled() }
   )
   val users: StateFlow<List<UserAccount>> = _users.asStateFlow()
 
@@ -3689,14 +3695,15 @@ class NflRepository(private val context: Context) {
    * Public Employee Registration workflow (Part 4, Part 5, Part 6).
    * Submits registration in PENDING_APPROVAL status. Never grants Admin or active access prior to Admin approval.
    */
-  fun registerEmployee(
+  /** Checks a registration form. Returns the error to show, or null when everything is fine. */
+  fun validateRegistrationInputs(
     fullName: String,
     employeeId: String,
     designation: EmployeeDesignation,
     physicalFloor: FloorScope,
     password: String,
     confirmPassword: String
-  ): SecurityActionResult {
+  ): SecurityActionResult? {
     val cleanName = fullName.trim()
     val cleanId = employeeId.trim()
     val cleanPass = password.trim()
@@ -3728,8 +3735,8 @@ class NflRepository(private val context: Context) {
         "All Floor is an authorized access scope, not a physical floor. Please select Sew-1, Sew-2, Sew-3, or Finishing."
       )
     }
-    if (cleanPass.length < 4) {
-      return SecurityActionResult(false, "Password must be at least 4 characters long.")
+    if (cleanPass.length < 6) {
+      return SecurityActionResult(false, "Password must be at least 6 characters long.")
     }
     if (cleanPass != cleanConfirm) {
       return SecurityActionResult(false, "Password and Confirm Password do not match.")
@@ -3748,9 +3755,46 @@ class NflRepository(private val context: Context) {
       return SecurityActionResult(false, statusNote)
     }
 
+    return null
+  }
+
+  /**
+   * Registration: the Firebase account is created first (so the request carries the person's own Firebase UID),
+   * then the pending record and the approval request are written. Nobody gets any access until the Administrator approves.
+   */
+  suspend fun registerEmployeeSecure(
+    fullName: String,
+    employeeId: String,
+    designation: EmployeeDesignation,
+    physicalFloor: FloorScope,
+    password: String,
+    confirmPassword: String
+  ): SecurityActionResult {
+    validateRegistrationInputs(fullName, employeeId, designation, physicalFloor, password, confirmPassword)?.let { return it }
+    val created = FirebaseAuthManager.createEmployeeAccount(employeeId.trim(), password.trim())
+    if (created is FirebaseAuthManager.EmployeeAuthResult.Failure) {
+      return SecurityActionResult(false, created.message)
+    }
+    val result = registerEmployee(fullName, employeeId, designation, physicalFloor, password, confirmPassword)
+    if (!result.success) FirebaseAuthManager.signOut(context)
+    return result
+  }
+
+  fun registerEmployee(
+    fullName: String,
+    employeeId: String,
+    designation: EmployeeDesignation,
+    physicalFloor: FloorScope,
+    password: String,
+    confirmPassword: String
+  ): SecurityActionResult {
+    validateRegistrationInputs(fullName, employeeId, designation, physicalFloor, password, confirmPassword)?.let { return it }
+    val cleanName = fullName.trim()
+    val cleanId = employeeId.trim()
+    val cleanPass = password.trim()
     val sanitizedPhysicalFloor = DesignationPolicy.sanitizePhysicalFloor(physicalFloor, designation)
-    val salt = GoogleSheetsStorageService.generateSalt()
-    val passwordHash = GoogleSheetsStorageService.hashPassword(cleanPass, salt)
+    val salt = if (legacyLocalLoginEnabled()) GoogleSheetsStorageService.generateSalt() else ""
+    val passwordHash = if (legacyLocalLoginEnabled()) GoogleSheetsStorageService.hashPassword(cleanPass, salt) else ""
     val now = System.currentTimeMillis()
 
     val baseAccount = UserAccount(
@@ -3821,7 +3865,13 @@ class NflRepository(private val context: Context) {
    * - Strict 1-Employee-ID = 1-Active-Device binding (MAX_APPROVED_DEVICES_PER_USER = 1)
    * - Mandatory password change on first login for Initial Admin (1015198)
    */
-  fun authenticateUser(id: String, pass: String): AuthResult {
+  fun authenticateUser(id: String, pass: String, firebaseVerified: Boolean = false): AuthResult {
+    if (!firebaseVerified && !legacyLocalLoginEnabled()) {
+      return AuthResult(
+        status = AuthStatus.INVALID_CREDENTIALS,
+        message = "This sign-in method is closed. Sign in with your Employee ID and password. New employees: register and wait for Admin approval."
+      )
+    }
     val cleanId = id.trim()
     val cleanIdLower = cleanId.lowercase(Locale.US)
     val cleanPass = pass.trim()
@@ -3846,7 +3896,8 @@ class NflRepository(private val context: Context) {
       }
     )
 
-    val passwordValid = (matchedUser.password.isNotBlank() && matchedUser.password == cleanPass) ||
+    val passwordValid = firebaseVerified ||
+        (matchedUser.password.isNotBlank() && matchedUser.password == cleanPass) ||
         GoogleSheetsStorageService.verifyPassword(cleanPass, matchedUser.passwordHash, matchedUser.passwordSalt)
 
     if (!passwordValid) {
@@ -4016,6 +4067,98 @@ class NflRepository(private val context: Context) {
       activeDevicesCount = 1,
       message = "Login successful (${finalUser.name})"
     )
+  }
+
+  /**
+   * Employee sign-in. Firebase checks the Employee ID + password; then the person's record is read from the cloud.
+   * No password stored in the app is accepted any more. The project owner may type the e-mail address instead of an
+   * Employee ID: that signs in as the Administrator (1015198).
+   */
+  suspend fun signInWithEmployeeCredentials(idOrEmail: String, password: String): AuthResult {
+    val input = idOrEmail.trim()
+    val pw = password.trim()
+    if (input.isEmpty() || pw.isEmpty()) {
+      return AuthResult(status = AuthStatus.INVALID_CREDENTIALS, message = "Please enter both your Employee ID and Password.")
+    }
+    val ownerStyle = input.contains("@")
+    val signIn = if (ownerStyle) FirebaseAuthManager.signInWithEmail(input, pw) else FirebaseAuthManager.signInEmployee(input, pw)
+    val fbUser = when (signIn) {
+      is FirebaseAuthManager.EmployeeAuthResult.Success -> signIn.user
+      is FirebaseAuthManager.EmployeeAuthResult.Failure -> {
+        addAuditLog("AUTH", input, "LOGIN_FAILED_CLOUD", input, "Cloud sign-in refused on ${sheetsStorage.getDeviceName()}")
+        return AuthResult(status = AuthStatus.INVALID_CREDENTIALS, message = signIn.message)
+      }
+    }
+    val employeeId = if (ownerStyle) INITIAL_ADMIN_EMPLOYEE_ID else input
+    val fetched = firebaseSync.fetchUserAwait(employeeId)
+    if (fetched.isFailure) {
+      FirebaseAuthManager.signOut(context)
+      return AuthResult(status = AuthStatus.INVALID_CREDENTIALS, message = "Could not reach the server. Check the internet and try again.")
+    }
+    var cloudUser: UserAccount? = fetched.getOrNull()
+    if (cloudUser == null && ownerStyle) {
+      cloudUser = bootstrapOwnerAdmin(fbUser.uid, fbUser.email.orEmpty())
+    }
+    if (cloudUser == null) {
+      FirebaseAuthManager.signOut(context)
+      return AuthResult(status = AuthStatus.INVALID_CREDENTIALS, message = "No registration was found for Employee ID $employeeId. Register first, then wait for Admin approval.")
+    }
+    if (cloudUser.firebaseUid.isNotBlank() && cloudUser.firebaseUid != fbUser.uid) {
+      FirebaseAuthManager.signOut(context)
+      addAuditLog("SECURITY", employeeId, "LOGIN_UID_MISMATCH", input, "The cloud account does not match the registered Employee ID")
+      return AuthResult(status = AuthStatus.INVALID_CREDENTIALS, message = "This Employee ID is registered to a different account. Please contact the Administrator.")
+    }
+    upsertRemoteUsers(listOf(cloudUser.copy(firebaseUid = fbUser.uid, mustChangePassword = false)))
+    val result = authenticateUser(employeeId, pw, firebaseVerified = true)
+    if (result.status == AuthStatus.SUCCESS) {
+      firebaseSync.bindFirebaseUidAwait(fbUser.uid, employeeId, sheetsStorage.getDeviceId())
+      firebaseSync.startRealtimeListeners(forceRetry = true)
+    } else {
+      // A pending, rejected or suspended person gets no cloud session.
+      FirebaseAuthManager.signOut(context)
+    }
+    return result
+  }
+
+  /** Creates the Administrator record 1015198. The cloud rules allow this only for the project owner's Firebase account. */
+  private suspend fun bootstrapOwnerAdmin(uid: String, email: String): UserAccount? {
+    val now = System.currentTimeMillis()
+    val base = UserAccount(
+      id = INITIAL_ADMIN_EMPLOYEE_ID,
+      employeeId = INITIAL_ADMIN_EMPLOYEE_ID,
+      name = "Administrator",
+      designation = EmployeeDesignation.ADMIN.displayName,
+      department = EmployeeDesignation.ADMIN.department,
+      role = UserRole.ADMIN,
+      floor = FloorScope.SEW_1,
+      authorizedFloorScope = FloorScope.ALL,
+      assignedLine = "All",
+      isAdmin = true,
+      isActive = true,
+      accountStatus = AccountStatus.APPROVED,
+      firebaseUid = uid,
+      googleEmail = email,
+      approvedBy = "owner",
+      approvedAtMillis = now,
+      createdAtMillis = now,
+      updatedAtMillis = now
+    )
+    val admin = DesignationPolicy.applyDesignationTemplate(
+      base = base,
+      designation = EmployeeDesignation.ADMIN,
+      physicalFloor = FloorScope.SEW_1
+    ).copy(
+      isAdmin = true,
+      isActive = true,
+      role = UserRole.ADMIN,
+      authorizedFloorScope = FloorScope.ALL,
+      accountStatus = AccountStatus.APPROVED,
+      firebaseUid = uid
+    )
+    if (!firebaseSync.pushUserAccountAwait(admin)) return null
+    firebaseSync.bindFirebaseUidAwait(uid, INITIAL_ADMIN_EMPLOYEE_ID, sheetsStorage.getDeviceId())
+    addAuditLog("SECURITY", INITIAL_ADMIN_EMPLOYEE_ID, "OWNER_ADMIN_CREATED", email, "Administrator record created by the project owner")
+    return admin
   }
 
   /**
