@@ -100,9 +100,19 @@ service cloud.firestore {
       return callerUser().get('role', '');
     }
 
+    // The owner of the Firebase project. Identified by the Firebase UID only (copied from Authentication -> Users),
+    // never by an e-mail address, so nobody can claim it by registering an address.
+    function isOwner() {
+      return isSignedIn() && request.auth.uid == 'OWNER_FIREBASE_UID';
+    }
+
     function isAdmin() {
+      return isOwner() || isBoundAdmin();
+    }
+
+    function isBoundAdmin() {
       let empId = boundEmployeeId();
-      return isSignedIn()
+      return (isSignedIn()
         && exists(authBindingPath())
         && empId != ''
         && exists(/databases/$(database)/documents/users/$(empId))
@@ -110,7 +120,7 @@ service cloud.firestore {
         && (
           get(/databases/$(database)/documents/users/$(empId)).data.get('role', '') == 'ADMIN'
           || empId == '1015198'
-        );
+        ));
     }
 
     function isPrivilegedPlanner() {
@@ -195,11 +205,8 @@ service cloud.firestore {
             && isNonEmptyString(request.resource.data.get('employeeId', ''))
             && request.resource.data.get('employeeId', '').size() <= 64
             && request.resource.data.get('firebaseUid', request.resource.data.get('uid', '')) == request.auth.uid
-            && (
-              !exists(userDocPath(request.resource.data.get('employeeId', '')))
-              || get(userDocPath(request.resource.data.get('employeeId', ''))).data.get('firebaseUid', '') == ''
-              || get(userDocPath(request.resource.data.get('employeeId', ''))).data.get('firebaseUid', '') == request.auth.uid
-            )
+            && exists(userDocPath(request.resource.data.get('employeeId', '')))
+            && get(userDocPath(request.resource.data.get('employeeId', ''))).data.get('firebaseUid', '') == request.auth.uid
           )
           || isAdmin()
         );
@@ -236,7 +243,8 @@ service cloud.firestore {
           )
           // 2. First-time bootstrap for Initial Admin 1015198 if not yet created
           || (
-            userId == '1015198'
+            isOwner()
+            && userId == '1015198'
             && request.resource.data.get('employeeId', '') == '1015198'
             && !exists(/databases/$(database)/documents/users/1015198)
             && request.resource.data.get('role', '') == 'ADMIN'
