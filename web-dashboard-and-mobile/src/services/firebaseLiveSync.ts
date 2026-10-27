@@ -4,6 +4,8 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signInWithCustomToken,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   Auth,
   User as FirebaseUser
@@ -103,6 +105,7 @@ export async function bindFirebaseUidToEmployee(uid: string, employeeId: string,
       doc(db, 'auth_bindings', uid),
       {
         uid,
+        firebaseUid: uid,
         employeeId: cleanId,
         email,
         boundAtMillis: now,
@@ -124,6 +127,158 @@ export async function signOutWebCloudSession(): Promise<void> {
     await firebaseSignOut(auth);
   } catch (e) {
     console.warn('signOutWebCloudSession notice:', e);
+  }
+}
+
+/** The hidden Firebase e-mail of an employee. Same rule as the Android app. It is never shown and never receives mail. */
+export function employeeEmail(employeeId: string): string {
+  return `${employeeId.trim().toLowerCase()}@staff.nfl-live.app`;
+}
+
+export type EmployeeAuthOutcome =
+  | { ok: true; user: FirebaseUser }
+  | { ok: false; message: string; alreadyExists?: boolean };
+
+function describeAuthError(err: any, whenCreating: boolean): EmployeeAuthOutcome {
+  const code = String(err?.code || '');
+  if (code === 'auth/network-request-failed') return { ok: false, message: 'No internet connection. This needs internet.' };
+  if (code === 'auth/too-many-requests') return { ok: false, message: 'Too many attempts. Wait a few minutes and try again.' };
+  if (whenCreating && code === 'auth/email-already-in-use') {
+    return { ok: false, alreadyExists: true, message: 'This Employee ID already has an account. Sign in instead. If you forgot the password, ask the Administrator.' };
+  }
+  if (whenCreating && code === 'auth/weak-password') return { ok: false, message: 'The password is too weak. Use at least 6 characters.' };
+  if (whenCreating) return { ok: false, message: 'Could not create the account. Check the internet and try again.' };
+  return { ok: false, message: 'Employee ID or password is not correct.' };
+}
+
+/** Employee ID + password, checked by Firebase. An e-mail address (owner) is used as typed. */
+export async function signInWebEmployee(idOrEmail: string, password: string): Promise<EmployeeAuthOutcome> {
+  const auth = getFirebaseAuth();
+  if (!auth) return { ok: false, message: 'Cloud sign-in is not available. Check the internet connection.' };
+  const input = idOrEmail.trim();
+  const email = input.includes('@') ? input : employeeEmail(input);
+  try {
+    const cred = await signInWithEmailAndPassword(auth, email, password.trim());
+    return { ok: true, user: cred.user };
+  } catch (err: any) {
+    return describeAuthError(err, false);
+  }
+}
+
+/** Creates the Firebase account of a new employee. It has no access until the Administrator approves it. */
+export async function createWebEmployeeAccount(employeeId: string, password: string): Promise<EmployeeAuthOutcome> {
+  const auth = getFirebaseAuth();
+  if (!auth) return { ok: false, message: 'Cloud sign-in is not available. Check the internet connection.' };
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, employeeEmail(employeeId), password.trim());
+    return { ok: true, user: cred.user };
+  } catch (err: any) {
+    return describeAuthError(err, true);
+  }
+}
+
+export function currentFirebaseUid(): string {
+  return getFirebaseAuth()?.currentUser?.uid || '';
+}
+
+/** Reads one user record: undefined = could not read, null = no such record. */
+export async function fetchOwnUserRecord(employeeId: string): Promise<Record<string, any> | null | undefined> {
+  const db = getDb();
+  if (!db) return undefined;
+  try {
+    const snap = await getDoc(doc(db, 'users', employeeId.trim().replace(/\//g, '_')));
+    return snap.exists() ? (snap.data() as Record<string, any>) : null;
+  } catch (e) {
+    console.warn('fetchOwnUserRecord notice:', e);
+    return undefined;
+  }
+}
+
+/** Creates the Administrator record 1015198. The cloud rules allow this only for the project owner's Firebase account. */
+export async function bootstrapOwnerAdminRecord(uid: string, email: string): Promise<Record<string, any> | null> {
+  const db = getDb();
+  if (!db || !uid) return null;
+  const now = Date.now();
+  const rec: Record<string, any> = {
+    id: '1015198', employeeId: '1015198', name: 'Administrator', password: '', passwordHash: '', passwordSalt: '',
+    designation: 'Admin', department: 'Administration', requestedDesignation: 'Admin', requestedFloor: 'SEW_1',
+    role: 'ADMIN', floor: 'SEW_1', assignedFloor: 'All Floor', authorizedFloorScope: 'ALL', assignedLine: 'All',
+    isActive: true, accountStatus: 'APPROVED', isAdmin: true, mustChangePassword: false,
+    activeSessionId: '', authorizedDeviceId: '', authorizedDeviceName: '', rejectionReason: '',
+    createdAtMillis: now, updatedAtMillis: now, approvedBy: 'owner', approvedAtMillis: now,
+    firebaseUid: uid, googleEmail: email, fcmToken: '', fcmDeviceId: '', fcmUpdatedAtMillis: 0,
+    canViewDashboard: true, canViewTvDashboard: true, canViewMonthlyEfficiency: true, canViewMonthlyDhu: true,
+    canViewMonthlyOql: true, canViewLineDeepDive: true, canViewAuditLogs: true, canExportReports: true,
+    canProductionWrite: true, canFinishingWrite: true, canQualityWrite: true, canOqlWrite: true,
+    canNptWrite: true, canMorningTargetWrite: true, canMonthlyTargetWrite: true, canTargetRevisionWrite: true,
+    isDeleted: false
+  };
+  try {
+    await setDoc(doc(db, 'users', '1015198'), rec);
+    return rec;
+  } catch (e) {
+    console.warn('bootstrapOwnerAdminRecord notice:', e);
+    return null;
+  }
+}
+
+export interface WebRegistrationInput {
+  employeeId: string;
+  name: string;
+  designationName: string;     // e.g. "Production Supervisor"
+  department: string;
+  role: string;                // role name chosen by the designation policy, e.g. SUPERVISOR
+  physicalFloor: 'SEW_1' | 'SEW_2' | 'SEW_3' | 'FINISHING';
+  scopeName: string;           // FloorScope name, e.g. SEW_2 or ALL
+  scopeDisplay: string;        // e.g. "Sew 2" or "All Floor"
+}
+
+/** Writes the pending user record and the approval request. Must be called while signed in as the new account. */
+export async function submitWebRegistration(input: WebRegistrationInput): Promise<{ ok: boolean; message: string }> {
+  const db = getDb();
+  const uid = currentFirebaseUid();
+  if (!db || !uid) return { ok: false, message: 'You are not signed in to the cloud. Please try again.' };
+  const id = input.employeeId.trim();
+  const docId = id.replace(/\//g, '_');
+  const now = Date.now();
+  try {
+    await setDoc(doc(db, 'users', docId), {
+      id, employeeId: id, name: input.name.trim(), password: '', passwordHash: '', passwordSalt: '',
+      designation: input.designationName, department: input.department, requestedDesignation: input.designationName,
+      requestedFloor: input.physicalFloor, role: input.role, floor: input.physicalFloor,
+      assignedFloor: input.scopeDisplay, authorizedFloorScope: input.scopeName, assignedLine: 'K1',
+      isActive: false, accountStatus: 'PENDING_APPROVAL', isAdmin: false, mustChangePassword: false,
+      activeSessionId: '', authorizedDeviceId: '', authorizedDeviceName: '', rejectionReason: '',
+      createdAtMillis: now, updatedAtMillis: now, approvedBy: '', approvedAtMillis: 0,
+      firebaseUid: uid, googleEmail: '', fcmToken: '', fcmDeviceId: '', fcmUpdatedAtMillis: 0,
+      canViewDashboard: true, canViewTvDashboard: true, canViewMonthlyEfficiency: true, canViewMonthlyDhu: true,
+      canViewMonthlyOql: true, canViewLineDeepDive: true, canViewAuditLogs: false, canExportReports: false,
+      canProductionWrite: false, canFinishingWrite: false, canQualityWrite: false, canOqlWrite: false,
+      canNptWrite: false, canMorningTargetWrite: false, canMonthlyTargetWrite: false, canTargetRevisionWrite: false,
+      isDeleted: false
+    });
+    const requestId = `REG_${id}`;
+    await setDoc(doc(db, 'registration_requests', requestId), {
+      requestId, employeeId: id, name: input.name.trim(), requestedRole: input.role,
+      assignedFloor: input.scopeDisplay, department: input.department, status: 'PENDING',
+      requestedByUid: uid, createdAtMillis: now, updatedAtMillis: now
+    }, { merge: true });
+    const notifId = `NOTIF_${requestId}`;
+    await setDoc(doc(db, 'admin_notifications', notifId), {
+      notificationId: notifId, requestId, requestType: 'EMPLOYEE_REGISTRATION', targetUserId: id,
+      title: 'New Employee Registration',
+      summary: `${input.name.trim()} (ID: ${id}) • ${input.designationName} • ${input.scopeDisplay}`,
+      requestedRoleOrDevice: input.designationName, requestedFloor: input.scopeDisplay,
+      status: 'PENDING', createdByUid: uid, createdAtMillis: now
+    }, { merge: true });
+    return { ok: true, message: `Registration submitted for Employee ID ${id}. Waiting for Admin approval.` };
+  } catch (e: any) {
+    console.warn('submitWebRegistration notice:', e);
+    const code = String(e?.code || '');
+    if (code === 'permission-denied') {
+      return { ok: false, message: 'This Employee ID is already registered. Ask the Administrator.' };
+    }
+    return { ok: false, message: 'Could not send the registration. Check the internet and try again.' };
   }
 }
 

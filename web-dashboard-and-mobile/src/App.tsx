@@ -20,6 +20,7 @@ import {
 import { CalculationEngine } from './services/calculationEngine';
 import {
   startLiveFirestoreListeners,
+  signOutWebCloudSession,
   pushProductionToCloud,
   pushQualityToCloud,
   pushIncidentToCloud,
@@ -196,8 +197,9 @@ export default function App() {
     } catch {}
   }, [monthlyTargets]);
 
-  // Connect real-time Firestore listeners (shared with Android Mobile & TV apps)
+  // Connect real-time Firestore listeners (shared with Android Mobile & TV apps). Only after a person has signed in.
   useEffect(() => {
+    if (!currentUser) return;
     const unsubscribe = startLiveFirestoreListeners({
       onStatusChanged: status => setCloudConnected(status.startsWith('Live')),
       onConnectionChange: connected => setCloudConnected(connected),
@@ -272,7 +274,7 @@ export default function App() {
       }
     });
     return () => unsubscribe();
-  }, [lastResetMs]);
+  }, [lastResetMs, currentUser?.id]);
 
   const triggerBeep = () => {
     try {
@@ -684,6 +686,7 @@ export default function App() {
 
           <button
             onClick={() => {
+              void signOutWebCloudSession();
               setCurrentUser(null);
               setIsAuthenticatedAdmin(false);
               setShowRoleSelector(false);
