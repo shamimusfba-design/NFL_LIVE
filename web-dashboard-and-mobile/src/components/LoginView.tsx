@@ -15,6 +15,8 @@ import { accountFromRecord, saveSessionCache } from '../services/sessionUser';
 interface LoginViewProps {
   // Kept for compatibility with the caller. Sign-in is checked by Firebase, never against these.
   users?: UserAccount[];
+  /** Why a saved sign-in could not be used, shown once on the login screen. */
+  notice?: string;
   onLogin: (user: UserAccount) => void;
   onUpdateAdmin?: (newAdmin: UserAccount) => void;
 }
@@ -147,13 +149,13 @@ const Message: React.FC<{ kind: 'error' | 'info'; text: string }> = ({ kind, tex
   }}>{text}</div>
 );
 
-export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
+export const LoginView: React.FC<LoginViewProps> = ({ onLogin, notice }) => {
   const [mode, setMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
   // Nothing is pre-filled: no default ID and no default password.
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(notice ?? null);
   const [busy, setBusy] = useState(false);
 
   const [regName, setRegName] = useState('');

@@ -10,7 +10,8 @@ import {
   QualityEntryRecord,
   IncidentRecord,
   LineMasterItem,
-  FloorManpowerRecord
+  FloorManpowerRecord,
+  AlertComment
 } from './types';
 import {
   ALL_FACTORY_LINES,
@@ -22,6 +23,7 @@ import { CalculationEngine } from './services/calculationEngine';
 import {
   startLiveFirestoreListeners,
   pushFloorManpowerToCloud,
+  pushAlertCommentToCloud,
   signOutWebCloudSession,
   restoreWebSession,
   pushProductionToCloud,
@@ -66,6 +68,7 @@ export default function App() {
   const [users, setUsers] = useState<UserAccount[]>(STANDARD_USERS);
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
+  const [restoreNotice, setRestoreNotice] = useState<string | undefined>(undefined);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const [activeDeviceView, setActiveDeviceView] = useState<'MOBILE' | 'TV'>(() =>
@@ -103,6 +106,8 @@ export default function App() {
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [entryModule, setEntryModule] = useState<EntryModuleId | undefined>(undefined);
   const [floorTotals, setFloorTotals] = useState<FloorManpowerRecord[]>([]);
+  const [alertComments, setAlertComments] = useState<AlertComment[]>([]);
+  const [sidebarHidden, setSidebarHidden] = useState<boolean>(() => { try { return localStorage.getItem('nfl_sidebar_hidden') === '1'; } catch { return false; } });
   const [pageRequest, setPageRequest] = useState<{ page: 'PRODUCTION' | 'QUALITY' | 'ALL' | 'TABLE'; n: number } | undefined>(undefined);
   const [adminStart, setAdminStart] = useState<'DEMO' | 'LINES' | 'USERS' | undefined>(undefined);
   const [showReportsModal, setShowReportsModal] = useState(false);
@@ -229,7 +234,10 @@ export default function App() {
         }
       } else {
         clearSessionCache();
-        if (res.status === 'denied') void signOutWebCloudSession();
+        if (res.status === 'denied') {
+          setRestoreNotice(`Signed out: ${res.reason}`);
+          void signOutWebCloudSession();
+        }
       }
       setAuthChecking(false);
     })();
@@ -303,6 +311,7 @@ export default function App() {
         });
       },
       onFloorManpowerUpdated: remote => setFloorTotals(remote),
+      onAlertCommentsUpdated: remote => setAlertComments(remote),
       onUsersUpdated: remoteUsers => {
         if (remoteUsers.length === 0) return;
         setUsers(prev => {
@@ -352,6 +361,26 @@ export default function App() {
     });
   }, [incidents, currentUser]);
 
+  // Notifications are: (1) NPT incidents that were raised, (2) lines whose OQL today is above 10%.
+  // Hourly quality entries are never notifications by themselves.
+  const highOqlToday = useMemo(() => {
+    const byLine = new Map<string, { checked: number; defective: number; floor: string }>();
+    qualities
+      .filter(q => q.date === todayIso && (isDemoMode || !q.isDemo))
+      .forEach(q => {
+        const v = byLine.get(q.lineId) || { checked: 0, defective: 0, floor: q.floor };
+        v.checked += q.checkedGarments || 0;
+        v.defective += q.defectiveGarments || 0;
+        byLine.set(q.lineId, v);
+      });
+    const hasTarget = (id: string) =>
+      isDemoMode || targets.some(t => !t.isDemo && t.lineId === id && t.date === todayIso && (t.hourlyTargetPcs > 0 || t.dailyTargetPcs > 0));
+    return Array.from(byLine.entries())
+      .filter(([id, v]) => v.checked > 0 && hasTarget(id) && (v.defective / v.checked) * 100 > 10)
+      .map(([id, v]) => ({ lineId: id, floor: v.floor, oqlPct: (v.defective / v.checked) * 100, checked: v.checked, date: todayIso }))
+      .sort((a, b) => b.oqlPct - a.oqlPct);
+  }, [qualities, targets, todayIso, isDemoMode]);
+
   // The alert sounds ONLY for an incident that is new, once, for about 3 seconds, with vibration on a phone.
   // Incidents that were already there when the page opened never make a sound.
   const seenIncidentsRef = useRef<Set<string>>(
@@ -388,11 +417,16 @@ export default function App() {
       if (inc.category === 'LOW_PRODUCTION' && currentUser.role === 'PRODUCTION_MANAGER') return true;
       return false;
     });
-    if (fresh.length === 0) return;
+    const oqlRoles = ['ADMIN', 'IE', 'AUDITOR', 'QUALITY_MANAGER', 'QUALITY_REPORTER', 'PRODUCTION_MANAGER'];
+    const freshOql = oqlRoles.includes(currentUser.role)
+      ? highOqlToday.map(h => `oql|${h.lineId}|${h.date}`).filter(k => !seen.has(k))
+      : [];
+    freshOql.forEach(k => seen.add(k));
+    if (fresh.length === 0 && freshOql.length === 0) return;
     fresh.forEach(inc => seen.add(inc.id));
     try { localStorage.setItem('nfl_seen_incidents', JSON.stringify(Array.from(seen).slice(-500))); } catch {}
     if (alertArmedRef.current) playNewIncidentAlert();
-  }, [incidents, currentUser]);
+  }, [incidents, currentUser, highOqlToday]);
 
   const targetedConfigs = useMemo(() => {
     const all = CalculationEngine.getTargetedLines(lines, targets, selectedFloor, todayIso, !isDemoMode);
@@ -653,6 +687,22 @@ export default function App() {
     }
   };
 
+  const handleAddComment = (targetId: string, text: string, parentId: string | null) => {
+    if (!currentUser) return;
+    const c: AlertComment = {
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      targetId,
+      parentId,
+      authorId: currentUser.id,
+      authorName: currentUser.name,
+      authorRole: currentUser.role,
+      text: text.slice(0, 1000),
+      createdMillis: Date.now()
+    };
+    setAlertComments(prev => [c, ...prev]);
+    void pushAlertCommentToCloud(c);
+  };
+
   const handleSaveFloorManpower = (record: FloorManpowerRecord) => {
     setFloorTotals(prev => [record, ...prev.filter(r => !(r.floor === record.floor && r.date === record.date))]);
     void pushFloorManpowerToCloud(record);
@@ -697,6 +747,18 @@ export default function App() {
   };
 
   const closeMenu = () => setMenuOpen(false);
+  const toggleMenu = () => {
+    if (window.matchMedia('(min-width: 768px)').matches) {
+      setSidebarHidden(v => {
+        const next = !v;
+        try { localStorage.setItem('nfl_sidebar_hidden', next ? '1' : '0'); } catch {}
+        return next;
+      });
+    } else {
+      setMenuOpen(v => !v);
+    }
+  };
+  const notificationCount = openIncidents.length + highOqlToday.length;
 
   if (authChecking) {
     return <LoadingScreen />;
@@ -705,6 +767,7 @@ export default function App() {
   if (!currentUser) {
     return (
       <LoginView
+        notice={restoreNotice}
         users={users}
         onLogin={u => {
           setCurrentUser(u);
@@ -723,7 +786,7 @@ export default function App() {
       {menuOpen && <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={() => setMenuOpen(false)} />}
       <aside
         className={`fixed md:sticky top-0 z-40 h-screen w-64 shrink-0 flex-col border-r border-[#1B2E45] bg-[#0B1A2C] text-white transition-transform duration-200 ${
-          menuOpen ? 'flex translate-x-0' : 'hidden -translate-x-full md:flex md:translate-x-0'
+          menuOpen ? 'flex translate-x-0' : `hidden -translate-x-full ${sidebarHidden ? '' : 'md:flex md:translate-x-0'}`
         }`}
       >
         <div className="flex items-center gap-3 px-4 py-4">
@@ -790,8 +853,8 @@ export default function App() {
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l10 18H2L12 3zM12 10v5M12 18v.01" /></svg>
-            <span className="flex-1">Incidents (NPT)</span>{openIncidents.length > 0 && (
-              <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">{openIncidents.length}</span>
+            <span className="flex-1">Notifications (NPT &amp; OQL)</span>{notificationCount > 0 && (
+              <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">{notificationCount}</span>
             )}
           </button>
       
@@ -874,20 +937,21 @@ export default function App() {
         {/* ---------- Slim top bar ---------- */}
         <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-[#1B2E45] bg-[#0B1A2CF2] px-3 py-2 text-white backdrop-blur">
           <button
-            onClick={() => setMenuOpen(v => !v)}
+            onClick={toggleMenu}
             aria-label="Open menu"
-            className="grid h-9 w-9 place-items-center rounded-lg border border-[#1B2E45] bg-[#12263C] md:hidden"
+            title="Show or hide the menu"
+            className="grid h-9 w-9 place-items-center rounded-lg border border-[#1B2E45] bg-[#12263C]"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
           <div className="min-w-0 flex-1 truncate text-[14px] font-extrabold md:text-[16px]">NFL LIVE PRODUCTION &amp; Quality</div>
-          {hasUnmutedAlarmForRole && (
+          {notificationCount > 0 && (
             <button
               onClick={() => setShowIncidentModal(true)}
-              title="Open incidents"
+              title="NPT incidents and lines with OQL above 10% today"
               className="rounded-lg bg-red-600 px-2.5 py-1 text-[11px] font-black text-white"
             >
-              {openIncidents.length} open
+              {notificationCount} alerts
             </button>
           )}
           <span
@@ -1018,6 +1082,9 @@ export default function App() {
           onMuteDeviceAlarm={handleMuteAlarm}
           onAcknowledgeIncident={handleAcknowledgeIncident}
           onResolveIncident={handleResolveIncident}
+          comments={alertComments}
+          onAddComment={handleAddComment}
+          highOqlLines={highOqlToday}
           onClose={() => setShowIncidentModal(false)}
         />
       )}

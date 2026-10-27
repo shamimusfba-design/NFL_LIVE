@@ -35,7 +35,8 @@ import {
   UserAccount,
   WeeklyQualityRecord,
   MonthlyTargetConfig,
-  FloorManpowerRecord
+  FloorManpowerRecord,
+  AlertComment
 } from '../types';
 import { normalizeHourSlot24h } from '../data/masterData';
 
@@ -218,7 +219,7 @@ export function waitForAuthReady(): Promise<FirebaseUser | null> {
 
 export type RestoreResult =
   | { status: 'none' }                                   // nobody was signed in
-  | { status: 'denied' }                                 // signed in, but not (or no longer) an approved, active employee
+  | { status: 'denied'; reason: string }                 // signed in, but not (or no longer) an approved, active employee
   | { status: 'error'; uid: string }                     // could not check because of the network: do NOT sign the person out
   | { status: 'ok'; uid: string; rec: Record<string, any> };
 
@@ -235,11 +236,15 @@ export async function restoreWebSession(): Promise<RestoreResult> {
     try {
       const binding = await getDoc(doc(db, 'auth_bindings', user.uid));
       const employeeId = binding.exists() ? String((binding.data() as any).employeeId || '') : '';
-      if (!employeeId) return { status: 'denied' };
+      if (!employeeId) return { status: 'denied', reason: 'This sign-in is not linked to an Employee ID yet.' };
       const rec = await fetchOwnUserRecord(employeeId);
       if (rec === undefined) throw new Error('record could not be read');
-      if (!rec || rec.firebaseUid !== user.uid) return { status: 'denied' };
-      if (String(rec.accountStatus || '') !== 'APPROVED' || rec.isActive === false) return { status: 'denied' };
+      if (!rec) return { status: 'denied', reason: `No registration found for Employee ID ${employeeId}.` };
+      // Same rule as the sign-in screen: a record without a stored uid is accepted, a record of a different account is not.
+      if (rec.firebaseUid && rec.firebaseUid !== user.uid) return { status: 'denied', reason: 'This Employee ID belongs to a different account.' };
+      if (String(rec.accountStatus || '') !== 'APPROVED' || rec.isActive === false) {
+        return { status: 'denied', reason: 'This account is not approved or is not active.' };
+      }
       return { status: 'ok', uid: user.uid, rec };
     } catch (e) {
       console.warn('restoreWebSession attempt notice:', e);
@@ -395,6 +400,7 @@ export interface LiveCloudCallbacks {
   onSetupUpdate?: (records: LineTargetConfig[]) => void;
   onWeeklyQualityUpdated?: (records: WeeklyQualityRecord[]) => void;
   onFloorManpowerUpdated?: (records: FloorManpowerRecord[]) => void;
+  onAlertCommentsUpdated?: (records: AlertComment[]) => void;
   onWeeklyQualityUpdate?: (records: WeeklyQualityRecord[]) => void;
   onMonthlyTargetsUpdated?: (records: MonthlyTargetConfig[]) => void;
   onMonthlyTargetsUpdate?: (records: MonthlyTargetConfig[]) => void;
@@ -721,6 +727,32 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
     );
 
     // 5. Weekly BS OQL & NFL AQC
+    const commentsQ = query(collection(db, 'alert_comments'), orderBy('createdMillis', 'desc'), limit(600));
+    unsubscribers.push(
+      onSnapshot(
+        commentsQ,
+        snap => {
+          const list: AlertComment[] = [];
+          snap.forEach(d => {
+            const data = d.data();
+            if (!data.targetId || !data.text) return;
+            list.push({
+              id: d.id,
+              targetId: String(data.targetId),
+              parentId: data.parentId ? String(data.parentId) : null,
+              authorId: String(data.authorId || ''),
+              authorName: String(data.authorName || ''),
+              authorRole: String(data.authorRole || ''),
+              text: String(data.text),
+              createdMillis: Number(data.createdMillis || 0)
+            });
+          });
+          callbacks.onAlertCommentsUpdated?.(list);
+        },
+        () => {}
+      )
+    );
+
     const floorMpQ = query(collection(db, 'floor_manpower'), orderBy('date', 'desc'), limit(30));
     unsubscribers.push(
       onSnapshot(
@@ -1044,6 +1076,18 @@ export async function pushIncidentToCloud(inc: IncidentRecord): Promise<boolean>
     return true;
   } catch (e) {
     console.warn('pushIncidentToCloud error:', e);
+    return false;
+  }
+}
+
+export async function pushAlertCommentToCloud(c: AlertComment): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    await setDoc(doc(db, 'alert_comments', c.id), { ...c });
+    return true;
+  } catch (err) {
+    console.warn('pushAlertCommentToCloud error:', err);
     return false;
   }
 }

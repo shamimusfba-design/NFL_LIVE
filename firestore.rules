@@ -435,6 +435,20 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Comments and replies under an NPT incident or a high-OQL alert. Anyone approved can write; nobody can edit.
+    match /alert_comments/{docId} {
+      allow read: if isApprovedCaller();
+      allow create: if isApprovedCaller()
+        && request.resource.data.get('authorId', '') == boundEmployeeId()
+        && isNonEmptyString(request.resource.data.get('targetId', ''))
+        && request.resource.data.get('text', '') is string
+        && request.resource.data.get('text', '').size() > 0
+        && request.resource.data.get('text', '').size() <= 1000;
+      allow update: if false;
+      allow delete: if isAdmin()
+        || (isApprovedCaller() && resource.data.get('authorId', '') == boundEmployeeId());
+    }
+
     // Employee Registration Requests
     match /registration_requests/{requestId} {
       allow get: if isAdmin() || (isSignedIn() && resource.data.get('requestedByUid', '') == request.auth.uid);

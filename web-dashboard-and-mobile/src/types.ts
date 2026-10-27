@@ -244,3 +244,16 @@ export interface FloorManpowerRecord {
   updatedBy: string;
   updatedMillis: number;
 }
+
+/** A comment, or a reply (parentId set), under an NPT incident or a high-OQL alert. */
+export interface AlertComment {
+  id: string;
+  /** The incident id, or "oql|<line>|<date>" for a high-OQL alert. */
+  targetId: string;
+  parentId: string | null;
+  authorId: string;
+  authorName: string;
+  authorRole: string;
+  text: string;
+  createdMillis: number;
+}

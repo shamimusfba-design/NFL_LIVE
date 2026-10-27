@@ -19,7 +19,8 @@ import {
   getBangladeshTodayIso,
   formatHourSlot12h,
   canWriteWeeklyQualityOrBiHourlyAudit,
-  generateRecentIsoWeeks
+  isoWeeksOfYear,
+  isoWeekKeyOf
 } from '../data/masterData';
 
 interface EntryFormsProps {
@@ -104,15 +105,14 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const [qaError, setQaError] = useState<string | null>(null);
 
   // Weekly BS OQL & NFL AQC State (Admin & Auditor Only)
-  const recentWeeks = useMemo(() => generateRecentIsoWeeks(12), []);
-  const [selectedWeekKey, setSelectedWeekKey] = useState(
-    recentWeeks[recentWeeks.length - 1]?.weekKey || '2026-W43'
-  );
-  const [selectedWeekStartIso, setSelectedWeekStartIso] = useState(
-    recentWeeks[recentWeeks.length - 1]?.weekStartIso || getBangladeshTodayIso()
-  );
-  const [bsOqlInput, setBsOqlInput] = useState('3.85');
-  const [nflAqcInput, setNflAqcInput] = useState('4.20');
+  const todayWeekKey = isoWeekKeyOf(getBangladeshTodayIso());
+  const [weekYear, setWeekYear] = useState<number>(Number(todayWeekKey.slice(0, 4)));
+  const yearWeeks = useMemo(() => isoWeeksOfYear(weekYear), [weekYear]);
+  const [selectedWeekKey, setSelectedWeekKey] = useState(todayWeekKey);
+  const selectedWeek = yearWeeks.find(w => w.weekKey === selectedWeekKey) || yearWeeks[0];
+  const selectedWeekStartIso = selectedWeek?.weekStartIso || getBangladeshTodayIso();
+  const [bsOqlInput, setBsOqlInput] = useState('');
+  const [nflAqcInput, setNflAqcInput] = useState('');
   const [weeklyMsg, setWeeklyMsg] = useState<string | null>(null);
 
   // Supervisor Setup State
@@ -848,33 +848,40 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
               )}
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Select ISO Week (Last 12 Weeks):
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {recentWeeks.map(w => (
-                    <button
-                      type="button"
-                      key={w.weekKey}
-                      onClick={() => {
-                        setSelectedWeekKey(w.weekKey);
-                        setSelectedWeekStartIso(w.weekStartIso);
-                        const existing = weeklyRecords.find(r => r.weekKey === w.weekKey);
-                        if (existing) {
-                          setBsOqlInput(existing.bsOqlPct !== null ? String(existing.bsOqlPct) : '');
-                          setNflAqcInput(existing.nflAqcPct !== null ? String(existing.nflAqcPct) : '');
-                        }
-                      }}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-black border transition ${
-                        selectedWeekKey === w.weekKey
-                          ? 'bg-[#002D62] text-white border-[#002D62]'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      {w.weekKey}
-                    </button>
-                  ))}
+                <label className="block text-xs font-bold text-slate-700 mb-2">Week</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <select
+                    value={weekYear}
+                    onChange={e => {
+                      const y = Number(e.target.value);
+                      setWeekYear(y);
+                      const first = isoWeeksOfYear(y)[0];
+                      if (first) setSelectedWeekKey(first.weekKey);
+                      setBsOqlInput(''); setNflAqcInput('');
+                    }}
+                    className="rounded-lg border border-slate-300 bg-white p-2.5 text-sm font-black text-slate-900"
+                  >
+                    {[2025, 2026, 2027, 2028].map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                  <select
+                    value={selectedWeekKey}
+                    onChange={e => {
+                      const key = e.target.value;
+                      setSelectedWeekKey(key);
+                      const existing = weeklyRecords.find(r => r.weekKey === key);
+                      setBsOqlInput(existing && existing.bsOqlPct !== null ? String(existing.bsOqlPct) : '');
+                      setNflAqcInput(existing && existing.nflAqcPct !== null ? String(existing.nflAqcPct) : '');
+                    }}
+                    className="col-span-2 rounded-lg border border-slate-300 bg-white p-2.5 text-sm font-black text-slate-900"
+                  >
+                    {yearWeeks.map(w => (
+                      <option key={w.weekKey} value={w.weekKey}>
+                        Week {w.weekNo} ({w.weekStartIso.slice(5)} to {w.weekEndIso.slice(5)}){weeklyRecords.some(r => r.weekKey === w.weekKey) ? ' ✓' : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+                <div className="mt-1 text-[11px] text-slate-500">{yearWeeks.length} weeks in {weekYear}. A tick means a value is already saved.</div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -882,12 +889,9 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     Week Start Date (Monday ISO)
                   </label>
-                  <input
-                    type="date"
-                    value={selectedWeekStartIso}
-                    onChange={e => setSelectedWeekStartIso(e.target.value)}
-                    className="w-full text-xs font-bold border border-slate-300 rounded-lg p-2"
-                  />
+                  <div className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-700">
+                    {selectedWeekStartIso}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">

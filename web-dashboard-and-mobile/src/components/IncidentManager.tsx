@@ -1,3 +1,5 @@
+import { AlertComment } from '../types';
+import { CommentThread } from './CommentThread';
 import React, { useState, useEffect } from 'react';
 import {
   IncidentRecord,
@@ -16,6 +18,10 @@ interface IncidentManagerProps {
   onMuteDeviceAlarm: (incidentId: string) => void;
   onAcknowledgeIncident: (incidentId: string, acknowledgedBy: string) => void;
   onResolveIncident: (incidentId: string, resolvedBy: string, resolutionNote: string) => void;
+  comments?: AlertComment[];
+  onAddComment?: (targetId: string, text: string, parentId: string | null) => void;
+  /** Lines whose OQL today is above 10%. They are notifications too. */
+  highOqlLines?: Array<{ lineId: string; floor: string; oqlPct: number; checked: number; date: string }>;
   onClose: () => void;
 }
 
@@ -28,6 +34,9 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
   onMuteDeviceAlarm,
   onAcknowledgeIncident,
   onResolveIncident,
+  comments = [],
+  onAddComment,
+  highOqlLines = [],
   onClose
 }) => {
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'REPORT' | 'INBOX' | 'HISTORY'>('ACTIVE');
@@ -208,6 +217,22 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
           {/* TAB 1: ACTIVE INCIDENTS */}
           {activeTab === 'ACTIVE' && (
             <div className="space-y-3">
+              {highOqlLines.length > 0 && (
+                <div className="space-y-2 rounded-xl border border-red-300 bg-red-50 p-3">
+                  <div className="text-sm font-black text-red-800">High OQL today (above 10%): {highOqlLines.length} line(s)</div>
+                  {highOqlLines.map(h => (
+                    <div key={h.lineId} className="rounded-lg border border-red-200 bg-white p-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="rounded bg-[#0A2558] px-2 py-0.5 text-xs font-black text-white">{h.lineId}</span>
+                        <span className="text-xs text-slate-500">{h.floor}</span>
+                        <span className="ml-auto text-sm font-black text-red-700">OQL {h.oqlPct.toFixed(1)}%</span>
+                        <span className="text-[11px] text-slate-500">{h.checked} pcs checked</span>
+                      </div>
+                      <CommentThread targetId={`oql|${h.lineId}|${h.date}`} comments={comments} onAdd={(t, x, p) => onAddComment?.(t, x, p)} />
+                    </div>
+                  ))}
+                </div>
+              )}
               {openIncidents.length === 0 ? (
                 <div className="text-center py-12 text-slate-500">
                   <span className="text-4xl">✅</span>
@@ -324,6 +349,7 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                           ⏹ Resolve & Stop Timer
                         </button>
                       </div>
+                      <CommentThread targetId={inc.id} comments={comments} onAdd={(t, x, p) => onAddComment?.(t, x, p)} />
                     </div>
                   );
                 })

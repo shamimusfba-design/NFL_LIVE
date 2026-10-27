@@ -429,3 +429,38 @@ export function generateSyntheticDemoDataset(dateStr: string = getBangladeshToda
 
   return { targets, productions, qualities, incidents, weeklyQuality, monthlyTargets };
 }
+
+/** Every ISO week of a year (52 or 53 weeks), Monday to Sunday, in UTC so the dates never shift. */
+export function isoWeeksOfYear(year: number): Array<{ weekNo: number; weekKey: string; weekStartIso: string; weekEndIso: string }> {
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const dow = jan4.getUTCDay() || 7;
+  const firstMonday = new Date(jan4);
+  firstMonday.setUTCDate(jan4.getUTCDate() - (dow - 1));
+  const out: Array<{ weekNo: number; weekKey: string; weekStartIso: string; weekEndIso: string }> = [];
+  for (let n = 1; n <= 53; n++) {
+    const start = new Date(firstMonday);
+    start.setUTCDate(firstMonday.getUTCDate() + (n - 1) * 7);
+    const thursday = new Date(start);
+    thursday.setUTCDate(start.getUTCDate() + 3);
+    if (thursday.getUTCFullYear() !== year) break; // a week belongs to the year that holds its Thursday
+    const end = new Date(start);
+    end.setUTCDate(start.getUTCDate() + 6);
+    out.push({
+      weekNo: n,
+      weekKey: `${year}-W${String(n).padStart(2, '0')}`,
+      weekStartIso: start.toISOString().slice(0, 10),
+      weekEndIso: end.toISOString().slice(0, 10)
+    });
+  }
+  return out;
+}
+
+/** The ISO week that holds the given yyyy-MM-dd date. */
+export function isoWeekKeyOf(dateIso: string): string {
+  const d = new Date(`${dateIso}T00:00:00Z`);
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
