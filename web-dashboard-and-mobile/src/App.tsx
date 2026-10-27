@@ -43,6 +43,7 @@ import { EntryForms } from './components/EntryForms';
 import { ReportsView } from './components/ReportsView';
 import { AdminView } from './components/AdminView';
 import { LoginView } from './components/LoginView';
+import { NflLogo } from './components/NflLogo';
 import { accountFromRecord } from './services/sessionUser';
 
 const STORAGE_KEYS = {
@@ -61,6 +62,7 @@ export default function App() {
   const [users, setUsers] = useState<UserAccount[]>(STANDARD_USERS);
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const [activeDeviceView, setActiveDeviceView] = useState<'MOBILE' | 'TV'>(() =>
     typeof window !== 'undefined' && window.innerWidth >= 900 ? 'TV' : 'MOBILE'
@@ -644,6 +646,8 @@ export default function App() {
     incidentsCount: incidents.filter(i => !i.isDemo).length
   };
 
+  const closeMenu = () => setMenuOpen(false);
+
   if (authChecking) {
     return (
       <div style={{ minHeight: '100vh', background: '#061B43', display: 'grid', placeItems: 'center', color: '#94A3B8', fontSize: 13, letterSpacing: 1 }}>
@@ -668,135 +672,147 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0A1522] text-slate-900 font-sans flex flex-col">
-      {/* Top Application Global Desktop & Mobile Control Bar */}
-      <div className="bg-[#06111D] text-white px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs border-b border-[#1B2E45] shadow-sm z-40">
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <div className="bg-white text-[#061938] font-black text-xs px-2 py-0.5 rounded shadow tracking-wider">
-            NFL
+    <div className="min-h-screen bg-[#0A1522] text-slate-900 font-sans flex">
+      {/* ---------- Side menu: slides in on a phone, stays open on a computer ---------- */}
+      {menuOpen && <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={() => setMenuOpen(false)} />}
+      <aside
+        className={`fixed md:sticky top-0 z-40 h-screen w-64 shrink-0 flex-col border-r border-[#1B2E45] bg-[#0B1A2C] text-white transition-transform duration-200 ${
+          menuOpen ? 'flex translate-x-0' : 'hidden -translate-x-full md:flex md:translate-x-0'
+        }`}
+      >
+        <div className="flex items-center gap-3 px-4 py-4">
+          <div className="grid h-10 w-10 place-items-center overflow-hidden rounded-[10px] bg-white shadow">
+            <NflLogo size={34} />
           </div>
-          <span className="font-extrabold tracking-wide hidden sm:inline">
-            NFL LIVE WEB &amp; TV SYSTEM
-          </span>
+          <div className="leading-tight">
+            <div className="text-[15px] font-extrabold">NFL LIVE</div>
+            <div className="text-[11px] text-slate-400">Production &amp; Quality</div>
+          </div>
+        </div>
 
-          <span
-            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-              cloudConnected
-                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700'
-                : 'bg-slate-800 text-slate-300 border-slate-700'
-            }`}
-          >
-            {cloudConnected ? '☁️ Cloud Live' : '💾 Local + Cloud Ready'}
-          </span>
-
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
+          <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">Dashboard</div>
+      
           <button
-            onClick={() => {
-              if (isAuthenticatedAdmin) {
-                setShowRoleSelector(true);
-              }
-            }}
-            title={
-              isAuthenticatedAdmin
-                ? 'Admin Role Preview Switcher'
-                : `Logged in as ${currentUser.name} (${currentUser.role})`
-            }
-            className={`flex items-center gap-1.5 bg-blue-950/80 px-2.5 py-1 rounded-lg border border-blue-800 transition ${
-              isAuthenticatedAdmin ? 'hover:bg-blue-900 cursor-pointer' : 'cursor-default'
-            }`}
+            onClick={() => { closeMenu(); setActiveDeviceView('TV') }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
           >
-            <span className="text-[10px] text-blue-300">User:</span>
-            <span className="font-bold text-white">{currentUser.name}</span>
-            <span className="bg-blue-600 text-[9px] px-1.5 py-0.2 rounded font-extrabold">
-              {currentUser.role}
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10" /></svg>
+            <span className="flex-1">Dashboard</span>
+          </button>
+      
+          <button
+            onClick={() => { closeMenu(); setActiveDeviceView('MOBILE') }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h10a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM11 18h2" /></svg>
+            <span className="flex-1">Compact view</span>
+          </button>
+          <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">Work</div>
+      
+          <button
+            onClick={() => { closeMenu(); setShowEntryModal(true) }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3l7 7-11 11H3v-7L14 3z" /></svg>
+            <span className="flex-1">Data Entry</span>
+          </button>
+      
+          <button
+            onClick={() => { closeMenu(); setShowIncidentModal(true) }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l10 18H2L12 3zM12 10v5M12 18v.01" /></svg>
+            <span className="flex-1">Incidents (NPT)</span>{openIncidents.length > 0 && (
+              <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">{openIncidents.length}</span>
+            )}
+          </button>
+      
+          <button
+            onClick={() => { closeMenu(); setShowReportsModal(true) }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h7l5 5v13H7V3zM14 3v5h5M10 13h6M10 17h6" /></svg>
+            <span className="flex-1">Reports / Excel</span>
+          </button>
+      {currentUser?.role === 'ADMIN' && (
+          <button
+            onClick={() => { closeMenu(); setShowAdminModal(true) }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM12 2v3M12 19v3M2 12h3M19 12h3" /></svg>
+            <span className="flex-1">Admin & Reset</span>
+          </button>)}
+          <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">More</div>
+      
+          <button
+            onClick={() => { closeMenu(); handleTriggerInstallDesktop() }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v11M7 11l5 5 5-5M5 20h14" /></svg>
+            <span className="flex-1">Install desktop app</span>
+          </button>
+        </nav>
+
+        <div className="border-t border-[#1B2E45] p-3">
+          <button
+            onClick={() => { if (isAuthenticatedAdmin) { setShowRoleSelector(true); setMenuOpen(false); } }}
+            title={isAuthenticatedAdmin ? 'Admin role preview' : `Signed in as ${currentUser.name}`}
+            className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-[#12263C]"
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#1d3b5f] text-[13px] font-extrabold">
+              {currentUser.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1 leading-tight">
+              <span className="block truncate text-[13px] font-bold">{currentUser.name}</span>
+              <span className="block text-[11px] text-slate-400">{currentUser.role}</span>
             </span>
           </button>
-
           <button
             onClick={() => {
               void signOutWebCloudSession();
               setCurrentUser(null);
               setIsAuthenticatedAdmin(false);
               setShowRoleSelector(false);
+              setMenuOpen(false);
             }}
-            className="text-[10px] bg-red-950/70 hover:bg-red-900 text-red-200 border border-red-800/80 px-2 py-1 rounded-lg font-bold transition flex items-center gap-1"
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-red-800/70 bg-red-950/60 py-2 text-[12px] font-bold text-red-200 hover:bg-red-900"
           >
-            <span>🚪</span>
-            <span>Logout</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9" /></svg>
+            Logout
           </button>
         </div>
+      </aside>
 
-        <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* ---------- Slim top bar ---------- */}
+        <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-[#1B2E45] bg-[#0B1A2CF2] px-3 py-2 text-white backdrop-blur">
+          <button
+            onClick={() => setMenuOpen(v => !v)}
+            aria-label="Open menu"
+            className="grid h-9 w-9 place-items-center rounded-lg border border-[#1B2E45] bg-[#12263C] md:hidden"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+          </button>
+          <div className="min-w-0 flex-1 truncate text-[14px] font-extrabold md:text-[16px]">NFL LIVE PRODUCTION &amp; Quality</div>
           {hasUnmutedAlarmForRole && (
             <button
               onClick={() => setShowIncidentModal(true)}
-              className="bg-red-600 hover:bg-red-700 text-white font-black text-[11px] px-2.5 py-1 rounded-lg animate-bounce flex items-center gap-1 shadow"
+              className="animate-pulse rounded-lg bg-red-600 px-2.5 py-1 text-[11px] font-black text-white"
             >
-              <span>🚨 ALARM ACTIVE</span>
+              ALARM
             </button>
           )}
-
-          <button
-            onClick={() => setShowEntryModal(true)}
-            className="bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1 rounded-md text-[11px] font-bold transition shadow-sm"
+          <span
+            className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+              cloudConnected
+                ? 'border-emerald-700 bg-emerald-950/80 text-emerald-300'
+                : 'border-slate-700 bg-slate-800 text-slate-300'
+            }`}
           >
-            📝 Data Entry (12h AM/PM &amp; Audit)
-          </button>
-
-          <button
-            onClick={() => setShowReportsModal(true)}
-            className="bg-indigo-700 hover:bg-indigo-600 text-white px-2.5 py-1 rounded-md text-[11px] font-bold transition shadow-sm"
-          >
-            📊 Reports / Excel
-          </button>
-
-          <button
-            onClick={() => setShowIncidentModal(true)}
-            className="bg-amber-700 hover:bg-amber-600 text-white px-2.5 py-1 rounded-md text-[11px] font-bold transition shadow-sm relative"
-          >
-            🚨 Incidents {openIncidents.length > 0 ? `(${openIncidents.length})` : ''}
-          </button>
-
-          {currentUser?.role === 'ADMIN' && (
-            <button
-              onClick={() => setShowAdminModal(true)}
-              className="bg-blue-800 hover:bg-blue-700 text-white px-2.5 py-1 rounded-md text-[11px] font-bold transition shadow-sm"
-              title="Admin Console, Clear Demo Data & Factory Reset"
-            >
-              ⚙️ Admin &amp; Reset
-            </button>
-          )}
-
-          <button
-            onClick={handleTriggerInstallDesktop}
-            className="bg-cyan-700 hover:bg-cyan-600 text-white px-2.5 py-1 rounded-md text-[11px] font-bold transition shadow-sm"
-          >
-            🖥️ Install Desktop App
-          </button>
-
-          <div className="bg-blue-950 p-0.5 rounded-lg flex text-[11px] font-bold border border-blue-900">
-            <button
-              onClick={() => setActiveDeviceView('TV')}
-              className={`px-2.5 py-1 rounded-md transition ${
-                activeDeviceView === 'TV'
-                  ? 'bg-[#1976D2] text-white shadow'
-                  : 'text-blue-300 hover:text-white'
-              }`}
-            >
-              🖥️ TV Wallboard (16:9)
-            </button>
-            <button
-              onClick={() => setActiveDeviceView('MOBILE')}
-              className={`px-2.5 py-1 rounded-md transition ${
-                activeDeviceView === 'MOBILE'
-                  ? 'bg-[#1976D2] text-white shadow'
-                  : 'text-blue-300 hover:text-white'
-              }`}
-            >
-              📱 Compact View
-            </button>
-          </div>
-        </div>
-      </div>
+            {cloudConnected ? 'Cloud Live' : 'Local'}
+          </span>
+        </header>
 
       {/* Main View Area */}
       <main className="flex-1">
@@ -1014,6 +1030,7 @@ export default function App() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

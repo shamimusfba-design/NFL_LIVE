@@ -197,7 +197,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             <span>🏭</span>
             <span>NFL LIVE</span>
           </div>
-          <span className="text-xs font-bold" style={{ color: WB_THEME.MUTED }}>
+          <span className="hidden sm:inline text-xs font-bold" style={{ color: WB_THEME.MUTED }}>
             TV Wallboard &amp; Command Center
           </span>
         </div>
@@ -205,7 +205,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
         {/* 4-Page Segment: Production | Quality | All | Table */}
         <div
           style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-          className="flex items-center p-0.5 rounded-md border gap-0.5"
+          className="grid grid-cols-4 sm:flex w-full sm:w-auto items-center p-0.5 rounded-md border gap-0.5"
         >
           {(
             [
@@ -225,7 +225,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 backgroundColor: page === item.id ? WB_THEME.BLUE : 'transparent',
                 color: page === item.id ? '#031225' : WB_THEME.MUTED
               }}
-              className="px-3 py-1 rounded text-xs font-black transition"
+              className="px-3 py-1.5 sm:py-1 rounded text-xs font-black transition text-center"
             >
               {item.label}
             </button>
@@ -235,7 +235,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
         {/* Floor Segment: Sew 1 | Sew 2 | Sew 3 | All Floors */}
         <div
           style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-          className="flex items-center p-0.5 rounded-md border gap-0.5"
+          className="grid grid-cols-4 sm:flex w-full sm:w-auto items-center p-0.5 rounded-md border gap-0.5"
         >
           {(['Sew 1', 'Sew 2', 'Sew 3', 'All'] as FloorId[]).map(fl => (
             <button
@@ -245,7 +245,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 backgroundColor: selectedFloor === fl ? WB_THEME.BLUE : 'transparent',
                 color: selectedFloor === fl ? '#031225' : WB_THEME.MUTED
               }}
-              className="px-3 py-1 rounded text-xs font-black transition"
+              className="px-3 py-1.5 sm:py-1 rounded text-xs font-black transition text-center"
             >
               {fl === 'All' ? 'All Floors' : fl}
             </button>
@@ -255,7 +255,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
         {/* Period Segment: Today | Yesterday | Week | Month */}
         <div
           style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-          className="flex items-center p-0.5 rounded-md border gap-0.5"
+          className="grid grid-cols-4 sm:flex w-full sm:w-auto items-center p-0.5 rounded-md border gap-0.5"
         >
           {(['Today', 'Yesterday', 'Week', 'Month'] as PeriodId[]).map(p => (
             <button
@@ -265,7 +265,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 backgroundColor: selectedPeriod === p ? WB_THEME.BLUE : 'transparent',
                 color: selectedPeriod === p ? '#031225' : WB_THEME.MUTED
               }}
-              className="px-2.5 py-1 rounded text-xs font-black transition"
+              className="px-2.5 py-1.5 sm:py-1 rounded text-xs font-black transition text-center"
             >
               {p}
             </button>
@@ -275,8 +275,8 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
       {/* ==================== STATUS STRIP ==================== */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="font-extrabold text-sm mr-1">
+        <div className="flex w-full sm:w-auto items-center gap-1.5 overflow-x-auto whitespace-nowrap sm:flex-wrap sm:overflow-visible pb-1 sm:pb-0">
+          <span className="font-extrabold text-sm mr-1 shrink-0">
             {selectedFloor === 'All' ? 'All Floors' : selectedFloor} ·{' '}
             {page === 'PRODUCTION'
               ? 'Production'
