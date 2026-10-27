@@ -412,6 +412,29 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Floor manpower and machines: typed once a day per floor under the line-wise target set-up
+    match /floor_manpower/{docId} {
+      allow read: if isApprovedCaller();
+      allow create, update: if isApprovedCaller()
+        && callerRole() in ['ADMIN', 'IE', 'SUPERVISOR', 'PRODUCTION_REPORTER', 'PRODUCTION_MANAGER']
+        && callerHasFloorAccess(request.resource.data.get('floor', ''))
+        && isValidPhysicalFloor(request.resource.data.get('floor', ''))
+        && isNonEmptyString(request.resource.data.get('date', ''))
+        && request.resource.data.get('totalMachines', -1) is number
+        && request.resource.data.get('totalMachines', -1) >= 0
+        && request.resource.data.get('machinesRunning', -1) is number
+        && request.resource.data.get('machinesRunning', -1) >= 0
+        && request.resource.data.get('machinesRunning', 0) <= request.resource.data.get('totalMachines', 0)
+        && request.resource.data.get('operatorsPresent', -1) is number
+        && request.resource.data.get('operatorsPresent', -1) >= 0
+        && request.resource.data.get('helpersPresent', -1) is number
+        && request.resource.data.get('helpersPresent', -1) >= 0
+        && request.resource.data.get('operatorsOnHandwork', -1) is number
+        && request.resource.data.get('operatorsOnHandwork', -1) >= 0
+        && request.resource.data.get('operatorsOnHandwork', 0) <= request.resource.data.get('operatorsPresent', 0);
+      allow delete: if isAdmin();
+    }
+
     // Employee Registration Requests
     match /registration_requests/{requestId} {
       allow get: if isAdmin() || (isSignedIn() && resource.data.get('requestedByUid', '') == request.auth.uid);

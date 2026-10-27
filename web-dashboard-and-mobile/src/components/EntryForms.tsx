@@ -7,12 +7,12 @@ import {
   QualityDefectItem,
   WeeklyQualityRecord,
   MonthlyTargetConfig,
+  FloorManpowerRecord,
   UserRole
 } from '../types';
 import { BulkTargetSetup } from './BulkTargetSetup';
 import { EntryModuleId, ENTRY_MODULES } from '../data/entryModules';
 import {
-  STANDARD_STYLES,
   STANDARD_HOUR_SLOTS,
   BI_HOURLY_AUDIT_SLOTS,
   STANDARD_DEFECT_TYPES,
@@ -39,6 +39,8 @@ interface EntryFormsProps {
   /** One module per kind of person. When set, only that module is shown. */
   module?: EntryModuleId;
   targets?: LineTargetConfig[];
+  floorTotals?: FloorManpowerRecord[];
+  onSaveFloorManpower?: (record: FloorManpowerRecord) => void;
   onClose: () => void;
 }
 
@@ -54,6 +56,8 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   onSaveMonthlyTarget,
   module,
   targets = [],
+  floorTotals = [],
+  onSaveFloorManpower,
   onClose
 }) => {
   const [activeTab, setActiveTab] = useState<
@@ -71,11 +75,13 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const [formFloor, setFormFloor] = useState<'Sew 1' | 'Sew 2' | 'Sew 3'>('Sew 2');
   const [formLine, setFormLine] = useState('K1');
   const [formHourSlot, setFormHourSlot] = useState(STANDARD_HOUR_SLOTS[0]);
-  const [formStyle, setFormStyle] = useState(STANDARD_STYLES[0].styleNumber);
+  // The item / style of a line comes from today's Target Setting. Nothing is chosen from a made-up list.
+  const styleOf = (lineId: string): string =>
+    targets.find(t => t.lineId === lineId && t.date === formDate && !t.isDemo)?.styleNumber || '';
 
   // Production State (Single + Batch All-Lines Matrix)
   const [prodEntryMode, setProdEntryMode] = useState<'SINGLE' | 'BATCH'>('SINGLE');
-  const [prodQty, setProdQty] = useState('85');
+  const [prodQty, setProdQty] = useState('');
   const [prodIsZero, setProdIsZero] = useState(false);
   const [prodRemarks, setProdRemarks] = useState('');
   const [batchQtys, setBatchQtys] = useState<Record<string, string>>({});
@@ -84,17 +90,16 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   // Quality State (Hourly DHU 1-Hr vs Bi-Hourly Audit 2-Hr OQL)
   const [qaMode, setQaMode] = useState<'HOURLY_DHU' | 'BI_HOURLY_AUDIT'>(module === 'AUDIT' ? 'BI_HOURLY_AUDIT' : 'HOURLY_DHU');
   const [biHourlySlot, setBiHourlySlot] = useState(BI_HOURLY_AUDIT_SLOTS[0]);
-  const [checkedGarments, setCheckedGarments] = useState('100');
-  const [defectiveGarments, setDefectiveGarments] = useState('4');
-  const [defectCounts, setDefectCounts] = useState<Record<string, number>>({
-    'Poor iron': 2,
-    'Uncut thread': 2
-  });
-  const [sewSent, setSewSent] = useState('4');
-  const [sewRecv, setSewRecv] = useState('3');
-  const [spotSent, setSpotSent] = useState('1');
-  const [spotRecv, setSpotRecv] = useState('1');
+  const [checkedGarments, setCheckedGarments] = useState('');
+  const [defectiveGarments, setDefectiveGarments] = useState('');
+  const [defectCounts, setDefectCounts] = useState<Record<string, number>>({});
+  const [sewSent, setSewSent] = useState('');
+  const [sewRecv, setSewRecv] = useState('');
+  const [spotSent, setSpotSent] = useState('');
+  const [spotRecv, setSpotRecv] = useState('');
   const [qaRemarks, setQaRemarks] = useState('');
+  const [customDefects, setCustomDefects] = useState<string[]>([]);
+  const [customDefectInput, setCustomDefectInput] = useState('');
   const [qaSuccess, setQaSuccess] = useState<string | null>(null);
   const [qaError, setQaError] = useState<string | null>(null);
 
@@ -130,7 +135,10 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const [moSuccess, setMoSuccess] = useState(false);
 
   const canWriteAuditOrWeekly = canWriteWeeklyQualityOrBiHourlyAudit(currentUserRole);
-  const availableLines = lines.filter(l => l.floor === formFloor);
+  const floorLines = lines.filter(l => l.floor === formFloor && l.isActive && !/^(iron|packing)/i.test(l.id));
+  const withTarget = floorLines.filter(l => targets.some(t => t.lineId === l.id && t.date === formDate && !t.isDemo && (t.hourlyTargetPcs > 0 || t.dailyTargetPcs > 0)));
+  // Lines without a target that day are not running. If no target was set at all yet, every line is shown.
+  const availableLines = withTarget.length > 0 ? withTarget : floorLines;
 
   // Calculated Quality preview
   const numChecked = Number(checkedGarments) || 0;
@@ -158,7 +166,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
             floor: formFloor,
             date: formDate,
             hourSlot: formHourSlot,
-            styleNumber: formStyle,
+            styleNumber: styleOf(line.id),
             outputQty: q,
             isConfirmedZero: q === 0,
             remarks: prodRemarks,
@@ -182,7 +190,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
       floor: formFloor,
       date: formDate,
       hourSlot: formHourSlot,
-      styleNumber: formStyle,
+      styleNumber: styleOf(formLine),
       outputQty: qty,
       isConfirmedZero: prodIsZero,
       remarks: prodRemarks,
@@ -227,7 +235,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
       floor: formFloor,
       date: formDate,
       hourSlot: activeSlot,
-      styleNumber: formStyle,
+      styleNumber: styleOf(formLine),
       checkedGarments: numChecked,
       defectiveGarments: numDefective,
       defects: defectsList,
@@ -289,7 +297,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
       hourlyTargetPcs: Math.round(daily / hrs),
       targetEfficiencyPct: Number(setupTargetEff) || 75,
       buyer: 'Nike / NFL',
-      styleNumber: formStyle,
+      styleNumber: styleOf(formLine),
       smv: Number(setupSmv),
       operatorsCount: Number(setupOps),
       machinesCount: Number(setupOps),
@@ -459,18 +467,10 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-600 mb-1">Garment Style</label>
-                <select
-                  value={formStyle}
-                  onChange={e => setFormStyle(e.target.value)}
-                  className="w-full text-xs font-bold border border-slate-300 rounded-lg p-2 bg-white"
-                >
-                  {STANDARD_STYLES.map(s => (
-                    <option key={s.styleNumber} value={s.styleNumber}>
-                      {s.styleNumber} (SMV {s.smv})
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1">Item / Style (from Target Setting)</label>
+                <div className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-700">
+                  {styleOf(formLine) || 'not set today'}
+                </div>
               </div>
             </div>
           )}
@@ -727,89 +727,76 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 <label className="block text-xs font-bold text-slate-700 mb-2">
                   Defect Breakdown (Total Defects: {totalDefects})
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-44 overflow-y-auto p-1">
-                  {STANDARD_DEFECT_TYPES.map(defect => {
+                <div className="space-y-1.5">
+                  {[...STANDARD_DEFECT_TYPES, ...customDefects].map(defect => {
                     const count = defectCounts[defect] || 0;
                     return (
-                      <div
-                        key={defect}
-                        className="flex items-center justify-between p-2 rounded-lg border border-slate-200 bg-slate-50 text-xs"
-                      >
-                        <span className="font-medium text-slate-800 truncate pr-1">{defect}</span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleDefectChange(defect, -1)}
-                            className="w-6 h-6 rounded bg-slate-200 font-bold text-slate-700 hover:bg-slate-300"
-                          >
-                            -
-                          </button>
-                          <span className="font-black text-slate-900 w-4 text-center">{count}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleDefectChange(defect, 1)}
-                            className="w-6 h-6 rounded bg-blue-600 font-bold text-white hover:bg-blue-700"
-                          >
-                            +
-                          </button>
+                      <div key={defect} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <span className="pr-2 text-sm font-semibold text-slate-800">{defect}</span>
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => handleDefectChange(defect, -1)} className="h-8 w-8 rounded-lg bg-slate-200 text-base font-black text-slate-700 hover:bg-slate-300">-</button>
+                          <span className="w-8 text-center text-base font-black text-slate-900">{count}</span>
+                          <button type="button" onClick={() => handleDefectChange(defect, 1)} className="h-8 w-8 rounded-lg bg-blue-600 text-base font-black text-white hover:bg-blue-700">+</button>
                         </div>
                       </div>
                     );
                   })}
+                  <div className="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2">
+                    <input
+                      type="text"
+                      value={customDefectInput}
+                      onChange={e => setCustomDefectInput(e.target.value)}
+                      placeholder="Other defect (custom name)"
+                      className="min-w-0 flex-1 rounded-lg border border-slate-300 p-2 text-sm text-slate-900"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const name = customDefectInput.trim();
+                        if (!name) return;
+                        const exists = [...STANDARD_DEFECT_TYPES, ...customDefects].some(d => d.toLowerCase() === name.toLowerCase());
+                        if (!exists) setCustomDefects(prev => [...prev, name]);
+                        setCustomDefectInput('');
+                      }}
+                      className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-black text-white hover:bg-slate-900"
+                    >
+                      Add new
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* Sewing & Spot Rectification (shown in 1-Hr Hourly DHU Mode) */}
+              {/* Rectification of the chosen hour: sent, received back, balance */}
               {qaMode === 'HOURLY_DHU' && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Sewing Sent (pcs)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={sewSent}
-                      onChange={e => setSewSent(e.target.value)}
-                      className="w-full text-xs font-black border border-slate-300 rounded p-1.5 bg-white"
-                    />
+                <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-[11px] font-bold text-slate-500">
+                    Rectification for the hour chosen above ({formatHourSlot12h(formHourSlot)}). Choose another hour to enter that hour.
                   </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Sewing Recv (pcs)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={sewRecv}
-                      onChange={e => setSewRecv(e.target.value)}
-                      className="w-full text-xs font-black border border-slate-300 rounded p-1.5 bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Spot Sent (pcs)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={spotSent}
-                      onChange={e => setSpotSent(e.target.value)}
-                      className="w-full text-xs font-black border border-slate-300 rounded p-1.5 bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Spot Recv (pcs)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={spotRecv}
-                      onChange={e => setSpotRecv(e.target.value)}
-                      className="w-full text-xs font-black border border-slate-300 rounded p-1.5 bg-white"
-                    />
-                  </div>
+                  {[
+                    { title: 'Sewing defects', sent: sewSent, setSent: setSewSent, recv: sewRecv, setRecv: setSewRecv },
+                    { title: 'Spot defects', sent: spotSent, setSent: setSpotSent, recv: spotRecv, setRecv: setSpotRecv }
+                  ].map(g => {
+                    const balance = (Number(g.sent) || 0) - (Number(g.recv) || 0);
+                    return (
+                      <div key={g.title}>
+                        <div className="mb-1 text-xs font-black text-slate-800">{g.title}</div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <label>
+                            <span className="mb-0.5 block text-[11px] font-bold text-slate-600">Sent (pcs)</span>
+                            <input type="number" min={0} value={g.sent} onChange={e => g.setSent(e.target.value)} className="w-full rounded border border-slate-300 bg-white p-2 text-sm font-black" />
+                          </label>
+                          <label>
+                            <span className="mb-0.5 block text-[11px] font-bold text-slate-600">Received (pcs)</span>
+                            <input type="number" min={0} value={g.recv} onChange={e => g.setRecv(e.target.value)} className="w-full rounded border border-slate-300 bg-white p-2 text-sm font-black" />
+                          </label>
+                          <div>
+                            <span className="mb-0.5 block text-[11px] font-bold text-slate-600">Balance</span>
+                            <div className={`w-full rounded border p-2 text-sm font-black ${balance < 0 ? 'border-red-300 bg-red-50 text-red-700' : 'border-slate-200 bg-white text-slate-900'}`}>{balance}</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -989,7 +976,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
           {/* ==================== TAB 4: MORNING LINE SETUP ==================== */}
           {activeTab === 'SETUP' && (
-            <BulkTargetSetup lines={lines} targets={targets} date={formDate} onSaveSetup={onSaveSetup} />
+            <BulkTargetSetup lines={lines} targets={targets} floorTotals={floorTotals} date={formDate} userName={currentUserName} onSaveSetup={onSaveSetup} onSaveFloorManpower={r => onSaveFloorManpower?.(r)} />
           )}
 
           {activeTab === 'MONTHLY' && (

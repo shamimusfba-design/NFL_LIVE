@@ -50,6 +50,8 @@ interface TvDesktopDashboardProps {
   openIncidents: IncidentRecord[];
   allIncidents?: IncidentRecord[];
   onOpenIncidentPanel: () => void;
+  /** The side menu can ask for a page. n changes on every request so the same page can be asked twice. */
+  pageRequest?: { page: WbPageId; n: number };
 }
 
 function effColor(val: number | null, target = 75): string {
@@ -82,6 +84,7 @@ function oqlColor(oql: number | null, target = 4.5): string {
 }
 
 export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
+  pageRequest,
   selectedFloor,
   onSelectFloor,
   selectedPeriod,
@@ -102,6 +105,11 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   onOpenIncidentPanel
 }) => {
   const [page, setPage] = useState<WbPageId>('ALL');
+  // A page chosen in the side menu is shown at once.
+  useEffect(() => {
+    if (pageRequest) setPage(pageRequest.page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageRequest?.n]);
   const [intervalIdx, setIntervalIdx] = useState(0);
   const interval = WB_INTERVALS[intervalIdx];
   const [countdown, setCountdown] = useState(WB_INTERVALS[0]);
@@ -415,7 +423,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           </div>
 
           {/* Row 1 Panels */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[220px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[220px]">
             <WbPanel
               title="Live Target vs Achievement"
               sub="Column: target (grey) vs output (status) · % below"
@@ -461,7 +469,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           </div>
 
           {/* Row 2 Panels */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
             <WbPanel
               title="Hourly Output vs Target"
               sub="12-Hour AM/PM slots (8 AM – 6 PM) · Target (back) vs Output (front)"
@@ -547,7 +555,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           </div>
 
           {/* Row 1 Panels */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[220px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[220px]">
             <WbPanel
               title="DHU by Line"
               sub={`Dashed: limit ${kpis.dhuLimitPct.toFixed(1)}`}
@@ -595,7 +603,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           </div>
 
           {/* Row 2 Panels */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
             <WbPanel
               title="Hourly DHU and OQL"
               sub="12-Hour AM/PM trend · Orange: DHU · Blue: OQL%"
@@ -802,7 +810,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           </div>
 
           {/* Row 1 Panels */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
             <WbPanel
               title="Live Target vs Achievement"
               sub="Grey: Target · Colored: Output · % below"
@@ -843,7 +851,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           </div>
 
           {/* Row 2 Panels */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
             <WbPanel
               title="Efficiency by Line"
               sub={`Front: ${selectedPeriod} · Back: Month · Dashed: target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
@@ -1247,7 +1255,7 @@ const LiveTargetVsAchievementChart: React.FC<{
 }> = ({ lines, onSelectLine }) => {
   const maxVal = Math.max(100, ...lines.map(l => Math.max(l.target, l.output ?? 0)));
   return (
-    <div className="flex items-end justify-between gap-1 h-full pt-4 overflow-x-auto">
+    <div className="nfl-scroll flex items-end justify-between gap-1 h-full pt-4 pb-2 overflow-x-auto">
       {lines.map(l => {
         const tgtH = Math.round((l.target / maxVal) * 100);
         const outH = Math.round(((l.output ?? 0) / maxVal) * 100);
@@ -1256,7 +1264,7 @@ const LiveTargetVsAchievementChart: React.FC<{
           <div
             key={l.lineId}
             onClick={() => onSelectLine(l)}
-            className="flex flex-col items-center flex-1 min-w-[26px] h-full justify-end cursor-pointer group"
+            className="flex flex-col items-center flex-1 min-w-[38px] h-full justify-end cursor-pointer group"
           >
             <div className="text-[9px] font-black mb-0.5" style={{ color: col }}>
               {l.output ?? '—'}
@@ -1290,7 +1298,7 @@ const EfficiencyByLineChart: React.FC<{
   onSelectLine: (l: LinePerformanceSummary) => void;
 }> = ({ lines, targetEff, onSelectLine }) => {
   return (
-    <div className="relative flex items-end justify-between gap-1 h-full pt-4 overflow-x-auto">
+    <div className="nfl-scroll relative flex items-end justify-between gap-1 h-full pt-4 pb-2 overflow-x-auto">
       {/* Dashed Target Line */}
       <div
         style={{ bottom: `${Math.min(95, Math.max(15, targetEff))}%`, borderColor: WB_THEME.AMBER }}
@@ -1337,7 +1345,7 @@ const MetricByLineBarChart: React.FC<{
 }> = ({ lines, getValue, getColor, formatVal, limitVal, onSelectLine }) => {
   const maxVal = Math.max(limitVal * 2, 8, ...lines.map(l => getValue(l) ?? 0));
   return (
-    <div className="flex items-end justify-between gap-1 h-full pt-4 overflow-x-auto">
+    <div className="nfl-scroll flex items-end justify-between gap-1 h-full pt-4 pb-2 overflow-x-auto">
       {lines.map(l => {
         const val = getValue(l);
         const hPct = val !== null ? Math.min(100, Math.round((val / maxVal) * 100)) : 0;

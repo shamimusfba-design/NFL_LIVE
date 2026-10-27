@@ -27,3 +27,23 @@ export function accountFromRecord(rec: Record<string, any>, fallbackId: string):
     floor: toFloorId(String(rec.authorizedFloorScope || rec.floor || 'ALL'))
   };
 }
+
+const CACHE_KEY = 'nfl_session_cache_v1';
+
+/** What was last known about the signed-in person, kept only to survive a slow or failed network at start-up. */
+export function saveSessionCache(uid: string, account: UserAccount): void {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ uid, account })); } catch {}
+}
+
+export function readSessionCache(): { uid: string; account: UserAccount } | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    return v && v.uid && v.account && v.account.id ? v : null;
+  } catch { return null; }
+}
+
+export function clearSessionCache(): void {
+  try { localStorage.removeItem(CACHE_KEY); } catch {}
+}

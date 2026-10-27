@@ -34,7 +34,8 @@ import {
   IncidentRecord,
   UserAccount,
   WeeklyQualityRecord,
-  MonthlyTargetConfig
+  MonthlyTargetConfig,
+  FloorManpowerRecord
 } from '../types';
 import { normalizeHourSlot24h } from '../data/masterData';
 
@@ -203,7 +204,7 @@ export async function createWebEmployeeAccount(employeeId: string, password: str
   }
 }
 
-/** Resolves with the signed-in Firebase user (the browser remembers the sign-in) or null. Never waits more than a few seconds. */
+/** Resolves with the signed-in Firebase user (the browser remembers the sign-in) or null. Waits up to 12 seconds on a slow phone. */
 export function waitForAuthReady(): Promise<FirebaseUser | null> {
   const auth = getFirebaseAuth();
   if (!auth) return Promise.resolve(null);
@@ -211,31 +212,41 @@ export function waitForAuthReady(): Promise<FirebaseUser | null> {
     let done = false;
     const finish = (u: FirebaseUser | null) => { if (!done) { done = true; resolve(u); } };
     const unsubscribe = onAuthStateChanged(auth, u => { unsubscribe(); finish(u); }, () => finish(null));
-    setTimeout(() => finish(null), 5000);
+    setTimeout(() => finish(null), 12000);
   });
 }
 
+export type RestoreResult =
+  | { status: 'none' }                                   // nobody was signed in
+  | { status: 'denied' }                                 // signed in, but not (or no longer) an approved, active employee
+  | { status: 'error'; uid: string }                     // could not check because of the network: do NOT sign the person out
+  | { status: 'ok'; uid: string; rec: Record<string, any> };
+
 /**
  * Brings back the person who is still signed in from an earlier visit, so nobody has to sign in again and again.
- * The record is checked again: it must be approved, active and belong to this very sign-in.
+ * The record is checked again (approved, active, same account). A network problem never counts as "signed out".
  */
-export async function restoreWebSession(): Promise<Record<string, any> | null> {
+export async function restoreWebSession(): Promise<RestoreResult> {
   const user = await waitForAuthReady();
-  if (!user) return null;
+  if (!user) return { status: 'none' };
   const db = getDb();
-  if (!db) return null;
-  try {
-    const binding = await getDoc(doc(db, 'auth_bindings', user.uid));
-    const employeeId = binding.exists() ? String((binding.data() as any).employeeId || '') : '';
-    if (!employeeId) return null;
-    const rec = await fetchOwnUserRecord(employeeId);
-    if (!rec || rec.firebaseUid !== user.uid) return null;
-    if (String(rec.accountStatus || '') !== 'APPROVED' || rec.isActive === false) return null;
-    return rec;
-  } catch (e) {
-    console.warn('restoreWebSession notice:', e);
-    return null;
+  if (!db) return { status: 'error', uid: user.uid };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const binding = await getDoc(doc(db, 'auth_bindings', user.uid));
+      const employeeId = binding.exists() ? String((binding.data() as any).employeeId || '') : '';
+      if (!employeeId) return { status: 'denied' };
+      const rec = await fetchOwnUserRecord(employeeId);
+      if (rec === undefined) throw new Error('record could not be read');
+      if (!rec || rec.firebaseUid !== user.uid) return { status: 'denied' };
+      if (String(rec.accountStatus || '') !== 'APPROVED' || rec.isActive === false) return { status: 'denied' };
+      return { status: 'ok', uid: user.uid, rec };
+    } catch (e) {
+      console.warn('restoreWebSession attempt notice:', e);
+      await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+    }
   }
+  return { status: 'error', uid: user.uid };
 }
 
 export function currentFirebaseUid(): string {
@@ -383,6 +394,7 @@ export interface LiveCloudCallbacks {
   onSetupsUpdated?: (records: LineTargetConfig[]) => void;
   onSetupUpdate?: (records: LineTargetConfig[]) => void;
   onWeeklyQualityUpdated?: (records: WeeklyQualityRecord[]) => void;
+  onFloorManpowerUpdated?: (records: FloorManpowerRecord[]) => void;
   onWeeklyQualityUpdate?: (records: WeeklyQualityRecord[]) => void;
   onMonthlyTargetsUpdated?: (records: MonthlyTargetConfig[]) => void;
   onMonthlyTargetsUpdate?: (records: MonthlyTargetConfig[]) => void;
@@ -709,6 +721,33 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
     );
 
     // 5. Weekly BS OQL & NFL AQC
+    const floorMpQ = query(collection(db, 'floor_manpower'), orderBy('date', 'desc'), limit(30));
+    unsubscribers.push(
+      onSnapshot(
+        floorMpQ,
+        snap => {
+          const list: FloorManpowerRecord[] = [];
+          snap.forEach(d => {
+            const data = d.data();
+            if (!data.floor || !data.date) return;
+            list.push({
+              floor: data.floor as any,
+              date: String(data.date),
+              totalMachines: Number(data.totalMachines || 0),
+              machinesRunning: Number(data.machinesRunning || 0),
+              operatorsPresent: Number(data.operatorsPresent || 0),
+              helpersPresent: Number(data.helpersPresent || 0),
+              operatorsOnHandwork: Number(data.operatorsOnHandwork || 0),
+              updatedBy: String(data.updatedBy || ''),
+              updatedMillis: Number(data.updatedMillis || 0)
+            });
+          });
+          callbacks.onFloorManpowerUpdated?.(list);
+        },
+        () => {}
+      )
+    );
+
     const weeklyQ = query(collection(db, 'weekly_quality'), limit(100));
     unsubscribers.push(
       onSnapshot(
@@ -1005,6 +1044,19 @@ export async function pushIncidentToCloud(inc: IncidentRecord): Promise<boolean>
     return true;
   } catch (e) {
     console.warn('pushIncidentToCloud error:', e);
+    return false;
+  }
+}
+
+export async function pushFloorManpowerToCloud(e: FloorManpowerRecord): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    const docId = `${e.floor.trim().replace(/ /g, '_')}_${e.date}`;
+    await setDoc(doc(db, 'floor_manpower', docId), { ...e }, { merge: true });
+    return true;
+  } catch (err) {
+    console.warn('pushFloorManpowerToCloud error:', err);
     return false;
   }
 }

@@ -230,3 +230,17 @@ export interface FloorKpis {
   openIncidentsCount: number;
   downtimeMinutes: number;
 }
+
+/** Floor totals typed once a day under the line-wise target set-up (same record as the Android app). */
+export interface FloorManpowerRecord {
+  floor: 'Sew 1' | 'Sew 2' | 'Sew 3';
+  date: string;
+  totalMachines: number;
+  machinesRunning: number;
+  operatorsPresent: number;
+  helpersPresent: number;
+  /** Operators doing handwork (usually because helpers are short). They are part of operatorsPresent. */
+  operatorsOnHandwork: number;
+  updatedBy: string;
+  updatedMillis: number;
+}

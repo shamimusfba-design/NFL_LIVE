@@ -32,6 +32,7 @@ interface MobileDashboardProps {
   allIncidents?: IncidentRecord[];
   onOpenIncidentPanel: () => void;
   onNavigateToReports: () => void;
+  pageRequest?: { page: 'PRODUCTION' | 'QUALITY' | 'ALL' | 'TABLE'; n: number };
 }
 
 export const MobileDashboard: React.FC<MobileDashboardProps> = props => {

@@ -9,7 +9,8 @@ import {
   ProductionEntryRecord,
   QualityEntryRecord,
   IncidentRecord,
-  LineMasterItem
+  LineMasterItem,
+  FloorManpowerRecord
 } from './types';
 import {
   ALL_FACTORY_LINES,
@@ -20,6 +21,7 @@ import {
 import { CalculationEngine } from './services/calculationEngine';
 import {
   startLiveFirestoreListeners,
+  pushFloorManpowerToCloud,
   signOutWebCloudSession,
   restoreWebSession,
   pushProductionToCloud,
@@ -46,7 +48,7 @@ import { LoginView } from './components/LoginView';
 import { NflLogo } from './components/NflLogo';
 import { LoadingScreen } from './components/LoadingScreen';
 import { ENTRY_MODULES, canUseEntryModule, EntryModuleId } from './data/entryModules';
-import { accountFromRecord } from './services/sessionUser';
+import { accountFromRecord, saveSessionCache, readSessionCache, clearSessionCache } from './services/sessionUser';
 
 const STORAGE_KEYS = {
   SAMPLE_CLEARED: 'nfl_desktop_sample_data_cleared',
@@ -100,6 +102,9 @@ export default function App() {
   const [showIncidentModal, setShowIncidentModal] = useState(false);
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [entryModule, setEntryModule] = useState<EntryModuleId | undefined>(undefined);
+  const [floorTotals, setFloorTotals] = useState<FloorManpowerRecord[]>([]);
+  const [pageRequest, setPageRequest] = useState<{ page: 'PRODUCTION' | 'QUALITY' | 'ALL' | 'TABLE'; n: number } | undefined>(undefined);
+  const [adminStart, setAdminStart] = useState<'DEMO' | 'LINES' | 'USERS' | undefined>(undefined);
   const [showReportsModal, setShowReportsModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showRoleSelector, setShowRoleSelector] = useState(false);
@@ -208,12 +213,23 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const rec = await restoreWebSession();
+      const res = await restoreWebSession();
       if (cancelled) return;
-      if (rec) {
-        const u = accountFromRecord(rec, String(rec.id || ''));
+      if (res.status === 'ok') {
+        const u = accountFromRecord(res.rec, String(res.rec.id || ''));
+        saveSessionCache(res.uid, u);
         setCurrentUser(u);
         setIsAuthenticatedAdmin(u.role === 'ADMIN');
+      } else if (res.status === 'error') {
+        // The network failed while checking. Keep the person in, if this very browser knew them.
+        const cached = readSessionCache();
+        if (cached && cached.uid === res.uid) {
+          setCurrentUser(cached.account);
+          setIsAuthenticatedAdmin(cached.account.role === 'ADMIN');
+        }
+      } else {
+        clearSessionCache();
+        if (res.status === 'denied') void signOutWebCloudSession();
       }
       setAuthChecking(false);
     })();
@@ -286,6 +302,7 @@ export default function App() {
           return Array.from(map.values());
         });
       },
+      onFloorManpowerUpdated: remote => setFloorTotals(remote),
       onUsersUpdated: remoteUsers => {
         if (remoteUsers.length === 0) return;
         setUsers(prev => {
@@ -378,14 +395,17 @@ export default function App() {
   }, [incidents, currentUser]);
 
   const targetedConfigs = useMemo(() => {
-    return CalculationEngine.getTargetedLines(
-      lines,
-      targets,
-      selectedFloor,
-      todayIso,
-      !isDemoMode
+    const all = CalculationEngine.getTargetedLines(lines, targets, selectedFloor, todayIso, !isDemoMode);
+    if (isDemoMode) return all;
+    // A line is running on a day only when its target was set for that day.
+    // Lines without a target in the selected period are not shown anywhere (charts, KPIs, tables).
+    const active = new Set(
+      targets
+        .filter(t => !t.isDemo && (t.hourlyTargetPcs > 0 || t.dailyTargetPcs > 0) && CalculationEngine.isDateInPeriod(t.date, todayIso, selectedPeriod))
+        .map(t => t.lineId)
     );
-  }, [lines, targets, selectedFloor, todayIso, isDemoMode]);
+    return all.filter(c => active.has(c.lineId));
+  }, [lines, targets, selectedFloor, todayIso, isDemoMode, selectedPeriod]);
 
   const lineSummaries = useMemo(() => {
     return CalculationEngine.computeLineSummaries(
@@ -633,6 +653,11 @@ export default function App() {
     }
   };
 
+  const handleSaveFloorManpower = (record: FloorManpowerRecord) => {
+    setFloorTotals(prev => [record, ...prev.filter(r => !(r.floor === record.floor && r.date === record.date))]);
+    void pushFloorManpowerToCloud(record);
+  };
+
   const handleSaveSetup = (setup: LineTargetConfig) => {
     setTargets(prev => {
       const filtered = prev.filter(t => !(t.lineId === setup.lineId && t.date === setup.date));
@@ -713,17 +738,36 @@ export default function App() {
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
           <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">Dashboard</div>
-      
           <button
-            onClick={() => { closeMenu(); setActiveDeviceView('TV') }}
+            onClick={() => { closeMenu(); setActiveDeviceView('TV'); setPageRequest({ page: 'ALL', n: Date.now() }); }}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10" /></svg>
-            <span className="flex-1">Dashboard</span>
+            <span className="flex-1">Overview (All)</span>
           </button>
-      
           <button
-            onClick={() => { closeMenu(); setActiveDeviceView('MOBILE') }}
+            onClick={() => { closeMenu(); setActiveDeviceView('TV'); setPageRequest({ page: 'PRODUCTION', n: Date.now() }); }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21V9l6 4V9l6 4V5h3v16z" /></svg>
+            <span className="flex-1">Production</span>
+          </button>
+          <button
+            onClick={() => { closeMenu(); setActiveDeviceView('TV'); setPageRequest({ page: 'QUALITY', n: Date.now() }); }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6" /></svg>
+            <span className="flex-1">Quality</span>
+          </button>
+          <button
+            onClick={() => { closeMenu(); setActiveDeviceView('TV'); setPageRequest({ page: 'TABLE', n: Date.now() }); }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5h18v14H3zM3 10h18M3 15h18M9 5v14" /></svg>
+            <span className="flex-1">Line table</span>
+          </button>
+          <button
+            onClick={() => { closeMenu(); setActiveDeviceView('MOBILE'); }}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h10a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM11 18h2" /></svg>
@@ -759,13 +803,31 @@ export default function App() {
             <span className="flex-1">Reports / Excel</span>
           </button>
       {currentUser?.role === 'ADMIN' && (
+        <>
+          <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">Admin</div>
           <button
-            onClick={() => { closeMenu(); setShowAdminModal(true) }}
+            onClick={() => { closeMenu(); setAdminStart('USERS'); setShowAdminModal(true); }}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
           >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM12 2v3M12 19v3M2 12h3M19 12h3" /></svg>
-            <span className="flex-1">Admin & Reset</span>
-          </button>)}
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5M19 8v6M16 11h6" /></svg>
+            <span className="flex-1">Users & approvals</span>
+          </button>
+          <button
+            onClick={() => { closeMenu(); setAdminStart('LINES'); setShowAdminModal(true); }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+            <span className="flex-1">Line master</span>
+          </button>
+          <button
+            onClick={() => { closeMenu(); setAdminStart('DEMO'); setShowAdminModal(true); }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg>
+            <span className="flex-1">Data clean & reset</span>
+          </button>
+        </>
+      )}
           <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">More</div>
       
           <button
@@ -794,6 +856,7 @@ export default function App() {
           <button
             onClick={() => {
               void signOutWebCloudSession();
+              clearSessionCache();
               setCurrentUser(null);
               setIsAuthenticatedAdmin(false);
               setShowRoleSelector(false);
@@ -843,6 +906,7 @@ export default function App() {
         {activeDeviceView === 'MOBILE' ? (
           <div className="max-w-lg mx-auto min-h-screen bg-[#0A1522] shadow-xl relative border-x border-[#1B2E45]">
             <MobileDashboard
+              pageRequest={pageRequest}
               selectedFloor={selectedFloor}
               onSelectFloor={setSelectedFloor}
               selectedPeriod={selectedPeriod}
@@ -869,6 +933,7 @@ export default function App() {
           </div>
         ) : (
           <TvDesktopDashboard
+            pageRequest={pageRequest}
             selectedFloor={selectedFloor}
             onSelectFloor={setSelectedFloor}
             selectedPeriod={selectedPeriod}
@@ -971,6 +1036,8 @@ export default function App() {
           onSaveMonthlyTarget={handleSaveMonthlyTarget}
           module={entryModule}
           targets={targets}
+          floorTotals={floorTotals}
+          onSaveFloorManpower={handleSaveFloorManpower}
           onClose={() => { setShowEntryModal(false); setEntryModule(undefined); }}
         />
       )}
@@ -996,6 +1063,7 @@ export default function App() {
       {/* MODAL 5: ADMIN, CLEAR DEMO DATA & FACTORY RESET */}
       {showAdminModal && (
         <AdminView
+          initialTab={adminStart}
           lines={lines}
           users={users}
           demoStats={demoStats}
@@ -1013,7 +1081,7 @@ export default function App() {
           onApproveDeviceOrTv={async (userId, deviceId, deviceName) => {
             await approveCloudDeviceOrTvRequest(userId, deviceId, deviceName, currentUser.name);
           }}
-          onClose={() => setShowAdminModal(false)}
+          onClose={() => { setShowAdminModal(false); setAdminStart(undefined); }}
         />
       )}
 

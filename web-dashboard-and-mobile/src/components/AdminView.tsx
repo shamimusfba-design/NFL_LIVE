@@ -23,6 +23,7 @@ interface AdminViewProps {
   onApproveRegistration?: (userId: string) => Promise<void>;
   onRejectRegistration?: (userId: string) => Promise<void>;
   onApproveDeviceOrTv?: (userId: string, deviceId: string, deviceName: string) => Promise<void>;
+  initialTab?: 'DEMO' | 'LINES' | 'USERS';
   onClose: () => void;
 }
 
@@ -38,6 +39,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onApproveRegistration,
   onRejectRegistration,
   onApproveDeviceOrTv,
+  initialTab,
   onClose
 }) => {
   const pendingRegistrations = users.filter(u => u.accountStatus === 'PENDING_APPROVAL');
@@ -49,7 +51,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const totalPendingRequests = pendingRegistrations.length + pendingDeviceOrTvUsers.length;
 
   const [adminTab, setAdminTab] = useState<'DEMO' | 'LINES' | 'USERS'>(
-    totalPendingRequests > 0 ? 'USERS' : 'DEMO'
+    initialTab ?? (totalPendingRequests > 0 ? 'USERS' : 'DEMO')
   );
   const [confirmRemoval, setConfirmRemoval] = useState(false);
   const [confirmFactoryReset, setConfirmFactoryReset] = useState(false);

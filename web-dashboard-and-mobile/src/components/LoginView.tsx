@@ -10,7 +10,7 @@ import {
   submitWebRegistration,
   signOutWebCloudSession
 } from '../services/firebaseLiveSync';
-import { accountFromRecord } from '../services/sessionUser';
+import { accountFromRecord, saveSessionCache } from '../services/sessionUser';
 
 interface LoginViewProps {
   // Kept for compatibility with the caller. Sign-in is checked by Firebase, never against these.
@@ -220,7 +220,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
         return;
       }
       setPasswordInput('');
-      onLogin(accountFromRecord(rec, employeeId));
+      const account = accountFromRecord(rec, employeeId);
+      saveSessionCache(uid, account);
+      onLogin(account);
     } catch (err: any) {
       setErrorMessage(err?.message ? String(err.message) : 'Could not sign in. Check the internet connection.');
     } finally {
@@ -299,7 +301,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
         background: `linear-gradient(180deg, rgba(6,27,67,.2), rgba(6,27,67,.53), rgba(6,27,67,.93), #061B43), url(${bg}) center/cover no-repeat`
       }} />
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '34px 20px 26px', minHeight: '100vh' }}>
-        <div style={{ width: 86, height: 86, borderRadius: '50%', background: '#fff', boxShadow: '0 8px 22px rgba(0,0,0,.45)', display: 'grid', placeItems: 'center' }}>
+        <div style={{ width: 86, height: 86, borderRadius: '50%', background: '#fff', boxShadow: '0 8px 22px rgba(0,0,0,.45)', display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
           <NflLogo size={72} />
         </div>
         <div style={{ fontSize: 34, fontWeight: 900, letterSpacing: 1.2, color: '#fff', margin: '14px 0 20px', lineHeight: 1 }}>

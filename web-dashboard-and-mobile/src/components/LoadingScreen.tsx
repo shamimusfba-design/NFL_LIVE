@@ -35,7 +35,7 @@ export const LoadingScreen: React.FC<{ label?: string }> = ({ label = 'Loading..
         <div
           style={{
             position: 'absolute', left: 30, top: 30, width: 108, height: 108, borderRadius: '50%', background: '#fff',
-            display: 'grid', placeItems: 'center', boxShadow: '0 8px 26px rgba(0,0,0,.5)', animation: 'nflBreath 1.8s ease-in-out infinite'
+            display: 'grid', placeItems: 'center', boxShadow: '0 8px 26px rgba(0,0,0,.5)', animation: 'nflBreath 1.8s ease-in-out infinite', overflow: 'hidden'
           }}
         >
           <NflLogo size={90} />

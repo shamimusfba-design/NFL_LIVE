@@ -188,20 +188,8 @@ export const NPT_TYPES = [
   'Manpower Shortage', 'Quality Issue', 'Setup Time', 'Custom'
 ];
 
-export const STANDARD_USERS: UserAccount[] = [
-  { id: '1015198', name: 'Primary Administrator (1015198)', username: '1015198', role: 'ADMIN', floor: 'All' },
-  { id: 'admin', name: 'System Admin', username: 'admin', role: 'ADMIN', floor: 'All' },
-  { id: 'auditor', name: 'NFL Auditor (Bi-Hourly & Weekly OQL)', username: 'auditor', role: 'AUDITOR', floor: 'All' },
-  { id: 'qual_rep', name: 'Quality Inspector (Hourly DHU)', username: 'qual_rep', role: 'QUALITY_REPORTER', floor: 'Sew 2' },
-  { id: 'prod_rep', name: 'Production Reporter', username: 'prod_rep', role: 'PRODUCTION_REPORTER', floor: 'Sew 2' },
-  { id: 'ie', name: 'IE Officer', username: 'ie', role: 'IE', floor: 'All' },
-  { id: 'supervisor', name: 'Floor Supervisor', username: 'supervisor', role: 'SUPERVISOR', floor: 'Sew 2' },
-  { id: 'production', name: 'Production Manager', username: 'production', role: 'PRODUCTION_MANAGER', floor: 'All' },
-  { id: 'quality', name: 'Quality Manager', username: 'quality', role: 'QUALITY_MANAGER', floor: 'All' },
-  { id: 'mechanic', name: 'Senior Mechanic', username: 'mechanic', role: 'MECHANIC', floor: 'Sew 2' },
-  { id: 'input_coord', name: 'Input Coordinator', username: 'input_coord', role: 'INPUT_MATERIAL', floor: 'Sew 2' },
-  { id: 'management', name: 'Factory Management', username: 'management', role: 'MANAGEMENT_VIEW', floor: 'All' }
-];
+/** The old shared accounts (admin, auditor, ie ...) are closed. Real accounts come from the cloud after sign-in. */
+export const STANDARD_USERS: UserAccount[] = [];
 
 export function generateRecentIsoWeeks(count = 12): Array<{ weekKey: string; weekStartIso: string }> {
   const result: Array<{ weekKey: string; weekStartIso: string }> = [];
