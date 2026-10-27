@@ -88,6 +88,7 @@ class FirebaseSyncService(private val context: Context) {
   var onRemoteIncidentsUpdated: ((List<IncidentItem>) -> Unit)? = null
   var onRemoteSetupsUpdated: ((List<SupervisorLineSetup>) -> Unit)? = null
   var onRemoteMonthlyTargetsUpdated: ((List<MonthlyFactoryTarget>) -> Unit)? = null
+  var onRemoteFloorManpowerUpdated: ((List<FloorManpower>) -> Unit)? = null
   var onRemoteWeeklyQualityUpdated: ((List<WeeklyQualityEntry>) -> Unit)? = null
   var onRemoteUsersUpdated: ((List<UserAccount>) -> Unit)? = null
   var onRemoteDeviceRequestsUpdated: ((List<DeviceApprovalRequest>) -> Unit)? = null
@@ -502,6 +503,31 @@ class FirebaseSyncService(private val context: Context) {
         }
       listeners.add(weeklyReg)
 
+      // 5c. Floor manpower and machines (three small documents a day, newest 30 only)
+      val floorMpReg = db.collection("floor_manpower")
+        .orderBy("date", Query.Direction.DESCENDING)
+        .limit(30)
+        .addSnapshotListener { snapshot, error ->
+          if (error != null) {
+            handleListenerError("FloorManpower", error)
+            return@addSnapshotListener
+          }
+          if (snapshot != null) {
+            hasPermissionError = false
+            val docChanges = snapshot.documentChanges
+            val docs = snapshot.documents
+            val isFromCache = snapshot.metadata.isFromCache
+            snapshotScope.launch {
+              recordCollectionRead(collection = "floor_manpower", changesCount = docChanges.size, isFromCache = isFromCache)
+              val list = docs.mapNotNull { doc -> parseFloorManpowerDoc(doc) }
+              if (list.isNotEmpty()) {
+                onRemoteFloorManpowerUpdated?.invoke(list)
+              }
+            }
+          }
+        }
+      listeners.add(floorMpReg)
+
       // 6. User accounts listener:
       // - Admin listens to full /users, /device_approval_requests, and /admin_notifications collections
       // - Non-admin listens only to their own /users/{employeeId} document (least-privilege RBAC)
@@ -823,6 +849,26 @@ class FirebaseSyncService(private val context: Context) {
         nflAqcPct = doc.getDouble("nflAqcPct"),
         lastUpdatedBy = doc.getString("lastUpdatedBy") ?: "",
         lastUpdatedMillis = doc.getLong("lastUpdatedMillis") ?: 0L
+      )
+    } catch (e: Exception) {
+      null
+    }
+  }
+
+  private fun parseFloorManpowerDoc(doc: DocumentSnapshot): FloorManpower? {
+    return try {
+      val floor = doc.getString("floor")?.takeIf { it.isNotBlank() } ?: return null
+      val date = doc.getString("date")?.takeIf { it.isNotBlank() } ?: return null
+      FloorManpower(
+        floor = floor,
+        date = date,
+        totalMachines = doc.getLong("totalMachines")?.toInt() ?: 0,
+        machinesRunning = doc.getLong("machinesRunning")?.toInt() ?: 0,
+        operatorsPresent = doc.getLong("operatorsPresent")?.toInt() ?: 0,
+        helpersPresent = doc.getLong("helpersPresent")?.toInt() ?: 0,
+        operatorsOnHandwork = doc.getLong("operatorsOnHandwork")?.toInt() ?: 0,
+        updatedBy = doc.getString("updatedBy") ?: "",
+        updatedMillis = doc.getLong("updatedMillis") ?: 0L
       )
     } catch (e: Exception) {
       null
@@ -1462,6 +1508,52 @@ class FirebaseSyncService(private val context: Context) {
       Log.w("FirebaseSync", "Firestore weekly quality push failed: ${e.message}")
       false
     }
+  }
+
+  suspend fun pushFloorManpowerAwait(e: FloorManpower): Boolean = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext false
+    try {
+      val docId = e.floor.trim().replace(" ", "_") + "_" + e.date
+      val map = hashMapOf<String, Any>(
+        "floor" to e.floor, "date" to e.date,
+        "totalMachines" to e.totalMachines, "machinesRunning" to e.machinesRunning,
+        "operatorsPresent" to e.operatorsPresent, "helpersPresent" to e.helpersPresent,
+        "operatorsOnHandwork" to e.operatorsOnHandwork,
+        "updatedBy" to e.updatedBy, "updatedMillis" to e.updatedMillis
+      )
+      withTimeout(10000L) { db.collection("floor_manpower").document(docId).set(map, SetOptions.merge()).await() }
+      hasPermissionError = false
+      lastErrorMessage = null
+      true
+    } catch (ex: Exception) {
+      if (ex is FirebaseFirestoreException && ex.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) hasPermissionError = true
+      lastErrorMessage = ex.message
+      Log.w("FirebaseSync", "Firestore floor manpower push failed: ${ex.message}")
+      false
+    }
+  }
+
+  /** Deletes every document of the given Firestore collections. Returns (documents deleted, all collections succeeded). */
+  suspend fun deleteCollectionsAwait(names: List<String>): Pair<Int, Boolean> = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext Pair(0, false)
+    var total = 0
+    var ok = true
+    for (name in names) {
+      try {
+        val snap = withTimeout(15000L) { db.collection(name).get().await() }
+        snap.documents.chunked(400).forEach { chunk ->
+          val batch = db.batch()
+          chunk.forEach { batch.delete(it.reference) }
+          withTimeout(15000L) { batch.commit().await() }
+          total += chunk.size
+        }
+      } catch (ex: Exception) {
+        ok = false
+        lastErrorMessage = ex.message
+        Log.w("FirebaseSync", "Failed clearing collection $name: ${ex.message}")
+      }
+    }
+    Pair(total, ok)
   }
 
   suspend fun pushUserAccountAwait(user: UserAccount): Boolean = withContext(Dispatchers.IO) {

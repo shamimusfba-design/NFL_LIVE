@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.NflRepository
 import com.example.model.FloorScope
+import com.example.model.ManpowerSummary
+import com.example.model.autoHourlyTarget
 import com.example.model.SupervisorLineSetup
 import com.example.model.UserRole
 import com.example.ui.theme.NflGreen
@@ -50,38 +52,45 @@ internal data class LineRowDraft(
   val floor: String,
   val itemName: String,
   val smvText: String,
-  val targetText: String
+  val operatorsText: String = "",
+  val helpersText: String = "",
+  val finishingText: String = "",
+  val effText: String = "100",
+  val targetText: String = ""
 )
+
+private const val DRAFT_FIELD_COUNT = 9
 
 internal val LineRowDraftMapSaver: Saver<SnapshotStateMap<String, LineRowDraft>, ArrayList<String>> = Saver(
   save = { map ->
-    val list = ArrayList<String>(map.size * 5)
+    val list = ArrayList<String>(map.size * DRAFT_FIELD_COUNT)
     map.values.forEach { d ->
-      list.add(d.lineId)
-      list.add(d.floor)
-      list.add(d.itemName)
-      list.add(d.smvText)
-      list.add(d.targetText)
+      list.add(d.lineId); list.add(d.floor); list.add(d.itemName); list.add(d.smvText)
+      list.add(d.operatorsText); list.add(d.helpersText); list.add(d.finishingText); list.add(d.effText); list.add(d.targetText)
     }
     list
   },
   restore = { list ->
     mutableStateMapOf<String, LineRowDraft>().apply {
       var i = 0
-      while (i + 4 < list.size) {
+      while (i + DRAFT_FIELD_COUNT - 1 < list.size) {
         val draft = LineRowDraft(
-          lineId = list[i],
-          floor = list[i + 1],
-          itemName = list[i + 2],
-          smvText = list[i + 3],
-          targetText = list[i + 4]
+          lineId = list[i], floor = list[i + 1], itemName = list[i + 2], smvText = list[i + 3],
+          operatorsText = list[i + 4], helpersText = list[i + 5], finishingText = list[i + 6], effText = list[i + 7], targetText = list[i + 8]
         )
         put(draft.lineId, draft)
-        i += 5
+        i += DRAFT_FIELD_COUNT
       }
     }
   }
 )
+
+/** Hourly target worked out from what is typed in the row: manpower x 60 x target % / SMV. */
+private fun LineRowDraft.totalManpower(): Int =
+  (operatorsText.toIntOrNull() ?: 0) + (helpersText.toIntOrNull() ?: 0) + (finishingText.toIntOrNull() ?: 0)
+
+private fun LineRowDraft.autoHourly(): Int =
+  autoHourlyTarget(totalManpower(), smvText.toDoubleOrNull() ?: 0.0, effText.toDoubleOrNull() ?: 0.0)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -118,19 +127,21 @@ fun SupervisorSetupScreen(
   var lastSetupContextKey by rememberSaveable { mutableStateOf("") }
 
   fun populateRowDrafts() {
+    val realSetups = repository.targets.value.filter { !it.isDemo }
     floorLines.forEach { lineInfo ->
       val setup = repository.getLineSetup(lineInfo.id)
-      val hourlyTgt = if (setup.targetHourlyPcs > 0) {
-        setup.targetHourlyPcs
-      } else if (setup.targetDailyPcs > 0) {
-        (setup.targetDailyPcs / 8).coerceAtLeast(1)
-      } else 0
+      // Manpower is shown only when it was really typed before. Nothing is made up.
+      val hasReal = realSetups.any { it.lineId.equals(lineInfo.id, ignoreCase = true) }
       rowDrafts[lineInfo.id] = LineRowDraft(
         lineId = lineInfo.id,
         floor = lineInfo.floor,
         itemName = setup.itemName,
         smvText = if (setup.smv > 0) setup.smv.toString() else "",
-        targetText = if (hourlyTgt > 0) hourlyTgt.toString() else ""
+        operatorsText = if (hasReal) setup.operatorsCount.toString() else "",
+        helpersText = if (hasReal) setup.helpersCount.toString() else "",
+        finishingText = if (hasReal) setup.finishingStaffCount.toString() else "",
+        // Target % starts at 100 for a line that was never set up; a saved line shows what was saved.
+        effText = if (hasReal && setup.targetEfficiencyPct > 0) setup.targetEfficiencyPct.let { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() } else "100"
       )
     }
   }
@@ -150,10 +161,21 @@ fun SupervisorSetupScreen(
     }
   }
 
+  /** Returns a short message when the row cannot be saved, otherwise null. */
+  fun problemWith(draft: LineRowDraft): String? {
+    if ((draft.smvText.toDoubleOrNull() ?: 0.0) <= 0.0) return "Line ${draft.lineId}: enter the SMV."
+    if (draft.operatorsText.isBlank() || draft.helpersText.isBlank() || draft.finishingText.isBlank()) {
+      return "Line ${draft.lineId}: enter operators, helpers and finishing staff (use 0 if there are none)."
+    }
+    if (draft.totalManpower() <= 0) return "Line ${draft.lineId}: total manpower must be more than 0."
+    if ((draft.effText.toDoubleOrNull() ?: 0.0) <= 0.0) return "Line ${draft.lineId}: enter the target %."
+    return null
+  }
+
   fun buildSetupFromDraft(draft: LineRowDraft): SupervisorLineSetup {
     val existing = repository.getLineSetup(draft.lineId)
     val smvVal = draft.smvText.toDoubleOrNull()?.coerceAtLeast(0.1) ?: existing.smv
-    val hourlyVal = draft.targetText.toIntOrNull()?.coerceAtLeast(0) ?: 0
+    val hourlyVal = draft.autoHourly()
     val dailyVal = hourlyVal * 8
 
     return existing.copy(
@@ -162,6 +184,11 @@ fun SupervisorSetupScreen(
       date = repository.getCurrentBangladeshDateIso(),
       itemName = draft.itemName.trim().ifBlank { existing.itemName },
       smv = smvVal,
+      operatorsCount = draft.operatorsText.toIntOrNull() ?: 0,
+      helpersCount = draft.helpersText.toIntOrNull() ?: 0,
+      finishingStaffCount = draft.finishingText.toIntOrNull() ?: 0,
+      targetEfficiencyPct = draft.effText.toDoubleOrNull() ?: existing.targetEfficiencyPct,
+      includeHelpersInEfficiency = true,
       targetDailyPcs = dailyVal,
       targetHourlyPcs = hourlyVal
     )
@@ -169,12 +196,21 @@ fun SupervisorSetupScreen(
 
   fun saveAllFloorLines() {
     if (!canMorningTargetWrite) return
-    val setupsToSave = floorLines.mapNotNull { line ->
-      rowDrafts[line.id]?.let { buildSetupFromDraft(it) }
+    // A completely untouched row (no SMV and no manpower) is skipped. Every other row must be complete.
+    val active = floorLines.mapNotNull { line -> rowDrafts[line.id] }
+      .filter { it.smvText.isNotBlank() || it.operatorsText.isNotBlank() || it.helpersText.isNotBlank() || it.finishingText.isNotBlank() }
+    val firstProblem = active.firstNotNullOfOrNull { problemWith(it) }
+    if (firstProblem != null) {
+      saveSuccessMsg = "⚠️ $firstProblem Nothing was saved."
+      return
     }
-    repository.saveBatchLineSetups(setupsToSave)
+    if (active.isEmpty()) {
+      saveSuccessMsg = "⚠️ Enter SMV and manpower for at least one line."
+      return
+    }
+    repository.saveBatchLineSetups(active.map { buildSetupFromDraft(it) })
     populateRowDrafts()
-    saveSuccessMsg = "✓ Saved all ${setupsToSave.size} lines for ${selectedFloor.displayName} (Synced to Cloud & TV Dashboard)"
+    saveSuccessMsg = "✓ Saved ${active.size} lines for ${selectedFloor.displayName} (hourly targets worked out automatically, synced to Cloud & TV Dashboard)"
   }
 
   Scaffold(
@@ -191,7 +227,7 @@ fun SupervisorSetupScreen(
               fontSize = 15.sp
             )
             Text(
-              text = "Line-wise Hourly Target (pcs/hr) • 8-Hour Shift (Daily = Hourly × 8)",
+              text = "Item, SMV, manpower and target % • hourly target is worked out automatically (Daily = Hourly × 8)",
               color = Color(0xFFBAE6FD),
               fontSize = 11.sp
             )
@@ -359,7 +395,7 @@ fun SupervisorSetupScreen(
                   color = Color(0xFF0F172A)
                 )
                 Text(
-                  text = "Columns: 1. Line | 2. Item | 3. SMV | 4. 8-Hr Target (pcs)",
+                  text = "Hourly target = (operators + helpers + finishing) × 60 × target % ÷ SMV",
                   fontSize = 11.sp,
                   color = Color(0xFF64748B)
                 )
@@ -385,8 +421,13 @@ fun SupervisorSetupScreen(
             ) {
               TableHeaderCell("Line", 54.dp, TextAlign.Center)
               TableHeaderCell("Item / Style", 124.dp, TextAlign.Start)
-              TableHeaderCell("SMV", 68.dp, TextAlign.Center)
-              TableHeaderCell("Hourly Target (pcs/hr)", 96.dp, TextAlign.Center)
+              TableHeaderCell("SMV", 62.dp, TextAlign.Center)
+              TableHeaderCell("Operators", 66.dp, TextAlign.Center)
+              TableHeaderCell("Helpers", 62.dp, TextAlign.Center)
+              TableHeaderCell("Finishing", 62.dp, TextAlign.Center)
+              TableHeaderCell("Total", 54.dp, TextAlign.Center)
+              TableHeaderCell("Target %", 62.dp, TextAlign.Center)
+              TableHeaderCell("Hourly (auto)", 84.dp, TextAlign.Center)
               if (canMorningTargetWrite) {
                 TableHeaderCell("Save", 54.dp, TextAlign.Center)
               }
@@ -445,7 +486,7 @@ fun SupervisorSetupScreen(
                     val clean = newVal.filter { it.isDigit() || it == '.' }
                     rowDrafts[lineInfo.id] = draft.copy(smvText = clean)
                   },
-                  width = 68.dp,
+                  width = 62.dp,
                   enabled = canMorningTargetWrite,
                   isDecimal = true,
                   placeholder = "SMV",
@@ -453,28 +494,60 @@ fun SupervisorSetupScreen(
                   testTag = if (idx == 0) "setup_smv_input" else null
                 )
 
-                // Column 4: Hourly Target (pcs/hr) Field
+                // Columns 4-6: Operators | Helpers | Finishing
                 CompactTableNumberField(
-                  value = draft.targetText,
-                  onValueChange = { newVal ->
-                    val clean = newVal.filter { it.isDigit() }
-                    rowDrafts[lineInfo.id] = draft.copy(targetText = clean)
-                  },
-                  width = 96.dp,
-                  enabled = canMorningTargetWrite,
-                  isDecimal = false,
-                  placeholder = "pcs/hr",
-                  imeAction = if (idx == floorLines.lastIndex) ImeAction.Done else ImeAction.Next,
-                  testTag = if (idx == 0) "setup_target_pcs_input" else null
+                  value = draft.operatorsText,
+                  onValueChange = { v -> rowDrafts[lineInfo.id] = draft.copy(operatorsText = v.filter { it.isDigit() }.take(3)) },
+                  width = 66.dp, enabled = canMorningTargetWrite, isDecimal = false, placeholder = "Opr",
+                  imeAction = ImeAction.Next, testTag = if (idx == 0) "setup_operators_input" else null
                 )
-
+                CompactTableNumberField(
+                  value = draft.helpersText,
+                  onValueChange = { v -> rowDrafts[lineInfo.id] = draft.copy(helpersText = v.filter { it.isDigit() }.take(3)) },
+                  width = 62.dp, enabled = canMorningTargetWrite, isDecimal = false, placeholder = "Hlp",
+                  imeAction = ImeAction.Next, testTag = if (idx == 0) "setup_helpers_input" else null
+                )
+                CompactTableNumberField(
+                  value = draft.finishingText,
+                  onValueChange = { v -> rowDrafts[lineInfo.id] = draft.copy(finishingText = v.filter { it.isDigit() }.take(3)) },
+                  width = 62.dp, enabled = canMorningTargetWrite, isDecimal = false, placeholder = "Fin",
+                  imeAction = ImeAction.Next, testTag = if (idx == 0) "setup_finishing_input" else null
+                )
+                // Column 7: Total manpower (worked out)
+                Surface(color = Color(0xFFE0F2FE), shape = RoundedCornerShape(5.dp), modifier = Modifier.width(54.dp).heightIn(min = 36.dp)) {
+                  Box(contentAlignment = Alignment.Center) {
+                    Text(text = draft.totalManpower().takeIf { it > 0 }?.toString() ?: "—", fontWeight = FontWeight.Black, fontSize = 13.sp, color = Color(0xFF075985))
+                  }
+                }
+                // Column 8: Target efficiency %
+                CompactTableNumberField(
+                  value = draft.effText,
+                  onValueChange = { v -> rowDrafts[lineInfo.id] = draft.copy(effText = v.filter { it.isDigit() || it == '.' }.take(5)) },
+                  width = 62.dp, enabled = canMorningTargetWrite, isDecimal = true, placeholder = "%",
+                  imeAction = if (idx == floorLines.lastIndex) ImeAction.Done else ImeAction.Next, testTag = if (idx == 0) "setup_target_eff_input" else null
+                )
+                // Column 9: Hourly target, worked out automatically
+                Surface(color = Color(0xFFDCFCE7), shape = RoundedCornerShape(5.dp), modifier = Modifier.width(84.dp).heightIn(min = 36.dp)) {
+                  Box(contentAlignment = Alignment.Center) {
+                    Text(
+                      text = draft.autoHourly().takeIf { it > 0 }?.let { "$it /hr" } ?: "—",
+                      fontWeight = FontWeight.Black, fontSize = 13.sp, color = Color(0xFF166534),
+                      modifier = Modifier.testTag("setup_hourly_auto_${lineInfo.id}")
+                    )
+                  }
+                }
                 // Column 5: Quick Single-Row Save Button
                 if (canMorningTargetWrite) {
                   Surface(
                     onClick = {
-                      val setup = buildSetupFromDraft(draft)
-                      repository.saveLineSetup(setup)
-                      saveSuccessMsg = "✓ Saved Line ${draft.lineId}: Hourly Target ${setup.targetHourlyPcs} pcs/hr (${setup.targetDailyPcs} pcs/day)"
+                      val problem = problemWith(draft)
+                      if (problem != null) {
+                        saveSuccessMsg = "⚠️ $problem"
+                      } else {
+                        val setup = buildSetupFromDraft(draft)
+                        repository.saveLineSetup(setup)
+                        saveSuccessMsg = "✓ Saved Line ${draft.lineId}: Hourly Target ${setup.targetHourlyPcs} pcs/hr (${setup.targetDailyPcs} pcs/day)"
+                      }
                     },
                     color = Color(0xFFDCFCE7),
                     shape = RoundedCornerShape(5.dp),
@@ -528,6 +601,106 @@ fun SupervisorSetupScreen(
           }
         }
       }
+
+      // 3. Floor totals (not line by line): machines, operators, helpers and handwork staff present today
+      FloorManpowerCard(
+        repository = repository,
+        floor = selectedFloor,
+        plannedOperators = floorLines.sumOf { rowDrafts[it.id]?.operatorsText?.toIntOrNull() ?: 0 },
+        canWrite = canMorningTargetWrite
+      )
+    }
+  }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FloorManpowerCard(
+  repository: NflRepository,
+  floor: FloorScope,
+  plannedOperators: Int,
+  canWrite: Boolean
+) {
+  val entries by repository.floorManpower.collectAsState()
+  val isSingleFloor = floor == FloorScope.SEW_1 || floor == FloorScope.SEW_2 || floor == FloorScope.SEW_3
+  val draft = rememberSaveable(floor.name, saver = StringMapSaver) { mutableStateMapOf<String, String>() }
+  var message by remember { mutableStateOf<String?>(null) }
+  var isError by remember { mutableStateOf(false) }
+
+  LaunchedEffect(floor.name, entries.size) {
+    if (isSingleFloor && draft.isEmpty()) {
+      val today = repository.getCurrentBangladeshDateIso()
+      val mine = entries.filter { it.floor.equals(floor.apiValue, ignoreCase = true) }
+      val todayRow = mine.find { it.date == today }
+      val last = mine.maxByOrNull { it.date }
+      if (todayRow != null) {
+        draft["tm"] = todayRow.totalMachines.toString(); draft["mr"] = todayRow.machinesRunning.toString()
+        draft["op"] = todayRow.operatorsPresent.toString(); draft["hp"] = todayRow.helpersPresent.toString(); draft["hw"] = todayRow.operatorsOnHandwork.toString()
+      } else if (last != null) {
+        draft["tm"] = last.totalMachines.toString() // total machines hardly changes day to day
+      }
+    }
+  }
+
+  Card(
+    shape = RoundedCornerShape(12.dp),
+    colors = CardDefaults.cardColors(containerColor = Color.White),
+    elevation = CardDefaults.cardElevation(2.dp),
+    border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+    modifier = Modifier.fillMaxWidth().testTag("floor_manpower_card")
+  ) {
+    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Text("${floor.displayName} — Floor Manpower & Machines (today)", fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
+      if (!isSingleFloor) {
+        Text("Choose Sew 1, Sew 2 or Sew 3 above to enter that floor's totals.", fontSize = 12.sp, color = Color(0xFF64748B))
+        return@Column
+      }
+      Text("Typed once for the whole floor, not line by line. When helpers are short, operators do handwork: type how many operators are on handwork (HW) now. They are part of the operators present.", fontSize = 11.sp, color = Color(0xFF64748B))
+      val fields = listOf("tm" to "Total machines", "mr" to "Machines running", "op" to "Operators present", "hp" to "Helpers present", "hw" to "Operators doing handwork (HW)")
+      fields.chunked(2).forEach { row ->
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+          row.forEach { (code, label) ->
+            OutlinedTextField(
+              value = draft[code].orEmpty(),
+              onValueChange = { v -> if (canWrite && v.length <= 4 && v.all { it.isDigit() }) draft[code] = v },
+              label = { Text(label, fontSize = 10.sp, maxLines = 1) },
+              singleLine = true,
+              enabled = canWrite,
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+              modifier = Modifier.weight(1f).testTag("floor_mp_$code")
+            )
+          }
+          if (row.size == 1) Spacer(Modifier.weight(1f))
+        }
+      }
+      fun n(code: String) = draft[code].orEmpty().toIntOrNull() ?: 0
+      val live = ManpowerSummary(1, plannedOperators, n("op"), n("hp"), n("hw"), n("tm"), n("mr"))
+      Surface(color = Color(0xFFF1F5F9), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+          Text("Operators present: ${live.operatorsPresent} of ${live.operatorsPlanned} planned (${live.operatorsPresentPct.toInt()}%)", fontSize = 12.sp, color = Color(0xFF0F172A))
+          Text("Machines running: ${live.machinesRunning} of ${live.totalMachines} (${live.machinesRunningPct.toInt()}%)", fontSize = 12.sp, color = Color(0xFF0F172A))
+          Text("Running machines per present operator: ${live.machinesPerOperatorPct.toInt()}%", fontSize = 12.sp, color = Color(0xFF0F172A))
+          Text("Helpers as % of machines: ${live.helpersPctOfMachines.toInt()}%", fontSize = 12.sp, color = Color(0xFF0F172A))
+          Text("Operators on handwork (HW): ${live.operatorsOnHandwork} (${live.handworkPctOfOperators.toInt()}% of operators present)", fontSize = 12.sp, color = Color(0xFF0F172A))
+        }
+      }
+      message?.let {
+        Text(it, color = if (isError) Color(0xFFB91C1C) else Color(0xFF15803D), fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.testTag("floor_mp_message"))
+      }
+      Button(
+        onClick = {
+          val v = listOf("tm", "mr", "op", "hp", "hw").map { draft[it].orEmpty().trim() }
+          if (v.any { it.isEmpty() }) { message = "Fill all five boxes (use 0 if none)."; isError = true }
+          else {
+            val r = repository.saveFloorManpower(floor.apiValue, v[0].toInt(), v[1].toInt(), v[2].toInt(), v[3].toInt(), v[4].toInt())
+            message = r.message; isError = !r.success
+          }
+        },
+        enabled = canWrite,
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = NflRoyalBlue),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp).testTag("floor_mp_save_btn")
+      ) { Text("Save ${floor.displayName} totals", fontWeight = FontWeight.Bold) }
     }
   }
 }

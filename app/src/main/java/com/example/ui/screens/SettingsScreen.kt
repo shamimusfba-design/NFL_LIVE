@@ -347,6 +347,11 @@ fun SettingsScreen(
         }
       }
 
+      // Data Clean: Administrator only, typed word + own password
+      if (currentUser?.isAdmin == true && currentUser?.role == UserRole.ADMIN) {
+        DataCleanCard(repository = repository)
+      }
+
       // 3. Demo Data Lifecycle Management Card
       Card(
         shape = RoundedCornerShape(10.dp),

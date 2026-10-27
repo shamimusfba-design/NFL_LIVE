@@ -593,6 +593,18 @@ fun HomeScreen(
             modifier = Modifier.fillMaxWidth()
           )
         }
+        if (currentPeriod == PeriodScope.TODAY && currentFloor != FloorScope.FINISHING) {
+          val floorEntries by repository.floorManpower.collectAsStateWithLifecycle()
+          val manpower = remember(floorEntries, targets, currentFloor) {
+            computeManpowerSummary(
+              floorEntries,
+              targets,
+              repository.getCurrentBangladeshDateIso(),
+              if (currentFloor == FloorScope.ALL) null else currentFloor.apiValue
+            )
+          }
+          ManpowerMachinesCard(summary = manpower, modifier = Modifier.clickable { onNavigateToSetup() })
+        }
       } else {
         DayByDayTrendAnalyticsCard(
           title = "${currentFloor.displayName} — ${currentPeriod.displayName} Day-by-Day Trends",

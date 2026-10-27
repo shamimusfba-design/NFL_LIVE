@@ -33,7 +33,7 @@ class ExampleUnitTest {
     // Style A: 50 pcs * 10.0 SMV = 500 earned mins
     // Style B: 30 pcs * 15.0 SMV = 450 earned mins
     // Total earned = 950 mins
-    // Line manpower = 20 operators * 60 mins = 1200 available mins (NOT 2400!)
+    // Line manpower = 20 operators + 4 helpers + 6 finishing = 30 people * 60 mins = 1800 available mins, counted once per line-hour (NOT 3600!)
     val setups = mapOf(
       "K1" to SupervisorLineSetup(
         lineId = "K1",
@@ -45,7 +45,7 @@ class ExampleUnitTest {
         targetEfficiencyPct = 75.0,
         operatorsCount = 20,
         helpersCount = 4,
-        includeHelpersInEfficiency = false,
+        finishingStaffCount = 6,
         workingMinutesPerHour = 60
       )
     )
@@ -64,7 +64,7 @@ class ExampleUnitTest {
       val setup = setups["K1"]!!
       setup.includedManpower * setup.workingMinutesPerHour
     }
-    assertEquals(1200, totalAvailableMinutes) // Correct: 1200, not 2400!
+    assertEquals(1800, totalAvailableMinutes) // Correct: 1800 (30 people x 60), not 3600
   }
 
   @Test
@@ -108,7 +108,7 @@ class ExampleUnitTest {
   fun `test morning line target and SMV efficiency calculation`() {
     // Supervisor sets morning target for Line K1:
     // Item: Polo Shirt, SMV = 14.50 min, Target Daily = 480 pcs, Target Eff = 75.0%
-    // 20 operators, 7 hours worked so far -> available mins = 20 * 7 * 60 = 8400 mins
+    // 20 operators + 2 helpers + 4 finishing = 26 people, 7 hours worked so far -> available mins = 26 * 7 * 60 = 10920 mins
     val morningSetup = SupervisorLineSetup(
       lineId = "K1",
       floor = "Sew 2",
@@ -125,8 +125,8 @@ class ExampleUnitTest {
     // Actual output produced so far = 390 pcs
     val actualOutput = 390
     val earnedMinutes = actualOutput * morningSetup.smv // 390 * 14.5 = 5655 mins
-    val availableMinutes = morningSetup.includedManpower * morningSetup.workingHoursSoFar * 60.0 // 8400 mins
-    val actualEfficiency = (earnedMinutes / availableMinutes) * 100.0 // 67.32%
+    val availableMinutes = morningSetup.includedManpower * morningSetup.workingHoursSoFar * 60.0 // 10920 mins
+    val actualEfficiency = (earnedMinutes / availableMinutes) * 100.0 // 51.79%
 
     // Target achievement % against full daily target
     val targetAchievementPct = (actualOutput.toDouble() / morningSetup.targetDailyPcs) * 100.0 // 81.25%
@@ -134,7 +134,8 @@ class ExampleUnitTest {
     assertEquals(14.50, morningSetup.smv, 0.001)
     assertEquals(75.0, morningSetup.targetEfficiencyPct, 0.001)
     assertEquals("Polo Shirt", morningSetup.itemName)
-    assertTrue(kotlin.math.abs(67.32 - actualEfficiency) < 0.1)
+    assertEquals(26, morningSetup.includedManpower)
+    assertTrue(kotlin.math.abs(51.79 - actualEfficiency) < 0.1)
     assertTrue(kotlin.math.abs(81.25 - targetAchievementPct) < 0.1)
   }
 

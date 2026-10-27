@@ -722,9 +722,12 @@ data class SupervisorLineSetup(
   val totalManpower: Int
     get() = operatorsCount + helpersCount + finishingStaffCount
 
-  /** People counted for available production minutes when calculating efficiency. */
+  /**
+   * People counted for available production minutes when calculating efficiency and the hourly target:
+   * operators + helpers + finishing staff of the line. (includeHelpersInEfficiency is no longer used.)
+   */
   val includedManpower: Int
-    get() = operatorsCount + (if (includeHelpersInEfficiency) helpersCount else 0)
+    get() = operatorsCount + helpersCount + finishingStaffCount
 }
 
 enum class IncidentCategory(val displayName: String, val targetRole: UserRole) {
@@ -1041,4 +1044,90 @@ data class AdminNotificationPayload(
   val createdAtMillis: Long = System.currentTimeMillis()
 )
 
+/**
+ * Hourly target worked out from the line set-up: manpower x minutes per hour x target efficiency % / SMV.
+ * Returns 0 when something is missing so that no made-up target is ever shown.
+ */
+fun autoHourlyTarget(totalManpower: Int, smv: Double, targetEfficiencyPct: Double, minutesPerHour: Int = 60): Int {
+  if (totalManpower <= 0 || smv <= 0.0 || targetEfficiencyPct <= 0.0 || minutesPerHour <= 0) return 0
+  return Math.round(totalManpower * minutesPerHour * (targetEfficiencyPct / 100.0) / smv).toInt()
+}
 
+/** Floor totals typed once a day under the line-wise target set-up (not line by line). */
+data class FloorManpower(
+  val floor: String,
+  val date: String,
+  val totalMachines: Int,
+  val machinesRunning: Int,
+  val operatorsPresent: Int,
+  val helpersPresent: Int,
+  /** Operators who are doing handwork (HW) today, usually because helpers are short. They are part of operatorsPresent. */
+  val operatorsOnHandwork: Int,
+  val updatedBy: String = "",
+  val updatedMillis: Long = System.currentTimeMillis()
+)
+
+/** The four manpower and machine numbers shown on the dashboard. */
+data class ManpowerSummary(
+  val floorsEntered: Int,
+  val operatorsPlanned: Int,
+  val operatorsPresent: Int,
+  val helpersPresent: Int,
+  val operatorsOnHandwork: Int,
+  val totalMachines: Int,
+  val machinesRunning: Int
+) {
+  /** Operators present as a percentage of the operators planned in the line set-up. */
+  val operatorsPresentPct: Double get() = if (operatorsPlanned > 0) operatorsPresent * 100.0 / operatorsPlanned else 0.0
+  /** Machines running as a percentage of all machines. */
+  val machinesRunningPct: Double get() = if (totalMachines > 0) machinesRunning * 100.0 / totalMachines else 0.0
+  /** Machines running as a percentage of operators present. */
+  val machinesPerOperatorPct: Double get() = if (operatorsPresent > 0) machinesRunning * 100.0 / operatorsPresent else 0.0
+  /** Helpers present as a percentage of all machines. */
+  val helpersPctOfMachines: Double get() = if (totalMachines > 0) helpersPresent * 100.0 / totalMachines else 0.0
+  /** Operators doing handwork as a percentage of operators present. */
+  val handworkPctOfOperators: Double get() = if (operatorsPresent > 0) operatorsOnHandwork * 100.0 / operatorsPresent else 0.0
+  val hasData: Boolean get() = floorsEntered > 0
+}
+
+/**
+ * Adds up the floor totals of one date. [floorApiValue] null = the whole factory.
+ * Planned operators come from the line set-up of the same floors and date (sewing lines only).
+ */
+fun computeManpowerSummary(
+  entries: List<FloorManpower>,
+  setups: List<SupervisorLineSetup>,
+  isoDate: String,
+  floorApiValue: String? = null
+): ManpowerSummary {
+  val rows = entries.filter { it.date == isoDate && (floorApiValue == null || it.floor.equals(floorApiValue, ignoreCase = true)) }
+    .groupBy { it.floor.trim().lowercase() }
+    .map { (_, v) -> v.maxByOrNull { it.updatedMillis }!! }
+  val floors = rows.map { it.floor.trim().lowercase() }.toSet()
+  val planned = setups.filter { st ->
+    st.date == isoDate && !st.isDemo &&
+      !st.lineId.startsWith("Iron", ignoreCase = true) && !st.lineId.startsWith("Packing", ignoreCase = true) &&
+      st.floor.trim().lowercase() in floors
+  }.groupBy { it.lineId.trim().uppercase() }.map { (_, v) -> v.maxByOrNull { it.snapshotTimestamp }!! }
+  return ManpowerSummary(
+    floorsEntered = rows.size,
+    operatorsPlanned = planned.sumOf { it.operatorsCount },
+    operatorsPresent = rows.sumOf { it.operatorsPresent },
+    helpersPresent = rows.sumOf { it.helpersPresent },
+    operatorsOnHandwork = rows.sumOf { it.operatorsOnHandwork },
+    totalMachines = rows.sumOf { it.totalMachines },
+    machinesRunning = rows.sumOf { it.machinesRunning }
+  )
+}
+
+/** What an Administrator can clear from Data Clean. Users, roles, the line master and the audit log are never cleared. */
+enum class DataCleanScope(val displayName: String) {
+  DEMO_ONLY("Demo data only"),
+  PRODUCTION("Production records"),
+  QUALITY("Quality records"),
+  NPT("NPT incidents"),
+  SETUP("Daily line setups & floor manpower"),
+  MONTHLY("Monthly data"),
+  WEEKLY("Weekly OQL / AQC"),
+  EVERYTHING("Everything")
+}

@@ -994,6 +994,90 @@ class NflRepository(private val context: Context) {
     return SecurityActionResult(true, "Saved $label on this phone. Cloud sync in progress.")
   }
 
+  // ---------------- Floor manpower & machines (typed once a day per floor, under the line-wise target set-up) ----------------
+  private val floorManpowerPrefs by lazy { context.getSharedPreferences("nfl_floor_manpower", Context.MODE_PRIVATE) }
+  private val _floorManpower = MutableStateFlow<List<FloorManpower>>(loadFloorManpowerLocal())
+  val floorManpower: StateFlow<List<FloorManpower>> = _floorManpower.asStateFlow()
+
+  private fun loadFloorManpowerLocal(): List<FloorManpower> {
+    return try {
+      val raw = floorManpowerPrefs.getString("entries_json", null) ?: return emptyList()
+      val arr = org.json.JSONArray(raw)
+      (0 until arr.length()).mapNotNull { i ->
+        val o = arr.optJSONObject(i) ?: return@mapNotNull null
+        val floor = o.optString("floor"); val date = o.optString("date")
+        if (floor.isBlank() || date.isBlank()) return@mapNotNull null
+        FloorManpower(floor, date, o.optInt("totalMachines"), o.optInt("machinesRunning"), o.optInt("operatorsPresent"),
+          o.optInt("helpersPresent"), o.optInt("operatorsOnHandwork"), o.optString("updatedBy"), o.optLong("updatedMillis"))
+      }
+    } catch (e: Exception) { emptyList() }
+  }
+
+  private fun persistFloorManpowerLocal(list: List<FloorManpower>) {
+    try {
+      val arr = org.json.JSONArray()
+      list.forEach { e ->
+        arr.put(org.json.JSONObject().apply {
+          put("floor", e.floor); put("date", e.date); put("totalMachines", e.totalMachines); put("machinesRunning", e.machinesRunning)
+          put("operatorsPresent", e.operatorsPresent); put("helpersPresent", e.helpersPresent); put("operatorsOnHandwork", e.operatorsOnHandwork)
+          put("updatedBy", e.updatedBy); put("updatedMillis", e.updatedMillis)
+        })
+      }
+      floorManpowerPrefs.edit().putString("entries_json", arr.toString()).apply()
+    } catch (e: Exception) {
+      Log.w("NflRepository", "Could not save floor manpower locally: ${e.message}")
+    }
+  }
+
+  /** Saves today's floor totals (machines, operators, helpers, handwork). Same permission as the morning line set-up. */
+  fun saveFloorManpower(floorApiValue: String, totalMachines: Int, machinesRunning: Int, operatorsPresent: Int, helpersPresent: Int, operatorsOnHandwork: Int): SecurityActionResult {
+    val u = getAuthoritativeCurrentUser()
+    val allowed = u != null && (u.isAdmin || u.role in setOf(UserRole.IE, UserRole.PRODUCTION_REPORTER, UserRole.SUPERVISOR, UserRole.PRODUCTION_MANAGER) || u.canMorningTargetWrite)
+    if (!allowed) {
+      val msg = "Access Denied: Only authorized IE, Supervisor or Production accounts can enter floor manpower and machines."
+      _syncStatusBanner.value = "⚠️ $msg"
+      return SecurityActionResult(false, msg)
+    }
+    if (floorApiValue !in setOf("Sew 1", "Sew 2", "Sew 3")) return SecurityActionResult(false, "Choose one floor (Sew 1, Sew 2 or Sew 3).")
+    val nums = listOf(totalMachines, machinesRunning, operatorsPresent, helpersPresent, operatorsOnHandwork)
+    if (nums.any { it < 0 || it > 9999 }) return SecurityActionResult(false, "Numbers must be between 0 and 9999.")
+    if (machinesRunning > totalMachines) return SecurityActionResult(false, "Machines running cannot be more than total machines.")
+    if (operatorsOnHandwork > operatorsPresent) return SecurityActionResult(false, "Operators on handwork cannot be more than operators present.")
+    val today = sheetsStorage.getCurrentBangladeshDateIso()
+    val entry = FloorManpower(floorApiValue, today, totalMachines, machinesRunning, operatorsPresent, helpersPresent, operatorsOnHandwork, u?.name?.ifBlank { u.id } ?: "", System.currentTimeMillis())
+    synchronized(stateLock) {
+      _floorManpower.value = (_floorManpower.value.filterNot { it.floor.equals(floorApiValue, true) && it.date == today } + entry).sortedBy { it.date }
+    }
+    persistFloorManpowerLocal(_floorManpower.value)
+    touchDataUpdated()
+    addAuditLog("MANPOWER", floorApiValue, "SAVE_FLOOR_MANPOWER", entry.updatedBy, "Machines $machinesRunning/$totalMachines, operators $operatorsPresent, helpers $helpersPresent, operators on handwork $operatorsOnHandwork")
+    repoScope.launch {
+      val ok = firebaseSync.pushFloorManpowerAwait(entry)
+      _syncStatusBanner.value = if (ok) "✓ $floorApiValue manpower and machines synced to cloud" else "⚠️ $floorApiValue manpower saved on this phone only (cloud sync failed)"
+    }
+    return SecurityActionResult(true, "Saved $floorApiValue manpower and machines. Cloud sync in progress.")
+  }
+
+  fun upsertRemoteFloorManpower(remote: List<FloorManpower>) {
+    if (remote.isEmpty()) return
+    var changed = false
+    synchronized(stateLock) {
+      val map = LinkedHashMap<String, FloorManpower>()
+      _floorManpower.value.forEach { map[it.floor.lowercase() + "|" + it.date] = it }
+      remote.forEach { r ->
+        val key = r.floor.lowercase() + "|" + r.date
+        val prev = map[key]
+        if (prev == null || (r.updatedMillis >= prev.updatedMillis && prev != r)) { map[key] = r; changed = true }
+      }
+      if (changed) _floorManpower.value = map.values.sortedBy { it.date }
+    }
+    if (changed) { persistFloorManpowerLocal(_floorManpower.value); touchDataUpdated() }
+  }
+
+  /** Today's manpower numbers for one floor (apiValue) or the whole factory (null). */
+  fun manpowerSummary(floorApiValue: String? = null): ManpowerSummary =
+    computeManpowerSummary(_floorManpower.value, _targets.value, sheetsStorage.getCurrentBangladeshDateIso(), floorApiValue)
+
   fun upsertRemoteWeeklyQuality(remoteList: List<WeeklyQualityEntry>) {
     if (remoteList.isEmpty()) return
     var changed = false
@@ -1174,6 +1258,9 @@ class NflRepository(private val context: Context) {
       }
       firebaseSync.onRemoteWeeklyQualityUpdated = { remoteList ->
         upsertRemoteWeeklyQuality(remoteList)
+      }
+      firebaseSync.onRemoteFloorManpowerUpdated = { remoteList ->
+        upsertRemoteFloorManpower(remoteList)
       }
       firebaseSync.onRemoteUsersUpdated = { remoteList ->
         upsertRemoteUsers(remoteList)
@@ -2645,6 +2732,112 @@ class NflRepository(private val context: Context) {
       isDemo = false
     )
     saveLineSetup(updated)
+  }
+
+  // ---------------- Data Clean (Administrator only) ----------------
+
+  /**
+   * Clears the chosen category on this phone and in Cloud Firestore for every device.
+   * Needs the Administrator's own password. Users, roles, the line master and the audit log are never touched.
+   * [onComplete] gets (success, message).
+   */
+  fun cleanData(scope: DataCleanScope, adminPassword: String, onComplete: (Boolean, String) -> Unit) {
+    val actor = getAuthoritativeCurrentUser()
+    if (actor == null || !actor.isAdmin) {
+      val msg = "Access Denied: Only an Administrator can clean data."
+      _syncStatusBanner.value = "⚠️ $msg"
+      addAuditLog("SECURITY", "ALL", "UNAUTHORIZED_DATA_CLEAN", actor?.id ?: "anonymous", "Blocked ${scope.name}")
+      onComplete(false, msg)
+      return
+    }
+    if (!GoogleSheetsStorageService.verifyPassword(adminPassword, actor.passwordHash, actor.passwordSalt)) {
+      addAuditLog("SECURITY", "ALL", "DATA_CLEAN_BAD_PASSWORD", actor.id, "Wrong password for ${scope.name}")
+      onComplete(false, "The Administrator password is not correct.")
+      return
+    }
+    val who = actor.name.ifBlank { actor.id }
+    if (scope == DataCleanScope.DEMO_ONLY) {
+      removeAllDemoData()
+      onComplete(true, "Demo data removed. Your real records were kept.")
+      return
+    }
+    if (scope == DataCleanScope.EVERYTHING) {
+      resetAllOperationalData(clearCloud = true) { count, ok ->
+        repoScope.launch {
+          val extra = clearExtraData(setupExtras = true, monthly = true, weekly = true)
+          addAuditLog("DATA_ADMIN", "ALL", "CLEAN_EVERYTHING", who, "Deleted ${count + extra.first} cloud records")
+          val all = ok && extra.second
+          onComplete(all, if (all) "Everything was cleaned (${count + extra.first} cloud records deleted)." else "Cleaned on this phone; some cloud records could not be deleted. Check the internet and run it again.")
+        }
+      }
+      return
+    }
+    repoScope.launch {
+      var deleted = 0
+      var ok = true
+      when (scope) {
+        DataCleanScope.PRODUCTION -> {
+          synchronized(stateLock) { _productionEntries.value = emptyList() }
+          sheetsStorage.saveLocalProductionEntries(emptyList())
+          if (firebaseSync.isAvailable()) firebaseSync.deleteCollectionsAwait(listOf("production_entries")).let { deleted = it.first; ok = it.second }
+        }
+        DataCleanScope.QUALITY -> {
+          synchronized(stateLock) { _qualityEntries.value = emptyList() }
+          sheetsStorage.saveLocalQualityEntries(emptyList())
+          if (firebaseSync.isAvailable()) firebaseSync.deleteCollectionsAwait(listOf("quality_entries")).let { deleted = it.first; ok = it.second }
+        }
+        DataCleanScope.NPT -> {
+          synchronized(stateLock) { _incidents.value = emptyList() }
+          sheetsStorage.saveLocalIncidents(emptyList())
+          if (firebaseSync.isAvailable()) firebaseSync.deleteCollectionsAwait(listOf("factory_alerts")).let { deleted = it.first; ok = it.second }
+        }
+        DataCleanScope.SETUP -> {
+          synchronized(stateLock) { _targets.value = emptyList() }
+          sheetsStorage.saveLocalSetups(emptyList())
+          val r1 = if (firebaseSync.isAvailable()) firebaseSync.deleteCollectionsAwait(listOf("daily_setups")) else Pair(0, true)
+          val r2 = clearExtraData(setupExtras = true, monthly = false, weekly = false)
+          deleted = r1.first + r2.first; ok = r1.second && r2.second
+        }
+        DataCleanScope.MONTHLY -> clearExtraData(setupExtras = false, monthly = true, weekly = false).let { deleted = it.first; ok = it.second }
+        DataCleanScope.WEEKLY -> clearExtraData(setupExtras = false, monthly = false, weekly = true).let { deleted = it.first; ok = it.second }
+        else -> {}
+      }
+      flushPendingPersistence()
+      touchDataUpdated()
+      addAuditLog("DATA_ADMIN", "ALL", "CLEAN_${scope.name}", who, "Deleted $deleted cloud records")
+      _syncStatusBanner.value = if (ok) "✓ ${scope.displayName} cleaned ($deleted cloud records deleted)" else "⚠️ ${scope.displayName} cleaned on this phone; cloud deletion incomplete"
+      onComplete(ok, if (ok) "${scope.displayName} cleaned ($deleted cloud records deleted)." else "Cleaned on this phone; some cloud records could not be deleted. Run it again with internet.")
+    }
+  }
+
+  /**
+   * Floor manpower, monthly and weekly figures.
+   * Monthly: the achieved figures go back to zero and the line-wise rows are removed, the floor targets stay.
+   * Weekly: all saved weeks are removed. The cloud documents of the chosen collections are deleted.
+   */
+  private suspend fun clearExtraData(setupExtras: Boolean, monthly: Boolean, weekly: Boolean): Pair<Int, Boolean> {
+    val names = mutableListOf<String>()
+    if (setupExtras) {
+      synchronized(stateLock) { _floorManpower.value = emptyList() }
+      persistFloorManpowerLocal(emptyList())
+      names.add("floor_manpower")
+    }
+    if (monthly) {
+      synchronized(stateLock) {
+        _monthlyTargets.value = _monthlyTargets.value.filter { it.lineId.isBlank() }.map {
+          it.copy(updateEfficiencyPct = 0.0, bsOqlPct = 0.0, friPassRatePct = 0.0, monthlyTargetPcs = 0.0, monthlyAchievementPcs = 0.0, lastUpdatedMillis = System.currentTimeMillis())
+        }
+      }
+      sheetsStorage.saveLocalMonthlyTargets(synchronized(stateLock) { _monthlyTargets.value })
+      names.add("monthly_targets")
+    }
+    if (weekly) {
+      synchronized(stateLock) { _weeklyQuality.value = emptyList() }
+      persistWeeklyQualityLocal(emptyList())
+      names.add("weekly_quality")
+    }
+    if (names.isEmpty() || !firebaseSync.isAvailable()) return Pair(0, true)
+    return firebaseSync.deleteCollectionsAwait(names)
   }
 
   fun removeAllDemoData() {
