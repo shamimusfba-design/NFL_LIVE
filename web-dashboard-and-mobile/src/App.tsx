@@ -21,6 +21,7 @@ import { CalculationEngine } from './services/calculationEngine';
 import {
   startLiveFirestoreListeners,
   signOutWebCloudSession,
+  restoreWebSession,
   pushProductionToCloud,
   pushQualityToCloud,
   pushIncidentToCloud,
@@ -42,6 +43,7 @@ import { EntryForms } from './components/EntryForms';
 import { ReportsView } from './components/ReportsView';
 import { AdminView } from './components/AdminView';
 import { LoginView } from './components/LoginView';
+import { accountFromRecord } from './services/sessionUser';
 
 const STORAGE_KEYS = {
   SAMPLE_CLEARED: 'nfl_desktop_sample_data_cleared',
@@ -58,6 +60,7 @@ export default function App() {
   const [lines, setLines] = useState<LineMasterItem[]>(ALL_FACTORY_LINES);
   const [users, setUsers] = useState<UserAccount[]>(STANDARD_USERS);
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
 
   const [activeDeviceView, setActiveDeviceView] = useState<'MOBILE' | 'TV'>(() =>
     typeof window !== 'undefined' && window.innerWidth >= 900 ? 'TV' : 'MOBILE'
@@ -196,6 +199,22 @@ export default function App() {
       localStorage.setItem(STORAGE_KEYS.MONTHLY_TARGETS, JSON.stringify(monthlyTargets));
     } catch {}
   }, [monthlyTargets]);
+
+  // The browser remembers the sign-in: bring the person back instead of asking again and again.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const rec = await restoreWebSession();
+      if (cancelled) return;
+      if (rec) {
+        const u = accountFromRecord(rec, String(rec.id || ''));
+        setCurrentUser(u);
+        setIsAuthenticatedAdmin(u.role === 'ADMIN');
+      }
+      setAuthChecking(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Connect real-time Firestore listeners (shared with Android Mobile & TV apps). Only after a person has signed in.
   useEffect(() => {
@@ -624,6 +643,14 @@ export default function App() {
     qualitiesCount: qualities.filter(q => !q.isDemo).length,
     incidentsCount: incidents.filter(i => !i.isDemo).length
   };
+
+  if (authChecking) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#061B43', display: 'grid', placeItems: 'center', color: '#94A3B8', fontSize: 13, letterSpacing: 1 }}>
+        Loading...
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return (

@@ -5,6 +5,7 @@ import {
   signInWithPopup,
   signInWithCustomToken,
   signInWithEmailAndPassword,
+  onAuthStateChanged,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   signOut as firebaseSignOut,
@@ -199,6 +200,41 @@ export async function createWebEmployeeAccount(employeeId: string, password: str
     return { ok: true, user: cred.user };
   } catch (err: any) {
     return describeAuthError(err, true);
+  }
+}
+
+/** Resolves with the signed-in Firebase user (the browser remembers the sign-in) or null. Never waits more than a few seconds. */
+export function waitForAuthReady(): Promise<FirebaseUser | null> {
+  const auth = getFirebaseAuth();
+  if (!auth) return Promise.resolve(null);
+  return new Promise(resolve => {
+    let done = false;
+    const finish = (u: FirebaseUser | null) => { if (!done) { done = true; resolve(u); } };
+    const unsubscribe = onAuthStateChanged(auth, u => { unsubscribe(); finish(u); }, () => finish(null));
+    setTimeout(() => finish(null), 5000);
+  });
+}
+
+/**
+ * Brings back the person who is still signed in from an earlier visit, so nobody has to sign in again and again.
+ * The record is checked again: it must be approved, active and belong to this very sign-in.
+ */
+export async function restoreWebSession(): Promise<Record<string, any> | null> {
+  const user = await waitForAuthReady();
+  if (!user) return null;
+  const db = getDb();
+  if (!db) return null;
+  try {
+    const binding = await getDoc(doc(db, 'auth_bindings', user.uid));
+    const employeeId = binding.exists() ? String((binding.data() as any).employeeId || '') : '';
+    if (!employeeId) return null;
+    const rec = await fetchOwnUserRecord(employeeId);
+    if (!rec || rec.firebaseUid !== user.uid) return null;
+    if (String(rec.accountStatus || '') !== 'APPROVED' || rec.isActive === false) return null;
+    return rec;
+  } catch (e) {
+    console.warn('restoreWebSession notice:', e);
+    return null;
   }
 }
 

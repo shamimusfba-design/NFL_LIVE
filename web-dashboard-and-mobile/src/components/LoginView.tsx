@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserAccount, UserRole, FloorId } from '../types';
+import { UserAccount } from '../types';
 import {
   signInWebEmployee,
   createWebEmployeeAccount,
@@ -10,6 +10,7 @@ import {
   submitWebRegistration,
   signOutWebCloudSession
 } from '../services/firebaseLiveSync';
+import { accountFromRecord } from '../services/sessionUser';
 
 interface LoginViewProps {
   // Kept for compatibility with the caller. Sign-in is checked by Firebase, never against these.
@@ -17,11 +18,6 @@ interface LoginViewProps {
   onLogin: (user: UserAccount) => void;
   onUpdateAdmin?: (newAdmin: UserAccount) => void;
 }
-
-const KNOWN_ROLES: UserRole[] = [
-  'ADMIN', 'PRODUCTION_REPORTER', 'QUALITY_REPORTER', 'AUDITOR', 'SUPERVISOR', 'PRODUCTION_MANAGER',
-  'QUALITY_MANAGER', 'MECHANIC', 'IE', 'INPUT_MATERIAL', 'MANAGEMENT_VIEW'
-];
 
 /** Same designations, departments, roles and floor rules as the Android app (DesignationPolicy). */
 const DESIGNATIONS: Array<{ name: string; department: string; role: string; scope: 'ALL' | 'FINISHING' | null }> = [
@@ -48,14 +44,6 @@ const FLOOR_CHOICES: Array<{ key: 'SEW_1' | 'SEW_2' | 'SEW_3'; label: string }> 
   { key: 'SEW_2', label: 'Sew 2' },
   { key: 'SEW_3', label: 'Sew 3' }
 ];
-
-function toFloorId(raw: string): FloorId {
-  const v = raw.toLowerCase();
-  if (v.includes('1')) return 'Sew 1' as FloorId;
-  if (v.includes('2')) return 'Sew 2' as FloorId;
-  if (v.includes('3')) return 'Sew 3' as FloorId;
-  return 'All' as FloorId;
-}
 
 const OWNER_EMPLOYEE_ID = '1015198';
 
@@ -231,17 +219,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
         setErrorMessage('Could not link this sign-in to your Employee ID. Please contact the Administrator.');
         return;
       }
-      const role = (KNOWN_ROLES as string[]).includes(String(rec.role))
-        ? (String(rec.role) as UserRole)
-        : ('MANAGEMENT_VIEW' as UserRole); // unknown role: view only
       setPasswordInput('');
-      onLogin({
-        id: String(rec.id || employeeId),
-        name: String(rec.name || employeeId),
-        username: String(rec.id || employeeId).toLowerCase(),
-        role,
-        floor: toFloorId(String(rec.authorizedFloorScope || rec.floor || 'ALL'))
-      });
+      onLogin(accountFromRecord(rec, employeeId));
     } catch (err: any) {
       setErrorMessage(err?.message ? String(err.message) : 'Could not sign in. Check the internet connection.');
     } finally {
