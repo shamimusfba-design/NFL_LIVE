@@ -112,6 +112,9 @@ const Field: React.FC<{
         value={value}
         placeholder={placeholder}
         autoComplete={autoComplete}
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
         onChange={e => onChange(e.target.value)}
         onFocus={() => setFocus(true)}
         onBlur={() => setFocus(false)}

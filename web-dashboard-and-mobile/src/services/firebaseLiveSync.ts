@@ -149,7 +149,11 @@ function describeAuthError(err: any, whenCreating: boolean): EmployeeAuthOutcome
   }
   if (whenCreating && code === 'auth/weak-password') return { ok: false, message: 'The password is too weak. Use at least 6 characters.' };
   if (whenCreating) return { ok: false, message: 'Could not create the account. Check the internet and try again.' };
-  return { ok: false, message: 'Employee ID or password is not correct.' };
+  const wrongCredential = ['auth/invalid-credential', 'auth/wrong-password', 'auth/user-not-found', 'auth/invalid-login-credentials', 'auth/invalid-email'];
+  if (wrongCredential.includes(code)) return { ok: false, message: 'Employee ID or password is not correct.' };
+  if (code === 'auth/user-disabled') return { ok: false, message: 'This account has been disabled. Please contact the Administrator.' };
+  // Anything else is NOT a wrong password: show the real reason so it can be fixed.
+  return { ok: false, message: `Sign-in could not be completed (${code || 'unknown error'}).` };
 }
 
 /** Employee ID + password, checked by Firebase. An e-mail address (owner) is used as typed. */

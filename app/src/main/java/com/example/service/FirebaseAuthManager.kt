@@ -159,8 +159,13 @@ object FirebaseAuthManager {
       EmployeeAuthResult.Failure("No internet connection. Signing in needs internet.")
     } catch (e: com.google.firebase.FirebaseTooManyRequestsException) {
       EmployeeAuthResult.Failure("Too many attempts. Wait a few minutes and try again.")
-    } catch (e: com.google.firebase.auth.FirebaseAuthException) {
+    } catch (e: com.google.firebase.auth.FirebaseAuthInvalidCredentialsException) {
       EmployeeAuthResult.Failure("Employee ID or password is not correct.")
+    } catch (e: com.google.firebase.auth.FirebaseAuthInvalidUserException) {
+      EmployeeAuthResult.Failure("Employee ID or password is not correct.")
+    } catch (e: com.google.firebase.auth.FirebaseAuthException) {
+      // Not a wrong password: show the real reason so it can be fixed.
+      EmployeeAuthResult.Failure("Sign-in could not be completed (${e.errorCode}).")
     } catch (e: Exception) {
       Log.w(TAG, "Email sign-in failed: ${e.message}")
       EmployeeAuthResult.Failure("Sign-in failed. Please check the internet and try again.")
