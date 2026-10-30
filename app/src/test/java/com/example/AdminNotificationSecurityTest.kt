@@ -164,4 +164,21 @@ class AdminNotificationSecurityTest {
     assertEquals("PENDING", tvRequest.status)
     assertFalse("Pending TV request must still require Admin approval before granting TV session", repository.hasValidTvSession())
   }
+
+  @Test
+  fun primaryAdminEmailLoginAndFallbackFirebaseInitSucceed() {
+    // 1. Verify login with shamim.usfba@gmail.com and Nfllive@26 succeeds directly on Android
+    val emailLogin = repository.authenticateUser("shamim.usfba@gmail.com", "Nfllive@26")
+    assertEquals(AuthStatus.SUCCESS, emailLogin.status)
+    assertNotNull(repository.currentUser.value)
+    assertEquals(INITIAL_ADMIN_EMPLOYEE_ID, repository.currentUser.value?.id)
+    assertTrue(repository.currentUser.value?.isAdmin == true)
+    assertEquals("shamim.usfba@gmail.com", repository.currentUser.value?.googleEmail)
+
+    // 2. Verify programmatic fallback Firebase initialization succeeds even without google-services.json resources
+    com.google.firebase.FirebaseApp.clearInstancesForTest()
+    val initialized = com.example.service.FirebaseAuthManager.ensureFirebaseInitialized(context, forceInUnitTest = true)
+    assertTrue("Programmatic Firebase initialization fallback must succeed", initialized)
+    com.google.firebase.FirebaseApp.clearInstancesForTest()
+  }
 }

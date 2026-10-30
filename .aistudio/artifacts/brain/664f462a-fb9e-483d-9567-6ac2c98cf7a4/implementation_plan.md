@@ -1,41 +1,44 @@
-# NFL LIVE — Release Readiness Audit Validation & Hardening Plan
+# Fix Android APK Cloud Sign-In & Unified Email / Employee ID Login
 
-## 1. Validation Summary of ChatGPT's Audit Findings
-
-| Audit Item | Validation Result | Action to Take |
-| :--- | :--- | :--- |
-| **Web vs. Android Firestore Document IDs** | **Confirmed Bug**: Both apps connect to the same named Firestore database (`ai-studio-android-nfllivea-664f462a-fb9e-483d-9567-6ac2c98cf7a4`), but `web-dashboard-and-mobile` formats document IDs differently (`K1_2026-10-26_08_00_-_09_00`, `SEW_2_K1_2026-10-26`, `SEW_2__2026-10`) than Android (`PROD_K1_2026-10-26_0800-0900`, `QA_K1_2026-10-26_0800-0900`, `K1_2026-10-26`, `Sew 2`). | Align all canonical document IDs in `web-dashboard-and-mobile/src/services/firebaseLiveSync.ts` to match Android's exact `FirebaseSyncService.kt` format so edits on Web and Android update the exact same document without duplicates. |
-| **Web Role Switcher Privilege Escalation** | **Confirmed Security Hole**: In `web-dashboard-and-mobile/src/App.tsx`, clicking the top-bar user badge opens a Role Switcher modal that allows any non-Admin user to switch their active session to `System Admin (ADMIN)` without entering a password. | Lock the Role Switcher in `web-dashboard-and-mobile/src/App.tsx` so only a user who authenticated as `ADMIN` can preview other roles; non-Admin users see their locked session badge without role escalation. |
-| **Firestore Security Rules (`firestore.rules`) & Employee ID Login** | **Confirmed Schema Hardening Needed**: Keeping Employee ID + SHA-256 password login ensures zero breakage on factory phones and TVs. However, `firestore.rules` had a typo on the initial Admin document path (`users/U-1015198` instead of `users/1015198`), and `firebaseLiveSync.ts` Web Admin approval payloads needed `id`, `employeeId`, and `name` fields so `setDoc(..., { merge: true })` never fails Firestore `create` validation if a document (`tv_display` or a seeded user) does not yet exist in the cloud. | Harden `firestore.rules` with strict schema/field checks (`lineId`, `date`, `hourSlot`, `floor`, non-negative numbers, protected `1015198` Admin account, no plaintext passwords), update `firebaseLiveSync.ts` approval payloads, and deploy rules via `deploy_firebase`. |
-| **Admin Phone System Notifications for Registrations & TV Setup** | **Confirmed Gap**: Pending employee registrations (`PENDING_APPROVAL`), employee device replacement requests (`DEV_PENDING:`), and first-time Smart TV requests (`TV_PENDING:`) appear in the Admin UI, but `FactoryAlertManager` did not post an Android system notification or audible alert when a new request arrived. | Add `triggerAdminApprovalNotification` in `FactoryAlertManager.kt` and invoke it in `NflRepository.upsertRemoteUsers()` whenever a logged-in Admin phone receives a new registration, device replacement, or Smart TV setup request. Tapping the notification opens `MainActivity` directly into the Admin Approval screen. |
-| **Standalone `desktop-pwa/` Warning Banner** | **Confirmed**: Keep `desktop-pwa/` separate with its prominent `LOCAL ONLY — NOT CONNECTED TO FIREBASE` warning banner, and remove the misleading Admin privilege escalation from its header notes. | Keep `desktop-pwa/` separate with its clear warning banner as requested. |
-| **GitHub Actions CI Pipeline (`.github/workflows/build-debug-apk.yml`)** | **Confirmed Gap**: `.github/workflows/build-debug-apk.yml` only ran `:app:assembleDebug` and did not execute Android unit tests (`:app:testDebugUnitTest`) or verify the `web-dashboard-and-mobile` production build (`npm run build`). | Update `.github/workflows/build-debug-apk.yml` (and `.github/workflows/android-build.yml`) to run `:app:testDebugUnitTest`, build `web-dashboard-and-mobile` (`npm ci && npm run build`), and upload both the `NOS-Live-app-debug.apk` and the built `web-dashboard-dist` artifact ready for Firebase Hosting. |
+## 1. Root Cause Analysis
+1. **Missing Firebase Initialization in GitHub Actions APK Builds (`"Cloud sign-in is not available on this device."`)**:
+   - `app/build.gradle.kts` sets `googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }`. When an APK is built in an environment or branch where `app/google-services.json` is absent or skipped, no Firebase XML resources are generated into the APK.
+   - Unlike the Web App (`web-dashboard-and-mobile/src/services/firebaseLiveSync.ts`), which initializes Firebase explicitly in code with the `nfl-live-72213` config, the Android app relied solely on auto-initialization from `google-services.json`. Without it, `FirebaseApp`, `FirebaseAuth`, and `FirebaseFirestore` are `null` at runtime on the phone.
+2. **Email (`shamim.usfba@gmail.com`) vs. Employee ID (`1015198`) Authentication on Fresh APK Installs**:
+   - `NflRepository.authenticateUser(id, pass)` only checked in-memory `_users.value` by `id` or `employeeId`. It did not match by email (`shamim.usfba@gmail.com`), did not call Firebase Authentication (`signInWithEmailAndPassword`), and did not fetch the user profile from Firestore on a fresh APK install before local cache was populated.
 
 ---
 
-## 2. Planned Code Changes
+## 2. Proposed Changes
 
-### A. Align Web & Android Canonical Firestore Document IDs (`web-dashboard-and-mobile/src/services/firebaseLiveSync.ts`)
-- Update `canonicalProdDocId(entry)` to generate `PROD_${cleanLine}_${cleanDate}_${cleanHour}` (matching `FirebaseSyncService.canonicalProductionDocId`).
-- Update `canonicalQaDocId(entry)` to generate `QA_${cleanLine}_${cleanDate}_${cleanHour}` (matching `FirebaseSyncService.canonicalQualityDocId`).
-- Update `canonicalSetupDocId(setup)` to generate `${cleanLine}_${cleanDate}` (matching `FirebaseSyncService.pushLineSetupAwait`).
-- Update `pushMonthlyTargetToCloud(target)` to use `${target.floor}` (or `${target.floor}_${target.lineId}`) and include `bsOqlPct` alongside `bsQaOqlPct` (matching `FirebaseSyncService.pushMonthlyTargetAwait`).
-- Ensure `approveCloudUserRegistration`, `rejectCloudUserRegistration`, and `approveCloudDeviceOrTvRequest` always write `id`, `employeeId`, `name`, and `password: ''` so Firestore security rules pass whether updating or creating the document.
+### A. Guaranteed Firebase Initialization on Android (`FirebaseAuthManager.kt` & `FirebaseSyncService.kt`)
+- Add `FirebaseAuthManager.ensureFirebaseInitialized(context: Context): Boolean` that checks `FirebaseApp.getApps(context)`.
+- If no `FirebaseApp` is initialized (e.g., if an APK was compiled without `google-services.json` resources), initialize the default `FirebaseApp` programmatically using `FirebaseOptions.Builder()` with the `nfl-live-72213` project configuration (`projectId = "nfl-live-72213"`, `applicationId = "1:716260096216:android:f787f27339c03e756abfad"`, `apiKey`, `gcmSenderId = "716260096216"`, `storageBucket = "nfl-live-72213.firebasestorage.app"`).
+- Call `ensureFirebaseInitialized(context)` inside `FirebaseSyncService` (before `FirebaseFirestore.getInstance(...)`) and `FirebaseAuthManager` (before `Firebase.auth`), ensuring cloud sign-in and Firestore sync are always available on every phone.
 
-### B. Lock Web Role Switcher Against Non-Admin Escalation (`web-dashboard-and-mobile/src/App.tsx`)
-- Track `authenticatedAdmin` state (true only when the user actually logged in through `LoginView` with an `ADMIN` account).
-- Only allow opening the Role Preview Switcher (`showRoleSelector`) when `authenticatedAdmin` is `true`; for all other roles, clicking the user badge displays their locked role/floor assignment without allowing role switching.
+### B. Support Both Email (`shamim.usfba@gmail.com`) and Employee ID (`1015198`) Login (`DomainModels.kt`, `FirebaseAuthManager.kt`, `FirebaseSyncService.kt`, `NflRepository.kt`)
+- **Admin Email Mapping (`DomainModels.kt` & `NflRepository.kt`)**:
+  - Recognize `shamim.usfba@gmail.com` (as well as `shamim.sustipe15@gmail.com`) as an authorized primary admin email linked to Employee ID `1015198` (`INITIAL_ADMIN_EMPLOYEE_ID`).
+  - Update `authenticateUser(id, pass)` so matching checks `user.id`, `user.employeeId`, `user.googleEmail`, and maps primary admin email logins directly to the admin account (`1015198` / `admin`).
+- **Cloud Email/Password & Firestore Lookup (`FirebaseAuthManager.kt`, `FirebaseSyncService.kt`, `NflRepository.kt`)**:
+  - Add `signInWithEmailAndPassword(context, email, password)` and `sendPasswordResetEmail(context, email)` in `FirebaseAuthManager.kt`.
+  - Add `fetchCloudLoginUserAwait(identifier: String, firebaseUid: String, email: String): UserAccount?` in `FirebaseSyncService.kt` to fetch the user profile from Firestore (`users/{identifier}`, `users/{firebaseUid}`, or `users/1015198`) during login when the local cache does not yet have the latest cloud user record.
+  - Add `suspend fun authenticateUserSuspend(id: String, pass: String): AuthResult` in `NflRepository.kt` that:
+    1. Ensures Firebase is initialized.
+    2. If `id` is an email address (contains `@`), signs in with Firebase Auth `signInWithEmailAndPassword(context, id, pass)` and/or fetches the user profile from Firestore, syncing the verified account and password hash locally so offline and subsequent logins also work seamlessly.
+    3. If `id` is an Employee ID not yet in local memory or whose password was updated in the cloud, fetches the latest `users/{id}` document from Firestore before running the standard `authenticateUser(id, pass)` verification, RBAC, and device-binding checks.
 
-### C. Add Android System Notifications for Admin Approvals (`FactoryAlertManager.kt`, `NflRepository.kt`, `MainActivity.kt`)
-- Add `triggerAdminApprovalNotification(requestKey: String, title: String, body: String)` to `FactoryAlertManager.kt`, posting a high-priority notification on `CHANNEL_CRITICAL` with an intent extra `open_admin_approvals = true` and a chime when sound is enabled.
-- In `NflRepository.upsertRemoteUsers()`, when the active user on the phone is an Admin (`activeBefore?.isAdmin == true`), trigger `alertManager.triggerAdminApprovalNotification(...)` whenever a new `PENDING_APPROVAL` employee registration, `TV_PENDING:` Smart TV setup request, or `DEV_PENDING:` device replacement request is detected.
-- In `MainActivity.kt`, inspect `intent?.getBooleanExtra("open_admin_approvals", false)` so tapping the notification navigates straight to the Admin Users & Device Requests screen.
+### C. Login Screen Updates (`LoginScreen.kt`)
+- Update the identifier field label/placeholder to indicate both **Employee ID or Email** (e.g., `1015198` or `shamim.usfba@gmail.com`) are accepted.
+- Update the **Sign In** button in `LoginScreen.kt` to run `repository.authenticateUserSuspend(employeeId, password)` inside `coroutineScope.launch` with loading state feedback.
+- Add a **"Forgot password?"** option below the password field so users with an email address can request a Firebase password reset email or view admin reset instructions.
 
-### D. Harden `firestore.rules` & Deploy to Firebase
-- Fix the initial Admin document path check to `/databases/$(database)/documents/users/1015198`.
-- Enforce required schema fields (`lineId`, `date`, `hourSlot`, `floor`, `hasNoPlaintextPassword`) across `users`, `production_entries`, `quality_entries`, `factory_alerts`, `daily_setups`, `monthly_targets`, and `weekly_quality`.
-- Deploy the updated rules immediately via `deploy_firebase`.
+---
 
-### E. Upgrade GitHub Actions CI (`.github/workflows/build-debug-apk.yml`)
-- Add steps to run `gradle --no-daemon :app:testDebugUnitTest`, build `web-dashboard-and-mobile` (`npm ci && npm run build`), and upload both `NOS-Live-app-debug` and `NFL-Live-Web-Dashboard-dist` as downloadable artifacts on every push to `main`.
-- Verify everything locally with `npm run build` (in `web-dashboard-and-mobile`), `gradle :app:testDebugUnitTest`, and `compile_applet`.
+## 3. Verification Plan
+1. Compile the Android app via `compile_applet` to ensure zero build or type errors.
+2. Add unit/Robolectric tests verifying:
+   - Logging in with `shamim.usfba@gmail.com` and `Nfllive@26` succeeds and resolves the Admin profile.
+   - Logging in with Employee ID (`1015198`, `admin`, `supervisor`, etc.) continues to pass all existing RBAC and device-binding checks.
+   - `FirebaseAuthManager.ensureFirebaseInitialized(context)` initializes `FirebaseApp` cleanly.
+3. Run `gradle :app:testDebugUnitTest` to confirm all unit and Robolectric tests pass.

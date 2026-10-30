@@ -102,15 +102,20 @@ service cloud.firestore {
 
     function isAdmin() {
       let empId = boundEmployeeId();
-      return isSignedIn()
-        && exists(authBindingPath())
-        && empId != ''
-        && exists(/databases/$(database)/documents/users/$(empId))
-        && get(/databases/$(database)/documents/users/$(empId)).data.get('accountStatus', '') == 'APPROVED'
-        && (
-          get(/databases/$(database)/documents/users/$(empId)).data.get('role', '') == 'ADMIN'
-          || empId == '1015198'
-        );
+      let authEmail = request.auth != null ? request.auth.token.get('email', '') : '';
+      return isSignedIn() && (
+        authEmail in ['shamim.usfba@gmail.com', 'shamim.sustipe15@gmail.com']
+        || (
+          exists(authBindingPath())
+          && empId != ''
+          && exists(/databases/$(database)/documents/users/$(empId))
+          && get(/databases/$(database)/documents/users/$(empId)).data.get('accountStatus', '') == 'APPROVED'
+          && (
+            get(/databases/$(database)/documents/users/$(empId)).data.get('role', '') == 'ADMIN'
+            || empId == '1015198'
+          )
+        )
+      );
     }
 
     function isPrivilegedPlanner() {
@@ -214,8 +219,17 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isSignedIn() && (
         isAdmin()
+        || userId == request.auth.uid
         || (hasAuthBinding() && boundEmployeeId() == userId)
         || resource.data.get('firebaseUid', '') == request.auth.uid
+        || (
+          request.auth.token.get('email', '') != ''
+          && (
+            userId == request.auth.token.get('email', '')
+            || resource.data.get('googleEmail', '') == request.auth.token.get('email', '')
+            || resource.data.get('email', '') == request.auth.token.get('email', '')
+          )
+        )
       );
       allow list: if isAdmin();
 

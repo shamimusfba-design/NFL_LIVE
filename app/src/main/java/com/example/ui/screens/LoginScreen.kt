@@ -442,10 +442,13 @@ fun LoginScreen(
                     errorMsg = null
                     lastAuthResult = null
                   },
-                  label = { Text("Employee ID") },
-                  placeholder = { Text("Enter Employee ID (e.g. $INITIAL_ADMIN_EMPLOYEE_ID)") },
-                  leadingIcon = { Icon(Icons.Default.Badge, contentDescription = "Employee ID") },
-                  keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                  label = { Text("Employee ID or Email") },
+                  placeholder = { Text("Enter Employee ID or Email (e.g. $INITIAL_ADMIN_EMPLOYEE_ID)") },
+                  leadingIcon = { Icon(Icons.Default.Badge, contentDescription = "Employee ID or Email") },
+                  keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Email,
+                    imeAction = ImeAction.Next
+                  ),
                   singleLine = true,
                   colors = fieldColors,
                   modifier = Modifier
@@ -486,6 +489,45 @@ fun LoginScreen(
                     .testTag("login_password_input"),
                   shape = RoundedCornerShape(12.dp)
                 )
+
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.End
+                ) {
+                  TextButton(
+                    onClick = {
+                      errorMsg = null
+                      infoBanner = null
+                      val cleanInput = employeeId.trim()
+                      if (cleanInput.contains("@")) {
+                        isLoading = true
+                        coroutineScope.launch {
+                          val resetRes = FirebaseAuthManager.sendPasswordResetEmail(context, cleanInput)
+                          isLoading = false
+                          resetRes.fold(
+                            onSuccess = {
+                              infoBanner = "Password reset link sent to $cleanInput. Please check your inbox."
+                            },
+                            onFailure = { err ->
+                              errorMsg = err.message ?: "Could not send password reset email."
+                            }
+                          )
+                        }
+                      } else {
+                        infoBanner = "Enter your registered email address above to receive a reset link, or ask your Administrator to reset your Employee ID password."
+                      }
+                    },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    modifier = Modifier.testTag("forgot_password_button")
+                  ) {
+                    Text(
+                      text = "Forgot password?",
+                      fontSize = 12.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = Color(0xFF0755F5)
+                    )
+                  }
+                }
 
                 // Device Replacement / Pending Verification Panel
                 val requiresVerification = lastAuthResult?.status in setOf(
@@ -592,12 +634,14 @@ fun LoginScreen(
                             otpStatusSuccess = verifyRes.success
                             otpStatusMessage = verifyRes.message
                             if (verifyRes.success) {
-                              val retryAuth = repository.authenticateUser(employeeId, password)
-                              if (retryAuth.status == AuthStatus.SUCCESS) {
-                                onLoginSuccess()
-                              } else if (retryAuth.status == AuthStatus.PASSWORD_CHANGE_REQUIRED) {
-                                currentTempPassword = password
-                                screenMode = AuthScreenMode.FORCE_PASSWORD_CHANGE
+                              coroutineScope.launch {
+                                val retryAuth = repository.authenticateUserSuspend(employeeId, password)
+                                if (retryAuth.status == AuthStatus.SUCCESS) {
+                                  onLoginSuccess()
+                                } else if (retryAuth.status == AuthStatus.PASSWORD_CHANGE_REQUIRED) {
+                                  currentTempPassword = password
+                                  screenMode = AuthScreenMode.FORCE_PASSWORD_CHANGE
+                                }
                               }
                             }
                           },
@@ -624,18 +668,20 @@ fun LoginScreen(
                     isLoading = true
                     errorMsg = null
                     infoBanner = null
-                    val authResult = repository.authenticateUser(employeeId, password)
-                    isLoading = false
-                    lastAuthResult = authResult
-                    when (authResult.status) {
-                      AuthStatus.SUCCESS -> onLoginSuccess()
-                      AuthStatus.PASSWORD_CHANGE_REQUIRED -> {
-                        currentTempPassword = password
-                        infoBanner = "First-time Admin login verified. Please set a new permanent password."
-                        screenMode = AuthScreenMode.FORCE_PASSWORD_CHANGE
-                      }
-                      else -> {
-                        errorMsg = authResult.message
+                    coroutineScope.launch {
+                      val authResult = repository.authenticateUserSuspend(employeeId, password)
+                      isLoading = false
+                      lastAuthResult = authResult
+                      when (authResult.status) {
+                        AuthStatus.SUCCESS -> onLoginSuccess()
+                        AuthStatus.PASSWORD_CHANGE_REQUIRED -> {
+                          currentTempPassword = password
+                          infoBanner = "First-time Admin login verified. Please set a new permanent password."
+                          screenMode = AuthScreenMode.FORCE_PASSWORD_CHANGE
+                        }
+                        else -> {
+                          errorMsg = authResult.message
+                        }
                       }
                     }
                   },

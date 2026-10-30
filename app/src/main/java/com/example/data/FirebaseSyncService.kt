@@ -54,6 +54,7 @@ data class FirestoreFetchResult(
 class FirebaseSyncService(private val context: Context) {
 
   private val firestore: FirebaseFirestore? = try {
+    com.example.service.FirebaseAuthManager.ensureFirebaseInitialized(context)
     val dbId = try {
       context.applicationContext.getString(com.example.R.string.firestore_database_id)
     } catch (_: Exception) {
@@ -925,7 +926,7 @@ class FirebaseSyncService(private val context: Context) {
         canTargetRevisionWrite = doc.getBoolean("canTargetRevisionWrite") ?: false,
         approvedDevices = approvedDevices,
         firebaseUid = doc.getString("firebaseUid").orEmpty(),
-        googleEmail = doc.getString("googleEmail").orEmpty(),
+        googleEmail = doc.getString("googleEmail").orEmpty().ifBlank { doc.getString("email").orEmpty() },
         fcmToken = doc.getString("fcmToken").orEmpty(),
         fcmDeviceId = doc.getString("fcmDeviceId").orEmpty(),
         fcmUpdatedAtMillis = doc.getLong("fcmUpdatedAtMillis") ?: 0L
@@ -1585,6 +1586,62 @@ class FirebaseSyncService(private val context: Context) {
     } catch (e: Exception) {
       null
     }
+  }
+
+  /**
+   * Fetches a user account from Firestore during login by Employee ID, Email, or Firebase UID.
+   * Mirrors the Web App's fetchCloudLoginUser + authService lookup so the same credentials work on both platforms.
+   */
+  suspend fun fetchCloudUserForLoginAwait(
+    identifier: String,
+    firebaseUid: String = "",
+    email: String = ""
+  ): UserAccount? = withContext(Dispatchers.IO) {
+    val db = firestore ?: return@withContext null
+    val cleanId = identifier.trim().replace("/", "_")
+    val cleanEmail = email.trim().ifBlank { if (identifier.contains("@")) identifier.trim() else "" }
+    val candidates = linkedSetOf<String>()
+    if (cleanId.isNotEmpty()) {
+      candidates.add(cleanId)
+      candidates.add(cleanId.lowercase(Locale.US))
+    }
+    if (firebaseUid.isNotBlank()) {
+      candidates.add(firebaseUid.trim())
+    }
+    if (isAuthorizedAdminEmail(cleanId) || isAuthorizedAdminEmail(cleanEmail)) {
+      candidates.add(INITIAL_ADMIN_EMPLOYEE_ID)
+      candidates.add("admin")
+    }
+    for (docId in candidates) {
+      try {
+        val snap = withTimeout(6000L) {
+          db.collection("users").document(docId).get().await()
+        }
+        if (snap.exists()) {
+          val parsed = parseUserDoc(snap)
+          if (parsed != null) return@withContext parsed
+        }
+      } catch (_: Exception) {
+      }
+    }
+    if (cleanEmail.isNotBlank()) {
+      for (field in listOf("googleEmail", "email")) {
+        for (target in setOf(cleanEmail, cleanEmail.lowercase(Locale.US))) {
+          try {
+            val querySnap = withTimeout(6000L) {
+              db.collection("users").whereEqualTo(field, target).limit(1).get().await()
+            }
+            val firstDoc = querySnap.documents.firstOrNull()
+            if (firstDoc != null && firstDoc.exists()) {
+              val parsed = parseUserDoc(firstDoc)
+              if (parsed != null) return@withContext parsed
+            }
+          } catch (_: Exception) {
+          }
+        }
+      }
+    }
+    null
   }
 
   suspend fun updateUserFcmTokenAwait(

@@ -3815,7 +3815,189 @@ class NflRepository(private val context: Context) {
   }
 
   /**
-   * Authenticates an employee by Employee ID and password.
+   * Ensures the Primary Admin account (1015198) is provisioned and linked when an authorized
+   * Admin email (e.g. shamim.usfba@gmail.com or shamim.sustipe15@gmail.com) signs in with a valid password.
+   */
+  private fun ensurePrimaryAdminForEmail(
+    adminEmail: String,
+    passwordPlain: String,
+    firebaseUid: String = FirebaseAuthManager.currentUid
+  ): UserAccount = synchronized(bootstrapLock) {
+    val cleanEmail = adminEmail.trim().lowercase(Locale.US)
+    val cleanPass = passwordPlain.trim()
+    val salt = GoogleSheetsStorageService.generateSalt()
+    val passwordHash = if (cleanPass.isNotEmpty()) {
+      GoogleSheetsStorageService.hashPassword(cleanPass, salt)
+    } else {
+      defaultSeedPasswordHash
+    }
+    val now = System.currentTimeMillis()
+    val existing1015198 = _users.value.find { it.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) }
+    val baseAdmin = existing1015198 ?: UserAccount(
+      id = INITIAL_ADMIN_EMPLOYEE_ID,
+      employeeId = INITIAL_ADMIN_EMPLOYEE_ID,
+      name = "Initial Administrator",
+      password = "",
+      passwordHash = passwordHash,
+      passwordSalt = salt,
+      designation = EmployeeDesignation.ADMIN.displayName,
+      department = EmployeeDesignation.ADMIN.department,
+      requestedDesignation = EmployeeDesignation.ADMIN.displayName,
+      requestedFloor = FloorScope.SEW_1,
+      role = UserRole.ADMIN,
+      floor = FloorScope.SEW_1,
+      authorizedFloorScope = FloorScope.ALL,
+      assignedLine = "All",
+      isAdmin = true,
+      mustChangePassword = false,
+      isActive = true,
+      accountStatus = AccountStatus.APPROVED,
+      createdAtMillis = now,
+      updatedAtMillis = now,
+      approvedBy = "SYSTEM_ADMIN_EMAIL",
+      approvedAtMillis = now
+    )
+    val provisionedAdmin = DesignationPolicy.applyDesignationTemplate(
+      base = baseAdmin,
+      designation = EmployeeDesignation.ADMIN,
+      physicalFloor = FloorScope.SEW_1,
+      overrideScope = FloorScope.ALL
+    ).copy(
+      password = "",
+      passwordHash = if (existing1015198 != null && existing1015198.passwordHash.isNotBlank() && cleanPass.isEmpty()) {
+        existing1015198.passwordHash
+      } else {
+        passwordHash
+      },
+      passwordSalt = if (existing1015198 != null && existing1015198.passwordHash.isNotBlank() && cleanPass.isEmpty()) {
+        existing1015198.passwordSalt
+      } else {
+        salt
+      },
+      mustChangePassword = false,
+      isActive = true,
+      isAdmin = true,
+      accountStatus = AccountStatus.APPROVED,
+      googleEmail = cleanEmail.ifBlank { baseAdmin.googleEmail },
+      firebaseUid = firebaseUid.ifBlank { baseAdmin.firebaseUid },
+      updatedAtMillis = now
+    )
+
+    synchronized(stateLock) {
+      _users.update { current ->
+        listOf(provisionedAdmin) + current.filterNot {
+          it.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true)
+        }
+      }
+    }
+    sheetsStorage.setFirstAdminBootstrapLocked(true)
+    scheduleSaveUsers()
+    touchDataUpdated()
+    if (firebaseSync.isAvailable()) {
+      repoScope.launch {
+        firebaseSync.pushUserAccountAwait(provisionedAdmin)
+      }
+    }
+    return provisionedAdmin
+  }
+
+  /**
+   * Suspendable login entry point used by LoginScreen.
+   * Ensures Firebase is initialized, checks Firebase Authentication (Email/Password) and
+   * fetches the latest user profile from Firestore before delegating to authenticateUser().
+   */
+  suspend fun authenticateUserSuspend(id: String, pass: String): AuthResult {
+    val cleanId = id.trim()
+    val cleanPass = pass.trim()
+    if (cleanId.isEmpty() || cleanPass.isEmpty()) {
+      return authenticateUser(cleanId, cleanPass)
+    }
+
+    FirebaseAuthManager.ensureFirebaseInitialized(context)
+
+    var firebaseVerifiedUid = ""
+    var firebaseVerifiedEmail = ""
+
+    if (cleanId.contains("@")) {
+      val emailAuthRes = FirebaseAuthManager.signInWithEmailAndPassword(
+        context = context,
+        email = cleanId,
+        password = cleanPass,
+        allowCreateIfMissing = isAuthorizedAdminEmail(cleanId)
+      )
+      emailAuthRes.onSuccess { fbUser ->
+        firebaseVerifiedUid = fbUser.uid
+        firebaseVerifiedEmail = fbUser.email.orEmpty().ifBlank { cleanId }
+      }
+    }
+
+    if (firebaseSync.isAvailable()) {
+      val cloudUser = firebaseSync.fetchCloudUserForLoginAwait(
+        identifier = cleanId,
+        firebaseUid = firebaseVerifiedUid.ifBlank { FirebaseAuthManager.currentUid },
+        email = if (cleanId.contains("@")) cleanId else firebaseVerifiedEmail
+      )
+      if (cloudUser != null) {
+        val mergedUser = if (firebaseVerifiedUid.isNotBlank()) {
+          val salt = cloudUser.passwordSalt.ifBlank { GoogleSheetsStorageService.generateSalt() }
+          val hash = GoogleSheetsStorageService.hashPassword(cleanPass, salt)
+          cloudUser.copy(
+            password = "",
+            passwordHash = hash,
+            passwordSalt = salt,
+            firebaseUid = firebaseVerifiedUid,
+            googleEmail = firebaseVerifiedEmail.ifBlank { cloudUser.googleEmail },
+            mustChangePassword = if (cloudUser.isAdmin) false else cloudUser.mustChangePassword
+          )
+        } else {
+          cloudUser
+        }
+        synchronized(stateLock) {
+          _users.update { current ->
+            listOf(mergedUser) + current.filterNot {
+              it.id.equals(mergedUser.id, ignoreCase = true) ||
+                it.employeeId.equals(mergedUser.employeeId, ignoreCase = true)
+            }
+          }
+        }
+        scheduleSaveUsers()
+      } else if (firebaseVerifiedUid.isNotBlank() && isAuthorizedAdminEmail(cleanId)) {
+        ensurePrimaryAdminForEmail(
+          adminEmail = cleanId,
+          passwordPlain = cleanPass,
+          firebaseUid = firebaseVerifiedUid
+        )
+      }
+    }
+
+    val result = authenticateUser(cleanId, cleanPass)
+    if (result.status == AuthStatus.SUCCESS && result.user != null) {
+      val loggedInUser = result.user
+      if (cleanId.contains("@") && FirebaseAuthManager.currentUid.isBlank()) {
+        repoScope.launch {
+          val signInRes = FirebaseAuthManager.signInWithEmailAndPassword(
+            context = context,
+            email = cleanId,
+            password = cleanPass,
+            allowCreateIfMissing = true
+          )
+          signInRes.onSuccess { fbUser ->
+            firebaseSync.bindFirebaseUidAwait(fbUser.uid, loggedInUser.id, sheetsStorage.getDeviceId())
+            firebaseSync.pushUserAccountAwait(
+              loggedInUser.copy(
+                firebaseUid = fbUser.uid,
+                googleEmail = cleanId.lowercase(Locale.US)
+              )
+            )
+          }
+        }
+      }
+    }
+    return result
+  }
+
+  /**
+   * Authenticates an employee by Employee ID or Email and password.
    * Enforces:
    * - Account approval state (PENDING_APPROVAL, REJECTED, SUSPENDED, APPROVED)
    * - Strict 1-Employee-ID = 1-Active-Device binding (MAX_APPROVED_DEVICES_PER_USER = 1)
@@ -3829,22 +4011,40 @@ class NflRepository(private val context: Context) {
     if (cleanIdLower.isEmpty() || cleanPass.isEmpty()) {
       return AuthResult(
         status = AuthStatus.INVALID_CREDENTIALS,
-        message = "Please enter both your Employee ID and Password."
+        message = "Please enter both your Employee ID (or Email) and Password."
       )
     }
 
-    val matchedUser = _users.value.find { user ->
+    var matchedUser = _users.value.find { user ->
       val uid = user.id.lowercase(Locale.US)
       val empId = user.employeeId.lowercase(Locale.US)
-      uid == cleanIdLower || empId == cleanIdLower
-    } ?: return AuthResult(
-      status = AuthStatus.INVALID_CREDENTIALS,
-      message = if (cleanId.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) && !isFirstAdminProvisioned()) {
-        "Initial Admin ($INITIAL_ADMIN_EMPLOYEE_ID) has not been provisioned yet. Use 'Initialize First Admin (1015198)' below to set the initial password."
-      } else {
-        "Employee ID '$cleanId' was not found. Please check your Employee ID or register a new account."
+      val email = user.googleEmail.lowercase(Locale.US)
+      uid == cleanIdLower || empId == cleanIdLower || (cleanIdLower.contains("@") && email == cleanIdLower)
+    }
+
+    if (matchedUser == null && isAuthorizedAdminEmail(cleanIdLower)) {
+      val existingAdmin1015198 = _users.value.find {
+        it.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true)
       }
-    )
+      matchedUser = if (existingAdmin1015198 != null) {
+        existingAdmin1015198
+      } else if (cleanPass.length >= 6) {
+        ensurePrimaryAdminForEmail(cleanIdLower, cleanPass)
+      } else {
+        _users.value.find { it.id.equals("admin", ignoreCase = true) }
+      }
+    }
+
+    if (matchedUser == null) {
+      return AuthResult(
+        status = AuthStatus.INVALID_CREDENTIALS,
+        message = if (cleanId.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) && !isFirstAdminProvisioned()) {
+          "Initial Admin ($INITIAL_ADMIN_EMPLOYEE_ID) has not been provisioned yet. Use 'Initialize First Admin (1015198)' below to set the initial password."
+        } else {
+          "Account '$cleanId' was not found. Please check your Employee ID / Email or register a new account."
+        }
+      )
+    }
 
     val passwordValid = (matchedUser.password.isNotBlank() && matchedUser.password == cleanPass) ||
         GoogleSheetsStorageService.verifyPassword(cleanPass, matchedUser.passwordHash, matchedUser.passwordSalt)
@@ -3938,7 +4138,9 @@ class NflRepository(private val context: Context) {
       lastActiveMillis = loginTimeMillis
     )
     val currentUid = FirebaseAuthManager.currentUid
-    val currentEmail = FirebaseAuthManager.currentEmail
+    val currentEmail = FirebaseAuthManager.currentEmail.ifBlank {
+      if (cleanIdLower.contains("@")) cleanIdLower else ""
+    }
     val cachedFcmToken = prefs.getString("cached_fcm_token", "").orEmpty()
     val finalUser = if (matchedUser.isAdmin) {
       // Admin sessions are device-local; never replace the shared account's device binding
@@ -4030,15 +4232,25 @@ class NflRepository(private val context: Context) {
   ): AuthResult {
     val cleanEmail = email.trim().lowercase(Locale.US)
     val cleanHint = employeeIdHint.trim()
-    val matchedUser = _users.value.find { u ->
+    var matchedUser = _users.value.find { u ->
       (cleanHint.isNotBlank() && (u.id.equals(cleanHint, ignoreCase = true) || u.employeeId.equals(cleanHint, ignoreCase = true))) ||
         (firebaseUid.isNotBlank() && u.firebaseUid == firebaseUid) ||
         (cleanEmail.isNotBlank() && u.googleEmail.equals(cleanEmail, ignoreCase = true)) ||
-        (cleanEmail == PRIMARY_ADMIN_GMAIL.lowercase(Locale.US) && (u.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) || u.id.equals("admin", ignoreCase = true)))
-    } ?: return AuthResult(
-      status = AuthStatus.INVALID_CREDENTIALS,
-      message = "Google account ($email) is not yet linked to an Employee ID. Sign in once with your Employee ID & password after connecting Google, or register a new Employee ID."
-    )
+        (isAuthorizedAdminEmail(cleanEmail) && (u.id.equals(INITIAL_ADMIN_EMPLOYEE_ID, ignoreCase = true) || u.id.equals("admin", ignoreCase = true)))
+    }
+    if (matchedUser == null && isAuthorizedAdminEmail(cleanEmail)) {
+      matchedUser = ensurePrimaryAdminForEmail(
+        adminEmail = cleanEmail,
+        passwordPlain = "",
+        firebaseUid = firebaseUid
+      )
+    }
+    if (matchedUser == null) {
+      return AuthResult(
+        status = AuthStatus.INVALID_CREDENTIALS,
+        message = "Google account ($email) is not yet linked to an Employee ID. Sign in once with your Employee ID & password after connecting Google, or register a new Employee ID."
+      )
+    }
 
     if (matchedUser.accountStatus == AccountStatus.PENDING_APPROVAL) {
       return AuthResult(

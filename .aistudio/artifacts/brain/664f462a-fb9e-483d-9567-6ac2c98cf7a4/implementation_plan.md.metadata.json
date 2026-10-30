@@ -1,6 +1,6 @@
 {
-  "summary":  "Release Readiness Audit Validation & Hardening Plan covering Web-to-Android canonical Firestore document ID alignment, locking the Web Role Switcher against privilege escalation, adding Android system notifications for Admin registration & TV setup requests, hardening Firestore schema rules while keeping Employee ID login, and adding Android unit tests + Web build verification to GitHub Actions.",
-  "updatedAt":  "2026-10-26T12:15:35.711316832Z",
+  "summary":  "Implementation plan to fix the 'Cloud sign-in is not available on this device' error on Android APK builds and support logging in with both Email (shamim.usfba@gmail.com) and Employee ID (1015198) across Firebase Auth, Firestore, and local state.",
+  "updatedAt":  "2026-10-28T05:45:27.695468700Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

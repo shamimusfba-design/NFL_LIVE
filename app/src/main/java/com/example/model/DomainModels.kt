@@ -448,6 +448,17 @@ data class AppFeaturePermission(
 
 const val INITIAL_ADMIN_EMPLOYEE_ID = "1015198"
 const val PRIMARY_ADMIN_GMAIL = "shamim.sustipe15@gmail.com"
+const val SECONDARY_ADMIN_GMAIL = "shamim.usfba@gmail.com"
+val AUTHORIZED_ADMIN_EMAILS: Set<String> = setOf(
+  PRIMARY_ADMIN_GMAIL.lowercase(),
+  SECONDARY_ADMIN_GMAIL.lowercase()
+)
+
+fun isAuthorizedAdminEmail(email: String): Boolean {
+  val clean = email.trim().lowercase()
+  return clean.isNotEmpty() && clean in AUTHORIZED_ADMIN_EMAILS
+}
+
 const val MAX_APPROVED_DEVICES_PER_USER = 1
 
 enum class AccountStatus(val displayName: String) {
