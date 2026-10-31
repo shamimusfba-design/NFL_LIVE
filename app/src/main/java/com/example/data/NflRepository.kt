@@ -6221,9 +6221,10 @@ class NflRepository(private val context: Context) {
   fun getLineNptBreakdown(lineId: String): List<NptCategorySlice> {
     val lineIncidents = _incidents.value.filter { it.lineId.equals(lineId, ignoreCase = true) }
     val categoryMinutes = mutableMapOf<String, Pair<Int, Int>>()
-    lineIncidents.forEach { inc ->
-      val mins = (((inc.endTimeMillis ?: System.currentTimeMillis()) - inc.startTimeMillis) / 60000).toInt().coerceIn(10, 180)
-      val catName = when (inc.category) {
+    lineIncidents.forEach { incident ->
+      val minutes = (((incident.endTimeMillis ?: System.currentTimeMillis()) - incident.startTimeMillis) / 60000L)
+        .coerceIn(0L, 180L).toInt()
+      val categoryName = when (incident.category) {
         IncidentCategory.MACHINE_BREAKDOWN -> "Machine Breakdown"
         IncidentCategory.INPUT_MATERIAL -> "Cutting Rip / Input Due"
         IncidentCategory.LINE_BALANCING -> "Line Balancing"
@@ -6233,35 +6234,30 @@ class NflRepository(private val context: Context) {
         IncidentCategory.LOW_PRODUCTION -> "Low Production"
         IncidentCategory.OTHER -> "Maintenance / Other"
       }
-      val current = categoryMinutes[catName] ?: Pair(0, 0)
-      categoryMinutes[catName] = Pair(current.first + mins, current.second + 1)
+      val current = categoryMinutes[categoryName] ?: Pair(0, 0)
+      categoryMinutes[categoryName] = Pair(current.first + minutes, current.second + 1)
     }
 
-    val hash = Math.abs(lineId.hashCode())
-    val mBreakdownMins = categoryMinutes["Machine Breakdown"]?.first ?: (25 + (hash % 30)).coerceAtLeast(15)
-    val inputDueMins = categoryMinutes["Cutting Rip / Input Due"]?.first ?: (15 + ((hash * 3) % 25)).coerceAtLeast(10)
-    val balancingMins = categoryMinutes["Line Balancing"]?.first ?: (10 + ((hash * 7) % 20)).coerceAtLeast(5)
-    val qualityMins = categoryMinutes["Quality Problem"]?.first ?: (8 + ((hash * 11) % 15)).coerceAtLeast(5)
-    val operatorMins = categoryMinutes["Operator N/A"]?.first ?: (5 + ((hash * 13) % 10)).coerceAtLeast(3)
-
-    val rawSlices = listOf(
-      Triple("Machine Breakdown", mBreakdownMins, 0xFFEF4444),
-      Triple("Cutting Rip / Input Due", inputDueMins, 0xFFF97316),
-      Triple("Line Balancing", balancingMins, 0xFF8B5CF6),
-      Triple("Quality Problem", qualityMins, 0xFFEAB308),
-      Triple("Operator N/A", operatorMins, 0xFF3B82F6)
+    val colors = mapOf(
+      "Machine Breakdown" to 0xFFEF4444,
+      "Cutting Rip / Input Due" to 0xFFF97316,
+      "Line Balancing" to 0xFF8B5CF6,
+      "Quality Problem" to 0xFFEAB308,
+      "Operator N/A" to 0xFF3B82F6,
+      "Power Outage" to 0xFF64748B,
+      "Low Production" to 0xFF0EA5E9,
+      "Maintenance / Other" to 0xFF14B8A6
     )
+    val totalMinutes = categoryMinutes.values.sumOf { it.first }
+    if (totalMinutes <= 0) return emptyList()
 
-    val totalMins = rawSlices.sumOf { it.second }.coerceAtLeast(1)
-    return rawSlices.map { (catName, mins, colorHex) ->
-      val pct = Math.round((mins.toDouble() / totalMins.toDouble()) * 1000.0) / 10.0
-      val count = categoryMinutes[catName]?.second ?: (mins / 15).coerceAtLeast(1)
+    return categoryMinutes.map { (categoryName, totals) ->
       NptCategorySlice(
-        categoryName = catName,
-        minutes = mins,
-        count = count,
-        percentage = pct,
-        colorHex = colorHex
+        categoryName = categoryName,
+        minutes = totals.first,
+        count = totals.second,
+        percentage = Math.round((totals.first.toDouble() / totalMinutes) * 1000.0) / 10.0,
+        colorHex = colors[categoryName] ?: 0xFF64748B
       )
     }.sortedByDescending { it.minutes }
   }
