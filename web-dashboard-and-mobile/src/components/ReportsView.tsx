@@ -128,7 +128,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         'Floor',
         'Line',
         'Date',
-        'Slot (12h AM/PM)',
+        'Hour',
         'Output / Checked Pcs',
         'Defective Pcs',
         'Total Defects',
@@ -226,10 +226,10 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         <div className="bg-[#002D62] text-white px-5 py-3.5 flex items-center justify-between">
           <div>
             <h2 className="text-base font-black tracking-wide">
-              Production, Quality, Bi-Hourly Audit &amp; History Ledger (12-Hour AM/PM)
+              Production, Quality, Bi-Hourly Audit &amp; History Ledger
             </h2>
             <div className="text-xs text-blue-200">
-              12-Hour AM/PM Time Format • CSV / Excel Export • Admin Record Correction
+              Hour numbers (1st hr, 2nd hr…) • CSV / Excel Export • Admin Record Correction
             </div>
           </div>
           <button
@@ -264,7 +264,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               [
                 { id: 'PRODUCTION', label: 'Line Production' },
                 { id: 'QUALITY', label: 'Quality & Alter' },
-                { id: 'HOURLY_LOG', label: '12h AM/PM Log & Audit' },
+                { id: 'HOURLY_LOG', label: 'Hourly Log & Audit' },
                 { id: 'WEEKLY_OQL', label: 'Weekly BS OQL / AQC' },
                 { id: 'INCIDENTS', label: 'NPT Stoppages' }
               ] as const
@@ -287,7 +287,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             onClick={downloadCsv}
             className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 transition"
           >
-            <span>📥 Export CSV (12h AM/PM)</span>
+            <span>📥 Export CSV</span>
           </button>
         </div>
 
@@ -351,7 +351,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                     <tr>
                       <th className="py-2.5 px-3">Line</th>
                       <th className="py-2.5 px-3">Date</th>
-                      <th className="py-2.5 px-3">Time Slot (12h AM/PM)</th>
+                      <th className="py-2.5 px-3">Hour</th>
                       <th className="py-2.5 px-3">Category</th>
                       <th className="py-2.5 px-3">Details</th>
                       <th className="py-2.5 px-3">Reported By</th>

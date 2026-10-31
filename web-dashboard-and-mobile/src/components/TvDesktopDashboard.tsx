@@ -474,7 +474,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
             <WbPanel
               title="Hourly Output vs Target"
-              sub="12-Hour AM/PM slots (8 AM – 6 PM) · Target (back) vs Output (front)"
+              sub="By hour of work (1st hr, 2nd hr…) · Target (back) vs Output (front)"
               className="lg:col-span-6"
             >
               <HourlyOutputWallboardChart buckets={hourlySeries} />
@@ -608,7 +608,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
             <WbPanel
               title="Hourly DHU and OQL"
-              sub="12-Hour AM/PM trend · Orange: DHU · Blue: OQL%"
+              sub="By hour of work (1st hr, 2nd hr…) · Orange: DHU · Blue: OQL%"
               className="lg:col-span-5"
             >
               <HourlyQualityLineChart buckets={hourlySeries} limit={kpis.oqlCommitmentPct} />
@@ -660,7 +660,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       {page === 'ALL' && (
         <div className="flex-1 flex flex-col gap-2">
           {/* Top 7 Summary Panels */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7 gap-2">
             {/* 1. Today Live Efficiency Gauge */}
             <WbSummaryCard
               title="Today Live Efficiency"
@@ -722,41 +722,42 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             </WbSummaryCard>
 
             {/* 4. Floor & Factory Efficiency */}
-            <WbSummaryCard title="Floor & Factory Eff">
-              <div className="flex items-end justify-between h-16 pt-2 px-1">
-                {(floorBenchmarks.length > 0
-                  ? floorBenchmarks
-                  : [
-                      { floor: 'Sew 1', todayEff: 76, monthEff: 72 },
-                      { floor: 'Sew 2', todayEff: kpis.todayEfficiencyPct || 68, monthEff: kpis.monthlyEfficiencyPct || 65 },
-                      { floor: 'Sew 3', todayEff: 71, monthEff: 68 },
-                      { floor: 'Factory', todayEff: 72, monthEff: 69 }
-                    ]
-                ).map(b => (
-                  <div key={b.floor} className="flex flex-col items-center gap-0.5">
-                    <div className="flex items-end gap-0.5 h-10">
-                      <div
-                        style={{
-                          height: `${Math.min(100, Math.max(10, b.todayEff))}%`,
-                          backgroundColor: WB_THEME.BLUE
-                        }}
-                        className="w-2.5 rounded-t-sm"
-                        title={`Today: ${b.todayEff}%`}
-                      />
-                      <div
-                        style={{
-                          height: `${Math.min(100, Math.max(10, b.monthEff))}%`,
-                          backgroundColor: WB_THEME.GREEN
-                        }}
-                        className="w-2.5 rounded-t-sm"
-                        title={`Month: ${b.monthEff}%`}
-                      />
+            <WbSummaryCard title="Floor & Factory Efficiency (Today / Month)">
+              {floorBenchmarks.length === 0 || floorBenchmarks.every(b => !b.todayEff && !b.monthEff) ? (
+                <div style={{ color: WB_THEME.MUTED }} className="text-[11px] font-semibold text-center py-3">
+                  No data yet
+                </div>
+              ) : (
+                <div className="flex items-end justify-around gap-1 pt-1">
+                  {floorBenchmarks.map(b => (
+                    <div key={b.floor} className="flex flex-col items-center gap-0.5">
+                      <div className="flex items-end gap-1 h-14">
+                        {[
+                          { v: b.todayEff, c: WB_THEME.BLUE, tip: 'Today' },
+                          { v: b.monthEff, c: WB_THEME.GREEN, tip: 'Month' }
+                        ].map(bar => (
+                          <div key={bar.tip} className="flex flex-col items-center justify-end h-full">
+                            <span style={{ color: bar.c }} className="text-[9px] font-black leading-none mb-0.5">
+                              {Math.round(bar.v)}
+                            </span>
+                            <div
+                              style={{ height: `${Math.min(100, Math.max(6, bar.v)) * 0.62}%`, backgroundColor: bar.c }}
+                              className="w-3 rounded-t-sm"
+                              title={`${bar.tip}: ${bar.v}%`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <span style={{ color: WB_THEME.MUTED }} className="text-[9px] font-bold">
+                        {b.floor}
+                      </span>
                     </div>
-                    <span style={{ color: WB_THEME.MUTED }} className="text-[9px] font-bold">
-                      {b.floor}
-                    </span>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              )}
+              <div className="flex justify-center gap-3 pt-1 text-[9px] font-bold" style={{ color: WB_THEME.MUTED }}>
+                <span><span style={{ backgroundColor: WB_THEME.BLUE }} className="inline-block w-2 h-2 rounded-sm mr-1" />Today</span>
+                <span><span style={{ backgroundColor: WB_THEME.GREEN }} className="inline-block w-2 h-2 rounded-sm mr-1" />Month</span>
               </div>
             </WbSummaryCard>
 
@@ -903,7 +904,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 Live Line Performance Table ({selectedFloor === 'All' ? 'All Floors' : selectedFloor} · {selectedPeriod})
               </h3>
               <p className="text-[11px] text-slate-500">
-                Click any line row to open its 12-Hour AM/PM Line Deep Dive &amp; Rectification Ledger
+                Click any line row to open its Line Deep Dive &amp; Rectification Ledger
               </p>
             </div>
           </div>
@@ -990,7 +991,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
         </div>
       )}
 
-      {/* ==================== LINE DEEP DIVE MODAL (12-HOUR AM/PM SLOTS) ==================== */}
+      {/* ==================== LINE DEEP DIVE MODAL ==================== */}
       {deepDiveLine && (
         <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
           <div
@@ -1050,13 +1051,13 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             </div>
 
             <div className="text-xs font-black uppercase tracking-wider" style={{ color: WB_THEME.MUTED }}>
-              Hourly &amp; Bi-Hourly Records (12-Hour AM/PM Format)
+              Hourly &amp; Bi-Hourly Records
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs border-collapse">
                 <thead>
                   <tr style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.MUTED }} className="text-left">
-                    <th className="p-2">Time Slot (12h AM/PM)</th>
+                    <th className="p-2">Hour</th>
                     <th className="p-2">Type</th>
                     <th className="p-2 text-right">Output Pcs</th>
                     <th className="p-2 text-right">Checked</th>
@@ -1148,7 +1149,7 @@ const WbTile: React.FC<{
         </span>
       )}
     </div>
-    <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold pl-1.5 truncate">
+    <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold pl-1.5 leading-snug">
       {sub}
     </div>
   </div>
@@ -1164,12 +1165,12 @@ const WbSummaryCard: React.FC<{
     style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
     className="rounded-lg border p-2.5 flex flex-col justify-between min-h-[115px]"
   >
-    <div className="flex items-center justify-between gap-1">
-      <span className="text-[11px] font-extrabold truncate">{title}</span>
+    <div className="flex items-start justify-between gap-1">
+      <span className="text-[11px] font-extrabold leading-tight">{title}</span>
       {badge && (
         <span
           style={{ backgroundColor: badgeColor || WB_THEME.BLUE, color: 'var(--wb-on-selected)' }}
-          className="px-1.5 py-0.5 rounded text-[9px] font-black"
+          className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black"
         >
           {badge}
         </span>
@@ -1375,14 +1376,14 @@ const MetricByLineBarChart: React.FC<{
 const HourlyOutputWallboardChart: React.FC<{ buckets: HourlyWallboardBucket[] }> = ({ buckets }) => {
   const maxVal = Math.max(100, ...buckets.map(b => Math.max(b.target, b.output)));
   return (
-    <div className="flex items-end justify-between gap-1.5 h-full pt-3">
+    <div className="nfl-scroll flex items-end justify-between gap-1.5 h-full pt-3 pb-2 overflow-x-auto">
       {buckets.map(b => {
         const tgtH = Math.round((b.target / maxVal) * 100);
         const outH = Math.round((b.output / maxVal) * 100);
         const pct = b.target > 0 ? Math.round((b.output / b.target) * 100) : 0;
         const col = b.output === 0 ? WB_THEME.DIM : achColor(pct);
         return (
-          <div key={b.slot24} className="flex flex-col items-center flex-1 h-full justify-end">
+          <div key={b.slot24} className="flex flex-col items-center flex-1 min-w-[46px] h-full justify-end">
             <div style={{ color: col }} className="text-[9px] font-black mb-0.5">
               {b.output > 0 ? b.output : '—'}
             </div>
@@ -1390,7 +1391,7 @@ const HourlyOutputWallboardChart: React.FC<{ buckets: HourlyWallboardBucket[] }>
               <div style={{ height: `${tgtH}%`, backgroundColor: WB_THEME.DIM }} className="w-2.5 rounded-t-sm" />
               <div style={{ height: `${outH}%`, backgroundColor: col }} className="w-3 rounded-t-sm" />
             </div>
-            <div className="text-[9px] font-black mt-0.5">{b.label12h}</div>
+            <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{b.label12h}</div>
             <div style={{ color: col }} className="text-[8px] font-bold">
               {b.output > 0 && b.target > 0 ? `${pct}%` : ''}
             </div>
@@ -1405,14 +1406,17 @@ const HourlyQualityLineChart: React.FC<{ buckets: HourlyWallboardBucket[]; limit
   buckets
 }) => {
   return (
-    <div className="flex items-end justify-between gap-1.5 h-full pt-3">
+    <div className="nfl-scroll flex items-end justify-between gap-1.5 h-full pt-3 pb-2 overflow-x-auto">
       {buckets.map(b => {
         const maxQ = 12;
         const dhuH = b.dhuPct !== null ? Math.min(100, Math.round((b.dhuPct / maxQ) * 100)) : 0;
         const oqlH = b.oqlPct !== null ? Math.min(100, Math.round((b.oqlPct / maxQ) * 100)) : 0;
         return (
-          <div key={b.slot24} className="flex flex-col items-center flex-1 h-full justify-end">
-            <div className="text-[8px] font-black mb-0.5" style={{ color: WB_THEME.BLUE }}>
+          <div key={b.slot24} className="flex flex-col items-center flex-1 min-w-[46px] h-full justify-end">
+            <div className="text-[8px] font-black leading-tight text-center" style={{ color: WB_THEME.ORANGE }}>
+              {b.dhuPct !== null ? b.dhuPct.toFixed(1) : '—'}
+            </div>
+            <div className="text-[8px] font-black mb-0.5 leading-tight text-center" style={{ color: WB_THEME.BLUE }}>
               {b.oqlPct !== null ? `${b.oqlPct.toFixed(1)}%` : '—'}
             </div>
             <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
@@ -1427,7 +1431,7 @@ const HourlyQualityLineChart: React.FC<{ buckets: HourlyWallboardBucket[]; limit
                 title={`OQL: ${b.oqlPct ?? 0}%`}
               />
             </div>
-            <div className="text-[9px] font-black mt-0.5">{b.label12h}</div>
+            <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{b.label12h}</div>
           </div>
         );
       })}
@@ -1537,11 +1541,11 @@ const HorizontalRankBars: React.FC<{
         const pct = Math.min(100, Math.max(6, Math.round((r.value / computedMax) * 100)));
         return (
           <div key={r.label} className="flex items-center gap-2 text-xs">
-            <span className="w-20 font-black truncate text-[11px]">{r.label}</span>
+            <span className="w-28 shrink-0 font-black text-[11px] leading-tight break-words">{r.label}</span>
             <div className="flex-1 h-3 rounded bg-[var(--wb-bg)] overflow-hidden">
               <div style={{ width: `${pct}%`, backgroundColor: r.color }} className="h-full rounded" />
             </div>
-            <span style={{ color: r.color }} className="w-16 text-right font-black text-[11px]">
+            <span style={{ color: r.color }} className="w-20 shrink-0 text-right font-black text-[11px] whitespace-nowrap">
               {r.text}
             </span>
           </div>
@@ -1572,11 +1576,11 @@ const OpenStoppagesList: React.FC<{
             style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.RED }}
             className="p-2 rounded border-l-4 flex items-center justify-between text-xs"
           >
-            <div className="truncate pr-2">
+            <div className="pr-2 min-w-0">
               <div className="font-black">
                 Line {inc.lineId} · {inc.category.replace(/_/g, ' ')}
               </div>
-              <div style={{ color: WB_THEME.MUTED }} className="text-[10px] truncate">
+              <div style={{ color: WB_THEME.MUTED }} className="text-[10px] break-words">
                 {inc.description}
               </div>
             </div>
