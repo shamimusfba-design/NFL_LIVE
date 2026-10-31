@@ -5581,60 +5581,7 @@ class NflRepository(private val context: Context) {
       }
     }
 
-    if (isSampleDataCleared() && !_isDemoMode.value) {
-      return emptyList()
-    }
-
-    // Proportional breakdown for the 70 minutes NPT:
-    // Loss per issue is calculated strictly: (Hourly Target / 60 mins) * Lost Minutes
-    val mBreakdownMins = 25
-    val balancingMins = 20
-    val inputDueMins = 15
-    val qualityMins = 10
-
-    val mBreakdownLoss = Math.round((hourlyTarget / 60.0) * mBreakdownMins).toInt().coerceAtLeast(1)
-    val balancingLoss = Math.round((hourlyTarget / 60.0) * balancingMins).toInt().coerceAtLeast(1)
-    val inputDueLoss = Math.round((hourlyTarget / 60.0) * inputDueMins).toInt().coerceAtLeast(1)
-    val qualityLoss = Math.round((hourlyTarget / 60.0) * qualityMins).toInt().coerceAtLeast(1)
-
-    return listOf(
-      LineIssueSummary(
-        category = "Machine Breakdown",
-        title = "SNLS-04 Needle Bar Vibration",
-        durationMins = mBreakdownMins,
-        cause = "Drive belt tension slipped and needle bar vibration on sewing head",
-        outputImpactPcs = mBreakdownLoss,
-        status = "RESOLVED",
-        actionTaken = "Mechanic Jahangir Hossain replaced drive belt and calibrated needle alignment"
-      ),
-      LineIssueSummary(
-        category = "Line Balancing",
-        title = "Bottleneck at Collar Seam Join",
-        durationMins = balancingMins,
-        cause = "Operator pace disparity between front placket assembly and collar join",
-        outputImpactPcs = balancingLoss,
-        status = "RESOLVED",
-        actionTaken = "IE Officer re-allocated 1 helper to assist trimming and bundle feeding"
-      ),
-      LineIssueSummary(
-        category = "Input Material N/A",
-        title = "Waiting for Rib Cuff Bundles",
-        durationMins = inputDueMins,
-        cause = "Cutting section bundle delivery delayed by 15 minutes for lot #2",
-        outputImpactPcs = inputDueLoss,
-        status = "RESOLVED",
-        actionTaken = "Input coordinator Biplob Das expedited bundle release from floor store"
-      ),
-      LineIssueSummary(
-        category = "Quality Alert",
-        title = "Seam Puckering Tension Adjustment",
-        durationMins = qualityMins,
-        cause = "Bottom bobbin thread tension too tight resulting in puckered stitch",
-        outputImpactPcs = qualityLoss,
-        status = "RESOLVED",
-        actionTaken = "QA Inspector Nasrin adjusted thread tension dial and verified 5 sample garments"
-      )
-    )
+    return emptyList()
   }
 
   fun getHourlyQualityData(lineId: String, period: PeriodScope): List<HourlyQualityRow> {
@@ -6292,9 +6239,11 @@ class NflRepository(private val context: Context) {
   // Calculate NPT distribution specifically for a single line
   fun getLineNptBreakdown(lineId: String): List<NptCategorySlice> {
     val lineIncidents = _incidents.value.filter { it.lineId.equals(lineId, ignoreCase = true) }
+    if (lineIncidents.isEmpty()) return emptyList()
+
     val categoryMinutes = mutableMapOf<String, Pair<Int, Int>>()
     lineIncidents.forEach { inc ->
-      val mins = (((inc.endTimeMillis ?: System.currentTimeMillis()) - inc.startTimeMillis) / 60000).toInt().coerceIn(10, 180)
+      val mins = (((inc.endTimeMillis ?: System.currentTimeMillis()) - inc.startTimeMillis) / 60000).toInt().coerceIn(0, 180)
       val catName = when (inc.category) {
         IncidentCategory.MACHINE_BREAKDOWN -> "Machine Breakdown"
         IncidentCategory.INPUT_MATERIAL -> "Cutting Rip / Input Due"
@@ -6309,31 +6258,25 @@ class NflRepository(private val context: Context) {
       categoryMinutes[catName] = Pair(current.first + mins, current.second + 1)
     }
 
-    val hash = Math.abs(lineId.hashCode())
-    val mBreakdownMins = categoryMinutes["Machine Breakdown"]?.first ?: (25 + (hash % 30)).coerceAtLeast(15)
-    val inputDueMins = categoryMinutes["Cutting Rip / Input Due"]?.first ?: (15 + ((hash * 3) % 25)).coerceAtLeast(10)
-    val balancingMins = categoryMinutes["Line Balancing"]?.first ?: (10 + ((hash * 7) % 20)).coerceAtLeast(5)
-    val qualityMins = categoryMinutes["Quality Problem"]?.first ?: (8 + ((hash * 11) % 15)).coerceAtLeast(5)
-    val operatorMins = categoryMinutes["Operator N/A"]?.first ?: (5 + ((hash * 13) % 10)).coerceAtLeast(3)
-
-    val rawSlices = listOf(
-      Triple("Machine Breakdown", mBreakdownMins, 0xFFEF4444),
-      Triple("Cutting Rip / Input Due", inputDueMins, 0xFFF97316),
-      Triple("Line Balancing", balancingMins, 0xFF8B5CF6),
-      Triple("Quality Problem", qualityMins, 0xFFEAB308),
-      Triple("Operator N/A", operatorMins, 0xFF3B82F6)
+    val colorByCategory = mapOf(
+      "Machine Breakdown" to 0xFFEF4444,
+      "Cutting Rip / Input Due" to 0xFFF97316,
+      "Line Balancing" to 0xFF8B5CF6,
+      "Quality Problem" to 0xFFEAB308,
+      "Operator N/A" to 0xFF3B82F6,
+      "Power Outage" to 0xFF0EA5E9,
+      "Low Production" to 0xFF64748B,
+      "Maintenance / Other" to 0xFF14B8A6
     )
-
-    val totalMins = rawSlices.sumOf { it.second }.coerceAtLeast(1)
-    return rawSlices.map { (catName, mins, colorHex) ->
-      val pct = Math.round((mins.toDouble() / totalMins.toDouble()) * 1000.0) / 10.0
-      val count = categoryMinutes[catName]?.second ?: (mins / 15).coerceAtLeast(1)
+    val totalMins = categoryMinutes.values.sumOf { it.first }.coerceAtLeast(1)
+    return categoryMinutes.map { (category, totals) ->
+      val mins = totals.first
       NptCategorySlice(
-        categoryName = catName,
+        categoryName = category,
         minutes = mins,
-        count = count,
-        percentage = pct,
-        colorHex = colorHex
+        count = totals.second,
+        percentage = Math.round(mins.toDouble() / totalMins * 1000.0) / 10.0,
+        colorHex = colorByCategory[category] ?: 0xFF64748B
       )
     }.sortedByDescending { it.minutes }
   }
