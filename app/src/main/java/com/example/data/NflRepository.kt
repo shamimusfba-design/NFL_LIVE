@@ -6155,24 +6155,19 @@ class NflRepository(private val context: Context) {
     return data.linePerformance.find { it.lineId.equals(lineId.trim(), ignoreCase = true) }
       ?: run {
         val setup = getLineSetup(lineId)
-        val hash = Math.abs(lineId.hashCode())
-        val lineSent = 12 + (hash % 10)
-        val lineRecv = (lineSent - (hash % 4)).coerceAtLeast(0)
-        val lineSpotSent = 6 + (hash % 6)
-        val lineSpotRecv = (lineSpotSent - (hash % 3)).coerceAtLeast(0)
+        val savedMonthly = getMonthlyLineTarget(setup.floor, lineId) ?: getMonthlyTarget(setup.floor)
+        // Return a neutral empty line summary rather than fabricated defect quantities.
         LinePerformancePoint(
           lineId = lineId,
           floor = setup.floor,
           itemName = setup.itemName,
           smv = setup.smv,
           targetPcs = setup.targetDailyPcs,
-          defectSent = lineSent,
-          defectReceived = lineRecv,
-          defectBalance = (lineSent - lineRecv).coerceAtLeast(0),
-          spotSent = lineSpotSent,
-          spotReceived = lineSpotRecv,
-          spotBalance = (lineSpotSent - lineSpotRecv).coerceAtLeast(0),
-          bsOqlPct = 2.40
+          hourlyTargetPcs = setup.targetHourlyPcs,
+          targetEfficiencyPct = setup.targetEfficiencyPct,
+          monthlyEfficiencyPct = savedMonthly.updateEfficiencyPct,
+          bsOqlPct = savedMonthly.bsOqlPct,
+          monthlyDhuPct = savedMonthly.targetDhuPct
         )
       }
   }
