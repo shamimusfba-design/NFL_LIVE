@@ -113,7 +113,7 @@ fun QualityDashboardScreen(
       modifier = Modifier.fillMaxSize().padding(padding).padding(10.dp),
       verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+      Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
         listOf(FloorScope.ALL, FloorScope.SEW_1, FloorScope.SEW_2, FloorScope.SEW_3, FloorScope.FINISHING).forEach { floor ->
           FilterChip(
             selected = selectedFloor == floor,
@@ -122,7 +122,7 @@ fun QualityDashboardScreen(
           )
         }
       }
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+      Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(PeriodScope.TODAY, PeriodScope.YESTERDAY, PeriodScope.WEEK, PeriodScope.MONTH).forEach { period ->
           FilterChip(
             selected = selectedPeriod == period,
