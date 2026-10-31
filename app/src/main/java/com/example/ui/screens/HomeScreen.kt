@@ -1486,16 +1486,17 @@ fun DualDefectTrackingCard(
         }
 
         val totalPending = sewingBalance + spotBalance
+        val hasFlowRecords = sewingSent + sewingReceived + spotSent + spotReceived > 0
         Surface(
-          color = if (totalPending > 0) Color(0xFFFEF2F2) else Color(0xFFF0FDF4),
+          color = if (!hasFlowRecords) Color(0xFFF1F5F9) else if (totalPending > 0) Color(0xFFFEF2F2) else Color(0xFFF0FDF4),
           shape = RoundedCornerShape(6.dp),
-          border = androidx.compose.foundation.BorderStroke(1.dp, if (totalPending > 0) Color(0xFFFECACA) else Color(0xFFBBF7D0))
+          border = androidx.compose.foundation.BorderStroke(1.dp, if (!hasFlowRecords) Color(0xFFCBD5E1) else if (totalPending > 0) Color(0xFFFECACA) else Color(0xFFBBF7D0))
         ) {
           Text(
-            text = if (totalPending > 0) "Pending: $totalPending pcs" else "100% Cleared",
+            text = if (!hasFlowRecords) "No Records" else if (totalPending > 0) "Pending: $totalPending pcs" else "100% Cleared",
             fontSize = 10.sp,
             fontWeight = FontWeight.ExtraBold,
-            color = if (totalPending > 0) Color(0xFFDC2626) else Color(0xFF166534),
+            color = if (!hasFlowRecords) Color(0xFF64748B) else if (totalPending > 0) Color(0xFFDC2626) else Color(0xFF166534),
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
           )
         }
