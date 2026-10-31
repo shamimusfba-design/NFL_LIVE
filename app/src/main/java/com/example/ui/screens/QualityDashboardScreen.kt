@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -43,7 +44,6 @@ fun QualityDashboardScreen(
   }
   val audits = remember(qualityEntries, selectedPeriod, selectedFloor, refreshTrigger) {
     qualityEntries
-      .filter { !it.isDemo || repository.isDemoMode.value }
       .filter { repository.isBiHourlyAuditSlot(it.hourSlot) }
       .filter { repository.isDateInPeriod(it.date, selectedPeriod) }
       .filter { repository.isInSelectedFloor(it.floor, selectedFloor) }
