@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.BuildConfig
 import com.example.data.NflRepository
 import com.example.model.PeriodScope
+import com.example.model.QualityRecord
 import com.example.ui.components.NptPieChartCard
 import com.example.ui.components.SpeedometerGauge
 import com.example.ui.theme.NflRoyalBlue
@@ -68,6 +69,21 @@ fun LineDeepDiveScreen(
   val floorLinesForDropdown = remember(floorName) { repository.allLinesMaster.filter { it.floor == floorName } }
 
   val monthlyTarget = remember(floorName, monthlyTargets, refreshTrigger) { repository.getMonthlyTarget(floorName) }
+  val monthlyLineTarget = remember(floorName, selectedLineId, monthlyTargets, refreshTrigger) {
+    repository.getMonthlyLineTarget(floorName, selectedLineId) ?: monthlyTarget
+  }
+  val linePeriodQuality = remember(selectedLineId, selectedPeriod, qualityEntries, refreshTrigger) {
+    qualityEntries
+      .filter { it.lineId.equals(selectedLineId, ignoreCase = true) && repository.isDateInPeriod(it.date, selectedPeriod) }
+      .groupBy { it.submissionId.ifBlank { it.id } }
+      .values.mapNotNull { it.maxByOrNull(QualityRecord::timestamp) }
+  }
+  val lineEndlineQuality = remember(linePeriodQuality) {
+    linePeriodQuality.filterNot { repository.isBiHourlyAuditSlot(it.hourSlot) }
+  }
+  val lineBiHourlyAudits = remember(linePeriodQuality) {
+    linePeriodQuality.filter { repository.isBiHourlyAuditSlot(it.hourSlot) && it.checkedGarments > 0 }
+  }
 
   val hourlyProd = remember(selectedLineId, selectedPeriod, productionEntries, targets, refreshTrigger) {
     val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
@@ -112,22 +128,42 @@ fun LineDeepDiveScreen(
     hourlyProd.lastOrNull()?.totalTarget ?: lineSetup.targetDailyPcs
   }
   val totalAchieve = remember(hourlyProd) {
-    hourlyProd.lastOrNull()?.totalAchieve ?: 420
+    hourlyProd.lastOrNull()?.totalAchieve ?: 0
   }
   val overallAchievePct = remember(totalTarget, totalAchieve) {
     if (totalTarget > 0) Math.round((totalAchieve.toDouble() / totalTarget) * 1000.0) / 10.0 else 0.0
   }
   val todayEffPct = remember(hourlyProd) {
-    if (hourlyProd.isNotEmpty()) hourlyProd.filter { it.efficiencyPct > 0 }.map { it.efficiencyPct }.average().let { if (it.isNaN()) 68.5 else Math.round(it * 10.0) / 10.0 } else 68.5
+    hourlyProd.filter { it.efficiencyPct > 0 }.map { it.efficiencyPct }.average()
+      .let { if (it.isNaN()) null else Math.round(it * 10.0) / 10.0 }
   }
   val avgOee = remember(hourlyProd) {
-    hourlyProd.filter { it.oeePct > 0 }.map { it.oeePct }.average().let { if (it.isNaN()) 72.8 else Math.round(it * 10.0) / 10.0 }
+    hourlyProd.filter { it.oeePct > 0 }.map { it.oeePct }.average()
+      .let { if (it.isNaN()) null else Math.round(it * 10.0) / 10.0 }
   }
-  val avgDhu = remember(hourlyQuality) {
-    hourlyQuality.map { it.dhuPct }.average().let { if (it.isNaN()) 1.85 else Math.round(it * 100.0) / 100.0 }
+  val avgDhu = remember(lineEndlineQuality) {
+    val checked = lineEndlineQuality.sumOf { it.checkedGarments }
+    if (checked > 0) Math.round((lineEndlineQuality.sumOf { it.totalDefects }.toDouble() / checked) * 10000.0) / 100.0 else null
   }
-  val avgOql = remember(hourlyQuality) {
-    hourlyQuality.map { it.oqlPct }.average().let { if (it.isNaN()) 3.55 else Math.round(it * 100.0) / 100.0 }
+  val avgOql = remember(lineBiHourlyAudits) {
+    val checked = lineBiHourlyAudits.sumOf { it.checkedGarments }
+    if (checked > 0) Math.round((lineBiHourlyAudits.sumOf { it.defectiveGarments }.toDouble() / checked) * 10000.0) / 100.0 else null
+  }
+  val auditPassCount = remember(lineBiHourlyAudits, monthlyTarget.targetOqlPct) {
+    lineBiHourlyAudits.count {
+      (it.defectiveGarments.toDouble() / it.checkedGarments.toDouble() * 100.0) <= monthlyTarget.targetOqlPct
+    }
+  }
+  val auditFailCount = lineBiHourlyAudits.size - auditPassCount
+  val auditByHour = remember(lineBiHourlyAudits) {
+    lineBiHourlyAudits.groupBy { repository.normalizeHourSlot24(it.hourSlot) }
+      .toSortedMap()
+      .map { (slot, rows) ->
+        val passed = rows.count {
+          (it.defectiveGarments.toDouble() / it.checkedGarments.toDouble() * 100.0) <= monthlyTarget.targetOqlPct
+        }
+        Triple(slot, rows.size, passed)
+      }
   }
   val totalNptMins = remember(lineIssues) { lineIssues.sumOf { it.durationMins } }
   val totalLostPcs = remember(lineIssues) { lineIssues.sumOf { it.outputImpactPcs } }
@@ -261,15 +297,15 @@ fun LineDeepDiveScreen(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
               KpiCard(
                 title = if (selectedPeriod == PeriodScope.YESTERDAY) "Yesterday Eff" else "Today Efficiency",
-                value = "${todayEffPct}%",
+                value = todayEffPct?.let { "${it}%" } ?: "N/A",
                 subtext = if (selectedPeriod == PeriodScope.YESTERDAY) "Recorded Final" else "Target: ${lineSetup.targetEfficiencyPct.toInt()}%",
-                valueColor = if (todayEffPct >= lineSetup.targetEfficiencyPct) Color(0xFF16A34A) else Color(0xFFD97706),
+                valueColor = todayEffPct?.let { if (it >= lineSetup.targetEfficiencyPct) Color(0xFF16A34A) else Color(0xFFD97706) } ?: Color(0xFF64748B),
                 modifier = Modifier.weight(1f)
               )
               KpiCard(
-                title = "Up to Date Eff",
-                value = "${monthlyTarget.updateEfficiencyPct}%",
-                subtext = "MTD Average",
+                title = "Monthly Updated Eff",
+                value = "${monthlyLineTarget.updateEfficiencyPct}%",
+                subtext = if (monthlyLineTarget.lineId.isNotBlank()) "Line MTD" else "Floor MTD",
                 valueColor = Color(0xFF2563EB),
                 modifier = Modifier.weight(1f)
               )
@@ -286,16 +322,16 @@ fun LineDeepDiveScreen(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
               KpiCard(
                 title = "Hourly OEE",
-                value = "${avgOee}%",
+                value = avgOee?.let { "${it}%" } ?: "N/A",
                 subtext = "Equip. Effectiveness",
                 valueColor = Color(0xFF0284C7),
                 modifier = Modifier.weight(1f)
               )
               KpiCard(
                 title = if (selectedPeriod == PeriodScope.YESTERDAY) "Yesterday DHU" else "Today DHU",
-                value = String.format(java.util.Locale.US, "%.2f", avgDhu),
+                value = avgDhu?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: "N/A",
                 subtext = if (selectedPeriod == PeriodScope.YESTERDAY) "Final QC Rate" else "Endline QC (DHU)",
-                valueColor = if (avgDhu <= 2.0) Color(0xFF16A34A) else Color(0xFFDC2626),
+                valueColor = avgDhu?.let { if (it <= 2.0) Color(0xFF16A34A) else Color(0xFFDC2626) } ?: Color(0xFF64748B),
                 modifier = Modifier.weight(1f)
               )
               KpiCard(
@@ -309,11 +345,15 @@ fun LineDeepDiveScreen(
           }
 
           // Line Efficiency Speedometer Dial
-          SpeedometerGauge(
-            value = todayEffPct,
-            targetValue = lineSetup.targetEfficiencyPct,
-            modifier = Modifier.fillMaxWidth()
-          )
+          if (todayEffPct != null) {
+            SpeedometerGauge(
+              value = todayEffPct,
+              targetValue = lineSetup.targetEfficiencyPct,
+              modifier = Modifier.fillMaxWidth()
+            )
+          } else {
+            Text("No efficiency records for this line and period.", color = Color(0xFF64748B), fontSize = 11.sp)
+          }
 
           // Column / Bar Chart: Hourly Target vs Output
           Text("Line $selectedLineId — Hourly Target vs Output (Pieces)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
@@ -365,16 +405,16 @@ fun LineDeepDiveScreen(
           Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             KpiCard(
               title = "Today DHU",
-              value = String.format(java.util.Locale.US, "%.2f", avgDhu),
+              value = avgDhu?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: "N/A",
               subtext = "Endline QC (DHU)",
-              valueColor = if (avgDhu <= 2.0) Color(0xFF16A34A) else Color(0xFFDC2626),
+              valueColor = avgDhu?.let { if (it <= 2.0) Color(0xFF16A34A) else Color(0xFFDC2626) } ?: Color(0xFF64748B),
               modifier = Modifier.weight(1f)
             )
             KpiCard(
               title = "Today OQL",
-              value = "${avgOql}%",
+              value = avgOql?.let { "${it}%" } ?: "N/A",
               subtext = "Bi-hourly Audit",
-              valueColor = if (avgOql <= 3.5) Color(0xFF16A34A) else Color(0xFFD97706),
+              valueColor = avgOql?.let { if (it <= monthlyTarget.targetOqlPct) Color(0xFF16A34A) else Color(0xFFD97706) } ?: Color(0xFF64748B),
               modifier = Modifier.weight(1f)
             )
             KpiCard(
@@ -401,6 +441,37 @@ fun LineDeepDiveScreen(
               valueColor = Color(0xFF475569),
               modifier = Modifier.weight(1f)
             )
+          }
+
+          // Actual bi-hourly audit outcomes: each saved audit is classified against the saved floor OQL standard.
+          Card(
+            shape = RoundedCornerShape(10.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+              Text("Line $selectedLineId — Bi-Hourly Audit Results", fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
+              Text("Total audits: ${lineBiHourlyAudits.size}  •  Pass: $auditPassCount  •  Fail: $auditFailCount", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
+              Text("Pass standard: OQL ≤ ${String.format(java.util.Locale.US, "%.2f", monthlyTarget.targetOqlPct)}%", fontSize = 9.sp, color = Color(0xFF64748B))
+              if (auditByHour.isEmpty()) {
+                Text("No bi-hourly audit records for this line and period.", fontSize = 10.sp, color = Color(0xFF64748B))
+              } else {
+                auditByHour.forEach { (slot, total, passed) ->
+                  val failed = total - passed
+                  Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                      Text(NflRepository.formatHourSlot12h(slot), fontSize = 9.sp, color = Color(0xFF334155), fontWeight = FontWeight.SemiBold)
+                      Text("Total $total • Pass $passed • Fail $failed", fontSize = 9.sp, color = Color(0xFF334155), fontWeight = FontWeight.Bold)
+                    }
+                    Row(Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFFFEE2E2))) {
+                      if (passed > 0) Box(Modifier.fillMaxHeight().weight(passed.toFloat()).background(Color(0xFF16A34A)))
+                      if (failed > 0) Box(Modifier.fillMaxHeight().weight(failed.toFloat()).background(Color(0xFFDC2626)))
+                    }
+                  }
+                }
+              }
+            }
           }
 
           // Top 5 Defects Solid Pie Chart for this Line (Requested order: right below production section)
