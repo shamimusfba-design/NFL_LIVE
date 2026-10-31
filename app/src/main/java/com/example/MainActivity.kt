@@ -851,6 +851,7 @@ class MainActivity : ComponentActivity() {
                     repository = repository,
                     onNavigateToProduction = { if (canWriteProd) currentScreen = AppScreen.PRODUCTION_ENTRY },
                     onNavigateToQuality = { if (canWriteQual) currentScreen = AppScreen.QUALITY_ENTRY },
+                    onNavigateToQualityDashboard = { if (canViewDeepDive) currentScreen = AppScreen.QUALITY_DASHBOARD },
                     onNavigateToNpt = { currentScreen = AppScreen.NPT_SUPERVISOR },
                     onNavigateToSetup = { if (canWriteMorningSetup) currentScreen = AppScreen.SUPERVISOR_SETUP },
                     onNavigateToTv = { currentScreen = AppScreen.TV_DASHBOARD },
