@@ -174,7 +174,7 @@ fun LineDeepDiveScreen(
     }
   }
   val auditFailCount = lineBiHourlyAudits.size - auditPassCount
-  val auditByHour = remember(lineBiHourlyAudits) {
+  val auditByHour = remember(lineBiHourlyAudits, monthlyTarget.targetOqlPct) {
     lineBiHourlyAudits.groupBy { repository.normalizeHourSlot24h(it.hourSlot) }
       .toSortedMap()
       .map { (slot, rows) ->
