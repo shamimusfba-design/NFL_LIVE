@@ -117,6 +117,15 @@ fun QualityDashboardScreen(
     counts.entries.sortedByDescending { it.value }.take(5).map { Triple(it.key, it.value, it.value * 100.0 / total) }
   }
 
+  val auditTopDefects = remember(auditRecords) {
+    val counts = auditRecords.flatMap { it.defects }
+      .filter { it.count > 0 }
+      .groupBy { it.defectType }
+      .mapValues { (_, defects) -> defects.sumOf { it.count } }
+    val total = counts.values.sum().coerceAtLeast(1)
+    counts.entries.sortedByDescending { it.value }.take(5).map { Triple(it.key, it.value, it.value * 100.0 / total) }
+  }
+
   val dashboardData = remember(currentFloor, currentPeriod, filteredRecords, refreshTrigger) {
     repository.getTvDashboardData(currentFloor, currentPeriod)
   }
@@ -315,6 +324,28 @@ fun QualityDashboardScreen(
                   }
                   Box(Modifier.fillMaxWidth().height(8.dp).background(Color(0xFFEDE9FE), RoundedCornerShape(6.dp))) {
                     Box(Modifier.fillMaxWidth((pct / (topDefects.firstOrNull()?.third ?: 1.0)).toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(Color(0xFF7C3AED), RoundedCornerShape(6.dp)))
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      item {
+        QualityPanel(title = "Top 5 Bi-Hourly Audit Defects", subtitle = "Defect breakdown recorded by auditors during two-hourly audits.") {
+          if (auditTopDefects.isEmpty()) QualityEmptyState("No bi-hourly audit defect breakdown is available.")
+          else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+              auditTopDefects.forEachIndexed { index, entry ->
+                val (name, count, pct) = entry
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("${index + 1}. $name", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF334155), modifier = Modifier.weight(1f))
+                    Text("$count pcs • ${String.format(java.util.Locale.US, "%.1f", pct)}%", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7C3AED))
+                  }
+                  Box(Modifier.fillMaxWidth().height(8.dp).background(Color(0xFFEDE9FE), RoundedCornerShape(6.dp))) {
+                    Box(Modifier.fillMaxWidth((pct / (auditTopDefects.firstOrNull()?.third ?: 1.0)).toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(Color(0xFF7C3AED), RoundedCornerShape(6.dp)))
                   }
                 }
               }
