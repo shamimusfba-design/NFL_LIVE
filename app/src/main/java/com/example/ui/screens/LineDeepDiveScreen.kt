@@ -37,6 +37,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.BuildConfig
 import com.example.data.NflRepository
 import com.example.model.PeriodScope
+import com.example.model.ParetoDefectPoint
+import com.example.model.QualityRecord
 import com.example.ui.components.NptPieChartCard
 import com.example.ui.components.SpeedometerGauge
 import com.example.ui.theme.NflRoyalBlue
@@ -68,6 +70,39 @@ fun LineDeepDiveScreen(
   val floorLinesForDropdown = remember(floorName) { repository.allLinesMaster.filter { it.floor == floorName } }
 
   val monthlyTarget = remember(floorName, monthlyTargets, refreshTrigger) { repository.getMonthlyTarget(floorName) }
+  val monthlyLineTarget = remember(floorName, selectedLineId, monthlyTargets, refreshTrigger) {
+    repository.getMonthlyLineTarget(floorName, selectedLineId) ?: monthlyTarget
+  }
+  val linePeriodQuality = remember(selectedLineId, selectedPeriod, qualityEntries, refreshTrigger) {
+    qualityEntries
+      .filter { it.lineId.equals(selectedLineId, ignoreCase = true) && repository.isDateInPeriod(it.date, selectedPeriod) }
+      .groupBy { it.submissionId.ifBlank { it.id } }
+      .values.mapNotNull { it.maxByOrNull(QualityRecord::timestamp) }
+  }
+  val lineEndlineQuality = remember(linePeriodQuality) {
+    linePeriodQuality.filterNot { repository.isBiHourlyAuditSlot(it.hourSlot) }
+  }
+  val lineBiHourlyAudits = remember(linePeriodQuality) {
+    linePeriodQuality.filter { repository.isBiHourlyAuditSlot(it.hourSlot) && it.checkedGarments > 0 }
+  }
+  val auditParetoDefects = remember(lineBiHourlyAudits) {
+    val counts = lineBiHourlyAudits.flatMap { it.defects }
+      .filter { it.count > 0 }
+      .groupBy { it.defectType }
+      .mapValues { (_, items) -> items.sumOf { it.count } }
+      .entries.sortedByDescending { it.value }
+    val total = counts.sumOf { it.value }.coerceAtLeast(1)
+    var cumulative = 0
+    counts.take(5).map { entry ->
+      cumulative += entry.value
+      ParetoDefectPoint(
+        defectName = entry.key,
+        count = entry.value,
+        percentage = Math.round(entry.value.toDouble() / total * 1000.0) / 10.0,
+        cumulativePercentage = Math.round(cumulative.toDouble() / total * 1000.0) / 10.0
+      )
+    }
+  }
 
   val hourlyProd = remember(selectedLineId, selectedPeriod, productionEntries, targets, refreshTrigger) {
     val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
@@ -88,7 +123,7 @@ fun LineDeepDiveScreen(
   }
 
   val paretoDefects = remember(selectedLineId, qualityEntries, refreshTrigger) {
-    repository.getParetoDefects(selectedLineId)
+    repository.getParetoDefects(selectedLineId, selectedPeriod)
   }
 
   val linePerformancePoint = remember(selectedLineId, selectedPeriod, productionEntries, qualityEntries, targets, incidents, refreshTrigger) {
@@ -112,22 +147,42 @@ fun LineDeepDiveScreen(
     hourlyProd.lastOrNull()?.totalTarget ?: lineSetup.targetDailyPcs
   }
   val totalAchieve = remember(hourlyProd) {
-    hourlyProd.lastOrNull()?.totalAchieve ?: 420
+    hourlyProd.lastOrNull()?.totalAchieve ?: 0
   }
   val overallAchievePct = remember(totalTarget, totalAchieve) {
     if (totalTarget > 0) Math.round((totalAchieve.toDouble() / totalTarget) * 1000.0) / 10.0 else 0.0
   }
   val todayEffPct = remember(hourlyProd) {
-    if (hourlyProd.isNotEmpty()) hourlyProd.filter { it.efficiencyPct > 0 }.map { it.efficiencyPct }.average().let { if (it.isNaN()) 68.5 else Math.round(it * 10.0) / 10.0 } else 68.5
+    hourlyProd.filter { it.efficiencyPct > 0 }.map { it.efficiencyPct }.average()
+      .let { if (it.isNaN()) null else Math.round(it * 10.0) / 10.0 }
   }
   val avgOee = remember(hourlyProd) {
-    hourlyProd.filter { it.oeePct > 0 }.map { it.oeePct }.average().let { if (it.isNaN()) 72.8 else Math.round(it * 10.0) / 10.0 }
+    hourlyProd.filter { it.oeePct > 0 }.map { it.oeePct }.average()
+      .let { if (it.isNaN()) null else Math.round(it * 10.0) / 10.0 }
   }
-  val avgDhu = remember(hourlyQuality) {
-    hourlyQuality.map { it.dhuPct }.average().let { if (it.isNaN()) 1.85 else Math.round(it * 100.0) / 100.0 }
+  val avgDhu = remember(lineEndlineQuality) {
+    val checked = lineEndlineQuality.sumOf { it.checkedGarments }
+    if (checked > 0) Math.round((lineEndlineQuality.sumOf { it.totalDefects }.toDouble() / checked) * 10000.0) / 100.0 else null
   }
-  val avgOql = remember(hourlyQuality) {
-    hourlyQuality.map { it.oqlPct }.average().let { if (it.isNaN()) 3.55 else Math.round(it * 100.0) / 100.0 }
+  val avgOql = remember(lineBiHourlyAudits) {
+    val checked = lineBiHourlyAudits.sumOf { it.checkedGarments }
+    if (checked > 0) Math.round((lineBiHourlyAudits.sumOf { it.defectiveGarments }.toDouble() / checked) * 10000.0) / 100.0 else null
+  }
+  val auditPassCount = remember(lineBiHourlyAudits, monthlyTarget.targetOqlPct) {
+    lineBiHourlyAudits.count {
+      (it.defectiveGarments.toDouble() / it.checkedGarments.toDouble() * 100.0) <= monthlyTarget.targetOqlPct
+    }
+  }
+  val auditFailCount = lineBiHourlyAudits.size - auditPassCount
+  val auditByHour = remember(lineBiHourlyAudits, monthlyTarget.targetOqlPct) {
+    lineBiHourlyAudits.groupBy { repository.normalizeHourSlot24h(it.hourSlot) }
+      .toSortedMap()
+      .map { (slot, rows) ->
+        val passed = rows.count {
+          (it.defectiveGarments.toDouble() / it.checkedGarments.toDouble() * 100.0) <= monthlyTarget.targetOqlPct
+        }
+        Triple(slot, rows.size, passed)
+      }
   }
   val totalNptMins = remember(lineIssues) { lineIssues.sumOf { it.durationMins } }
   val totalLostPcs = remember(lineIssues) { lineIssues.sumOf { it.outputImpactPcs } }
@@ -261,15 +316,15 @@ fun LineDeepDiveScreen(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
               KpiCard(
                 title = if (selectedPeriod == PeriodScope.YESTERDAY) "Yesterday Eff" else "Today Efficiency",
-                value = "${todayEffPct}%",
+                value = todayEffPct?.let { "${it}%" } ?: "N/A",
                 subtext = if (selectedPeriod == PeriodScope.YESTERDAY) "Recorded Final" else "Target: ${lineSetup.targetEfficiencyPct.toInt()}%",
-                valueColor = if (todayEffPct >= lineSetup.targetEfficiencyPct) Color(0xFF16A34A) else Color(0xFFD97706),
+                valueColor = todayEffPct?.let { if (it >= lineSetup.targetEfficiencyPct) Color(0xFF16A34A) else Color(0xFFD97706) } ?: Color(0xFF64748B),
                 modifier = Modifier.weight(1f)
               )
               KpiCard(
-                title = "Up to Date Eff",
-                value = "${monthlyTarget.updateEfficiencyPct}%",
-                subtext = "MTD Average",
+                title = "Monthly Updated Eff",
+                value = "${monthlyLineTarget.updateEfficiencyPct}%",
+                subtext = if (monthlyLineTarget.lineId.isNotBlank()) "Line MTD" else "Floor MTD",
                 valueColor = Color(0xFF2563EB),
                 modifier = Modifier.weight(1f)
               )
@@ -286,16 +341,16 @@ fun LineDeepDiveScreen(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
               KpiCard(
                 title = "Hourly OEE",
-                value = "${avgOee}%",
+                value = avgOee?.let { "${it}%" } ?: "N/A",
                 subtext = "Equip. Effectiveness",
                 valueColor = Color(0xFF0284C7),
                 modifier = Modifier.weight(1f)
               )
               KpiCard(
                 title = if (selectedPeriod == PeriodScope.YESTERDAY) "Yesterday DHU" else "Today DHU",
-                value = String.format(java.util.Locale.US, "%.2f", avgDhu),
+                value = avgDhu?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: "N/A",
                 subtext = if (selectedPeriod == PeriodScope.YESTERDAY) "Final QC Rate" else "Endline QC (DHU)",
-                valueColor = if (avgDhu <= 2.0) Color(0xFF16A34A) else Color(0xFFDC2626),
+                valueColor = avgDhu?.let { if (it <= 2.0) Color(0xFF16A34A) else Color(0xFFDC2626) } ?: Color(0xFF64748B),
                 modifier = Modifier.weight(1f)
               )
               KpiCard(
@@ -309,11 +364,15 @@ fun LineDeepDiveScreen(
           }
 
           // Line Efficiency Speedometer Dial
-          SpeedometerGauge(
-            value = todayEffPct,
-            targetValue = lineSetup.targetEfficiencyPct,
-            modifier = Modifier.fillMaxWidth()
-          )
+          if (todayEffPct != null) {
+            SpeedometerGauge(
+              value = todayEffPct,
+              targetValue = lineSetup.targetEfficiencyPct,
+              modifier = Modifier.fillMaxWidth()
+            )
+          } else {
+            Text("No efficiency records for this line and period.", color = Color(0xFF64748B), fontSize = 11.sp)
+          }
 
           // Column / Bar Chart: Hourly Target vs Output
           Text("Line $selectedLineId — Hourly Target vs Output (Pieces)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
@@ -365,21 +424,21 @@ fun LineDeepDiveScreen(
           Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             KpiCard(
               title = "Today DHU",
-              value = String.format(java.util.Locale.US, "%.2f", avgDhu),
+              value = avgDhu?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: "N/A",
               subtext = "Endline QC (DHU)",
-              valueColor = if (avgDhu <= 2.0) Color(0xFF16A34A) else Color(0xFFDC2626),
+              valueColor = avgDhu?.let { if (it <= 2.0) Color(0xFF16A34A) else Color(0xFFDC2626) } ?: Color(0xFF64748B),
               modifier = Modifier.weight(1f)
             )
             KpiCard(
               title = "Today OQL",
-              value = "${avgOql}%",
+              value = avgOql?.let { "${it}%" } ?: "N/A",
               subtext = "Bi-hourly Audit",
-              valueColor = if (avgOql <= 3.5) Color(0xFF16A34A) else Color(0xFFD97706),
+              valueColor = avgOql?.let { if (it <= monthlyTarget.targetOqlPct) Color(0xFF16A34A) else Color(0xFFD97706) } ?: Color(0xFF64748B),
               modifier = Modifier.weight(1f)
             )
             KpiCard(
               title = "BS OQL",
-              value = "${String.format(java.util.Locale.US, "%.2f", linePerformancePoint.bsOqlPct)}%",
+              value = "${String.format(java.util.Locale.US, "%.2f", monthlyTarget.bsOqlPct)}%",
               subtext = "IE Benchmark (≤ 2.5%)",
               valueColor = Color(0xFF0284C7),
               modifier = Modifier.weight(1f)
@@ -401,6 +460,39 @@ fun LineDeepDiveScreen(
               valueColor = Color(0xFF475569),
               modifier = Modifier.weight(1f)
             )
+          }
+
+          // Actual bi-hourly audit outcomes: each saved audit is classified against the saved floor OQL standard.
+          Card(
+            shape = RoundedCornerShape(10.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1)),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+              Text("Line $selectedLineId — Bi-Hourly Audit Results", fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
+              Text("Total audits: ${lineBiHourlyAudits.size}  •  Pass: $auditPassCount  •  Fail: $auditFailCount", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
+              Text("Pass standard: OQL ≤ ${String.format(java.util.Locale.US, "%.2f", monthlyTarget.targetOqlPct)}%", fontSize = 9.sp, color = Color(0xFF64748B))
+              if (auditByHour.isEmpty()) {
+                Text("No bi-hourly audit records for this line and period.", fontSize = 10.sp, color = Color(0xFF64748B))
+              } else {
+                auditByHour.forEach { (slot, total, passed) ->
+                  val failed = total - passed
+                  Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                      Text(repository.formatHourSlot12h(slot), fontSize = 9.sp, color = Color(0xFF334155), fontWeight = FontWeight.SemiBold)
+                      Text("Total $total • Pass $passed • Fail $failed", fontSize = 9.sp, color = Color(0xFF334155), fontWeight = FontWeight.Bold)
+                    }
+                    Row(Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFFFEE2E2))) {
+                      if (passed > 0) Box(Modifier.fillMaxHeight().weight(passed.toFloat()).background(Color(0xFF16A34A)))
+                      if (failed > 0) Box(Modifier.fillMaxHeight().weight(failed.toFloat()).background(Color(0xFFDC2626)))
+                    }
+                  }
+                }
+              }
+              Text("Top 5 Bi-Hourly Audit Defects", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+              ParetoDefectPieChart(auditParetoDefects)
+            }
           }
 
           // Top 5 Defects Solid Pie Chart for this Line (Requested order: right below production section)
@@ -1019,10 +1111,18 @@ private fun LineHourlyDefectTableCard(
             border = androidx.compose.foundation.BorderStroke(1.dp, if (totalPending > 0) Color(0xFFFECACA) else Color(0xFFBBF7D0))
           ) {
             Text(
-              text = if (totalPending > 0) "Pending: $totalPending pcs" else "All Clear ✓",
+              text = when {
+                hourlyRecords.isEmpty() -> "No Records"
+                totalPending > 0 -> "Pending: $totalPending pcs"
+                else -> "All Clear ✓"
+              },
               fontSize = 9.sp,
               fontWeight = FontWeight.Bold,
-              color = if (totalPending > 0) Color(0xFFDC2626) else Color(0xFF166534),
+              color = when {
+                hourlyRecords.isEmpty() -> Color(0xFF64748B)
+                totalPending > 0 -> Color(0xFFDC2626)
+                else -> Color(0xFF166534)
+              },
               modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
             )
           }
@@ -1053,14 +1153,14 @@ private fun LineHourlyDefectTableCard(
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Text("Hour Slot", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(105.dp))
-                Text("Sew Sent", color = Color(0xFFFED7AA), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("Sew Recv", color = Color(0xFFBBF7D0), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("Sew Bal", color = Color(0xFFFECDD3), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("Spot Sent", color = Color(0xFFE9D5FF), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("Spot Recv", color = Color(0xFFA7F3D0), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("Spot Bal", color = Color(0xFFFBCFE8), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("Status", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.width(75.dp))
+                Text("Hour Slot", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(82.dp))
+                Text("Sew Sent", color = Color(0xFFFED7AA), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("Sew Recv", color = Color(0xFFBBF7D0), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("Sew Bal", color = Color(0xFFFECDD3), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("Spot Sent", color = Color(0xFFE9D5FF), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("Spot Recv", color = Color(0xFFA7F3D0), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("Spot Bal", color = Color(0xFFFBCFE8), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("Status", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.width(64.dp))
               }
             }
 
@@ -1075,14 +1175,14 @@ private fun LineHourlyDefectTableCard(
                   modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Text(NflRepository.formatHourSlot12h(row.hourSlot), fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF334155), modifier = Modifier.width(105.dp))
-                  Text("${row.sewingSent}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEA580C), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                  Text("${row.sewingReceived}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                  Text("${row.sewingBalance}", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = if (row.sewingBalance > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                  Text("${row.spotSent}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF9333EA), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                  Text("${row.spotReceived}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                  Text("${row.spotBalance}", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = if (row.spotBalance > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                  Box(modifier = Modifier.width(75.dp), contentAlignment = Alignment.Center) {
+                  Text(NflRepository.formatHourSlot12h(row.hourSlot), fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF334155), modifier = Modifier.width(82.dp))
+                  Text("${row.sewingSent}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEA580C), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                  Text("${row.sewingReceived}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                  Text("${row.sewingBalance}", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = if (row.sewingBalance > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                  Text("${row.spotSent}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF9333EA), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                  Text("${row.spotReceived}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                  Text("${row.spotBalance}", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = if (row.spotBalance > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                  Box(modifier = Modifier.width(64.dp), contentAlignment = Alignment.Center) {
                     Surface(
                       color = if (rowPending > 0) Color(0xFFFEF2F2) else Color(0xFFF0FDF4),
                       shape = RoundedCornerShape(3.dp)
@@ -1100,8 +1200,11 @@ private fun LineHourlyDefectTableCard(
               }
             }
 
-            // Total Summary Row
-            Surface(
+            if (hourlyRecords.isEmpty()) {
+              Text("No hourly defect sent/received records for this line and period.", fontSize = 10.sp, color = Color(0xFF64748B), modifier = Modifier.padding(8.dp))
+            } else {
+              // Total Summary Row
+              Surface(
               color = Color(0xFFF1F5F9),
               shape = RoundedCornerShape(6.dp),
               border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1))
@@ -1110,14 +1213,14 @@ private fun LineHourlyDefectTableCard(
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Text("TOTAL", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A), modifier = Modifier.width(85.dp))
-                Text("$totalSewSent", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFFEA580C), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("$totalSewRecv", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("$totalSewBal", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = if (totalSewBal > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("$totalSpotSent", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFF9333EA), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("$totalSpotRecv", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("$totalSpotBal", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = if (totalSpotBal > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Box(modifier = Modifier.width(75.dp), contentAlignment = Alignment.Center) {
+                Text("TOTAL", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A), modifier = Modifier.width(82.dp))
+                Text("$totalSewSent", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFFEA580C), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("$totalSewRecv", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("$totalSewBal", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = if (totalSewBal > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("$totalSpotSent", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFF9333EA), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("$totalSpotRecv", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("$totalSpotBal", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = if (totalSpotBal > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Box(modifier = Modifier.width(64.dp), contentAlignment = Alignment.Center) {
                   Text(
                     text = if (totalPending > 0) "$totalPending pcs" else "Cleared",
                     fontSize = 9.sp,
@@ -1126,7 +1229,7 @@ private fun LineHourlyDefectTableCard(
                   )
                 }
               }
-            }
+            }            }
           }
         }
       }

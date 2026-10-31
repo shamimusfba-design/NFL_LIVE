@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - feature/admin-web-security-foundation
+      - feature/quality-dashboard-line-deep-dive
   workflow_dispatch:
 
 permissions:
@@ -25,7 +26,16 @@ jobs:
           java-version: '17'
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-      - name: Make Gradle wrapper executable
-        run: chmod +x ./gradlew
+        with:
+          gradle-version: '9.3.1'
+      - name: Create local debug signing key required by project
+        run: |
+          keytool -genkeypair -v \
+            -keystore debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
       - name: Build debug APK
-        run: ./gradlew --no-daemon :app:assembleDebug
+        run: gradle --no-daemon :app:assembleDebug

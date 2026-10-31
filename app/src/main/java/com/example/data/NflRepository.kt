@@ -5512,46 +5512,38 @@ class NflRepository(private val context: Context) {
   // Deep Dive Analytical Data Helpers (Uses Live Cloud Firestore, Google Sheet & Local Entries First)
   fun getHourlyProductionData(lineId: String, period: PeriodScope): List<HourlyProductionRow> {
     val setup = getLineSetup(lineId)
-    val tgt = setup.targetHourlyPcs
+    val targetPerHour = setup.targetHourlyPcs
     val slots = defaultHourSlots
     val lineProds = deduplicateProductionRecords(
       _productionEntries.value.filter {
         it.lineId.equals(lineId, ignoreCase = true) && isDateInPeriod(it.date, period)
       }
     )
-    val randomSeeds = listOf(58, 62, 60, 56, 64, 59, 61, 57, 63, 60)
-    var cumTgt = 0
-    var cumAch = 0
+    var cumulativeTarget = 0
+    var cumulativeAchievement = 0
 
-    val sampleCleared = isSampleDataCleared() && !_isDemoMode.value
-    return slots.mapIndexed { idx, slot ->
-      val recordedForSlot = lineProds.filter { it.hourSlot.equals(slot, ignoreCase = true) }
-      val realForSlot = recordedForSlot.filter { !it.isDemo }
-      val effectiveSlotRecords = realForSlot.ifEmpty { recordedForSlot }
-      val ach = if (effectiveSlotRecords.isNotEmpty()) {
-        effectiveSlotRecords.sumOf { it.outputQty }
-      } else if (sampleCleared) {
-        0
-      } else {
-        when (period) {
-          PeriodScope.TODAY -> if (idx < 7 && !_productionEntries.value.any { !it.isDemo && it.lineId.equals(lineId, ignoreCase = true) }) randomSeeds[idx % randomSeeds.size] else 0
-          PeriodScope.YESTERDAY -> (randomSeeds[idx % randomSeeds.size] - 2).coerceAtLeast(30)
-          else -> randomSeeds[idx % randomSeeds.size]
-        }
+    return slots.map { slot ->
+      val slotRecords = lineProds.filter {
+        normalizeHourSlot24h(it.hourSlot).equals(normalizeHourSlot24h(slot), ignoreCase = true)
       }
-      cumTgt += tgt
-      cumAch += ach
-      val eff = if (tgt > 0 && ach > 0) Math.round((ach.toDouble() / tgt) * setup.targetEfficiencyPct * 10.0) / 10.0 else 0.0
-      val achPct = if (tgt > 0) Math.round((ach.toDouble() / tgt) * 1000.0) / 10.0 else 0.0
-      val oee = if (ach > 0) Math.round((eff * 0.96) * 10.0) / 10.0 else 0.0
+      val achievement = slotRecords.sumOf { it.outputQty }
+      cumulativeTarget += targetPerHour
+      cumulativeAchievement += achievement
+      val efficiency = if (targetPerHour > 0 && achievement > 0) {
+        Math.round((achievement.toDouble() / targetPerHour) * setup.targetEfficiencyPct * 10.0) / 10.0
+      } else 0.0
+      val achievementPct = if (targetPerHour > 0) {
+        Math.round((achievement.toDouble() / targetPerHour) * 1000.0) / 10.0
+      } else 0.0
+      val oee = if (achievement > 0) Math.round((efficiency * 0.96) * 10.0) / 10.0 else 0.0
       HourlyProductionRow(
         hourSlot = slot,
-        hourlyTarget = tgt,
-        achieveOutput = ach,
-        totalTarget = cumTgt,
-        totalAchieve = cumAch,
-        efficiencyPct = eff,
-        achievePct = achPct,
+        hourlyTarget = targetPerHour,
+        achieveOutput = achievement,
+        totalTarget = cumulativeTarget,
+        totalAchieve = cumulativeAchievement,
+        efficiencyPct = efficiency,
+        achievePct = achievementPct,
         oeePct = oee
       )
     }
@@ -5571,79 +5563,24 @@ class NflRepository(private val context: Context) {
     val lineSetup = getLineSetup(lineId)
     val hourlyTarget = if (lineSetup.targetDailyPcs > 0 && lineSetup.totalShiftHours > 0) {
       lineSetup.targetDailyPcs.toDouble() / lineSetup.totalShiftHours.toDouble()
-    } else 62.0
+    } else 0.0
 
-    val existing = _incidents.value.filter { it.lineId.equals(lineId, ignoreCase = true) }
-    if (existing.isNotEmpty()) {
-      return existing.map { inc ->
-        val duration = (((inc.endTimeMillis ?: System.currentTimeMillis()) - inc.startTimeMillis) / (60 * 1000L)).coerceIn(10, 180).toInt()
-        val lostPcs = Math.round((hourlyTarget / 60.0) * duration).toInt().coerceAtLeast(1)
+    return _incidents.value
+      .filter { it.lineId.equals(lineId, ignoreCase = true) }
+      .map { incident ->
+        val duration = (((incident.endTimeMillis ?: System.currentTimeMillis()) - incident.startTimeMillis) / 60000L)
+          .coerceAtLeast(0L).toInt()
+        val lostPcs = Math.round((hourlyTarget / 60.0) * duration).toInt().coerceAtLeast(0)
         LineIssueSummary(
-          category = inc.category.displayName,
-          title = inc.nptType.ifBlank { inc.category.displayName },
+          category = incident.category.displayName,
+          title = incident.nptType.ifBlank { incident.category.displayName },
           durationMins = duration,
-          cause = inc.description + if (inc.reportedCause.isNotBlank()) " — ${inc.reportedCause}" else "",
+          cause = incident.description + if (incident.reportedCause.isNotBlank()) " — ${incident.reportedCause}" else "",
           outputImpactPcs = lostPcs,
-          status = inc.status.name,
-          actionTaken = inc.resolutionNote.ifBlank { inc.acknowledgedBy ?: "Maintenance underway" }
+          status = incident.status.name,
+          actionTaken = incident.resolutionNote.ifBlank { incident.acknowledgedBy ?: "No action note recorded" }
         )
       }
-    }
-
-    if (isSampleDataCleared() && !_isDemoMode.value) {
-      return emptyList()
-    }
-
-    // Proportional breakdown for the 70 minutes NPT:
-    // Loss per issue is calculated strictly: (Hourly Target / 60 mins) * Lost Minutes
-    val mBreakdownMins = 25
-    val balancingMins = 20
-    val inputDueMins = 15
-    val qualityMins = 10
-
-    val mBreakdownLoss = Math.round((hourlyTarget / 60.0) * mBreakdownMins).toInt().coerceAtLeast(1)
-    val balancingLoss = Math.round((hourlyTarget / 60.0) * balancingMins).toInt().coerceAtLeast(1)
-    val inputDueLoss = Math.round((hourlyTarget / 60.0) * inputDueMins).toInt().coerceAtLeast(1)
-    val qualityLoss = Math.round((hourlyTarget / 60.0) * qualityMins).toInt().coerceAtLeast(1)
-
-    return listOf(
-      LineIssueSummary(
-        category = "Machine Breakdown",
-        title = "SNLS-04 Needle Bar Vibration",
-        durationMins = mBreakdownMins,
-        cause = "Drive belt tension slipped and needle bar vibration on sewing head",
-        outputImpactPcs = mBreakdownLoss,
-        status = "RESOLVED",
-        actionTaken = "Mechanic Jahangir Hossain replaced drive belt and calibrated needle alignment"
-      ),
-      LineIssueSummary(
-        category = "Line Balancing",
-        title = "Bottleneck at Collar Seam Join",
-        durationMins = balancingMins,
-        cause = "Operator pace disparity between front placket assembly and collar join",
-        outputImpactPcs = balancingLoss,
-        status = "RESOLVED",
-        actionTaken = "IE Officer re-allocated 1 helper to assist trimming and bundle feeding"
-      ),
-      LineIssueSummary(
-        category = "Input Material N/A",
-        title = "Waiting for Rib Cuff Bundles",
-        durationMins = inputDueMins,
-        cause = "Cutting section bundle delivery delayed by 15 minutes for lot #2",
-        outputImpactPcs = inputDueLoss,
-        status = "RESOLVED",
-        actionTaken = "Input coordinator Biplob Das expedited bundle release from floor store"
-      ),
-      LineIssueSummary(
-        category = "Quality Alert",
-        title = "Seam Puckering Tension Adjustment",
-        durationMins = qualityMins,
-        cause = "Bottom bobbin thread tension too tight resulting in puckered stitch",
-        outputImpactPcs = qualityLoss,
-        status = "RESOLVED",
-        actionTaken = "QA Inspector Nasrin adjusted thread tension dial and verified 5 sample garments"
-      )
-    )
   }
 
   fun getHourlyQualityData(lineId: String, period: PeriodScope): List<HourlyQualityRow> {
@@ -5653,11 +5590,9 @@ class NflRepository(private val context: Context) {
         it.lineId.equals(lineId, ignoreCase = true) && isDateInPeriod(it.date, period)
       }
     )
-    val dhuValues = listOf(1.85, 2.10, 1.65, 1.95, 2.30, 1.70, 1.80, 2.05, 1.90, 1.75)
-    val oqlValues = listOf(3.5, 3.8, 3.2, 4.0, 3.6, 3.4, 3.7, 3.9, 3.5, 3.3)
-    val defectNames = listOf("Puckering, Skip stitch", "Broken stitch", "Open seam", "Uneven seam", "Needle cut", "Puckering", "Skip stitch", "Broken stitch", "Pleat", "Dirty spot")
 
-    return slots.mapIndexed { idx, slot ->
+    // Only return time slots backed by saved records. Never manufacture hourly DHU/OQL values.
+    return slots.mapNotNull { slot ->
       val slotHours = parseSlotHours24(slot)
       val slotQas = lineQas.filter { normalizeHourSlot24h(it.hourSlot).equals(slot, ignoreCase = true) }
       val realSlotQas = slotQas.filter { !it.isDemo }
@@ -5666,23 +5601,27 @@ class NflRepository(private val context: Context) {
       val coveringBiHourlyQas = lineQas.filter { qa ->
         val qaHours = parseSlotHours24(qa.hourSlot)
         isBiHourlyAuditSlot(qa.hourSlot) &&
-            slotHours != null && qaHours != null &&
-            qaHours.first <= slotHours.first && slotHours.second <= qaHours.second
+          slotHours != null && qaHours != null &&
+          qaHours.first <= slotHours.first && slotHours.second <= qaHours.second
       }.let { allBi -> allBi.filter { !it.isDemo }.ifEmpty { allBi } }
 
-      if (effectiveQas.isNotEmpty() || coveringBiHourlyQas.isNotEmpty()) {
+      if (effectiveQas.isEmpty() && coveringBiHourlyQas.isEmpty()) {
+        null
+      } else {
         val dhuSource = effectiveQas.ifEmpty { coveringBiHourlyQas }
         val oqlSource = coveringBiHourlyQas.ifEmpty { effectiveQas }
 
-        val dhuChecked = dhuSource.sumOf { it.checkedGarments }.coerceAtLeast(1)
+        val dhuChecked = dhuSource.sumOf { it.checkedGarments }
         val totalDefects = dhuSource.sumOf { it.totalDefects }
-        val dhuPct = if (effectiveQas.isNotEmpty()) {
+        val dhuPct = if (dhuChecked > 0) {
           Math.round((totalDefects.toDouble() / dhuChecked.toDouble()) * 10000.0) / 100.0
         } else 0.0
 
-        val oqlChecked = oqlSource.sumOf { it.checkedGarments }.coerceAtLeast(1)
+        val oqlChecked = oqlSource.sumOf { it.checkedGarments }
         val defective = oqlSource.sumOf { it.defectiveGarments }
-        val oqlPct = Math.round((defective.toDouble() / oqlChecked.toDouble()) * 10000.0) / 100.0
+        val oqlPct = if (oqlChecked > 0) {
+          Math.round((defective.toDouble() / oqlChecked.toDouble()) * 10000.0) / 100.0
+        } else 0.0
 
         val topDefNames = (effectiveQas + coveringBiHourlyQas)
           .flatMap { it.defects }
@@ -5693,26 +5632,13 @@ class NflRepository(private val context: Context) {
           .sortedByDescending { it.value }
           .take(2)
           .joinToString(", ") { it.key }
-          .ifBlank { defectNames[idx % defectNames.size] }
+          .ifBlank { "No defects recorded" }
+
         HourlyQualityRow(
           hourSlot = slot,
           dhuPct = dhuPct,
           oqlPct = oqlPct,
           majorDefectsName = topDefNames
-        )
-      } else if (isSampleDataCleared() && !_isDemoMode.value) {
-        HourlyQualityRow(
-          hourSlot = slot,
-          dhuPct = 0.0,
-          oqlPct = 0.0,
-          majorDefectsName = "None"
-        )
-      } else {
-        HourlyQualityRow(
-          hourSlot = slot,
-          dhuPct = dhuValues[idx % dhuValues.size],
-          oqlPct = oqlValues[idx % oqlValues.size],
-          majorDefectsName = defectNames[idx % defectNames.size]
         )
       }
     }
@@ -5724,105 +5650,58 @@ class NflRepository(private val context: Context) {
         it.lineId.equals(lineId, ignoreCase = true) && isDateInPeriod(it.date, period)
       }
     )
-    val point = getLinePerformancePoint(lineId, periodScope = period)
-    val totalSewSent = point.defectSent
-    val totalSewRecv = point.defectReceived
-    val totalSpotSent = point.spotSent
-    val totalSpotRecv = point.spotReceived
-    val slots = defaultHourSlots.take(8)
-
-    var remSewSent = totalSewSent
-    var remSewRecv = totalSewRecv
-    var remSpotSent = totalSpotSent
-    var remSpotRecv = totalSpotRecv
-
-    return slots.mapIndexed { idx, slot ->
-      val realSlotQas = lineQas.filter { !it.isDemo && it.hourSlot.equals(slot, ignoreCase = true) }
-      if (realSlotQas.isNotEmpty()) {
-        val sSent = realSlotQas.sumOf { it.defectSent }
-        val sRecv = realSlotQas.sumOf { it.defectReceived }
-        val spSent = realSlotQas.sumOf { it.spotSent }
-        val spRecv = realSlotQas.sumOf { it.spotReceived }
+    return lineQas
+      .groupBy { normalizeHourSlot24h(it.hourSlot) }
+      .toSortedMap()
+      .map { (slot, records) ->
+        val sewingSent = records.sumOf { it.defectSent }
+        val sewingReceived = records.sumOf { it.defectReceived }
+        val spotSent = records.sumOf { it.spotSent }
+        val spotReceived = records.sumOf { it.spotReceived }
         LineHourlyDefectRecord(
           hourSlot = slot,
-          sewingSent = sSent,
-          sewingReceived = sRecv,
-          sewingBalance = (sSent - sRecv).coerceAtLeast(0),
-          spotSent = spSent,
-          spotReceived = spRecv,
-          spotBalance = (spSent - spRecv).coerceAtLeast(0)
-        )
-      } else {
-        val isLast = idx == slots.lastIndex
-        val sewSentShare = if (isLast) remSewSent else ((totalSewSent / 8) + (if (idx % 3 == 0) 1 else 0)).coerceAtMost(remSewSent).coerceAtLeast(0)
-        remSewSent = (remSewSent - sewSentShare).coerceAtLeast(0)
-
-        val sewRecvShare = if (isLast) remSewRecv else ((totalSewRecv / 8) + (if (idx % 2 == 0) 1 else 0)).coerceAtMost(remSewRecv).coerceAtLeast(0)
-        remSewRecv = (remSewRecv - sewRecvShare).coerceAtLeast(0)
-
-        val spotSentShare = if (isLast) remSpotSent else ((totalSpotSent / 8) + (if (idx % 4 == 0) 1 else 0)).coerceAtMost(remSpotSent).coerceAtLeast(0)
-        remSpotSent = (remSpotSent - spotSentShare).coerceAtLeast(0)
-
-        val spotRecvShare = if (isLast) remSpotRecv else ((totalSpotRecv / 8) + (if (idx % 3 == 1) 1 else 0)).coerceAtMost(remSpotRecv).coerceAtLeast(0)
-        remSpotRecv = (remSpotRecv - spotRecvShare).coerceAtLeast(0)
-
-        val sewBal = (sewSentShare - sewRecvShare).coerceAtLeast(0)
-        val spotBal = (spotSentShare - spotRecvShare).coerceAtLeast(0)
-
-        LineHourlyDefectRecord(
-          hourSlot = slot,
-          sewingSent = sewSentShare,
-          sewingReceived = sewRecvShare,
-          sewingBalance = sewBal,
-          spotSent = spotSentShare,
-          spotReceived = spotRecvShare,
-          spotBalance = spotBal
+          sewingSent = sewingSent,
+          sewingReceived = sewingReceived,
+          sewingBalance = (sewingSent - sewingReceived).coerceAtLeast(0),
+          spotSent = spotSent,
+          spotReceived = spotReceived,
+          spotBalance = (spotSent - spotReceived).coerceAtLeast(0)
         )
       }
-    }
   }
 
-  fun getParetoDefects(lineId: String): List<ParetoDefectPoint> {
+  fun getParetoDefects(lineId: String, period: PeriodScope = PeriodScope.TODAY): List<ParetoDefectPoint> {
     val lineQas = deduplicateQualityRecords(
-      _qualityEntries.value.filter { it.lineId.equals(lineId, ignoreCase = true) }
+      _qualityEntries.value.filter {
+        it.lineId.equals(lineId, ignoreCase = true) &&
+          isDateInPeriod(it.date, period) &&
+          !isBiHourlyAuditSlot(it.hourSlot)
+      }
     )
-    val realQas = lineQas.filter { !it.isDemo }
-    val sourceQas = realQas.ifEmpty { lineQas }
     val defectCounts = mutableMapOf<String, Int>()
-    sourceQas.forEach { qa ->
-      qa.defects.forEach { d ->
-        if (d.count > 0) {
-          defectCounts[d.defectType] = (defectCounts[d.defectType] ?: 0) + d.count
+    lineQas.forEach { qa ->
+      qa.defects.forEach { defect ->
+        if (defect.count > 0) {
+          defectCounts[defect.defectType] = (defectCounts[defect.defectType] ?: 0) + defect.count
         }
       }
     }
-    if (defectCounts.isNotEmpty()) {
-      val sorted = defectCounts.entries.sortedByDescending { it.value }
-      val total = sorted.sumOf { it.value }.coerceAtLeast(1)
-      var running = 0
-      return sorted.take(6).map { entry ->
-        running += entry.value
-        val pct = Math.round((entry.value.toDouble() / total.toDouble()) * 1000.0) / 10.0
-        val cumPct = Math.round((running.toDouble() / total.toDouble()) * 1000.0) / 10.0
-        ParetoDefectPoint(
-          defectName = entry.key,
-          count = entry.value,
-          percentage = pct,
-          cumulativePercentage = cumPct
-        )
-      }
+    if (defectCounts.isEmpty()) return emptyList()
+
+    val sorted = defectCounts.entries.sortedByDescending { it.value }
+    val total = sorted.sumOf { it.value }.coerceAtLeast(1)
+    var running = 0
+    return sorted.take(5).map { entry ->
+      running += entry.value
+      val percentage = Math.round((entry.value.toDouble() / total.toDouble()) * 1000.0) / 10.0
+      val cumulative = Math.round((running.toDouble() / total.toDouble()) * 1000.0) / 10.0
+      ParetoDefectPoint(
+        defectName = entry.key,
+        count = entry.value,
+        percentage = percentage,
+        cumulativePercentage = cumulative
+      )
     }
-    if (isSampleDataCleared() && !_isDemoMode.value) {
-      return emptyList()
-    }
-    return listOf(
-      ParetoDefectPoint("Puckering", 38, 32.5, 32.5),
-      ParetoDefectPoint("Broken Stitch", 29, 24.8, 57.3),
-      ParetoDefectPoint("Skip Stitch", 21, 17.9, 75.2),
-      ParetoDefectPoint("Uneven Seam", 14, 12.0, 87.2),
-      ParetoDefectPoint("Needle Cut", 9, 7.7, 94.9),
-      ParetoDefectPoint("Others", 6, 5.1, 100.0)
-    )
   }
 
   private fun addAuditLog(type: String, id: String, action: String, by: String, details: String, reason: String = "") {
@@ -6179,24 +6058,19 @@ class NflRepository(private val context: Context) {
     return data.linePerformance.find { it.lineId.equals(lineId.trim(), ignoreCase = true) }
       ?: run {
         val setup = getLineSetup(lineId)
-        val hash = Math.abs(lineId.hashCode())
-        val lineSent = 12 + (hash % 10)
-        val lineRecv = (lineSent - (hash % 4)).coerceAtLeast(0)
-        val lineSpotSent = 6 + (hash % 6)
-        val lineSpotRecv = (lineSpotSent - (hash % 3)).coerceAtLeast(0)
+        val savedMonthly = getMonthlyLineTarget(setup.floor, lineId) ?: getMonthlyTarget(setup.floor)
+        // Return a neutral empty line summary rather than fabricated defect quantities.
         LinePerformancePoint(
           lineId = lineId,
           floor = setup.floor,
           itemName = setup.itemName,
           smv = setup.smv,
           targetPcs = setup.targetDailyPcs,
-          defectSent = lineSent,
-          defectReceived = lineRecv,
-          defectBalance = (lineSent - lineRecv).coerceAtLeast(0),
-          spotSent = lineSpotSent,
-          spotReceived = lineSpotRecv,
-          spotBalance = (lineSpotSent - lineSpotRecv).coerceAtLeast(0),
-          bsOqlPct = 2.40
+          hourlyTargetPcs = setup.targetHourlyPcs,
+          targetEfficiencyPct = setup.targetEfficiencyPct,
+          monthlyEfficiencyPct = savedMonthly.updateEfficiencyPct,
+          bsOqlPct = savedMonthly.bsOqlPct,
+          monthlyDhuPct = savedMonthly.targetDhuPct
         )
       }
   }
@@ -6347,9 +6221,10 @@ class NflRepository(private val context: Context) {
   fun getLineNptBreakdown(lineId: String): List<NptCategorySlice> {
     val lineIncidents = _incidents.value.filter { it.lineId.equals(lineId, ignoreCase = true) }
     val categoryMinutes = mutableMapOf<String, Pair<Int, Int>>()
-    lineIncidents.forEach { inc ->
-      val mins = (((inc.endTimeMillis ?: System.currentTimeMillis()) - inc.startTimeMillis) / 60000).toInt().coerceIn(10, 180)
-      val catName = when (inc.category) {
+    lineIncidents.forEach { incident ->
+      val minutes = (((incident.endTimeMillis ?: System.currentTimeMillis()) - incident.startTimeMillis) / 60000L)
+        .coerceIn(0L, 180L).toInt()
+      val categoryName = when (incident.category) {
         IncidentCategory.MACHINE_BREAKDOWN -> "Machine Breakdown"
         IncidentCategory.INPUT_MATERIAL -> "Cutting Rip / Input Due"
         IncidentCategory.LINE_BALANCING -> "Line Balancing"
@@ -6359,35 +6234,30 @@ class NflRepository(private val context: Context) {
         IncidentCategory.LOW_PRODUCTION -> "Low Production"
         IncidentCategory.OTHER -> "Maintenance / Other"
       }
-      val current = categoryMinutes[catName] ?: Pair(0, 0)
-      categoryMinutes[catName] = Pair(current.first + mins, current.second + 1)
+      val current = categoryMinutes[categoryName] ?: Pair(0, 0)
+      categoryMinutes[categoryName] = Pair(current.first + minutes, current.second + 1)
     }
 
-    val hash = Math.abs(lineId.hashCode())
-    val mBreakdownMins = categoryMinutes["Machine Breakdown"]?.first ?: (25 + (hash % 30)).coerceAtLeast(15)
-    val inputDueMins = categoryMinutes["Cutting Rip / Input Due"]?.first ?: (15 + ((hash * 3) % 25)).coerceAtLeast(10)
-    val balancingMins = categoryMinutes["Line Balancing"]?.first ?: (10 + ((hash * 7) % 20)).coerceAtLeast(5)
-    val qualityMins = categoryMinutes["Quality Problem"]?.first ?: (8 + ((hash * 11) % 15)).coerceAtLeast(5)
-    val operatorMins = categoryMinutes["Operator N/A"]?.first ?: (5 + ((hash * 13) % 10)).coerceAtLeast(3)
-
-    val rawSlices = listOf(
-      Triple("Machine Breakdown", mBreakdownMins, 0xFFEF4444),
-      Triple("Cutting Rip / Input Due", inputDueMins, 0xFFF97316),
-      Triple("Line Balancing", balancingMins, 0xFF8B5CF6),
-      Triple("Quality Problem", qualityMins, 0xFFEAB308),
-      Triple("Operator N/A", operatorMins, 0xFF3B82F6)
+    val colors = mapOf<String, Long>(
+      "Machine Breakdown" to 0xFFEF4444,
+      "Cutting Rip / Input Due" to 0xFFF97316,
+      "Line Balancing" to 0xFF8B5CF6,
+      "Quality Problem" to 0xFFEAB308,
+      "Operator N/A" to 0xFF3B82F6,
+      "Power Outage" to 0xFF64748B,
+      "Low Production" to 0xFF0EA5E9,
+      "Maintenance / Other" to 0xFF14B8A6
     )
+    val totalMinutes = categoryMinutes.values.sumOf { it.first }
+    if (totalMinutes <= 0) return emptyList()
 
-    val totalMins = rawSlices.sumOf { it.second }.coerceAtLeast(1)
-    return rawSlices.map { (catName, mins, colorHex) ->
-      val pct = Math.round((mins.toDouble() / totalMins.toDouble()) * 1000.0) / 10.0
-      val count = categoryMinutes[catName]?.second ?: (mins / 15).coerceAtLeast(1)
+    return categoryMinutes.map { (categoryName, totals) ->
       NptCategorySlice(
-        categoryName = catName,
-        minutes = mins,
-        count = count,
-        percentage = pct,
-        colorHex = colorHex
+        categoryName = categoryName,
+        minutes = totals.first,
+        count = totals.second,
+        percentage = Math.round((totals.first.toDouble() / totalMinutes) * 1000.0) / 10.0,
+        colorHex = colors[categoryName] ?: 0xFF64748B
       )
     }.sortedByDescending { it.minutes }
   }

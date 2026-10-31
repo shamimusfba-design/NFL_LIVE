@@ -45,6 +45,7 @@ fun HomeScreen(
   repository: NflRepository,
   onNavigateToProduction: () -> Unit,
   onNavigateToQuality: () -> Unit,
+  onNavigateToQualityDashboard: () -> Unit = {},
   onNavigateToNpt: () -> Unit,
   onNavigateToSetup: () -> Unit,
   onNavigateToTv: () -> Unit,
@@ -67,6 +68,7 @@ fun HomeScreen(
   val incidents by repository.incidents.collectAsStateWithLifecycle()
   val productionEntries by repository.productionEntries.collectAsStateWithLifecycle()
   val qualityEntries by repository.qualityEntries.collectAsStateWithLifecycle()
+  val weeklyQuality by repository.weeklyQuality.collectAsStateWithLifecycle()
   val targets by repository.targets.collectAsStateWithLifecycle()
   val monthlyTargets by repository.monthlyTargets.collectAsStateWithLifecycle()
   val isSyncing by repository.isSyncing.collectAsStateWithLifecycle()
@@ -541,10 +543,10 @@ fun HomeScreen(
       // NEW CHART: Weekly Trend Chart for "BS OQL" (Insaf Life Dashboard Module)
       // Placed directly below the existing "Up-to-Date OQL" metric card
       // =========================================================================
-      BsOqlWeeklyTrendChartCard(
-        modifier = Modifier
-          .fillMaxWidth()
-          .testTag("insaf_life_bs_oql_weekly_chart")
+      OqlTrendChart(
+        title = "${currentFloor.displayName} — BS OQL vs NFL OQL Trend",
+        subtitle = "Weekly IE-entered BS OQL compared with weekly NFL AQC OQL",
+        points = weeklyQuality.sortedBy { it.weekStartIso }.takeLast(12)
       )
 
       // Row 3: BS OQL (Buyer Standard OQL entered by IE) & FRI Pass Rate
@@ -600,6 +602,31 @@ fun HomeScreen(
           periodScope = currentPeriod,
           points = tvData.weeklyQaTrend
         )
+      }
+
+      if (canViewDeepDive) {
+        Surface(
+          onClick = onNavigateToQualityDashboard,
+          shape = RoundedCornerShape(9.dp),
+          color = Color(0xFFEFF6FF),
+          border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE)),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              Icon(Icons.Default.FactCheck, contentDescription = null, tint = Color(0xFF1D4ED8))
+              Column {
+                Text("Quality Analytics Dashboard", color = Color(0xFF1E3A8A), fontWeight = FontWeight.Black, fontSize = 12.sp)
+                Text("Bi-hourly audit • Pass/Fail • Defect trends", color = Color(0xFF475569), fontSize = 9.sp)
+              }
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Open quality dashboard", tint = Color(0xFF1D4ED8))
+          }
+        }
       }
 
       // 4. Quick Action Modules (Entry, Supervisor, TV, History - Strictly gated by RBAC Write Permissions)
@@ -1298,8 +1325,9 @@ fun HomeScreen(
 private fun OqlTrendChart(
   title: String,
   subtitle: String,
-  points: List<DailyQaTrend>
+  points: List<WeeklyQualityEntry>
 ) {
+  val chartPoints = remember(points) { points.filter { it.bsOqlPct != null || it.nflAqcPct != null } }
   Card(
     modifier = Modifier.fillMaxWidth(),
     shape = RoundedCornerShape(12.dp),
@@ -1315,16 +1343,16 @@ private fun OqlTrendChart(
       Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
           Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF1976D2)))
-          Text("Actual OQL", fontSize = 10.sp, color = Color(0xFF334155))
+          Text("BS OQL", fontSize = 10.sp, color = Color(0xFF334155))
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
           Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFFF59E0B)))
-          Text("5% benchmark", fontSize = 10.sp, color = Color(0xFF334155))
+          Text("NFL AQC OQL", fontSize = 10.sp, color = Color(0xFF334155))
         }
       }
-      if (points.isEmpty()) {
+      if (chartPoints.isEmpty()) {
         Box(Modifier.fillMaxWidth().height(145.dp), contentAlignment = Alignment.Center) {
-          Text("No quality records for this period yet", fontSize = 12.sp, color = Color(0xFF64748B))
+          Text("No weekly BS OQL / NFL AQC records entered yet", fontSize = 12.sp, color = Color(0xFF64748B))
         }
       } else {
         Canvas(modifier = Modifier.fillMaxWidth().height(150.dp)) {
@@ -1333,35 +1361,60 @@ private fun OqlTrendChart(
           val top = 10f
           val bottom = size.height - 12f
           val plotHeight = bottom - top
-          val maxValue = maxOf(5.0, points.maxOf { maxOf(it.bsOqlPct, it.nflAqcPct) } + 1.0).toFloat()
+          val maxValue = maxOf(
+            5.0,
+            (chartPoints.maxOfOrNull { maxOf(it.bsOqlPct ?: 0.0, it.nflAqcPct ?: 0.0) } ?: 4.0) + 1.0
+          ).toFloat()
           for (i in 0..4) {
             val y = top + plotHeight * i / 4f
             drawLine(Color(0xFFE2E8F0), Offset(left, y), Offset(right, y), strokeWidth = 1f)
           }
           fun pointAt(index: Int, value: Double): Offset {
-            val x = if (points.size == 1) (left + right) / 2f else left + (right - left) * index / (points.size - 1).toFloat()
+            val x = if (chartPoints.size == 1) (left + right) / 2f
+              else left + (right - left) * index / (chartPoints.size - 1).toFloat()
             val y = bottom - (value.toFloat() / maxValue) * plotHeight
             return Offset(x, y)
           }
-          fun drawSeries(values: (DailyQaTrend) -> Double, color: Color) {
-            val path = Path()
-            points.forEachIndexed { index, point ->
-              val p = pointAt(index, values(point))
-              if (index == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
-              drawCircle(color, radius = 3.5f, center = p)
+          fun drawSeries(
+            valueSelector: (WeeklyQualityEntry) -> Double?,
+            otherSelector: (WeeklyQualityEntry) -> Double?,
+            color: Color,
+            placeAboveWhenClose: Boolean
+          ) {
+            var previous: Offset? = null
+            chartPoints.forEachIndexed { index, point ->
+              val value = valueSelector(point)
+              if (value == null) {
+                previous = null
+              } else {
+                val raw = pointAt(index, value)
+                val other = otherSelector(point)
+                val close = other?.let { kotlin.math.abs(raw.y - pointAt(index, it).y) < 14f } == true
+                val offset = if (close) if (placeAboveWhenClose) -7f else 7f else 0f
+                val plotted = Offset(raw.x, (raw.y + offset).coerceIn(top + 2f, bottom - 2f))
+                previous?.let { drawLine(color, it, plotted, strokeWidth = 3f) }
+                drawCircle(color, radius = 3.5f, center = plotted)
+                previous = plotted
+              }
             }
-            if (points.size > 1) drawPath(path, color, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f))
           }
-          drawSeries({ it.bsOqlPct }, Color(0xFF1976D2))
-          drawSeries({ it.nflAqcPct }, Color(0xFFF59E0B))
+          drawSeries({ it.bsOqlPct }, { it.nflAqcPct }, Color(0xFF1976D2), true)
+          drawSeries({ it.nflAqcPct }, { it.bsOqlPct }, Color(0xFFF59E0B), false)
         }
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween
         ) {
-          Text(points.first().dateLabel, fontSize = 9.sp, color = Color(0xFF64748B))
-          if (points.size > 2) Text(points[points.size / 2].dateLabel, fontSize = 9.sp, color = Color(0xFF64748B))
-          if (points.size > 1) Text(points.last().dateLabel, fontSize = 9.sp, color = Color(0xFF64748B))
+          chartPoints.forEachIndexed { index, point ->
+            if (index == 0 || index == chartPoints.lastIndex || index % 3 == 0) {
+              Text(
+                text = point.weekKey.substringAfter("-W", point.weekKey).let { "W$it" },
+                fontSize = 8.sp,
+                color = Color(0xFF64748B),
+                maxLines = 1
+              )
+            }
+          }
         }
       }
     }
@@ -1433,16 +1486,17 @@ fun DualDefectTrackingCard(
         }
 
         val totalPending = sewingBalance + spotBalance
+        val hasFlowRecords = sewingSent + sewingReceived + spotSent + spotReceived > 0
         Surface(
-          color = if (totalPending > 0) Color(0xFFFEF2F2) else Color(0xFFF0FDF4),
+          color = if (!hasFlowRecords) Color(0xFFF1F5F9) else if (totalPending > 0) Color(0xFFFEF2F2) else Color(0xFFF0FDF4),
           shape = RoundedCornerShape(6.dp),
-          border = androidx.compose.foundation.BorderStroke(1.dp, if (totalPending > 0) Color(0xFFFECACA) else Color(0xFFBBF7D0))
+          border = androidx.compose.foundation.BorderStroke(1.dp, if (!hasFlowRecords) Color(0xFFCBD5E1) else if (totalPending > 0) Color(0xFFFECACA) else Color(0xFFBBF7D0))
         ) {
           Text(
-            text = if (totalPending > 0) "Pending: $totalPending pcs" else "100% Cleared",
+            text = if (!hasFlowRecords) "No Records" else if (totalPending > 0) "Pending: $totalPending pcs" else "100% Cleared",
             fontSize = 10.sp,
             fontWeight = FontWeight.ExtraBold,
-            color = if (totalPending > 0) Color(0xFFDC2626) else Color(0xFF166534),
+            color = if (!hasFlowRecords) Color(0xFF64748B) else if (totalPending > 0) Color(0xFFDC2626) else Color(0xFF166534),
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
           )
         }
@@ -1719,7 +1773,7 @@ fun LineWiseDhuCard(
       ) {
         // 1. LINE COLUMN (Locked on left side)
         Column(
-          modifier = Modifier.width(78.dp),
+          modifier = Modifier.width(60.dp),
           verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
           // Header Cell
@@ -1774,7 +1828,7 @@ fun LineWiseDhuCard(
         // Frozen column separator line
         Box(
           modifier = Modifier
-            .width(2.dp)
+            .width(1.dp)
             .height((36 + lines.size * 42).dp)
             .background(Color(0xFFCBD5E1))
         )

@@ -55,6 +55,7 @@ enum class AppScreen {
   WEEKLY_QUALITY,
   ADMIN_USERS,
   LINE_DEEP_DIVE,
+  QUALITY_DASHBOARD,
   TV_DASHBOARD,
   HISTORY_SYNC,
   SETTINGS,
@@ -490,6 +491,24 @@ class MainActivity : ComponentActivity() {
                       )
                     }
 
+                    if (canViewDeepDive) {
+                      NavigationDrawerItem(
+                        label = { Text("🧪 Quality Analytics Dashboard", color = if (currentScreen == AppScreen.QUALITY_DASHBOARD) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
+                        selected = currentScreen == AppScreen.QUALITY_DASHBOARD,
+                        onClick = {
+                          currentScreen = AppScreen.QUALITY_DASHBOARD
+                          scope.launch { drawerState.close() }
+                        },
+                        colors = NavigationDrawerItemDefaults.colors(
+                          unselectedContainerColor = Color.Transparent,
+                          selectedContainerColor = Color(0xFF1E293B),
+                          selectedTextColor = Color(0xFF38BDF8),
+                          unselectedTextColor = Color.White
+                        ),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                      )
+                    }
+
                     if (canWriteNpt) {
                       NavigationDrawerItem(
                         label = { Text("⚙️ NPT & Maintenance Tracking", color = if (currentScreen == AppScreen.NPT_SUPERVISOR) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
@@ -832,6 +851,7 @@ class MainActivity : ComponentActivity() {
                     repository = repository,
                     onNavigateToProduction = { if (canWriteProd) currentScreen = AppScreen.PRODUCTION_ENTRY },
                     onNavigateToQuality = { if (canWriteQual) currentScreen = AppScreen.QUALITY_ENTRY },
+                    onNavigateToQualityDashboard = { if (canViewDeepDive) currentScreen = AppScreen.QUALITY_DASHBOARD },
                     onNavigateToNpt = { currentScreen = AppScreen.NPT_SUPERVISOR },
                     onNavigateToSetup = { if (canWriteMorningSetup) currentScreen = AppScreen.SUPERVISOR_SETUP },
                     onNavigateToTv = { currentScreen = AppScreen.TV_DASHBOARD },
@@ -858,6 +878,16 @@ class MainActivity : ComponentActivity() {
                     initialMetric = selectedMonthlyMetric,
                     onNavigateBack = { currentScreen = AppScreen.HOME },
                     onNavigateToLine = { lineId ->
+                      if (canViewDeepDive) {
+                        selectedDeepDiveLineId = lineId
+                        currentScreen = AppScreen.LINE_DEEP_DIVE
+                      }
+                    }
+                  )
+                  AppScreen.QUALITY_DASHBOARD -> QualityDashboardScreen(
+                    repository = repository,
+                    onNavigateBack = { currentScreen = AppScreen.HOME },
+                    onNavigateToLineDeepDive = { lineId ->
                       if (canViewDeepDive) {
                         selectedDeepDiveLineId = lineId
                         currentScreen = AppScreen.LINE_DEEP_DIVE
