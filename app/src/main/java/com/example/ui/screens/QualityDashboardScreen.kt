@@ -114,7 +114,7 @@ fun QualityDashboardScreen(
       .groupBy { it.defectType }
       .mapValues { (_, defects) -> defects.sumOf { it.count } }
     val total = counts.values.sum().coerceAtLeast(1)
-    counts.entries.sortedByDescending { it.value }.take(5).map { it.key to it.value to (it.value * 100.0 / total) }
+    counts.entries.sortedByDescending { it.value }.take(5).map { Triple(it.key, it.value, it.value * 100.0 / total) }
   }
 
   val dashboardData = remember(currentFloor, currentPeriod, filteredRecords, refreshTrigger) {
