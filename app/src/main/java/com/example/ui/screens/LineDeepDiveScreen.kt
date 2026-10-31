@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.BuildConfig
 import com.example.data.NflRepository
 import com.example.model.PeriodScope
+import com.example.model.ParetoDefectPoint
 import com.example.model.QualityRecord
 import com.example.ui.components.NptPieChartCard
 import com.example.ui.components.SpeedometerGauge
@@ -83,6 +84,24 @@ fun LineDeepDiveScreen(
   }
   val lineBiHourlyAudits = remember(linePeriodQuality) {
     linePeriodQuality.filter { repository.isBiHourlyAuditSlot(it.hourSlot) && it.checkedGarments > 0 }
+  }
+  val auditParetoDefects = remember(lineBiHourlyAudits) {
+    val counts = lineBiHourlyAudits.flatMap { it.defects }
+      .filter { it.count > 0 }
+      .groupBy { it.defectType }
+      .mapValues { (_, items) -> items.sumOf { it.count } }
+      .entries.sortedByDescending { it.value }
+    val total = counts.sumOf { it.value }.coerceAtLeast(1)
+    var cumulative = 0
+    counts.take(5).map { entry ->
+      cumulative += entry.value
+      ParetoDefectPoint(
+        defectName = entry.key,
+        count = entry.value,
+        percentage = Math.round(entry.value.toDouble() / total * 1000.0) / 10.0,
+        cumulativePercentage = Math.round(cumulative.toDouble() / total * 1000.0) / 10.0
+      )
+    }
   }
 
   val hourlyProd = remember(selectedLineId, selectedPeriod, productionEntries, targets, refreshTrigger) {
@@ -419,7 +438,7 @@ fun LineDeepDiveScreen(
             )
             KpiCard(
               title = "BS OQL",
-              value = "${String.format(java.util.Locale.US, "%.2f", linePerformancePoint.bsOqlPct)}%",
+              value = "${String.format(java.util.Locale.US, "%.2f", monthlyTarget.bsOqlPct)}%",
               subtext = "IE Benchmark (≤ 2.5%)",
               valueColor = Color(0xFF0284C7),
               modifier = Modifier.weight(1f)
@@ -471,6 +490,8 @@ fun LineDeepDiveScreen(
                   }
                 }
               }
+              Text("Top 5 Bi-Hourly Audit Defects", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+              ParetoDefectPieChart(auditParetoDefects)
             }
           }
 
