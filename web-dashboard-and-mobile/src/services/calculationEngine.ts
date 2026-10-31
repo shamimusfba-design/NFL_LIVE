@@ -12,6 +12,9 @@ import {
 } from '../types';
 import {
   STANDARD_HOUR_SLOTS,
+  hourNoOfSlot,
+  hourOptionsForLine,
+  ordinalHr,
   formatSlotShortLabel12h,
   normalizeHourSlot24h
 } from '../data/masterData';
@@ -325,28 +328,42 @@ export class CalculationEngine {
       q => (floor === 'All' || q.floor === floor) && this.isDateInPeriod(q.date, todayIso, period)
     );
 
-    return STANDARD_HOUR_SLOTS.map(slot => {
-      const norm = normalizeHourSlot24h(slot);
-      const slotProds = floorProds.filter(p => normalizeHourSlot24h(p.hourSlot) === norm);
-      const slotQas = floorQas.filter(q => normalizeHourSlot24h(q.hourSlot) === norm);
+    // Hour numbers, not clock time: hour 1 of every line (General, Shift A, Shift B) is counted together.
+    const hourNoOf = (lineId: string, slot: string): number | null => hourNoOfSlot(lineId, slot);
+    const maxHourWithData = Math.max(
+      0,
+      ...floorProds.map(p => hourNoOf(p.lineId, p.hourSlot) ?? 0),
+      ...floorQas.map(q => hourNoOf(q.lineId, q.hourSlot) ?? 0)
+    );
+    const lastHour = Math.min(15, Math.max(8, maxHourWithData));
+
+    const result = [];
+    for (let k = 1; k <= lastHour; k++) {
+      const slotProds = floorProds.filter(p => hourNoOf(p.lineId, p.hourSlot) === k);
+      const slotQas = floorQas.filter(q => hourNoOf(q.lineId, q.hourSlot) === k);
+      // The target of an hour is the sum of the hourly targets of the lines that work that hour.
+      const target = activeLines
+        .filter(l => hourOptionsForLine(l.lineId).length >= k)
+        .reduce((s, l) => s + l.hourlyTarget, 0);
 
       const output = slotProds.reduce((s, p) => s + p.outputQty, 0);
       const checked = slotQas.reduce((s, q) => s + q.checkedGarments, 0);
       const defective = slotQas.reduce((s, q) => s + q.defectiveGarments, 0);
       const defects = slotQas.reduce((s, q) => s + q.totalDefects, 0);
 
-      return {
-        slot24: norm,
-        label12h: formatSlotShortLabel12h(norm),
-        target: hourlyTargetTotal,
+      result.push({
+        slot24: String(k),
+        label12h: `${ordinalHr(k)} hr`,
+        target,
         output,
         checked,
         defective,
         defects,
         dhuPct: checked > 0 ? Number(((defects / checked) * 100).toFixed(2)) : null,
         oqlPct: checked > 0 ? Number(((defective / checked) * 100).toFixed(2)) : null
-      };
-    });
+      });
+    }
+    return result;
   }
 
   public static computeTopDefects(

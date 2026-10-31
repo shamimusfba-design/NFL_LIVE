@@ -464,3 +464,85 @@ export function isoWeekKeyOf(dateIso: string): string {
   const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
+
+// ---------------------------------------------------------------------------
+// Hour numbers ("1st hr", "2nd hr"...). Data entry and charts count the hours a line really works,
+// so hour 1 of a General line (starts 8:00), of a Shift A line (starts 6:00) and of a Shift B line
+// (starts 15:00) line up. The breaks are left out. The stored slot stays the old "HH:00 - HH:00" key.
+// ---------------------------------------------------------------------------
+export type LineShiftType = 'GENERAL' | 'SHIFT_A' | 'SHIFT_B';
+
+// Shift lines (FA is the first shift, FB the second shift of the same pair). Every other line is General.
+// If a line moves between General and Shift, change only these two lists.
+const SHIFT_A_LINES = new Set(['D1A', 'D2A', 'E1A', 'E2A', 'FA', 'G1A', 'G2A', 'H1A', 'H2A', 'V1A', 'W1A', 'W2A', 'ZA1A', 'ZA2A']);
+const SHIFT_B_LINES = new Set(['D1B', 'D2B', 'E1B', 'E2B', 'FB', 'G1B', 'G2B', 'H1B', 'H2B', 'V1B', 'W1B', 'W2B', 'ZA1B', 'ZA2B']);
+
+export function lineShiftType(lineId: string): LineShiftType {
+  const id = String(lineId || '').trim().toUpperCase();
+  if (SHIFT_A_LINES.has(id)) return 'SHIFT_A';
+  if (SHIFT_B_LINES.has(id)) return 'SHIFT_B';
+  return 'GENERAL';
+}
+
+// Clock start hour of each working hour, in order. The lunch/meal break hour is not in the list.
+const CLOCK_HOURS: Record<LineShiftType, number[]> = {
+  GENERAL: [8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23],
+  SHIFT_A: [6, 7, 8, 9, 10, 11, 13, 14],
+  SHIFT_B: [15, 16, 17, 18, 19, 20, 21, 22]
+};
+
+export function ordinalHr(n: number): string {
+  const v = n % 100;
+  const suffix = v >= 11 && v <= 13 ? 'th' : n % 10 === 1 ? 'st' : n % 10 === 2 ? 'nd' : n % 10 === 3 ? 'rd' : 'th';
+  return `${n}${suffix}`;
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+export interface HourOption { no: number; key: string; label: string }
+
+/** The 1-hour slots of a line: hour number, stored key, and label like "1st hr". */
+export function hourOptionsForLine(lineId: string): HourOption[] {
+  return CLOCK_HOURS[lineShiftType(lineId)].map((h, i) => ({
+    no: i + 1,
+    key: `${pad2(h)}:00 - ${pad2(h + 1)}:00`,
+    label: `${ordinalHr(i + 1)} hr`
+  }));
+}
+
+/** The 2-hour audit slots of a line: "1st-2nd hr", "3rd-4th hr"... The stored key spans 2 clock hours from the first hour's start. */
+export function biHourlyOptionsForLine(lineId: string): HourOption[] {
+  const hours = CLOCK_HOURS[lineShiftType(lineId)];
+  const out: HourOption[] = [];
+  for (let i = 0; i + 1 < hours.length; i += 2) {
+    out.push({
+      no: i / 2 + 1,
+      key: `${pad2(hours[i])}:00 - ${pad2(hours[i] + 2)}:00`,
+      label: `${ordinalHr(i + 1)}-${ordinalHr(i + 2)} hr`
+    });
+  }
+  return out;
+}
+
+/** Hour number (1, 2, 3...) of a stored 1-hour slot for this line, or null when it is not a 1-hour slot of this line. */
+export function hourNoOfSlot(lineId: string, slotKey: string): number | null {
+  const parsed = parseSlotHours24(slotKey);
+  if (!parsed || parsed[1] - parsed[0] !== 1) return null;
+  const idx = CLOCK_HOURS[lineShiftType(lineId)].indexOf(parsed[0]);
+  return idx >= 0 ? idx + 1 : null;
+}
+
+/** Text for a stored slot: "3rd hr", "1st-2nd hr", or the old clock text when it does not fit the line's hours. */
+export function hourLabelOfSlot(lineId: string, slotKey: string): string {
+  const parsed = parseSlotHours24(slotKey);
+  if (!parsed) return slotKey || '';
+  const hours = CLOCK_HOURS[lineShiftType(lineId)];
+  if (parsed[1] - parsed[0] === 1) {
+    const idx = hours.indexOf(parsed[0]);
+    if (idx >= 0) return `${ordinalHr(idx + 1)} hr`;
+  } else if (parsed[1] - parsed[0] === 2) {
+    const idx = hours.indexOf(parsed[0]);
+    if (idx >= 0 && idx % 2 === 0) return `${ordinalHr(idx + 1)}-${ordinalHr(idx + 2)} hr`;
+  }
+  return formatHourSlot12h(slotKey);
+}

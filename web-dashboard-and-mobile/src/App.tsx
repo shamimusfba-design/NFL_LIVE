@@ -71,6 +71,13 @@ export default function App() {
   const [authChecking, setAuthChecking] = useState(true);
   const [restoreNotice, setRestoreNotice] = useState<string | undefined>(undefined);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try { return localStorage.getItem('nfl_theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; }
+  });
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem('nfl_theme', theme); } catch {}
+  }, [theme]);
 
   const [activeDeviceView, setActiveDeviceView] = useState<'MOBILE' | 'TV'>(() =>
     typeof window !== 'undefined' && window.innerWidth >= 900 ? 'TV' : 'MOBILE'
@@ -794,11 +801,11 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0A1522] text-slate-900 font-sans flex">
+    <div className="min-h-screen bg-[var(--wb-bg)] text-slate-900 font-sans flex">
       {/* ---------- Side menu: slides in on a phone, stays open on a computer ---------- */}
       {menuOpen && <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={() => setMenuOpen(false)} />}
       <aside
-        className={`fixed md:sticky top-0 z-40 h-screen w-64 shrink-0 flex-col border-r border-[#1B2E45] bg-[#0B1A2C] text-white transition-transform duration-200 ${
+        className={`fixed md:sticky top-0 z-40 h-screen w-64 shrink-0 flex-col border-r border-[var(--shell-line)] bg-[var(--shell-side)] text-[var(--shell-side-txt)] transition-transform duration-200 ${
           menuOpen ? 'flex translate-x-0' : `hidden -translate-x-full ${sidebarHidden ? '' : 'md:flex md:translate-x-0'}`
         }`}
       >
@@ -813,57 +820,57 @@ export default function App() {
         </div>
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
-          <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">Dashboard</div>
+          <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Dashboard</div>
           <button
             onClick={() => { closeMenu(); setActiveDeviceView('TV'); setPageRequest({ page: 'ALL', n: Date.now() }); }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-[var(--shell-side-txt)] hover:bg-[var(--shell-hover)] hover:text-white"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10" /></svg>
             <span className="flex-1">Overview (All)</span>
           </button>
           <button
             onClick={() => { closeMenu(); setActiveDeviceView('TV'); setPageRequest({ page: 'PRODUCTION', n: Date.now() }); }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-[var(--shell-side-txt)] hover:bg-[var(--shell-hover)] hover:text-white"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21V9l6 4V9l6 4V5h3v16z" /></svg>
             <span className="flex-1">Production</span>
           </button>
           <button
             onClick={() => { closeMenu(); setActiveDeviceView('TV'); setPageRequest({ page: 'QUALITY', n: Date.now() }); }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-[var(--shell-side-txt)] hover:bg-[var(--shell-hover)] hover:text-white"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6" /></svg>
             <span className="flex-1">Quality</span>
           </button>
           <button
             onClick={() => { closeMenu(); setActiveDeviceView('TV'); setPageRequest({ page: 'TABLE', n: Date.now() }); }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-[var(--shell-side-txt)] hover:bg-[var(--shell-hover)] hover:text-white"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5h18v14H3zM3 10h18M3 15h18M9 5v14" /></svg>
             <span className="flex-1">Line table</span>
           </button>
           <button
             onClick={() => { closeMenu(); setActiveDeviceView('MOBILE'); }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-[var(--shell-side-txt)] hover:bg-[var(--shell-hover)] hover:text-white"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h10a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM11 18h2" /></svg>
             <span className="flex-1">Compact view</span>
           </button>
-          <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">Data entry</div>
+          <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Data entry</div>
           {ENTRY_MODULES.filter(m => canUseEntryModule(m.id, currentUser?.role)).map(m => (
             <button
               key={m.id}
               onClick={() => { closeMenu(); setEntryModule(m.id); setShowEntryModal(true); }}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-[var(--shell-side-txt)] hover:bg-[var(--shell-hover)] hover:text-white"
             >
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d={m.icon} /></svg>
               <span className="flex-1">{m.label}</span>
             </button>
           ))}
-          <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">Work</div>
+          <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Work</div>
           <button
             onClick={() => { closeMenu(); setShowIncidentModal(true) }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-[var(--shell-side-txt)] hover:bg-[var(--shell-hover)] hover:text-white"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l10 18H2L12 3zM12 10v5M12 18v.01" /></svg>
             <span className="flex-1">Notifications (NPT &amp; OQL)</span>{notificationCount > 0 && (
@@ -873,53 +880,53 @@ export default function App() {
       
           <button
             onClick={() => { closeMenu(); setShowReportsModal(true) }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-[var(--shell-side-txt)] hover:bg-[var(--shell-hover)] hover:text-white"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M7 3h7l5 5v13H7V3zM14 3v5h5M10 13h6M10 17h6" /></svg>
             <span className="flex-1">Reports / Excel</span>
           </button>
       {currentUser?.role === 'ADMIN' && (
         <>
-          <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">Admin</div>
+          <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Admin</div>
           <button
             onClick={() => { closeMenu(); setAdminStart('USERS'); setShowAdminModal(true); }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-[var(--shell-side-txt)] hover:bg-[var(--shell-hover)] hover:text-white"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5M19 8v6M16 11h6" /></svg>
             <span className="flex-1">Users & approvals</span>
           </button>
           <button
             onClick={() => { closeMenu(); setAdminStart('LINES'); setShowAdminModal(true); }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-[var(--shell-side-txt)] hover:bg-[var(--shell-hover)] hover:text-white"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
             <span className="flex-1">Line master</span>
           </button>
           <button
             onClick={() => { closeMenu(); setAdminStart('DEMO'); setShowAdminModal(true); }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-[var(--shell-side-txt)] hover:bg-[var(--shell-hover)] hover:text-white"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg>
             <span className="flex-1">Data clean & reset</span>
           </button>
         </>
       )}
-          <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">More</div>
+          <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">More</div>
       
           <button
             onClick={() => { closeMenu(); handleTriggerInstallDesktop() }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-slate-200 hover:bg-[#12263C] hover:text-white"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-[var(--shell-side-txt)] hover:bg-[var(--shell-hover)] hover:text-white"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v11M7 11l5 5 5-5M5 20h14" /></svg>
             <span className="flex-1">Install desktop app</span>
           </button>
         </nav>
 
-        <div className="border-t border-[#1B2E45] p-3">
+        <div className="border-t border-[var(--shell-line)] p-3">
           <button
             onClick={() => { if (isAuthenticatedAdmin) { setShowRoleSelector(true); setMenuOpen(false); } }}
             title={isAuthenticatedAdmin ? 'Admin role preview' : `Signed in as ${currentUser.name}`}
-            className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-[#12263C]"
+            className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-[var(--shell-hover)]"
           >
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#1d3b5f] text-[13px] font-extrabold">
               {currentUser.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
@@ -948,16 +955,29 @@ export default function App() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* ---------- Slim top bar ---------- */}
-        <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-[#1B2E45] bg-[#0B1A2CF2] px-3 py-2 text-white backdrop-blur">
+        <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-[var(--shell-top-line)] bg-[var(--shell-top)] px-3 py-2 text-[var(--shell-top-txt)] backdrop-blur">
           <button
             onClick={toggleMenu}
             aria-label="Open menu"
             title="Show or hide the menu"
-            className="grid h-9 w-9 place-items-center rounded-lg border border-[#1B2E45] bg-[#12263C]"
+            className="grid h-9 w-9 place-items-center rounded-lg border border-[var(--shell-top-line)] bg-[var(--shell-top-btn)]"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
           <div className="min-w-0 flex-1 truncate text-[14px] font-extrabold md:text-[16px]">NFL LIVE Production &amp; Quality</div>
+          <button
+            onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
+            aria-label="Switch Day and Night mode"
+            title={theme === 'dark' ? 'Switch to Day mode' : 'Switch to Night mode'}
+            className="flex items-center gap-1.5 rounded-full border border-[var(--shell-top-line)] bg-[var(--shell-top-btn)] px-2.5 py-1.5 text-[11px] font-bold"
+          >
+            {theme === 'dark' ? (
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
+            ) : (
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
+            )}
+            <span>{theme === 'dark' ? 'Day' : 'Night'}</span>
+          </button>
           {notificationCount > 0 && (
             <button
               onClick={() => setShowIncidentModal(true)}
@@ -981,7 +1001,7 @@ export default function App() {
       {/* Main View Area */}
       <main className="flex-1">
         {activeDeviceView === 'MOBILE' ? (
-          <div className="max-w-lg mx-auto min-h-screen bg-[#0A1522] shadow-xl relative border-x border-[#1B2E45]">
+          <div className="max-w-lg mx-auto min-h-screen bg-[var(--wb-bg)] shadow-xl relative border-x border-[var(--wb-line)]">
             <MobileDashboard
               pageRequest={pageRequest}
               selectedFloor={selectedFloor}

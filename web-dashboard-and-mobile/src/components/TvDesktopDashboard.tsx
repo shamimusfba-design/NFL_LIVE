@@ -10,25 +10,27 @@ import {
   QualityEntryRecord
 } from '../types';
 import { HourlyWallboardBucket } from '../services/calculationEngine';
-import { formatHourSlot12h, isBiHourlyAuditSlot } from '../data/masterData';
+import { formatHourSlot12h,
+  hourLabelOfSlot, isBiHourlyAuditSlot } from '../data/masterData';
 
 export type WbPageId = 'PRODUCTION' | 'QUALITY' | 'ALL' | 'TABLE';
 
 const WB_INTERVALS = [30, 60, 10, 15, 0];
 
+// Colours come from CSS variables (see index.html) so one definition serves the Night and the Day theme.
 const WB_THEME = {
-  BG: '#0A1522',
-  PANEL: '#101E30',
-  LINE: '#1B2E45',
-  TXT: '#EAF0F7',
-  MUTED: '#8FA3B8',
-  RED: '#FF6B6B',
-  AMBER: '#F5B73B',
-  GREEN: '#3DD68C',
-  BLUE: '#5AA9FF',
-  ORANGE: '#F59E6B',
-  GREY: '#7C8B9E',
-  DIM: '#2A4560'
+  BG: 'var(--wb-bg)',
+  PANEL: 'var(--wb-panel)',
+  LINE: 'var(--wb-line)',
+  TXT: 'var(--wb-txt)',
+  MUTED: 'var(--wb-muted)',
+  RED: 'var(--wb-red)',
+  AMBER: 'var(--wb-amber)',
+  GREEN: 'var(--wb-green)',
+  BLUE: 'var(--wb-blue)',
+  ORANGE: 'var(--wb-orange)',
+  GREY: 'var(--wb-grey)',
+  DIM: 'var(--wb-dim)'
 };
 
 interface TvDesktopDashboardProps {
@@ -231,7 +233,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               }}
               style={{
                 backgroundColor: page === item.id ? WB_THEME.BLUE : 'transparent',
-                color: page === item.id ? '#031225' : WB_THEME.MUTED
+                color: page === item.id ? 'var(--wb-on-selected)' : WB_THEME.MUTED
               }}
               className="px-3 py-1.5 sm:py-1 rounded text-xs font-black transition text-center"
             >
@@ -251,7 +253,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               onClick={() => onSelectFloor(fl)}
               style={{
                 backgroundColor: selectedFloor === fl ? WB_THEME.BLUE : 'transparent',
-                color: selectedFloor === fl ? '#031225' : WB_THEME.MUTED
+                color: selectedFloor === fl ? 'var(--wb-on-selected)' : WB_THEME.MUTED
               }}
               className="px-3 py-1.5 sm:py-1 rounded text-xs font-black transition text-center"
             >
@@ -271,7 +273,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               onClick={() => onSelectPeriod(p)}
               style={{
                 backgroundColor: selectedPeriod === p ? WB_THEME.BLUE : 'transparent',
-                color: selectedPeriod === p ? '#031225' : WB_THEME.MUTED
+                color: selectedPeriod === p ? 'var(--wb-on-selected)' : WB_THEME.MUTED
               }}
               className="px-2.5 py-1.5 sm:py-1 rounded text-xs font-black transition text-center"
             >
@@ -298,25 +300,25 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           {selectedPeriod === 'Today' ? (
             <>
               <span
-                style={{ backgroundColor: WB_THEME.GREEN, color: '#052E22' }}
+                style={{ backgroundColor: WB_THEME.GREEN, color: 'var(--wb-on-green)' }}
                 className="px-2 py-0.5 rounded font-black text-[11px]"
               >
                 {onTargetCount} on target
               </span>
               <span
-                style={{ backgroundColor: WB_THEME.AMBER, color: '#3B2A00' }}
+                style={{ backgroundColor: WB_THEME.AMBER, color: 'var(--wb-on-amber)' }}
                 className="px-2 py-0.5 rounded font-black text-[11px]"
               >
                 {slightBehindCount} slightly behind
               </span>
               <span
-                style={{ backgroundColor: WB_THEME.RED, color: '#3B0A0A' }}
+                style={{ backgroundColor: WB_THEME.RED, color: 'var(--wb-on-red)' }}
                 className="px-2 py-0.5 rounded font-black text-[11px]"
               >
                 {farBehindCount} far behind
               </span>
               <span
-                style={{ backgroundColor: WB_THEME.GREY, color: '#0F172A' }}
+                style={{ backgroundColor: WB_THEME.GREY, color: 'var(--wb-on-grey)' }}
                 className="px-2 py-0.5 rounded font-black text-[11px]"
               >
                 {noOutputCount} no output
@@ -365,7 +367,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           {isDemoMode && (
             <button
               onClick={onToggleDemo}
-              style={{ backgroundColor: WB_THEME.RED, color: '#3B0A0A' }}
+              style={{ backgroundColor: WB_THEME.RED, color: 'var(--wb-on-red)' }}
               className="px-2 py-0.5 rounded font-black text-[11px]"
               title="Click to clear Demo Data"
             >
@@ -429,9 +431,9 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               sub="Column: target (grey) vs output (status) · % below"
               right={
                 <div className="flex gap-1">
-                  <WbBadge text="≥95%" bg={WB_THEME.GREEN} fg="#052E22" />
-                  <WbBadge text="80-95%" bg={WB_THEME.AMBER} fg="#3B2A00" />
-                  <WbBadge text="<80%" bg={WB_THEME.RED} fg="#3B0A0A" />
+                  <WbBadge text="≥95%" bg={WB_THEME.GREEN} fg="var(--wb-on-green)" />
+                  <WbBadge text="80-95%" bg={WB_THEME.AMBER} fg="var(--wb-on-amber)" />
+                  <WbBadge text="<80%" bg={WB_THEME.RED} fg="var(--wb-on-red)" />
                 </div>
               }
               className="lg:col-span-5"
@@ -500,7 +502,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 <WbBadge
                   text={`${openIncidents.length} open`}
                   bg={openIncidents.length > 0 ? WB_THEME.RED : WB_THEME.GREEN}
-                  fg={openIncidents.length > 0 ? '#3B0A0A' : '#052E22'}
+                  fg={openIncidents.length > 0 ? 'var(--wb-on-red)' : 'var(--wb-on-green)'}
                 />
               }
               className="lg:col-span-3"
@@ -619,7 +621,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 <WbBadge
                   text={`${kpis.defectsPending} pcs pending`}
                   bg={kpis.defectsPending > 0 ? WB_THEME.AMBER : WB_THEME.GREEN}
-                  fg="#052E22"
+                  fg="var(--wb-on-green)"
                 />
               }
               className="lg:col-span-4"
@@ -684,7 +686,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 <div style={{ color: WB_THEME.BLUE }} className="text-3xl font-black">
                   {kpis.monthlyEfficiencyPct.toFixed(1)}%
                 </div>
-                <div className="w-full h-1.5 rounded bg-[#0A1522] overflow-hidden my-1">
+                <div className="w-full h-1.5 rounded bg-[var(--wb-bg)] overflow-hidden my-1">
                   <div
                     style={{
                       width: `${Math.min(100, kpis.monthlyEfficiencyPct)}%`,
@@ -865,8 +867,8 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               sub="Weekly trend (%) · Dashed: 4.5% commitment · Level 1 <7% · Red >10%"
               right={
                 <div className="flex gap-1">
-                  <WbBadge text="BS OQL" bg={WB_THEME.BLUE} fg="#031225" />
-                  <WbBadge text="NFL AQC" bg={WB_THEME.ORANGE} fg="#3B1A00" />
+                  <WbBadge text="BS OQL" bg={WB_THEME.BLUE} fg="var(--wb-on-selected)" />
+                  <WbBadge text="NFL AQC" bg={WB_THEME.ORANGE} fg="var(--wb-on-orange)" />
                 </div>
               }
               className="lg:col-span-4"
@@ -1074,7 +1076,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                       );
                       return (
                         <tr key={p.id}>
-                          <td className="p-2 font-black">{formatHourSlot12h(p.hourSlot)}</td>
+                          <td className="p-2 font-black">{hourLabelOfSlot(p.lineId, p.hourSlot)}</td>
                           <td className="p-2">1-Hr Production &amp; QC</td>
                           <td className="p-2 text-right font-bold" style={{ color: WB_THEME.GREEN }}>
                             {p.outputQty}
@@ -1096,7 +1098,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                     .map(q => (
                       <tr key={q.id}>
                         <td className="p-2 font-black" style={{ color: WB_THEME.BLUE }}>
-                          {formatHourSlot12h(q.hourSlot)}
+                          {hourLabelOfSlot(q.lineId, q.hourSlot)}
                         </td>
                         <td className="p-2 font-bold" style={{ color: WB_THEME.BLUE }}>
                           2-Hr Bi-Hourly Audit (OQL)
@@ -1166,7 +1168,7 @@ const WbSummaryCard: React.FC<{
       <span className="text-[11px] font-extrabold truncate">{title}</span>
       {badge && (
         <span
-          style={{ backgroundColor: badgeColor || WB_THEME.BLUE, color: '#031225' }}
+          style={{ backgroundColor: badgeColor || WB_THEME.BLUE, color: 'var(--wb-on-selected)' }}
           className="px-1.5 py-0.5 rounded text-[9px] font-black"
         >
           {badge}
@@ -1536,7 +1538,7 @@ const HorizontalRankBars: React.FC<{
         return (
           <div key={r.label} className="flex items-center gap-2 text-xs">
             <span className="w-20 font-black truncate text-[11px]">{r.label}</span>
-            <div className="flex-1 h-3 rounded bg-[#0A1522] overflow-hidden">
+            <div className="flex-1 h-3 rounded bg-[var(--wb-bg)] overflow-hidden">
               <div style={{ width: `${pct}%`, backgroundColor: r.color }} className="h-full rounded" />
             </div>
             <span style={{ color: r.color }} className="w-16 text-right font-black text-[11px]">

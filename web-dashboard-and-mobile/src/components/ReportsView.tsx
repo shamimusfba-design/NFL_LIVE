@@ -9,7 +9,8 @@ import {
   WeeklyQualityRecord,
   UserRole
 } from '../types';
-import { formatHourSlot12h, isBiHourlyAuditSlot } from '../data/masterData';
+import { formatHourSlot12h,
+  hourLabelOfSlot, isBiHourlyAuditSlot } from '../data/masterData';
 
 interface ReportsViewProps {
   selectedFloor: FloorId;
@@ -139,7 +140,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           p.floor,
           p.lineId,
           p.date,
-          formatHourSlot12h(p.hourSlot),
+          hourLabelOfSlot(p.lineId, p.hourSlot),
           p.outputQty,
           '',
           '',
@@ -150,7 +151,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           q.floor,
           q.lineId,
           q.date,
-          formatHourSlot12h(q.hourSlot),
+          hourLabelOfSlot(q.lineId, q.hourSlot),
           q.checkedGarments,
           q.defectiveGarments,
           q.totalDefects,
@@ -409,7 +410,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                         <tr key={p.id}>
                           <td className="py-2 px-3 font-black text-[#002D62]">{p.lineId}</td>
                           <td className="py-2 px-3">{p.date}</td>
-                          <td className="py-2 px-3 font-black">{formatHourSlot12h(p.hourSlot)}</td>
+                          <td className="py-2 px-3 font-black">{hourLabelOfSlot(p.lineId, p.hourSlot)}</td>
                           <td className="py-2 px-3 text-blue-700">1-Hr Production</td>
                           <td className="py-2 px-3">Output: {p.outputQty} pcs ({p.styleNumber})</td>
                           <td className="py-2 px-3">{p.reportedBy}</td>
@@ -431,7 +432,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                         <tr key={q.id}>
                           <td className="py-2 px-3 font-black text-[#002D62]">{q.lineId}</td>
                           <td className="py-2 px-3">{q.date}</td>
-                          <td className="py-2 px-3 font-black">{formatHourSlot12h(q.hourSlot)}</td>
+                          <td className="py-2 px-3 font-black">{hourLabelOfSlot(q.lineId, q.hourSlot)}</td>
                           <td className="py-2 px-3 text-emerald-700">
                             {isBiHourlyAuditSlot(q.hourSlot)
                               ? '2-Hr Bi-Hourly Audit (OQL)'

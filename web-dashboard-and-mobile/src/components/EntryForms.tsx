@@ -18,6 +18,9 @@ import {
   STANDARD_DEFECT_TYPES,
   getBangladeshTodayIso,
   formatHourSlot12h,
+  hourOptionsForLine,
+  biHourlyOptionsForLine,
+  ordinalHr,
   canWriteWeeklyQualityOrBiHourlyAudit,
   isoWeeksOfYear,
   isoWeekKeyOf
@@ -75,7 +78,8 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const [formDate, setFormDate] = useState(getBangladeshTodayIso());
   const [formFloor, setFormFloor] = useState<'Sew 1' | 'Sew 2' | 'Sew 3'>('Sew 2');
   const [formLine, setFormLine] = useState('K1');
-  const [formHourSlot, setFormHourSlot] = useState(STANDARD_HOUR_SLOTS[0]);
+  // The hour is chosen by number (1st hr, 2nd hr...). The stored slot of each line is worked out from it.
+  const [formHourNo, setFormHourNo] = useState(1);
   // The item / style of a line comes from today's Target Setting. Nothing is chosen from a made-up list.
   const styleOf = (lineId: string): string =>
     targets.find(t => t.lineId === lineId && t.date === formDate && !t.isDemo)?.styleNumber || '';
@@ -90,7 +94,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
   // Quality State (Hourly DHU 1-Hr vs Bi-Hourly Audit 2-Hr OQL)
   const [qaMode, setQaMode] = useState<'HOURLY_DHU' | 'BI_HOURLY_AUDIT'>(module === 'AUDIT' ? 'BI_HOURLY_AUDIT' : 'HOURLY_DHU');
-  const [biHourlySlot, setBiHourlySlot] = useState(BI_HOURLY_AUDIT_SLOTS[0]);
+  const [biPairNo, setBiPairNo] = useState(1);
   const [checkedGarments, setCheckedGarments] = useState('');
   const [defectiveGarments, setDefectiveGarments] = useState('');
   const [defectCounts, setDefectCounts] = useState<Record<string, number>>({});
@@ -140,6 +144,17 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   // Lines without a target that day are not running. If no target was set at all yet, every line is shown.
   const availableLines = withTarget.length > 0 ? withTarget : floorLines;
 
+  // Hours of the selected line, and the largest hour list on this floor (for the batch form).
+  const lineHourOpts = hourOptionsForLine(formLine);
+  const hourNoSafe = Math.min(formHourNo, lineHourOpts.length);
+  const formHourSlot = lineHourOpts[hourNoSafe - 1]?.key ?? lineHourOpts[0].key;
+  const hourLabel = `${ordinalHr(hourNoSafe)} hr`;
+  const batchHourCount = Math.max(1, ...availableLines.map(l => hourOptionsForLine(l.id).length));
+  const biOpts = biHourlyOptionsForLine(formLine);
+  const biNoSafe = Math.min(biPairNo, biOpts.length);
+  const biHourlySlot = biOpts[biNoSafe - 1]?.key ?? biOpts[0].key;
+  const biLabel = biOpts[biNoSafe - 1]?.label ?? biOpts[0].label;
+
   // Calculated Quality preview
   const numChecked = Number(checkedGarments) || 0;
   const numDefective = Number(defectiveGarments) || 0;
@@ -157,15 +172,18 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
     e.preventDefault();
     if (prodEntryMode === 'BATCH') {
       let savedCount = 0;
+      let skipped = 0;
       availableLines.forEach(line => {
         const raw = batchQtys[line.id];
         if (raw !== undefined && raw.trim() !== '') {
+          const opt = hourOptionsForLine(line.id)[formHourNo - 1];
+          if (!opt) { skipped++; return; } // this line does not work that many hours
           const q = Math.max(0, Number(raw) || 0);
           onSaveProduction({
             lineId: line.id,
             floor: formFloor,
             date: formDate,
-            hourSlot: formHourSlot,
+            hourSlot: opt.key,
             styleNumber: styleOf(line.id),
             outputQty: q,
             isConfirmedZero: q === 0,
@@ -177,7 +195,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
         }
       });
       setProdSuccess(
-        `✓ Batch saved ${savedCount} line(s) for ${formatHourSlot12h(formHourSlot)}!`
+        `✓ Batch saved ${savedCount} line(s) for the ${ordinalHr(formHourNo)} hr!${skipped ? ` (${skipped} line(s) skipped: they do not work that many hours)` : ''}`
       );
       setBatchQtys({});
       setTimeout(() => setProdSuccess(null), 3000);
@@ -199,7 +217,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
     });
 
     setProdSuccess(
-      `✓ Saved Line ${formLine} output (${qty} pcs) for ${formatHourSlot12h(formHourSlot)}!`
+      `✓ Saved Line ${formLine} output (${qty} pcs) for the ${hourLabel}!`
     );
     setTimeout(() => setProdSuccess(null), 2500);
   };
@@ -253,7 +271,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
     setQaSuccess(
       `✓ Saved ${
         qaMode === 'BI_HOURLY_AUDIT' ? '2-Hr Bi-Hourly Audit (OQL)' : '1-Hr Quality DHU'
-      } for Line ${formLine} (${formatHourSlot12h(activeSlot)})!`
+      } for Line ${formLine} (${qaMode === 'BI_HOURLY_AUDIT' ? biLabel : hourLabel})!`
     );
     setTimeout(() => setQaSuccess(null), 2500);
   };
@@ -509,16 +527,16 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
                 <div>
                   <label className="text-xs font-bold text-slate-600 mr-2">
-                    Hour Slot (12-Hour AM/PM):
+                    Hour:
                   </label>
                   <select
-                    value={formHourSlot}
-                    onChange={e => setFormHourSlot(e.target.value)}
+                    value={prodEntryMode === 'BATCH' ? Math.min(formHourNo, batchHourCount) : hourNoSafe}
+                    onChange={e => setFormHourNo(Number(e.target.value))}
                     className="text-xs font-black border border-blue-400 rounded-lg p-2 bg-blue-50 text-[#002D62]"
                   >
-                    {STANDARD_HOUR_SLOTS.map(slot => (
-                      <option key={slot} value={slot}>
-                        {formatHourSlot12h(slot)}
+                    {Array.from({ length: prodEntryMode === 'BATCH' ? batchHourCount : lineHourOpts.length }, (_, i) => i + 1).map(n => (
+                      <option key={n} value={n}>
+                        {ordinalHr(n)} hr
                       </option>
                     ))}
                   </select>
@@ -567,7 +585,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 <div>
                   <div className="text-xs font-bold text-slate-600 mb-2">
                     Enter hourly output (pcs) for any lines on <b>{formFloor}</b> during{' '}
-                    <b>{formatHourSlot12h(formHourSlot)}</b>:
+                    <b>{hourLabel}</b>:
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2.5 max-h-60 overflow-y-auto p-1">
                     {availableLines.map(l => (
@@ -653,30 +671,30 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     {qaMode === 'BI_HOURLY_AUDIT'
-                      ? '2-Hr Audit Slot (12-Hour AM/PM)'
-                      : '1-Hr Inspection Slot (12-Hour AM/PM)'}
+                      ? '2-Hr Audit Slot'
+                      : 'Inspection Hour'}
                   </label>
                   {qaMode === 'BI_HOURLY_AUDIT' ? (
                     <select
-                      value={biHourlySlot}
-                      onChange={e => setBiHourlySlot(e.target.value)}
+                      value={biNoSafe}
+                      onChange={e => setBiPairNo(Number(e.target.value))}
                       className="w-full text-xs font-black border border-emerald-400 rounded-lg p-2 bg-emerald-50 text-emerald-950"
                     >
-                      {BI_HOURLY_AUDIT_SLOTS.map(slot => (
-                        <option key={slot} value={slot}>
-                          {formatHourSlot12h(slot)}
+                      {biOpts.map(o => (
+                        <option key={o.no} value={o.no}>
+                          {o.label}
                         </option>
                       ))}
                     </select>
                   ) : (
                     <select
-                      value={formHourSlot}
-                      onChange={e => setFormHourSlot(e.target.value)}
+                      value={hourNoSafe}
+                      onChange={e => setFormHourNo(Number(e.target.value))}
                       className="w-full text-xs font-black border border-blue-400 rounded-lg p-2 bg-blue-50 text-[#002D62]"
                     >
-                      {STANDARD_HOUR_SLOTS.map(slot => (
-                        <option key={slot} value={slot}>
-                          {formatHourSlot12h(slot)}
+                      {lineHourOpts.map(o => (
+                        <option key={o.no} value={o.no}>
+                          {o.label}
                         </option>
                       ))}
                     </select>
@@ -770,7 +788,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
               {qaMode === 'HOURLY_DHU' && (
                 <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <div className="text-[11px] font-bold text-slate-500">
-                    Rectification for the hour chosen above ({formatHourSlot12h(formHourSlot)}). Choose another hour to enter that hour.
+                    Rectification for the hour chosen above ({hourLabel}). Choose another hour to enter that hour.
                   </div>
                   {[
                     { title: 'Sewing defects', sent: sewSent, setSent: setSewSent, recv: sewRecv, setRecv: setSewRecv },

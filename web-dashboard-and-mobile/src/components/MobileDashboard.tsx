@@ -37,7 +37,7 @@ interface MobileDashboardProps {
 
 export const MobileDashboard: React.FC<MobileDashboardProps> = props => {
   return (
-    <div className="pb-16 bg-[#0A1522]">
+    <div className="pb-16 bg-[var(--wb-bg)]">
       <TvDesktopDashboard {...props} />
     </div>
   );
