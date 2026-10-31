@@ -436,7 +436,8 @@ private fun OqlDayByDayView(points: List<DailyQaTrend>) {
 @Composable
 private fun OqlComparisonTrendCanvas(points: List<DailyQaTrend>) {
   val maxValue = maxOf(5.0, (points.maxOfOrNull { maxOf(it.bsOqlPct, it.nflAqcPct) } ?: 5.0) * 1.2)
-  Canvas(Modifier.fillMaxWidth().height(178.dp).padding(horizontal = 4.dp)) {
+  Column(Modifier.fillMaxWidth()) {
+    Canvas(Modifier.fillMaxWidth().height(178.dp).padding(horizontal = 4.dp)) {
     val left = 18f
     val right = size.width - 18f
     val top = 26f
@@ -499,7 +500,19 @@ private fun OqlComparisonTrendCanvas(points: List<DailyQaTrend>) {
       }
     }
   }
-}
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+      val first = points.first()
+      Text("${first.dayName} ${first.dateLabel}", fontSize = 8.sp, color = Color(0xFF64748B))
+      if (points.size > 2) {
+        val middle = points[points.size / 2]
+        Text("${middle.dayName} ${middle.dateLabel}", fontSize = 8.sp, color = Color(0xFF64748B))
+      }
+      if (points.size > 1) {
+        val last = points.last()
+        Text("${last.dayName} ${last.dateLabel}", fontSize = 8.sp, color = Color(0xFF64748B))
+      }
+    }
+  }
 
 /**
  * 3. DHU Day-by-Day Line Chart (Direct Numeric Values without %)
