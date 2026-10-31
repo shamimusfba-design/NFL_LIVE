@@ -16,6 +16,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -25,6 +27,8 @@ import com.example.model.DailyQaTrend
 import com.example.model.NptCategorySlice
 import com.example.model.PeriodScope
 import java.util.Locale
+import android.graphics.Paint as AndroidPaint
+import android.graphics.Typeface
 
 /**
  * NPT Downtime / Lost Hours Distribution Pie Chart Card
@@ -381,58 +385,119 @@ private fun EfficiencyDayByDayView(points: List<DailyQaTrend>) {
  */
 @Composable
 private fun OqlDayByDayView(points: List<DailyQaTrend>) {
-  val avgOql = points.map { it.bsOqlPct }.average().let { Math.round(it * 100.0) / 100.0 }
+  val avgBsOql = points.map { it.bsOqlPct }.average().let { Math.round(it * 100.0) / 100.0 }
+  val avgNflOql = points.map { it.nflAqcPct }.average().let { Math.round(it * 100.0) / 100.0 }
 
   Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-    // Quick Stat Chips
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-      Surface(color = Color(0xFFFFFBEB), shape = RoundedCornerShape(6.dp), modifier = Modifier.weight(1f)) {
-        Column(modifier = Modifier.padding(6.dp)) {
-          Text("Period Avg OQL", fontSize = 8.5.sp, color = Color(0xFFB45309))
-          Text("${avgOql}%", fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF92400E))
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+      Surface(color = Color(0xFFEFF6FF), shape = RoundedCornerShape(6.dp), modifier = Modifier.weight(1f)) {
+        Column(Modifier.padding(6.dp)) {
+          Text("Avg BS OQL", fontSize = 8.sp, color = Color(0xFF1D4ED8))
+          Text("$avgBsOql%", fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF1D4ED8))
+        }
+      }
+      Surface(color = Color(0xFFFFF7ED), shape = RoundedCornerShape(6.dp), modifier = Modifier.weight(1f)) {
+        Column(Modifier.padding(6.dp)) {
+          Text("Avg NFL OQL", fontSize = 8.sp, color = Color(0xFFC2410C))
+          Text("$avgNflOql%", fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFFC2410C))
         }
       }
       Surface(color = Color(0xFFF1F5F9), shape = RoundedCornerShape(6.dp), modifier = Modifier.weight(1f)) {
-        Column(modifier = Modifier.padding(6.dp)) {
-          Text("Benchmark Target", fontSize = 8.5.sp, color = Color(0xFF475569))
-          Text("≤ 5.00%", fontSize = 13.sp, fontWeight = FontWeight.Black, color = Color(0xFF1E293B))
-        }
-      }
-      Surface(color = if (avgOql <= 5.0) Color(0xFFECFDF5) else Color(0xFFFEF2F2), shape = RoundedCornerShape(6.dp), modifier = Modifier.weight(1f)) {
-        Column(modifier = Modifier.padding(6.dp)) {
-          Text("Overall Status", fontSize = 8.5.sp, color = if (avgOql <= 5.0) Color(0xFF047857) else Color(0xFFB91C1C))
-          Text(if (avgOql <= 5.0) "PASS" else "AUDIT ALERT", fontSize = 13.sp, fontWeight = FontWeight.Black, color = if (avgOql <= 5.0) Color(0xFF065F46) else Color(0xFF991B1B))
+        Column(Modifier.padding(6.dp)) {
+          Text("Benchmark", fontSize = 8.sp, color = Color(0xFF475569))
+          Text("≤ 5.00%", fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF1E293B))
         }
       }
     }
 
-    // Legend
     Row(
       modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(14.dp),
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFFF59E0B)))
-        Text("Daily Auditor OQL %", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
+        Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF1976D2)))
+        Text("BS OQL", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
       }
       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFFEF4444)))
-        Text("5% Benchmark Limit", fontSize = 9.sp, fontWeight = FontWeight.Medium, color = Color(0xFF64748B))
+        Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFFF59E0B)))
+        Text("NFL OQL", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
+      }
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFFDC2626)))
+        Text("5% Limit", fontSize = 9.sp, color = Color(0xFF64748B))
       }
     }
 
-    TrendLineCanvas(
-      points = points,
-      valueSelector = { it.bsOqlPct },
-      targetValue = 5.0,
-      lineColor = Color(0xFFF59E0B),
-      targetLineColor = Color(0xFFEF4444),
-      isPercentage = true
+    OqlComparisonTrendCanvas(points)
+  }
+}
+
+@Composable
+private fun OqlComparisonTrendCanvas(points: List<DailyQaTrend>) {
+  val maxValue = maxOf(5.0, (points.maxOfOrNull { maxOf(it.bsOqlPct, it.nflAqcPct) } ?: 5.0) * 1.2)
+  Canvas(Modifier.fillMaxWidth().height(178.dp).padding(horizontal = 4.dp)) {
+    val left = 18f
+    val right = size.width - 18f
+    val top = 26f
+    val bottom = size.height - 26f
+    val plotHeight = bottom - top
+    fun xAt(index: Int): Float = if (points.size <= 1) (left + right) / 2f
+      else left + (right - left) * index / (points.size - 1).toFloat()
+    fun yAt(value: Double): Float = bottom - (value / maxValue).toFloat().coerceIn(0f, 1f) * plotHeight
+
+    for (i in 0..4) {
+      val y = top + plotHeight * i / 4f
+      drawLine(Color(0xFFE2E8F0), Offset(left, y), Offset(right, y), strokeWidth = 1f)
+    }
+
+    val targetY = yAt(5.0)
+    drawLine(
+      Color(0xFFDC2626).copy(alpha = 0.75f),
+      Offset(left, targetY),
+      Offset(right, targetY),
+      strokeWidth = 1.5f,
+      pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f, 6f))
     )
+
+    fun drawSeries(selector: (DailyQaTrend) -> Double, color: Color) {
+      val path = Path()
+      points.forEachIndexed { index, point ->
+        val p = Offset(xAt(index), yAt(selector(point)))
+        if (index == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
+        drawCircle(color, radius = 3.2f, center = p)
+      }
+      if (points.size > 1) drawPath(path, color, style = Stroke(width = 2.8f))
+    }
+    drawSeries({ it.bsOqlPct }, Color(0xFF1976D2))
+    drawSeries({ it.nflAqcPct }, Color(0xFFF59E0B))
+
+    val bsLabelPaint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+      color = Color(0xFF1D4ED8).toArgb()
+      textSize = 9.sp.toPx()
+      typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+      textAlign = AndroidPaint.Align.CENTER
+    }
+    val nflLabelPaint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+      color = Color(0xFFC2410C).toArgb()
+      textSize = 9.sp.toPx()
+      typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+      textAlign = AndroidPaint.Align.CENTER
+    }
+    val labelStep = if (points.size > 10) 2 else 1
+    points.forEachIndexed { index, point ->
+      if (index % labelStep == 0 || index == points.lastIndex) {
+        val x = xAt(index)
+        val bsY = (yAt(point.bsOqlPct) - 8.dp.toPx()).coerceAtLeast(top + 9.dp.toPx())
+        val nflY = (yAt(point.nflAqcPct) + 15.dp.toPx()).coerceAtMost(bottom - 2.dp.toPx())
+        drawContext.canvas.nativeCanvas.drawText(
+          String.format(Locale.US, "%.1f%%", point.bsOqlPct), x, bsY, bsLabelPaint
+        )
+        drawContext.canvas.nativeCanvas.drawText(
+          String.format(Locale.US, "%.1f%%", point.nflAqcPct), x, nflY, nflLabelPaint
+        )
+      }
+    }
   }
 }
 
@@ -665,7 +730,8 @@ private fun DailyTrendTableView(points: List<DailyQaTrend>) {
         ) {
           Text("Date / Day", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF64748B), modifier = Modifier.width(65.dp))
           Text("Efficiency", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF047857), textAlign = TextAlign.End, modifier = Modifier.width(55.dp))
-          Text("OQL %", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309), textAlign = TextAlign.End, modifier = Modifier.width(48.dp))
+          Text("BS OQL", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1D4ED8), textAlign = TextAlign.End, modifier = Modifier.width(48.dp))
+          Text("NFL OQL", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFFC2410C), textAlign = TextAlign.End, modifier = Modifier.width(52.dp))
           Text("DHU", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF7E22CE), textAlign = TextAlign.End, modifier = Modifier.width(45.dp))
           Text("Output Pcs", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E293B), textAlign = TextAlign.End, modifier = Modifier.width(60.dp))
           Text("Target Pcs", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF64748B), textAlign = TextAlign.End, modifier = Modifier.width(60.dp))
@@ -701,6 +767,15 @@ private fun DailyTrendTableView(points: List<DailyQaTrend>) {
               color = if (p.bsOqlPct <= 5.0) Color(0xFF16A34A) else Color(0xFFDC2626),
               textAlign = TextAlign.End,
               modifier = Modifier.width(48.dp)
+            )
+            
+            Text(
+              text = "${p.nflAqcPct}%",
+              fontSize = 9.5.sp,
+              fontWeight = FontWeight.Bold,
+              color = if (p.nflAqcPct <= 5.0) Color(0xFF16A34A) else Color(0xFFDC2626),
+              textAlign = TextAlign.End,
+              modifier = Modifier.width(52.dp)
             )
 
             Text(
