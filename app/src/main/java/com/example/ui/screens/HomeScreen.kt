@@ -97,7 +97,7 @@ fun HomeScreen(
     computed
   }
 
-  var selectedChartTab by remember { mutableStateOf("SPEEDOMETER") } // SPEEDOMETER | COLUMN | DONUT | PARETO
+  var selectedChartTab by remember { mutableStateOf("EFF_BAR") } // Default to paired Today + Monthly Efficiency columns
   var selectedLineDetail by remember { mutableStateOf<LinePerformancePoint?>(null) }
   var showClearSampleDataDialog by remember { mutableStateOf(false) }
   var showFactoryResetDialog by remember { mutableStateOf(false) }
