@@ -5653,11 +5653,9 @@ class NflRepository(private val context: Context) {
         it.lineId.equals(lineId, ignoreCase = true) && isDateInPeriod(it.date, period)
       }
     )
-    val dhuValues = listOf(1.85, 2.10, 1.65, 1.95, 2.30, 1.70, 1.80, 2.05, 1.90, 1.75)
-    val oqlValues = listOf(3.5, 3.8, 3.2, 4.0, 3.6, 3.4, 3.7, 3.9, 3.5, 3.3)
-    val defectNames = listOf("Puckering, Skip stitch", "Broken stitch", "Open seam", "Uneven seam", "Needle cut", "Puckering", "Skip stitch", "Broken stitch", "Pleat", "Dirty spot")
 
-    return slots.mapIndexed { idx, slot ->
+    // Only return time slots backed by saved records. Never manufacture hourly DHU/OQL values.
+    return slots.mapNotNull { slot ->
       val slotHours = parseSlotHours24(slot)
       val slotQas = lineQas.filter { normalizeHourSlot24h(it.hourSlot).equals(slot, ignoreCase = true) }
       val realSlotQas = slotQas.filter { !it.isDemo }
@@ -5666,23 +5664,27 @@ class NflRepository(private val context: Context) {
       val coveringBiHourlyQas = lineQas.filter { qa ->
         val qaHours = parseSlotHours24(qa.hourSlot)
         isBiHourlyAuditSlot(qa.hourSlot) &&
-            slotHours != null && qaHours != null &&
-            qaHours.first <= slotHours.first && slotHours.second <= qaHours.second
+          slotHours != null && qaHours != null &&
+          qaHours.first <= slotHours.first && slotHours.second <= qaHours.second
       }.let { allBi -> allBi.filter { !it.isDemo }.ifEmpty { allBi } }
 
-      if (effectiveQas.isNotEmpty() || coveringBiHourlyQas.isNotEmpty()) {
+      if (effectiveQas.isEmpty() && coveringBiHourlyQas.isEmpty()) {
+        null
+      } else {
         val dhuSource = effectiveQas.ifEmpty { coveringBiHourlyQas }
         val oqlSource = coveringBiHourlyQas.ifEmpty { effectiveQas }
 
-        val dhuChecked = dhuSource.sumOf { it.checkedGarments }.coerceAtLeast(1)
+        val dhuChecked = dhuSource.sumOf { it.checkedGarments }
         val totalDefects = dhuSource.sumOf { it.totalDefects }
-        val dhuPct = if (effectiveQas.isNotEmpty()) {
+        val dhuPct = if (dhuChecked > 0) {
           Math.round((totalDefects.toDouble() / dhuChecked.toDouble()) * 10000.0) / 100.0
         } else 0.0
 
-        val oqlChecked = oqlSource.sumOf { it.checkedGarments }.coerceAtLeast(1)
+        val oqlChecked = oqlSource.sumOf { it.checkedGarments }
         val defective = oqlSource.sumOf { it.defectiveGarments }
-        val oqlPct = Math.round((defective.toDouble() / oqlChecked.toDouble()) * 10000.0) / 100.0
+        val oqlPct = if (oqlChecked > 0) {
+          Math.round((defective.toDouble() / oqlChecked.toDouble()) * 10000.0) / 100.0
+        } else 0.0
 
         val topDefNames = (effectiveQas + coveringBiHourlyQas)
           .flatMap { it.defects }
@@ -5693,26 +5695,13 @@ class NflRepository(private val context: Context) {
           .sortedByDescending { it.value }
           .take(2)
           .joinToString(", ") { it.key }
-          .ifBlank { defectNames[idx % defectNames.size] }
+          .ifBlank { "No defects recorded" }
+
         HourlyQualityRow(
           hourSlot = slot,
           dhuPct = dhuPct,
           oqlPct = oqlPct,
           majorDefectsName = topDefNames
-        )
-      } else if (isSampleDataCleared() && !_isDemoMode.value) {
-        HourlyQualityRow(
-          hourSlot = slot,
-          dhuPct = 0.0,
-          oqlPct = 0.0,
-          majorDefectsName = "None"
-        )
-      } else {
-        HourlyQualityRow(
-          hourSlot = slot,
-          dhuPct = dhuValues[idx % dhuValues.size],
-          oqlPct = oqlValues[idx % oqlValues.size],
-          majorDefectsName = defectNames[idx % defectNames.size]
         )
       }
     }
@@ -5786,43 +5775,30 @@ class NflRepository(private val context: Context) {
     val lineQas = deduplicateQualityRecords(
       _qualityEntries.value.filter { it.lineId.equals(lineId, ignoreCase = true) }
     )
-    val realQas = lineQas.filter { !it.isDemo }
-    val sourceQas = realQas.ifEmpty { lineQas }
     val defectCounts = mutableMapOf<String, Int>()
-    sourceQas.forEach { qa ->
-      qa.defects.forEach { d ->
-        if (d.count > 0) {
-          defectCounts[d.defectType] = (defectCounts[d.defectType] ?: 0) + d.count
+    lineQas.forEach { qa ->
+      qa.defects.forEach { defect ->
+        if (defect.count > 0) {
+          defectCounts[defect.defectType] = (defectCounts[defect.defectType] ?: 0) + defect.count
         }
       }
     }
-    if (defectCounts.isNotEmpty()) {
-      val sorted = defectCounts.entries.sortedByDescending { it.value }
-      val total = sorted.sumOf { it.value }.coerceAtLeast(1)
-      var running = 0
-      return sorted.take(6).map { entry ->
-        running += entry.value
-        val pct = Math.round((entry.value.toDouble() / total.toDouble()) * 1000.0) / 10.0
-        val cumPct = Math.round((running.toDouble() / total.toDouble()) * 1000.0) / 10.0
-        ParetoDefectPoint(
-          defectName = entry.key,
-          count = entry.value,
-          percentage = pct,
-          cumulativePercentage = cumPct
-        )
-      }
+    if (defectCounts.isEmpty()) return emptyList()
+
+    val sorted = defectCounts.entries.sortedByDescending { it.value }
+    val total = sorted.sumOf { it.value }.coerceAtLeast(1)
+    var running = 0
+    return sorted.take(5).map { entry ->
+      running += entry.value
+      val percentage = Math.round((entry.value.toDouble() / total.toDouble()) * 1000.0) / 10.0
+      val cumulative = Math.round((running.toDouble() / total.toDouble()) * 1000.0) / 10.0
+      ParetoDefectPoint(
+        defectName = entry.key,
+        count = entry.value,
+        percentage = percentage,
+        cumulativePercentage = cumulative
+      )
     }
-    if (isSampleDataCleared() && !_isDemoMode.value) {
-      return emptyList()
-    }
-    return listOf(
-      ParetoDefectPoint("Puckering", 38, 32.5, 32.5),
-      ParetoDefectPoint("Broken Stitch", 29, 24.8, 57.3),
-      ParetoDefectPoint("Skip Stitch", 21, 17.9, 75.2),
-      ParetoDefectPoint("Uneven Seam", 14, 12.0, 87.2),
-      ParetoDefectPoint("Needle Cut", 9, 7.7, 94.9),
-      ParetoDefectPoint("Others", 6, 5.1, 100.0)
-    )
   }
 
   private fun addAuditLog(type: String, id: String, action: String, by: String, details: String, reason: String = "") {
