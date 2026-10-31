@@ -1145,14 +1145,14 @@ private fun LineHourlyDefectTableCard(
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Text("Hour Slot", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(105.dp))
-                Text("Sew Sent", color = Color(0xFFFED7AA), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("Sew Recv", color = Color(0xFFBBF7D0), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("Sew Bal", color = Color(0xFFFECDD3), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("Spot Sent", color = Color(0xFFE9D5FF), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("Spot Recv", color = Color(0xFFA7F3D0), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("Spot Bal", color = Color(0xFFFBCFE8), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("Status", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.width(75.dp))
+                Text("Hour Slot", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(82.dp))
+                Text("Sew Sent", color = Color(0xFFFED7AA), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("Sew Recv", color = Color(0xFFBBF7D0), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("Sew Bal", color = Color(0xFFFECDD3), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("Spot Sent", color = Color(0xFFE9D5FF), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("Spot Recv", color = Color(0xFFA7F3D0), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("Spot Bal", color = Color(0xFFFBCFE8), fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("Status", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.width(64.dp))
               }
             }
 
@@ -1167,14 +1167,14 @@ private fun LineHourlyDefectTableCard(
                   modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                   verticalAlignment = Alignment.CenterVertically
                 ) {
-                  Text(NflRepository.formatHourSlot12h(row.hourSlot), fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF334155), modifier = Modifier.width(105.dp))
-                  Text("${row.sewingSent}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEA580C), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                  Text("${row.sewingReceived}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                  Text("${row.sewingBalance}", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = if (row.sewingBalance > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                  Text("${row.spotSent}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF9333EA), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                  Text("${row.spotReceived}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                  Text("${row.spotBalance}", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = if (row.spotBalance > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                  Box(modifier = Modifier.width(75.dp), contentAlignment = Alignment.Center) {
+                  Text(NflRepository.formatHourSlot12h(row.hourSlot), fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF334155), modifier = Modifier.width(82.dp))
+                  Text("${row.sewingSent}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEA580C), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                  Text("${row.sewingReceived}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                  Text("${row.sewingBalance}", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = if (row.sewingBalance > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                  Text("${row.spotSent}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF9333EA), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                  Text("${row.spotReceived}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                  Text("${row.spotBalance}", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = if (row.spotBalance > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                  Box(modifier = Modifier.width(64.dp), contentAlignment = Alignment.Center) {
                     Surface(
                       color = if (rowPending > 0) Color(0xFFFEF2F2) else Color(0xFFF0FDF4),
                       shape = RoundedCornerShape(3.dp)
@@ -1202,14 +1202,14 @@ private fun LineHourlyDefectTableCard(
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Text("TOTAL", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A), modifier = Modifier.width(85.dp))
-                Text("$totalSewSent", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFFEA580C), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("$totalSewRecv", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("$totalSewBal", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = if (totalSewBal > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("$totalSpotSent", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFF9333EA), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("$totalSpotRecv", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Text("$totalSpotBal", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = if (totalSpotBal > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(65.dp))
-                Box(modifier = Modifier.width(75.dp), contentAlignment = Alignment.Center) {
+                Text("TOTAL", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A), modifier = Modifier.width(82.dp))
+                Text("$totalSewSent", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFFEA580C), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("$totalSewRecv", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("$totalSewBal", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = if (totalSewBal > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("$totalSpotSent", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFF9333EA), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("$totalSpotRecv", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Text("$totalSpotBal", fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = if (totalSpotBal > 0) Color(0xFFDC2626) else Color(0xFF16A34A), textAlign = TextAlign.End, modifier = Modifier.width(54.dp))
+                Box(modifier = Modifier.width(64.dp), contentAlignment = Alignment.Center) {
                   Text(
                     text = if (totalPending > 0) "$totalPending pcs" else "Cleared",
                     fontSize = 9.sp,
