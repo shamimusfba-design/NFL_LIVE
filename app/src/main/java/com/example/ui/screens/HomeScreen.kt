@@ -547,6 +547,12 @@ fun HomeScreen(
           .testTag("insaf_life_bs_oql_weekly_chart")
       )
 
+      OqlTrendChart(
+        title = "${currentFloor.displayName} — BS OQL vs NFL OQL Trend",
+        subtitle = "Compare buyer standard OQL with actual NFL audit OQL",
+        points = tvData.weeklyQaTrend
+      )
+
       // Row 3: BS OQL (Buyer Standard OQL entered by IE) & FRI Pass Rate
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1315,11 +1321,11 @@ private fun OqlTrendChart(
       Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
           Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF1976D2)))
-          Text("Actual OQL", fontSize = 10.sp, color = Color(0xFF334155))
+          Text("BS OQL", fontSize = 10.sp, color = Color(0xFF334155))
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
           Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFFF59E0B)))
-          Text("5% benchmark", fontSize = 10.sp, color = Color(0xFF334155))
+          Text("NFL OQL", fontSize = 10.sp, color = Color(0xFF334155))
         }
       }
       if (points.isEmpty()) {
@@ -1343,17 +1349,28 @@ private fun OqlTrendChart(
             val y = bottom - (value.toFloat() / maxValue) * plotHeight
             return Offset(x, y)
           }
-          fun drawSeries(values: (DailyQaTrend) -> Double, color: Color) {
+          fun drawSeries(
+            values: (DailyQaTrend) -> Double,
+            otherValues: (DailyQaTrend) -> Double,
+            color: Color,
+            placeAboveWhenClose: Boolean
+          ) {
             val path = Path()
             points.forEachIndexed { index, point ->
-              val p = pointAt(index, values(point))
+              val rawPoint = pointAt(index, values(point))
+              val otherPoint = pointAt(index, otherValues(point))
+              // When the two values are visually close, separate their markers vertically.
+              val offset = if (kotlin.math.abs(rawPoint.y - otherPoint.y) < 14f) {
+                if (placeAboveWhenClose) -7f else 7f
+              } else 0f
+              val p = Offset(rawPoint.x, (rawPoint.y + offset).coerceIn(top + 2f, bottom - 2f))
               if (index == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
               drawCircle(color, radius = 3.5f, center = p)
             }
             if (points.size > 1) drawPath(path, color, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f))
           }
-          drawSeries({ it.bsOqlPct }, Color(0xFF1976D2))
-          drawSeries({ it.nflAqcPct }, Color(0xFFF59E0B))
+          drawSeries({ it.bsOqlPct }, { it.nflAqcPct }, Color(0xFF1976D2), true)
+          drawSeries({ it.nflAqcPct }, { it.bsOqlPct }, Color(0xFFF59E0B), false)
         }
         Row(
           modifier = Modifier.fillMaxWidth(),
@@ -1719,7 +1736,7 @@ fun LineWiseDhuCard(
       ) {
         // 1. LINE COLUMN (Locked on left side)
         Column(
-          modifier = Modifier.width(78.dp),
+          modifier = Modifier.width(60.dp),
           verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
           // Header Cell
