@@ -38,7 +38,7 @@
       }
     </style>
   <style>.nfl-scroll{scrollbar-width:thin;scrollbar-color:#2B4A70 #0E1B2D}.nfl-scroll::-webkit-scrollbar{height:9px}.nfl-scroll::-webkit-scrollbar-track{background:#0E1B2D;border-radius:6px}.nfl-scroll::-webkit-scrollbar-thumb{background:#2B4A70;border-radius:6px}</style>
-<script>try{document.documentElement.setAttribute("data-theme",localStorage.getItem("nfl_theme")==="light"?"light":"dark")}catch(e){}</script>
+<script>try{var q=new URLSearchParams(location.search).get("theme");var t=(q==="light"||q==="dark")?q:localStorage.getItem("nfl_theme");if(q==="light"||q==="dark"){localStorage.setItem("nfl_theme",q)}document.documentElement.setAttribute("data-theme",t==="light"?"light":"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}</script>
 <style>
 :root,[data-theme="dark"]{
   --wb-bg:#0A1522;--wb-panel:#101E30;--wb-line:#1B2E45;--wb-txt:#EAF0F7;--wb-muted:#8FA3B8;
@@ -61,7 +61,7 @@ body{background:var(--wb-bg)}
 [data-theme="light"] body{background:linear-gradient(180deg,#DDE9F8 0%,#F1F6FC 100%)}
 .nfl-scroll{scrollbar-width:thin;scrollbar-color:var(--wb-dim) transparent}
 </style>
-  <script type="module" crossorigin src="./assets/index-CHAU-gaJ.js"></script>
+  <script type="module" crossorigin src="./assets/index-D_OAKXaK.js"></script>
 </head>
   <body>
     <div id="root"></div>
