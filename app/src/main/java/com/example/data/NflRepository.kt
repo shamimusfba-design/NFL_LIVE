@@ -5670,9 +5670,13 @@ class NflRepository(private val context: Context) {
       }
   }
 
-  fun getParetoDefects(lineId: String): List<ParetoDefectPoint> {
+  fun getParetoDefects(lineId: String, period: PeriodScope = PeriodScope.TODAY): List<ParetoDefectPoint> {
     val lineQas = deduplicateQualityRecords(
-      _qualityEntries.value.filter { it.lineId.equals(lineId, ignoreCase = true) }
+      _qualityEntries.value.filter {
+        it.lineId.equals(lineId, ignoreCase = true) &&
+          isDateInPeriod(it.date, period) &&
+          !isBiHourlyAuditSlot(it.hourSlot)
+      }
     )
     val defectCounts = mutableMapOf<String, Int>()
     lineQas.forEach { qa ->
