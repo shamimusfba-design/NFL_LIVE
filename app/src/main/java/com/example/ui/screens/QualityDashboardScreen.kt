@@ -44,7 +44,7 @@ fun QualityDashboardScreen(
   }
   val audits = remember(qualityEntries, selectedPeriod, selectedFloor, refreshTrigger) {
     qualityEntries
-      .filter { repository.isBiHourlyAuditSlot(it.hourSlot) }
+      .filter { repository.isBiHourlyAuditSlot(it.hourSlot) && it.checkedGarments > 0 }
       .filter { repository.isDateInPeriod(it.date, selectedPeriod) }
       .filter { repository.isInSelectedFloor(it.floor, selectedFloor) }
       .groupBy { it.submissionId.ifBlank { it.id } }
@@ -145,6 +145,42 @@ fun QualityDashboardScreen(
             Text("Line-wise Bi-Hourly Audit", fontWeight = FontWeight.Black, color = Color(0xFF0F172A), fontSize = 14.sp)
           }
           Text("Select a line to inspect its audit history. Pass/fail is evaluated against the floor's saved monthly OQL standard.", color = Color(0xFF64748B), fontSize = 10.sp)
+          Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            AuditLegend(Color(0xFF2563EB), "Total")
+            AuditLegend(Color(0xFF16A34A), "Pass")
+            AuditLegend(Color(0xFFDC2626), "Fail")
+          }
+          val maxAuditCount = lines.maxOfOrNull { line ->
+            audits.count { it.lineId.equals(line.id, true) }
+          }?.coerceAtLeast(1) ?: 1
+          Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).height(138.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Bottom
+          ) {
+            lines.forEach { line ->
+              val rows = audits.filter { it.lineId.equals(line.id, true) }
+              val threshold = repository.getMonthlyTarget(line.floor).targetOqlPct
+              val pass = rows.count { passed(it, threshold) }
+              val fail = rows.size - pass
+              Column(
+                modifier = Modifier.width(54.dp).fillMaxHeight(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Bottom
+              ) {
+                Row(
+                  modifier = Modifier.weight(1f).fillMaxWidth(),
+                  horizontalArrangement = Arrangement.Center,
+                  verticalAlignment = Alignment.Bottom
+                ) {
+                  AuditColumn(rows.size, maxAuditCount, Color(0xFF2563EB))
+                  AuditColumn(pass, maxAuditCount, Color(0xFF16A34A))
+                  AuditColumn(fail, maxAuditCount, Color(0xFFDC2626))
+                }
+                Text(line.id, color = Color(0xFF0F172A), fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+              }
+            }
+          }
           Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             lines.forEach { line ->
               val rows = audits.filter { it.lineId.equals(line.id, true) }
@@ -230,6 +266,26 @@ fun QualityDashboardScreen(
       }
     }
   }
+}
+
+@Composable
+private fun AuditLegend(color: Color, label: String) {
+  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    Box(Modifier.size(7.dp).clip(RoundedCornerShape(2.dp)).background(color))
+    Text(label, color = Color(0xFF475569), fontSize = 9.sp)
+  }
+}
+
+@Composable
+private fun RowScope.AuditColumn(value: Int, maxValue: Int, color: Color) {
+  Box(
+    Modifier
+      .weight(1f)
+      .fillMaxHeight((value.toFloat() / maxValue).coerceIn(0f, 1f))
+      .padding(horizontal = 1.dp)
+      .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+      .background(if (value > 0) color else Color(0xFFE2E8F0))
+  )
 }
 
 @Composable
