@@ -1111,10 +1111,18 @@ private fun LineHourlyDefectTableCard(
             border = androidx.compose.foundation.BorderStroke(1.dp, if (totalPending > 0) Color(0xFFFECACA) else Color(0xFFBBF7D0))
           ) {
             Text(
-              text = if (totalPending > 0) "Pending: $totalPending pcs" else "All Clear ✓",
+              text = when {
+                hourlyRecords.isEmpty() -> "No Records"
+                totalPending > 0 -> "Pending: $totalPending pcs"
+                else -> "All Clear ✓"
+              },
               fontSize = 9.sp,
               fontWeight = FontWeight.Bold,
-              color = if (totalPending > 0) Color(0xFFDC2626) else Color(0xFF166534),
+              color = when {
+                hourlyRecords.isEmpty() -> Color(0xFF64748B)
+                totalPending > 0 -> Color(0xFFDC2626)
+                else -> Color(0xFF166534)
+              },
               modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
             )
           }
@@ -1192,8 +1200,11 @@ private fun LineHourlyDefectTableCard(
               }
             }
 
-            // Total Summary Row
-            Surface(
+            if (hourlyRecords.isEmpty()) {
+              Text("No hourly defect sent/received records for this line and period.", fontSize = 10.sp, color = Color(0xFF64748B), modifier = Modifier.padding(8.dp))
+            } else {
+              // Total Summary Row
+              Surface(
               color = Color(0xFFF1F5F9),
               shape = RoundedCornerShape(6.dp),
               border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1))
@@ -1218,7 +1229,7 @@ private fun LineHourlyDefectTableCard(
                   )
                 }
               }
-            }
+            }            }
           }
         }
       }
