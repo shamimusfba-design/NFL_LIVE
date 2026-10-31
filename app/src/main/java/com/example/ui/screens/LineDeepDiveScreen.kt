@@ -295,7 +295,7 @@ fun LineDeepDiveScreen(
             // Row 1: Efficiency & Production Output
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
               KpiCard(
-                title = if (selectedPeriod == PeriodScope.YESTERDAY) "Yesterday Eff" else "Today Efficiency",
+                title = when (selectedPeriod) { PeriodScope.TODAY -> "Today Efficiency"; PeriodScope.YESTERDAY -> "Yesterday Efficiency"; PeriodScope.WEEK -> "Weekly Avg Eff"; PeriodScope.MONTH -> "Period Avg Eff" },
                 value = "${todayEffPct}%",
                 subtext = if (selectedPeriod == PeriodScope.YESTERDAY) "Recorded Final" else "Target: ${lineSetup.targetEfficiencyPct.toInt()}%",
                 valueColor = if (todayEffPct >= lineSetup.targetEfficiencyPct) Color(0xFF16A34A) else Color(0xFFD97706),
@@ -327,15 +327,15 @@ fun LineDeepDiveScreen(
                 modifier = Modifier.weight(1f)
               )
               KpiCard(
-                title = if (selectedPeriod == PeriodScope.YESTERDAY) "Yesterday DHU" else "Today DHU",
+                title = "${selectedPeriod.displayName} DHU",
                 value = String.format(java.util.Locale.US, "%.2f", avgDhu),
-                subtext = if (selectedPeriod == PeriodScope.YESTERDAY) "Final QC Rate" else "Endline QC (DHU)",
+                subtext = "Endline QC (DHU)",
                 valueColor = if (avgDhu <= 2.0) Color(0xFF16A34A) else Color(0xFFDC2626),
                 modifier = Modifier.weight(1f)
               )
               KpiCard(
                 title = "Up to Date DHU",
-                value = String.format(java.util.Locale.US, "%.2f", monthlyTarget.targetDhuPct),
+                value = String.format(java.util.Locale.US, "%.2f", lineMonthlyTarget.targetDhuPct),
                 subtext = "MTD Benchmark",
                 valueColor = Color(0xFF7C3AED),
                 modifier = Modifier.weight(1f)
@@ -399,14 +399,14 @@ fun LineDeepDiveScreen(
           // Quality KPI Cards Row (Today DHU, Today OQL, BS OQL, Monthly DHU, Monthly OQL)
           Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             KpiCard(
-              title = "Today DHU",
+              title = "${selectedPeriod.displayName} DHU",
               value = String.format(java.util.Locale.US, "%.2f", avgDhu),
               subtext = "Endline QC (DHU)",
               valueColor = if (avgDhu <= 2.0) Color(0xFF16A34A) else Color(0xFFDC2626),
               modifier = Modifier.weight(1f)
             )
             KpiCard(
-              title = "Today OQL",
+              title = "${selectedPeriod.displayName} OQL",
               value = "${avgOql}%",
               subtext = "Bi-hourly Audit",
               valueColor = if (avgOql <= 3.5) Color(0xFF16A34A) else Color(0xFFD97706),
@@ -431,7 +431,7 @@ fun LineDeepDiveScreen(
             )
             KpiCard(
               title = "Monthly OQL",
-              value = "${monthlyTarget.targetOqlPct}%",
+              value = "${lineMonthlyTarget.targetOqlPct}%",
               subtext = "AQL 2.5 Standard",
               valueColor = Color(0xFF475569),
               modifier = Modifier.weight(1f)
