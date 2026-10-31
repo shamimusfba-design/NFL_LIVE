@@ -247,8 +247,9 @@ export class CalculationEngine {
       m => !m.lineId && floorMatches(m.floor, floor)
     );
     const targetEfficiencyPct = floorMonthly?.targetEfficiencyPct || 75;
-    const dhuLimitPct = floorMonthly?.targetDhuPct || 2.0;
-    const oqlCommitmentPct = floorMonthly?.targetOqlPct || 4.5;
+    // Factory standard: DHU target below 4%, OQL target below 4.5%.
+    const dhuLimitPct = 4.0;
+    const oqlCommitmentPct = 4.5;
     const bsQaOqlPct = floorMonthly?.bsQaOqlPct ?? 2.4;
     const friPassRatePct = floorMonthly?.friPassRatePct ?? (reportedCount > 0 ? 98.5 : 0);
 

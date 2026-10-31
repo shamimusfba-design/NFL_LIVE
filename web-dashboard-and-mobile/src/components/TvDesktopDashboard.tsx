@@ -464,7 +464,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
         return (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
             <WbTile label="Factory QC pass" value={pass !== null ? `${pass.toFixed(1)}%` : '—'} color={pc(pass, 97, 93, false)} sub={`${(checked - defective).toLocaleString()} passed of ${checked.toLocaleString()} checked`} />
-            <WbTile label="Factory DHU" value={dhu !== null ? `${dhu.toFixed(2)}%` : '—'} color={pc(dhu, 3.2, 5, true)} sub={`${defects.toLocaleString()} defects`} />
+            <WbTile label="Factory DHU" value={dhu !== null ? `${dhu.toFixed(2)}%` : '—'} color={pc(dhu, 4, 5.5, true)} sub={`${defects.toLocaleString()} defects`} />
             <WbTile label="Factory OQL" value={oql !== null ? `${oql.toFixed(2)}%` : '—'} color={pc(oql, AUDIT_PASS_OQL_PCT, 7, true)} sub={`limit ${AUDIT_PASS_OQL_PCT}%`} />
             <WbTile label="BS OQL (weekly)" value={latestW && latestW.bsOqlPct !== null ? `${latestW.bsOqlPct.toFixed(2)}%` : '—'} color={pc(latestW?.bsOqlPct ?? null, 4.5, 7, true)} sub={latestW ? `Week ${latestW.weekKey.replace(/^\d{4}-/, '')}` : 'No weekly record yet'} />
             <WbTile label="NFL AQC (weekly)" value={latestW && latestW.nflAqcPct !== null ? `${latestW.nflAqcPct.toFixed(2)}%` : '—'} color={pc(latestW?.nflAqcPct ?? null, 4.5, 7, true)} sub={latestW ? `Week ${latestW.weekKey.replace(/^\d{4}-/, '')}` : 'No weekly record yet'} />
@@ -1457,11 +1457,11 @@ const WbTile: React.FC<{
     className="rounded-lg border p-2.5 flex flex-col justify-between relative overflow-hidden"
   >
     <div style={{ backgroundColor: color }} className="absolute left-0 top-0 bottom-0 w-1" />
-    <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-extrabold uppercase tracking-wider pl-1.5">
+    <div style={{ color: WB_THEME.MUTED }} className="text-[11px] md:text-xs font-extrabold uppercase tracking-wider pl-1.5">
       {label}
     </div>
     <div className="flex items-baseline gap-1.5 my-1 pl-1.5">
-      <span style={{ color }} className="text-2xl font-black leading-none">
+      <span style={{ color }} className="text-2xl md:text-3xl font-black leading-none">
         {value}
       </span>
       {unit && (
@@ -1470,7 +1470,7 @@ const WbTile: React.FC<{
         </span>
       )}
     </div>
-    <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold pl-1.5 leading-snug">
+    <div style={{ color: WB_THEME.MUTED }} className="text-xs md:text-sm font-semibold pl-1.5 leading-snug">
       {sub}
     </div>
   </div>
@@ -1579,12 +1579,12 @@ const niceMax = (vals: number[]): number => Math.max(1e-9, ...vals.filter(v => i
 const PLOT_H = 'h-44 md:h-52 xl:h-60';
 
 /** One column; its value label sits just above the top of the column. */
-const Col: React.FC<{ v: number; max: number; color: string; label?: React.ReactNode; w?: string; title?: string }> = ({ v, max, color, label, w = 'w-3 md:w-4', title }) => {
+const Col: React.FC<{ v: number; max: number; color: string; label?: React.ReactNode; w?: string; title?: string; labelColor?: string }> = ({ v, max, color, label, w = 'w-3 md:w-4', title, labelColor }) => {
   const h = Math.max(0, Math.min(100, (v / max) * 100));
   return (
     <div className={`relative ${w} h-full flex items-end`}>
       {label !== undefined && label !== null && label !== '' && (
-        <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] md:text-xs font-black leading-none" style={{ bottom: `calc(${h}% + 3px)`, color }}>
+        <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] md:text-xs font-black leading-none" style={{ bottom: `calc(${h}% + 3px)`, color: labelColor || color }}>
           {label}
         </div>
       )}
@@ -1608,7 +1608,7 @@ const ChartRow: React.FC<{ children: React.ReactNode; refPct?: number | null; re
 
 const Group: React.FC<{ children: React.ReactNode; name: React.ReactNode; sub?: React.ReactNode; subColor?: string; onClick?: () => void; minW?: string }> = ({ children, name, sub, subColor, onClick, minW = 'min-w-[44px] md:min-w-[54px]' }) => (
   <div onClick={onClick} className={`flex flex-col items-center flex-1 ${minW} ${onClick ? 'cursor-pointer' : ''}`}>
-    <div className={`w-full ${PLOT_H} flex items-end justify-center gap-1 border-b`} style={{ borderColor: WB_THEME.LINE }}>{children}</div>
+    <div className={`w-full ${PLOT_H} flex items-end justify-center gap-2 md:gap-3 border-b`} style={{ borderColor: WB_THEME.LINE }}>{children}</div>
     <div className="text-[11px] md:text-xs font-black mt-1 whitespace-nowrap">{name}</div>
     {sub !== undefined && <div style={{ color: subColor }} className="text-[10px] md:text-[11px] font-bold leading-tight">{sub}</div>}
   </div>
@@ -1625,7 +1625,7 @@ const LiveTargetVsAchievementChart: React.FC<{
         const col = achColor(l.achievementPct);
         return (
           <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)} sub={l.achievementPct !== null ? `${l.achievementPct.toFixed(0)}%` : '—'} subColor={col}>
-            <Col v={l.target} max={max} color={WB_THEME.DIM} w="w-2.5 md:w-3.5" title={`Target: ${l.target}`} />
+            <Col v={l.target} max={max} color={WB_THEME.DIM} labelColor={WB_THEME.MUTED} label={l.target} w="w-2.5 md:w-3.5" title={`Target: ${l.target}`} />
             <Col v={l.output ?? 0} max={max} color={col} label={l.output ?? '—'} w="w-3 md:w-4" title={`Output: ${l.output ?? 0}`} />
           </Group>
         );
@@ -1688,7 +1688,7 @@ const HourlyOutputWallboardChart: React.FC<{ buckets: HourlyWallboardBucket[] }>
         const col = b.output === 0 ? WB_THEME.DIM : achColor(pct);
         return (
           <Group key={b.slot24} name={b.label12h} sub={b.output > 0 && b.target > 0 ? `${pct}%` : ''} subColor={col} minW="min-w-[52px] md:min-w-[64px]">
-            <Col v={b.target} max={max} color={WB_THEME.DIM} w="w-3 md:w-5" title={`Target: ${b.target}`} />
+            <Col v={b.target} max={max} color={WB_THEME.DIM} labelColor={WB_THEME.MUTED} label={b.target > 0 ? b.target : ""} w="w-3 md:w-5" title={`Target: ${b.target}`} />
             <Col v={b.output} max={max} color={col} label={b.output > 0 ? b.output : '—'} w="w-4 md:w-6" title={`Output: ${b.output}`} />
           </Group>
         );
@@ -1772,12 +1772,11 @@ const RectificationPendingChart: React.FC<{
   );
 };
 
-/** Weekly BS OQL vs NFL AQC, from ISO week 32 of the current year onwards (blue: BS OQL, orange: NFL AQC). */
+/** Weekly BS OQL vs NFL AQC trend, from ISO week 32 of the current year (blue: BS OQL, orange: NFL AQC). */
 const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: number }> = ({ records, commitment }) => {
   const year = new Date().getFullYear();
-  const from = `${year}-W32`;
   const rows = [...records]
-    .filter(r => r.weekKey >= from && (r.bsOqlPct !== null || r.nflAqcPct !== null))
+    .filter(r => r.weekKey >= `${year}-W32` && (r.bsOqlPct !== null || r.nflAqcPct !== null))
     .sort((a, b) => (a.weekKey < b.weekKey ? -1 : 1));
   if (rows.length === 0) {
     return (
@@ -1786,16 +1785,45 @@ const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: n
       </div>
     );
   }
+  const step = 70, padL = 30, padR = 30, top = 26, plotH = 170, W = Math.max(320, padL + padR + step * (rows.length - 1));
   const max = niceMax([commitment, ...rows.flatMap(r => [r.bsOqlPct ?? 0, r.nflAqcPct ?? 0])]);
+  const x = (i: number) => (rows.length === 1 ? W / 2 : padL + i * step);
+  const y = (v: number) => top + plotH - (v / max) * plotH;
+  const series = [
+    { key: 'bs', name: 'BS OQL', color: WB_THEME.BLUE, get: (r: WeeklyQualityRecord) => r.bsOqlPct, dy: -10 },
+    { key: 'aqc', name: 'NFL AQC', color: WB_THEME.ORANGE, get: (r: WeeklyQualityRecord) => r.nflAqcPct, dy: 18 }
+  ];
   return (
-    <ChartRow refPct={(commitment / max) * 100} refColor={WB_THEME.RED}>
-      {rows.map(r => (
-        <Group key={r.weekKey} name={`W${r.weekKey.replace(/^\d{4}-W/, '')}`} minW="min-w-[56px] md:min-w-[70px]">
-          <Col v={r.bsOqlPct ?? 0} max={max} color={WB_THEME.BLUE} label={r.bsOqlPct !== null ? `${r.bsOqlPct.toFixed(1)}` : ''} title={`BS OQL: ${r.bsOqlPct ?? '—'}%`} />
-          <Col v={r.nflAqcPct ?? 0} max={max} color={WB_THEME.ORANGE} label={r.nflAqcPct !== null ? `${r.nflAqcPct.toFixed(1)}` : ''} title={`NFL AQC: ${r.nflAqcPct ?? '—'}%`} />
-        </Group>
-      ))}
-    </ChartRow>
+    <div className="nfl-scroll overflow-x-auto pb-1">
+      <svg viewBox={`0 0 ${W} ${top + plotH + 30}`} style={{ width: '100%', minWidth: W, height: top + plotH + 30 }}>
+        <line x1={0} x2={W} y1={y(commitment)} y2={y(commitment)} stroke={WB_THEME.RED} strokeWidth={2} strokeDasharray="6 5" />
+        <text x={W - 4} y={y(commitment) - 5} textAnchor="end" fontSize={11} fontWeight={800} fill={WB_THEME.RED}>{commitment}% commitment</text>
+        <line x1={0} x2={W} y1={top + plotH} y2={top + plotH} stroke={WB_THEME.LINE} strokeWidth={1} />
+        {series.map(sr => {
+          const pts = rows.map((r, i) => ({ i, v: sr.get(r) })).filter(p => p.v !== null) as Array<{ i: number; v: number }>;
+          return (
+            <g key={sr.key}>
+              <polyline fill="none" stroke={sr.color} strokeWidth={3} strokeLinejoin="round" points={pts.map(p => `${x(p.i)},${y(p.v)}`).join(' ')} />
+              {pts.map(p => (
+                <g key={p.i}>
+                  <circle cx={x(p.i)} cy={y(p.v)} r={5} fill={sr.color} />
+                  <text x={x(p.i)} y={y(p.v) + sr.dy} textAnchor="middle" fontSize={12} fontWeight={900} fill={sr.color}>{p.v.toFixed(1)}</text>
+                </g>
+              ))}
+            </g>
+          );
+        })}
+        {rows.map((r, i) => (
+          <text key={r.weekKey} x={x(i)} y={top + plotH + 20} textAnchor="middle" fontSize={12} fontWeight={800} fill={WB_THEME.TXT}>
+            W{r.weekKey.replace(/^\d{4}-W/, '')}
+          </text>
+        ))}
+      </svg>
+      <div className="flex justify-center gap-4 text-xs font-bold" style={{ color: WB_THEME.MUTED }}>
+        <span><span className="inline-block w-3 h-1 align-middle mr-1" style={{ backgroundColor: WB_THEME.BLUE }} />BS OQL</span>
+        <span><span className="inline-block w-3 h-1 align-middle mr-1" style={{ backgroundColor: WB_THEME.ORANGE }} />NFL AQC</span>
+      </div>
+    </div>
   );
 };
 
