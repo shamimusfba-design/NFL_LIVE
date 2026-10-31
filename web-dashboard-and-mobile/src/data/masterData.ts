@@ -651,3 +651,17 @@ export function nptCategoriesFor(floor: string): Array<{ id: string; label: stri
     { id: 'OTHER', label: 'Other (describe below)' }
   ];
 }
+
+/** Audit rule: a bi-hourly OQL audit PASSES when its OQL is at or below this limit (the weekly commitment, 4.5%). */
+export const AUDIT_PASS_OQL_PCT = 4.5;
+
+export function auditResultOf(checked: number, defective: number): 'PASS' | 'FAIL' | null {
+  if (!(checked > 0)) return null;
+  return (defective / checked) * 100 <= AUDIT_PASS_OQL_PCT ? 'PASS' : 'FAIL';
+}
+
+/** Basic garment items for sewing floors. "Custom item" lets anyone type another one. */
+export const GARMENT_ITEMS = [
+  'T-shirt', 'Sweatshirt', 'Polo shirt', 'Hoodie', 'Jacket', 'Hoody jacket',
+  'Bodysuit', 'Dress', 'Pant', 'Leggings', 'Shorts', 'Jumpsuit', 'Skirt'
+];

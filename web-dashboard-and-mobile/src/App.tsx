@@ -644,7 +644,11 @@ export default function App() {
   };
 
   // The Admin's switch: it changes the shared setting, so every signed-in person gets the same demo (or loses it).
-  demoSwitchRef.current = (on: boolean) => { if (on !== isDemoMode) applyDemo(on); };
+  // Demo data is for the Admin only: everyone else always sees the real data.
+  demoSwitchRef.current = (on: boolean) => {
+    if (currentUser?.role !== 'ADMIN') { if (isDemoMode) applyDemo(false); return; }
+    if (on !== isDemoMode) applyDemo(on);
+  };
 
   const handleLoadDemoData = () => {
     applyDemo(true);
@@ -1035,7 +1039,7 @@ export default function App() {
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
-          <div className="min-w-0 flex-1 truncate text-[14px] font-extrabold md:text-[16px]">NFL LIVE Production &amp; Quality</div>
+          <div className="min-w-0 flex-1 truncate text-[14px] font-extrabold md:text-[16px]"><span className="md:hidden">NFL LIVE</span><span className="hidden md:inline">NFL LIVE Production &amp; Quality</span></div>
           {/* Two clear choices; the one in use is filled. */}
           <div
             role="group"

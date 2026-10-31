@@ -24,6 +24,7 @@ import {
   lineDisplayName,
   isDepartmentFloor,
   isFinishingUnit,
+  AUDIT_PASS_OQL_PCT,
   biHourlyOptionsForLine,
   ordinalHr,
   canWriteWeeklyQualityOrBiHourlyAudit,
@@ -792,6 +793,16 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                   )}
                 </div>
               </div>
+
+              {qaMode === 'BI_HOURLY_AUDIT' && numChecked > 0 && (() => {
+                const oql = (numDefective / numChecked) * 100;
+                const pass = oql <= AUDIT_PASS_OQL_PCT;
+                return (
+                  <div className={`rounded-lg px-3 py-2 text-center text-sm font-black ${pass ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                    Audit result: {pass ? 'PASS' : 'FAIL'} (OQL {oql.toFixed(2)}% · limit {AUDIT_PASS_OQL_PCT}%)
+                  </div>
+                );
+              })()}
 
               {/* Live Metric Banner (sewing) */}
               {!deptFloor && (

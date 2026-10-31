@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { LineMasterItem, LineTargetConfig, FloorManpowerRecord, PhysicalFloor } from '../types';
-import { isDepartmentFloor, lineDisplayName, unitWord, isFinishingUnit, finishingUnitId } from '../data/masterData';
+import { isDepartmentFloor, lineDisplayName, unitWord, isFinishingUnit, finishingUnitId, GARMENT_ITEMS } from '../data/masterData';
 
 type FloorName = PhysicalFloor;
 
@@ -49,6 +49,32 @@ function useIsDesktop(): boolean {
 }
 
 const box = 'w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500';
+
+/** Item of a sewing line: a dropdown of the basic items, plus "Custom item" for anything else. */
+const ItemPicker: React.FC<{ value: string; onChange: (v: string) => void; className?: string }> = ({ value, onChange, className = '' }) => {
+  const isItem = (GARMENT_ITEMS as string[]).includes(value);
+  const [custom, setCustom] = useState(!isItem && value.trim() !== '');
+  return (
+    <div className={className}>
+      <select
+        value={custom ? '__custom' : isItem ? value : ''}
+        onChange={e => {
+          if (e.target.value === '__custom') { setCustom(true); onChange(''); }
+          else { setCustom(false); onChange(e.target.value); }
+        }}
+        className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-bold text-slate-900"
+      >
+        <option value="">Choose item</option>
+        {GARMENT_ITEMS.map(it => <option key={it} value={it}>{it}</option>)}
+        <option value="__custom">Custom item…</option>
+      </select>
+      {custom && (
+        <input type="text" placeholder="Type the item name" value={value} onChange={e => onChange(e.target.value)}
+          className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-bold text-slate-900" />
+      )}
+    </div>
+  );
+};
 
 export const BulkTargetSetup: React.FC<Props> = ({ onlyFloor = null, lines, targets, floorTotals, date, userName, onSaveSetup, onSaveFloorManpower }) => {
   const [floor, setFloor] = useState<FloorName>(onlyFloor || 'Sew 2');
@@ -239,7 +265,7 @@ export const BulkTargetSetup: React.FC<Props> = ({ onlyFloor = null, lines, targ
             <thead>
               <tr className="bg-[#0A2558] text-[11px] uppercase tracking-wide text-white">
                 <th className="px-3 py-2.5 text-left">{unit}</th>
-                <th className="px-2 py-2.5 text-left">Item / Style</th>
+                {!dept && <th className="px-2 py-2.5 text-left">Item / Style</th>}
                 {dept ? (
                   <th className="px-2 py-2.5">Hourly target (pcs)</th>
                 ) : (
@@ -260,7 +286,7 @@ export const BulkTargetSetup: React.FC<Props> = ({ onlyFloor = null, lines, targ
                 return (
                   <tr key={x.id} className={idx % 2 ? 'bg-slate-50' : 'bg-white'}>
                     <td className="px-3 py-1.5"><span className="rounded bg-[#0A2558] px-2.5 py-1 text-xs font-black text-white">{lineDisplayName(x.id)}</span></td>
-                    <td className="px-2 py-1.5"><input type="text" value={x.r.style} onChange={e => setField(x.id, 'style', e.target.value)} className={cell + ' text-left'} /></td>
+                    {!dept && <td className="px-2 py-1.5"><ItemPicker value={x.r.style} onChange={v => setField(x.id, 'style', v)} /></td>}
                     {dept ? (
                       <td className="w-40 px-2 py-1.5"><input type="number" inputMode="numeric" min={0} value={x.r.hr} onChange={e => setField(x.id, 'hr', e.target.value)} className={cell} /></td>
                     ) : (
@@ -299,7 +325,7 @@ export const BulkTargetSetup: React.FC<Props> = ({ onlyFloor = null, lines, targ
                 </span>
                 <button type="button" onClick={() => saveOne(x.id)} className="rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-700">Save</button>
               </div>
-              <input type="text" placeholder="Item / Style" value={x.r.style} onChange={e => setField(x.id, 'style', e.target.value)} className={box + ' mb-2'} />
+              {!dept && <ItemPicker value={x.r.style} onChange={v => setField(x.id, 'style', v)} className="mb-2" />}
               {dept ? (
                 <label className="block">
                   <span className="mb-0.5 block text-[10px] font-bold text-slate-500">Hourly target (pcs)</span>

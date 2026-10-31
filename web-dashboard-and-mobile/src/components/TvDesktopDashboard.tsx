@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 /** Button and title text for every view */
 const FLOOR_LABEL: Record<FloorId, string> = {
   'Sew 1': 'Sew 1', 'Sew 2': 'Sew 2', 'Sew 3': 'Sew 3',
-  'All Sewing': 'All Sewing', 'Cutting': 'Cutting', 'Print': 'Print', 'Embroidery': 'Embroidery', 'Factory': 'Factory'
+  'All Sewing': 'Sewing', 'Cutting': 'Cutting', 'Print': 'Print', 'Embroidery': 'Embroidery', 'Factory': 'Factory'
 };
 /** Buttons in order: the three sewing floors, all sewing, the departments, then the whole factory */
 const FLOOR_BUTTONS: FloorId[] = ['Sew 1', 'Sew 2', 'Sew 3', 'All Sewing', 'Cutting', 'Print', 'Embroidery', 'Factory'];
@@ -19,7 +19,9 @@ import {
 } from '../types';
 import { HourlyWallboardBucket, FinishingFloorSummary } from '../services/calculationEngine';
 import { formatHourSlot12h,
-  hourLabelOfSlot, isBiHourlyAuditSlot, floorMatches, lineDisplayName, isDepartmentFloor, unitWord } from '../data/masterData';
+  hourLabelOfSlot, isBiHourlyAuditSlot, floorMatches, lineDisplayName, isDepartmentFloor, unitWord,
+  AUDIT_PASS_OQL_PCT, auditResultOf, getBangladeshTodayIso } from '../data/masterData';
+import { CalculationEngine as CalcForPeriod } from '../services/calculationEngine';
 
 export type WbPageId = 'PRODUCTION' | 'QUALITY' | 'FINISHING' | 'ALL' | 'TABLE';
 
@@ -134,6 +136,20 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   const isDept = isDepartmentFloor(selectedFloor);
   const hasQc = selectedFloor === 'Print' || selectedFloor === 'Embroidery';
   const unit = unitWord(selectedFloor);
+  const todayW = getBangladeshTodayIso();
+  const auditByLine = useMemo(() => {
+    const m = new Map<string, { lineId: string; floor: string; pass: number; fail: number }>();
+    qualities
+      .filter(q => isBiHourlyAuditSlot(q.hourSlot) && floorMatches(q.floor, selectedFloor) && CalcForPeriod.isDateInPeriod(q.date, todayW, selectedPeriod))
+      .forEach(q => {
+        const r = auditResultOf(q.checkedGarments, q.defectiveGarments);
+        if (!r) return;
+        const v = m.get(q.lineId) || { lineId: q.lineId, floor: q.floor, pass: 0, fail: 0 };
+        if (r === 'PASS') v.pass++; else v.fail++;
+        m.set(q.lineId, v);
+      });
+    return Array.from(m.values()).sort((a, b) => a.lineId.localeCompare(b.lineId, undefined, { numeric: true }));
+  }, [qualities, selectedFloor, selectedPeriod, todayW]);
 
   // Auto-slide Production -> Quality -> All (pauses on Table or when interval === 0)
   useEffect(() => {
@@ -280,7 +296,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 backgroundColor: selectedFloor === fl ? WB_THEME.BLUE : 'transparent',
                 color: selectedFloor === fl ? 'var(--wb-on-selected)' : WB_THEME.MUTED
               }}
-              className="px-3 py-1.5 sm:py-1 rounded text-xs font-black transition text-center"
+              className="shrink-0 whitespace-nowrap px-2.5 py-1.5 sm:py-1 rounded text-[11px] sm:text-xs font-black transition text-center"
             >
               {FLOOR_LABEL[fl]}
             </button>
@@ -1074,6 +1090,39 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
       {/* ==================== PAGE 4: TABLE (15-COLUMN LIVE LINE PERFORMANCE TABLE) ==================== */}
       {!isDept && page === 'TABLE' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 mb-2">
+          <WbPanel title="Audit: Pass / Fail by Line" sub={`Bi-hourly OQL audits · PASS when OQL is at or below ${AUDIT_PASS_OQL_PCT}%`} className="lg:col-span-7">
+            <AuditPassFailChart rows={auditByLine} />
+          </WbPanel>
+          <WbPanel title="Audit results by Line" sub="How many audits passed and failed in this period" className="lg:col-span-5">
+            <div className="max-h-[260px] overflow-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead className="sticky top-0" style={{ backgroundColor: WB_THEME.BG }}>
+                  <tr className="text-left" style={{ color: WB_THEME.MUTED }}>
+                    <th className="p-2">Line</th><th className="p-2 text-right">Pass</th><th className="p-2 text-right">Fail</th><th className="p-2 text-right">Pass rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditByLine.length === 0 && (<tr><td colSpan={4} className="p-3 text-center" style={{ color: WB_THEME.MUTED }}>No audits yet</td></tr>)}
+                  {auditByLine.map(r => {
+                    const tot = r.pass + r.fail;
+                    const rate = tot > 0 ? (r.pass / tot) * 100 : 0;
+                    return (
+                      <tr key={r.lineId} className="border-t" style={{ borderColor: WB_THEME.LINE }}>
+                        <td className="p-2 font-black">{lineDisplayName(r.lineId)}</td>
+                        <td className="p-2 text-right font-black" style={{ color: WB_THEME.GREEN }}>{r.pass}</td>
+                        <td className="p-2 text-right font-black" style={{ color: WB_THEME.RED }}>{r.fail}</td>
+                        <td className="p-2 text-right font-black" style={{ color: rate >= 90 ? WB_THEME.GREEN : rate >= 70 ? WB_THEME.AMBER : WB_THEME.RED }}>{rate.toFixed(0)}%</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </WbPanel>
+        </div>
+      )}
+      {!isDept && page === 'TABLE' && (
         <div className="flex-1 bg-slate-100 text-slate-900 rounded-lg overflow-auto p-3">
           <div className="flex items-center justify-between mb-2">
             <div>
@@ -1175,18 +1224,19 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE, color: WB_THEME.TXT }}
             className="w-full max-w-4xl max-h-[90vh] rounded-xl border p-5 flex flex-col gap-4 overflow-y-auto shadow-2xl"
           >
-            <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: WB_THEME.LINE }}>
-              <div>
-                <h3 className="text-lg font-black">
-                  Line {deepDiveLine.lineId} Deep Dive ({deepDiveLine.floor}) — {deepDiveLine.styleNumber}
+            <div className="flex items-start gap-3 border-b pb-3" style={{ borderColor: WB_THEME.LINE }}>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-lg font-black leading-tight">
+                  {lineDisplayName(deepDiveLine.lineId)} <span style={{ color: WB_THEME.MUTED }} className="text-sm font-bold">({deepDiveLine.floor})</span>
                 </h3>
-                <p style={{ color: WB_THEME.MUTED }} className="text-xs">
-                  SMV {deepDiveLine.smv.toFixed(1)} · Operators {deepDiveLine.operators} · Helpers {deepDiveLine.helpers} · Daily Target {deepDiveLine.target} pcs ({deepDiveLine.hourlyTarget}/hr)
+                <p style={{ color: WB_THEME.MUTED }} className="text-xs mt-0.5">
+                  {deepDiveLine.styleNumber ? `${deepDiveLine.styleNumber} · ` : ''}SMV {deepDiveLine.smv.toFixed(1)} · Operators {deepDiveLine.operators} · Helpers {deepDiveLine.helpers} · Hourly target {deepDiveLine.hourlyTarget} pcs
                 </p>
               </div>
               <button
                 onClick={() => setDeepDiveLine(null)}
-                className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm"
+                className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-black text-sm"
+                aria-label="Close"
               >
                 ✕ Close
               </button>
@@ -1228,69 +1278,86 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             </div>
 
             <div className="text-xs font-black uppercase tracking-wider" style={{ color: WB_THEME.MUTED }}>
-              Hourly &amp; Bi-Hourly Records
+              Hourly &amp; Bi-Hourly Records (scroll up and down)
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.MUTED }} className="text-left">
-                    <th className="p-2">Hour</th>
-                    <th className="p-2">Type</th>
-                    <th className="p-2 text-right">Output Pcs</th>
-                    <th className="p-2 text-right">Checked</th>
-                    <th className="p-2 text-right">Defective</th>
-                    <th className="p-2 text-right">Defects</th>
-                    <th className="p-2 text-right">Sew Sent/Recv</th>
-                    <th className="p-2 text-right">Spot Sent/Recv</th>
+            <div className="max-h-[48vh] overflow-auto rounded-lg border" style={{ borderColor: WB_THEME.LINE }}>
+              <table className="w-full min-w-[860px] text-sm border-collapse">
+                <thead className="sticky top-0 z-10">
+                  <tr style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.MUTED }} className="text-xs uppercase tracking-wide">
+                    <th className="p-2.5 text-left">Hour</th>
+                    <th className="p-2.5 text-left">Type</th>
+                    <th className="p-2.5 text-right">Output</th>
+                    <th className="p-2.5 text-right">Checked</th>
+                    <th className="p-2.5 text-right">Defective</th>
+                    <th className="p-2.5 text-center">Result</th>
+                    <th className="p-2.5 text-right">Defects</th>
+                    <th className="p-2.5 text-right">Sew S / R</th>
+                    <th className="p-2.5 text-right">Spot S / R</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y" style={{ borderColor: WB_THEME.LINE }}>
+                <tbody>
                   {productions
                     .filter(p => p.lineId === deepDiveLine.lineId)
-                    .slice(0, 12)
+                    .slice(0, 40)
                     .map(p => {
-                      const matchQa = qualities.find(
-                        q => q.lineId === p.lineId && q.date === p.date && q.hourSlot === p.hourSlot
-                      );
+                      const matchQa = qualities.find(q => q.lineId === p.lineId && q.date === p.date && q.hourSlot === p.hourSlot);
                       return (
-                        <tr key={p.id}>
-                          <td className="p-2 font-black">{hourLabelOfSlot(p.lineId, p.hourSlot)}</td>
-                          <td className="p-2">1-Hr Production &amp; QC</td>
-                          <td className="p-2 text-right font-bold" style={{ color: WB_THEME.GREEN }}>
-                            {p.outputQty}
-                          </td>
-                          <td className="p-2 text-right">{matchQa?.checkedGarments ?? '—'}</td>
-                          <td className="p-2 text-right">{matchQa?.defectiveGarments ?? '—'}</td>
-                          <td className="p-2 text-right">{matchQa?.totalDefects ?? '—'}</td>
-                          <td className="p-2 text-right">
-                            {matchQa ? `${matchQa.defectSent || 0} / ${matchQa.defectReceived || 0}` : '—'}
-                          </td>
-                          <td className="p-2 text-right">
-                            {matchQa ? `${matchQa.spotSent || 0} / ${matchQa.spotReceived || 0}` : '—'}
-                          </td>
+                        <tr key={p.id} className="border-t" style={{ borderColor: WB_THEME.LINE }}>
+                          <td className="p-2.5 font-black whitespace-nowrap">{hourLabelOfSlot(p.lineId, p.hourSlot)}</td>
+                          <td className="p-2.5 whitespace-nowrap">Production &amp; QC</td>
+                          <td className="p-2.5 text-right font-black" style={{ color: WB_THEME.GREEN }}>{p.outputQty}</td>
+                          <td className="p-2.5 text-right">{matchQa?.checkedGarments ?? '—'}</td>
+                          <td className="p-2.5 text-right">{matchQa?.defectiveGarments ?? '—'}</td>
+                          <td className="p-2.5 text-center">—</td>
+                          <td className="p-2.5 text-right">{matchQa?.totalDefects ?? '—'}</td>
+                          <td className="p-2.5 text-right">{matchQa ? `${matchQa.defectSent || 0} / ${matchQa.defectReceived || 0}` : '—'}</td>
+                          <td className="p-2.5 text-right">{matchQa ? `${matchQa.spotSent || 0} / ${matchQa.spotReceived || 0}` : '—'}</td>
                         </tr>
                       );
                     })}
                   {qualities
                     .filter(q => q.lineId === deepDiveLine.lineId && isBiHourlyAuditSlot(q.hourSlot))
-                    .map(q => (
-                      <tr key={q.id}>
-                        <td className="p-2 font-black" style={{ color: WB_THEME.BLUE }}>
-                          {hourLabelOfSlot(q.lineId, q.hourSlot)}
-                        </td>
-                        <td className="p-2 font-bold" style={{ color: WB_THEME.BLUE }}>
-                          2-Hr Bi-Hourly Audit (OQL)
-                        </td>
-                        <td className="p-2 text-right">—</td>
-                        <td className="p-2 text-right font-bold">{q.checkedGarments}</td>
-                        <td className="p-2 text-right font-bold">{q.defectiveGarments}</td>
-                        <td className="p-2 text-right font-bold">{q.totalDefects}</td>
-                        <td className="p-2 text-right">—</td>
-                        <td className="p-2 text-right">—</td>
-                      </tr>
-                    ))}
+                    .map(q => {
+                      const r = auditResultOf(q.checkedGarments, q.defectiveGarments);
+                      return (
+                        <tr key={q.id} className="border-t" style={{ borderColor: WB_THEME.LINE }}>
+                          <td className="p-2.5 font-black whitespace-nowrap" style={{ color: WB_THEME.BLUE }}>{hourLabelOfSlot(q.lineId, q.hourSlot)}</td>
+                          <td className="p-2.5 font-bold whitespace-nowrap" style={{ color: WB_THEME.BLUE }}>Bi-Hourly Audit (OQL)</td>
+                          <td className="p-2.5 text-right">—</td>
+                          <td className="p-2.5 text-right font-bold">{q.checkedGarments}</td>
+                          <td className="p-2.5 text-right font-bold">{q.defectiveGarments}</td>
+                          <td className="p-2.5 text-center">
+                            <span className="rounded px-2 py-0.5 text-[11px] font-black" style={{ backgroundColor: r === 'PASS' ? WB_THEME.GREEN : WB_THEME.RED, color: r === 'PASS' ? 'var(--wb-on-green)' : 'var(--wb-on-red)' }}>{r ?? '—'}</span>
+                          </td>
+                          <td className="p-2.5 text-right font-bold">{q.totalDefects}</td>
+                          <td className="p-2.5 text-right">—</td>
+                          <td className="p-2.5 text-right">—</td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
+            </div>
+
+            <div className="text-xs font-black uppercase tracking-wider" style={{ color: WB_THEME.MUTED }}>
+              NPT today on this line
+            </div>
+            <div className="space-y-1.5">
+              {allIncidents.filter(i => i.lineId === deepDiveLine.lineId).length === 0 && (
+                <div className="text-xs font-bold" style={{ color: WB_THEME.GREEN }}>No NPT on this line.</div>
+              )}
+              {allIncidents
+                .filter(i => i.lineId === deepDiveLine.lineId)
+                .sort((a, b) => b.startTimeMillis - a.startTimeMillis)
+                .slice(0, 12)
+                .map(inc => (
+                  <div key={inc.id} className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs" style={{ borderColor: WB_THEME.LINE, backgroundColor: WB_THEME.BG }}>
+                    <span className="font-black">{inc.category.replace(/_/g, ' ').toLowerCase()}</span>
+                    <span style={{ color: inc.status === 'RESOLVED' ? WB_THEME.GREEN : WB_THEME.RED }} className="font-black">{inc.status === 'RESOLVED' ? 'Resolved' : 'Open'}</span>
+                    <span style={{ color: WB_THEME.MUTED }}>{new Date(inc.startTimeMillis + 6 * 3600 * 1000).toISOString().slice(11, 16)} BD</span>
+                    <span className="flex-1 min-w-0 truncate" style={{ color: WB_THEME.MUTED }}>{inc.description}</span>
+                  </div>
+                ))}
             </div>
           </div>
         </div>
@@ -1575,6 +1642,31 @@ const HourlyOutputWallboardChart: React.FC<{ buckets: HourlyWallboardBucket[] }>
           </div>
         );
       })}
+    </div>
+  );
+};
+
+/** Pass and fail counts of the bi-hourly audits, one pair of columns per line. */
+const AuditPassFailChart: React.FC<{ rows: Array<{ lineId: string; pass: number; fail: number }> }> = ({ rows }) => {
+  const maxVal = Math.max(3, ...rows.map(r => Math.max(r.pass, r.fail)));
+  if (rows.length === 0) {
+    return <div style={{ color: WB_THEME.MUTED }} className="flex items-center justify-center h-full text-xs font-bold">No audits recorded in this period</div>;
+  }
+  return (
+    <div className="nfl-scroll flex items-end justify-between gap-1.5 h-full pt-3 pb-2 overflow-x-auto">
+      {rows.map(r => (
+        <div key={r.lineId} className="flex flex-col items-center flex-1 min-w-[46px] h-full justify-end">
+          <div className="flex gap-0.5 text-[9px] font-black mb-0.5">
+            <span style={{ color: WB_THEME.GREEN }}>{r.pass}</span>
+            <span style={{ color: WB_THEME.RED }}>{r.fail}</span>
+          </div>
+          <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
+            <div style={{ height: `${Math.round((r.pass / maxVal) * 100)}%`, backgroundColor: WB_THEME.GREEN }} className="w-2.5 rounded-t-sm" title={`Pass: ${r.pass}`} />
+            <div style={{ height: `${Math.round((r.fail / maxVal) * 100)}%`, backgroundColor: WB_THEME.RED }} className="w-2.5 rounded-t-sm" title={`Fail: ${r.fail}`} />
+          </div>
+          <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(r.lineId)}</div>
+        </div>
+      ))}
     </div>
   );
 };
