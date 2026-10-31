@@ -461,7 +461,7 @@ fun LineDeepDiveScreen(
                   val failed = total - passed
                   Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                      Text(NflRepository.formatHourSlot12h(slot), fontSize = 9.sp, color = Color(0xFF334155), fontWeight = FontWeight.SemiBold)
+                      Text(repository.formatHourSlot12h(slot), fontSize = 9.sp, color = Color(0xFF334155), fontWeight = FontWeight.SemiBold)
                       Text("Total $total • Pass $passed • Fail $failed", fontSize = 9.sp, color = Color(0xFF334155), fontWeight = FontWeight.Bold)
                     }
                     Row(Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFFFEE2E2))) {
