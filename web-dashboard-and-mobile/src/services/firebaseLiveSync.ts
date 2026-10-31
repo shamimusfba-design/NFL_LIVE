@@ -1224,6 +1224,19 @@ export async function updateCloudUserAccess(
   }
 }
 
+/** Admin: correct a person's designation, department, role and floor (e.g. registered under the wrong one). */
+export async function updateCloudUserProfile(userId: string, fields: Record<string, string>, by: string): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    await setDoc(doc(db, 'users', userId), { ...fields, profileUpdatedBy: by, updatedAtMillis: Date.now() }, { merge: true });
+    return true;
+  } catch (e) {
+    console.warn('updateCloudUserProfile error:', e);
+    return false;
+  }
+}
+
 /** Admin: block (no access at all, reversible) or unblock a person. */
 export async function setCloudUserBlocked(userId: string, blocked: boolean, by: string): Promise<boolean> {
   const db = getDb();

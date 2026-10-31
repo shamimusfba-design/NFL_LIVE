@@ -29,6 +29,7 @@ import {
   updateCloudUserAccess,
   setCloudUserBlocked,
   deleteCloudUser,
+  updateCloudUserProfile,
   signOutWebCloudSession,
   restoreWebSession,
   pushProductionToCloud,
@@ -54,6 +55,7 @@ import { AdminView } from './components/AdminView';
 import { LoginView } from './components/LoginView';
 import { NflLogo } from './components/NflLogo';
 import { LoadingScreen } from './components/LoadingScreen';
+import { designationFields } from './data/designations';
 import { ENTRY_MODULES, canUseEntryModule, EntryModuleId } from './data/entryModules';
 import { accountFromRecord, saveSessionCache, readSessionCache, clearSessionCache } from './services/sessionUser';
 
@@ -763,6 +765,12 @@ export default function App() {
     if (ok) setUsers(prev => prev.map(x => (x.id === u.id ? { ...x, accountStatus: blocked ? 'SUSPENDED' : 'APPROVED', isActive: !blocked } : x)));
     return ok;
   };
+  const handleSaveProfile = async (u: UserAccount, designation: string, floorKey: string) => {
+    const f = designationFields(designation, floorKey);
+    const ok = await updateCloudUserProfile(u.id, f, currentUser?.name || '');
+    if (ok) setUsers(prev => prev.map(x => (x.id === u.id ? { ...x, designation: f.designation, department: f.department, role: f.role, floor: accountFromRecord(f, u.id).floor } : x)));
+    return ok;
+  };
   const handleDeleteUser = async (u: UserAccount) => {
     const ok = await deleteCloudUser(u.id, u.firebaseUid);
     if (ok) setUsers(prev => prev.filter(x => x.id !== u.id));
@@ -1249,6 +1257,7 @@ export default function App() {
           onSaveAccess={handleSaveAccess}
           onBlockUser={handleBlockUser}
           onDeleteUser={handleDeleteUser}
+          onSaveProfile={handleSaveProfile}
           lines={lines}
           users={users}
           demoStats={demoStats}

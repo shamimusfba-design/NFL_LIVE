@@ -28,6 +28,7 @@ interface AdminViewProps {
   onSaveAccess?: (u: UserAccount, permissions: string[] | null, allowedLines: string[] | null) => Promise<boolean>;
   onBlockUser?: (u: UserAccount, blocked: boolean) => Promise<boolean>;
   onDeleteUser?: (u: UserAccount) => Promise<boolean>;
+  onSaveProfile?: (u: UserAccount, designation: string, floorKey: string) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -47,6 +48,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onSaveAccess,
   onBlockUser,
   onDeleteUser,
+  onSaveProfile,
   onClose
 }) => {
   const pendingRegistrations = users.filter(u => u.accountStatus === 'PENDING_APPROVAL');
@@ -364,7 +366,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
           {adminTab === 'USERS' && (
             <div className="space-y-4">
               {onSaveAccess && onBlockUser && onDeleteUser && (
-                <UserAccessPanel users={users} lines={lines} onSaveAccess={onSaveAccess} onBlock={onBlockUser} onDelete={onDeleteUser} />
+                <UserAccessPanel users={users} lines={lines} onSaveAccess={onSaveAccess} onBlock={onBlockUser} onDelete={onDeleteUser} onSaveProfile={onSaveProfile || (async () => false)} />
               )}
               {pendingRegistrations.length > 0 && (
                 <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-2.5 shadow-sm">

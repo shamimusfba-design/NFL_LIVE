@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { UserAccount, LineMasterItem } from '../types';
 import { ENTRY_MODULES } from '../data/entryModules';
 import { lineDisplayName, isFinishingUnit } from '../data/masterData';
+import { DESIGNATIONS, FLOOR_CHOICES } from '../data/designations';
 
 interface Props {
   users: UserAccount[];
@@ -9,10 +10,13 @@ interface Props {
   onSaveAccess: (u: UserAccount, permissions: string[] | null, allowedLines: string[] | null) => Promise<boolean>;
   onBlock: (u: UserAccount, blocked: boolean) => Promise<boolean>;
   onDelete: (u: UserAccount) => Promise<boolean>;
+  onSaveProfile: (u: UserAccount, designation: string, floorKey: string) => Promise<boolean>;
 }
 
 /** Admin: for every registered person, which entry modules and lines they may use; block or delete. */
-export const UserAccessPanel: React.FC<Props> = ({ users, lines, onSaveAccess, onBlock, onDelete }) => {
+export const UserAccessPanel: React.FC<Props> = ({ users, lines, onSaveAccess, onBlock, onDelete, onSaveProfile }) => {
+  const [desig, setDesig] = useState('');
+  const [fkey, setFkey] = useState('SEW_2');
   const [openId, setOpenId] = useState<string | null>(null);
   const [mods, setMods] = useState<string[] | null>(null);
   const [lineSel, setLineSel] = useState<string[] | null>(null);
@@ -32,6 +36,9 @@ export const UserAccessPanel: React.FC<Props> = ({ users, lines, onSaveAccess, o
     setOpenId(u.id);
     setMods(Array.isArray(u.permissions) ? [...u.permissions] : null);
     setLineSel(Array.isArray(u.allowedLines) && u.allowedLines.length > 0 ? [...u.allowedLines] : null);
+    setDesig(DESIGNATIONS.some(d => d.name === u.designation) ? (u.designation as string) : DESIGNATIONS[0].name);
+    const f = FLOOR_CHOICES.find(c => c.label === u.floor);
+    setFkey(f ? f.key : 'SEW_2');
     setMsg(null);
   };
   const floorLines = (u: UserAccount) =>
@@ -79,6 +86,25 @@ export const UserAccessPanel: React.FC<Props> = ({ users, lines, onSaveAccess, o
               </div>
               {openId === u.id && (
                 <div className="mt-2 space-y-3 rounded-lg bg-slate-50 p-3">
+                  <div className="rounded-lg border border-slate-200 bg-white p-2.5">
+                    <div className="mb-1.5 text-xs font-black text-slate-800">Designation and floor (fix a wrong registration)</div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      <select value={desig} onChange={e => setDesig(e.target.value)} className="rounded-lg border border-slate-300 p-2 text-xs font-bold">
+                        {DESIGNATIONS.map(d => <option key={d.name} value={d.name}>{d.name} ({d.department})</option>)}
+                      </select>
+                      {DESIGNATIONS.find(d => d.name === desig)?.scope === null ? (
+                        <select value={fkey} onChange={e => setFkey(e.target.value)} className="rounded-lg border border-slate-300 p-2 text-xs font-bold">
+                          {FLOOR_CHOICES.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                        </select>
+                      ) : (
+                        <div className="rounded-lg bg-slate-100 p-2 text-xs font-bold text-slate-600">
+                          {DESIGNATIONS.find(d => d.name === desig)?.scope === 'ALL' ? 'All floors' : 'Finishing'}
+                        </div>
+                      )}
+                      <button type="button" onClick={async () => { if (await onSaveProfile(u, desig, fkey)) setMsg(`${u.name} is now ${desig}. It applies the next time they open the app.`); }}
+                        className="rounded-lg bg-[#1976D2] px-3 py-2 text-xs font-black text-white">Save designation</button>
+                    </div>
+                  </div>
                   <div>
                     <label className="flex items-center gap-2 text-xs font-bold text-slate-800">
                       <input type="checkbox" checked={mods === null} onChange={e => setMods(e.target.checked ? null : [])} />
