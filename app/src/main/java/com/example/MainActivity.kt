@@ -47,6 +47,7 @@ import kotlinx.coroutines.launch
 enum class AppScreen {
   LOGIN,
   HOME,
+  QUALITY_DASHBOARD,
   PRODUCTION_ENTRY,
   QUALITY_ENTRY,
   NPT_SUPERVISOR,
@@ -414,6 +415,24 @@ class MainActivity : ComponentActivity() {
                       ),
                       modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
                     )
+
+                    if (canViewDash) {
+                      NavigationDrawerItem(
+                        label = { Text("🛡️ Quality Dashboard", color = if (currentScreen == AppScreen.QUALITY_DASHBOARD) Color(0xFF38BDF8) else Color(0xFFF1F5F9), fontWeight = FontWeight.SemiBold) },
+                        selected = currentScreen == AppScreen.QUALITY_DASHBOARD,
+                        onClick = {
+                          currentScreen = AppScreen.QUALITY_DASHBOARD
+                          scope.launch { drawerState.close() }
+                        },
+                        colors = NavigationDrawerItemDefaults.colors(
+                          unselectedContainerColor = Color.Transparent,
+                          selectedContainerColor = Color(0xFF1E293B),
+                          selectedTextColor = Color(0xFF38BDF8),
+                          unselectedTextColor = Color.White
+                        ),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                      )
+                    }
 
                     NavigationDrawerItem(
                       label = {
@@ -852,6 +871,16 @@ class MainActivity : ComponentActivity() {
                     },
                     onNavigateToNotificationCenter = { currentScreen = AppScreen.NOTIFICATION_CENTER },
                     onNavigateToLogin = { currentScreen = AppScreen.LOGIN }
+                  )
+                  AppScreen.QUALITY_DASHBOARD -> QualityDashboardScreen(
+                    repository = repository,
+                    onNavigateBack = { currentScreen = AppScreen.HOME },
+                    onNavigateToLine = { lineId ->
+                      if (canViewDeepDive) {
+                        selectedDeepDiveLineId = lineId
+                        currentScreen = AppScreen.LINE_DEEP_DIVE
+                      }
+                    }
                   )
                   AppScreen.MONTHLY_BREAKDOWN -> MonthlyBreakdownScreen(
                     repository = repository,
