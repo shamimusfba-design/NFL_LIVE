@@ -1,7 +1,7 @@
 {
-  "name": "NFL LIVE Desktop — Production, Quality & NPT System",
+  "name": "NFL LIVE — Production & Quality",
   "short_name": "NFL LIVE",
-  "description": "Natural Finishes Ltd. Real-Time Factory Floor Production, Quality (DHU), NPT Incident & Wallboard Desktop Application",
+  "description": "Northern Fashions Limited. Real-time factory production, quality (DHU/OQL) and NPT monitoring.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#061938",
@@ -9,10 +9,28 @@
   "orientation": "any",
   "icons": [
     {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
       "src": "/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }
