@@ -72,7 +72,7 @@ fun QualityDashboardScreen(
   val totalChecked = audits.sumOf { it.checkedGarments }
   val passRate = if (audits.isNotEmpty()) totalPassed * 100.0 / audits.size else null
   val hourlyRows = remember(selectedLineAudits) {
-    selectedLineAudits.groupBy { repository.normalizeHourSlot24(it.hourSlot) }
+    selectedLineAudits.groupBy { repository.normalizeHourSlot24h(it.hourSlot) }
       .toSortedMap()
       .map { (slot, rows) ->
         val pass = rows.count { passed(it, selectedLineThreshold) }
