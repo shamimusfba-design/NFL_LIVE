@@ -122,6 +122,24 @@ fun LineDeepDiveScreen(
     }
   }
 
+  val auditParetoDefects = remember(lineBiHourlyAudits) {
+    val counts = lineBiHourlyAudits.flatMap { it.defects }
+      .filter { it.count > 0 }
+      .groupBy { it.defectType }
+      .mapValues { (_, defects) -> defects.sumOf { it.count } }
+    val total = counts.values.sum().coerceAtLeast(1)
+    var running = 0
+    counts.entries.sortedByDescending { it.value }.take(5).map { entry ->
+      running += entry.value
+      ParetoDefectPoint(
+        defectName = entry.key,
+        count = entry.value,
+        percentage = Math.round(entry.value.toDouble() / total * 1000.0) / 10.0,
+        cumulativePercentage = Math.round(running.toDouble() / total * 1000.0) / 10.0
+      )
+    }
+  }
+
   val linePerformancePoint = remember(selectedLineId, selectedPeriod, productionEntries, qualityEntries, targets, incidents, refreshTrigger) {
     val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
     val pt = repository.getLinePerformancePoint(selectedLineId, periodScope = selectedPeriod)
@@ -447,6 +465,9 @@ fun LineDeepDiveScreen(
             lineId = selectedLineId,
             records = lineBiHourlyAudits
           )
+
+          Text("Top 5 Bi-Hourly Audit Defects", fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
+          ParetoDefectPieChart(auditParetoDefects)
 
           // Sliding Selector: Hourly DHU vs Hourly OQL Column Charts
           Text("Hourly Quality Trend Analysis (Column Charts):", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569))
