@@ -234,7 +234,8 @@ object DesignationPolicy {
         canMonthlyTargetWrite = false,
         canTargetRevisionWrite = false
       )
-      EmployeeDesignation.IE -> base.copy(
+      // IEM (IE manager) has the same permissions as IE; its floor scope (all floors) comes from the designation.
+      EmployeeDesignation.IE, EmployeeDesignation.IEM -> base.copy(
         designation = designation.displayName,
         department = designation.department,
         role = UserRole.IE,
