@@ -20,6 +20,8 @@ import {
   getBangladeshTodayIso,
   formatHourSlot12h,
   hourOptionsForLine,
+  lineDisplayName,
+  isDepartmentFloor,
   biHourlyOptionsForLine,
   ordinalHr,
   canWriteWeeklyQualityOrBiHourlyAudit,
@@ -98,6 +100,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const [biPairNo, setBiPairNo] = useState(1);
   const [checkedGarments, setCheckedGarments] = useState('');
   const [defectiveGarments, setDefectiveGarments] = useState('');
+  const [qcPass, setQcPass] = useState('');
   const [defectCounts, setDefectCounts] = useState<Record<string, number>>({});
   const [sewSent, setSewSent] = useState('');
   const [sewRecv, setSewRecv] = useState('');
@@ -144,6 +147,9 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const withTarget = floorLines.filter(l => targets.some(t => t.lineId === l.id && t.date === formDate && !t.isDemo && (t.hourlyTargetPcs > 0 || t.dailyTargetPcs > 0)));
   // Lines without a target that day are not running. If no target was set at all yet, every line is shown.
   const availableLines = withTarget.length > 0 ? withTarget : floorLines;
+  // Departments: Cutting has no quality check; Print and Embroidery record checked and QC pass only.
+  const deptFloor = isDepartmentFloor(formFloor);
+  const noQcFloor = formFloor === 'Cutting';
 
   // Hours of the selected line, and the largest hour list on this floor (for the batch form).
   const lineHourOpts = hourOptionsForLine(formLine);
@@ -234,8 +240,42 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
       return;
     }
 
+    if (noQcFloor) {
+      setQaError('Cutting has no quality check. Choose Print or Embroidery, or a sewing floor.');
+      return;
+    }
     if (numChecked <= 0) {
       setQaError('Checked garments must be greater than 0.');
+      return;
+    }
+    if (deptFloor) {
+      const pass = Number(qcPass);
+      if (qcPass.trim() === '' || !(pass >= 0) || pass > numChecked) {
+        setQaError('QC Pass must be between 0 and the checked pieces.');
+        return;
+      }
+      const notPassed = numChecked - pass;
+      onSaveQuality({
+        lineId: formLine,
+        floor: formFloor,
+        date: formDate,
+        hourSlot: formHourSlot,
+        styleNumber: styleOf(formLine),
+        checkedGarments: numChecked,
+        defectiveGarments: notPassed,
+        defects: [],
+        totalDefects: notPassed,
+        defectSent: 0,
+        defectReceived: 0,
+        spotSent: 0,
+        spotReceived: 0,
+        isConfirmedZero: notPassed === 0,
+        remarks: qaRemarks,
+        reportedBy: currentUserName,
+        isDemo: false
+      });
+      setQaSuccess(`✓ Saved ${lineDisplayName(formLine)}: ${pass} passed of ${numChecked} checked (${hourLabel}).`);
+      setTimeout(() => setQaSuccess(null), 2500);
       return;
     }
     if (numDefective < 0 || numDefective > numChecked) {
@@ -482,7 +522,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 >
                   {availableLines.map(l => (
                     <option key={l.id} value={l.id}>
-                      Line {l.id}
+                      {deptFloor ? lineDisplayName(l.id) : `Line ${l.id}`}
                     </option>
                   ))}
                 </select>
@@ -551,7 +591,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Output Quantity (Pcs) for Line {formLine}
+                      Output Quantity (Pcs) for {deptFloor ? lineDisplayName(formLine) : `Line ${formLine}`}
                     </label>
                     <input
                       type="number"
@@ -597,7 +637,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                         key={l.id}
                         className="p-2 rounded-lg border border-slate-200 bg-slate-50 flex flex-col gap-1"
                       >
-                        <span className="text-xs font-black text-[#002D62]">Line {l.id}</span>
+                        <span className="text-xs font-black text-[#002D62]">{deptFloor ? lineDisplayName(l.id) : `Line ${l.id}`}</span>
                         <input
                           type="number"
                           min={0}
@@ -720,19 +760,30 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Defective Pcs
+                    {deptFloor ? 'QC Pass Pcs' : 'Defective Pcs'}
                   </label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={defectiveGarments}
-                    onChange={e => setDefectiveGarments(e.target.value)}
-                    className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
-                  />
+                  {deptFloor ? (
+                    <input
+                      type="number"
+                      min={0}
+                      value={qcPass}
+                      onChange={e => setQcPass(e.target.value)}
+                      className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
+                    />
+                  ) : (
+                    <input
+                      type="number"
+                      min={0}
+                      value={defectiveGarments}
+                      onChange={e => setDefectiveGarments(e.target.value)}
+                      className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
+                    />
+                  )}
                 </div>
               </div>
 
-              {/* Live Metric Banner */}
+              {/* Live Metric Banner (sewing) */}
+              {!deptFloor && (
               <div className="grid grid-cols-2 gap-3 bg-blue-50 p-3 rounded-lg border border-blue-200 text-center">
                 <div>
                   <div className="text-[10px] text-blue-700 font-bold">Computed OQL %</div>
@@ -744,6 +795,24 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 </div>
               </div>
 
+              )}
+
+              {/* Print / Embroidery: what passed */}
+              {deptFloor && !noQcFloor && (
+                <div className="grid grid-cols-2 gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-center">
+                  <div>
+                    <div className="text-[10px] font-bold text-emerald-700">QC Pass rate</div>
+                    <div className="text-xl font-black text-emerald-800">{numChecked > 0 && qcPass !== '' ? `${((Math.min(Number(qcPass) || 0, numChecked) / numChecked) * 100).toFixed(1)}%` : '—'}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-red-700">Not passed</div>
+                    <div className="text-xl font-black text-red-700">{numChecked > 0 && qcPass !== '' ? Math.max(0, numChecked - (Number(qcPass) || 0)) : '—'}</div>
+                  </div>
+                </div>
+              )}
+
+              {!deptFloor && (
+                <>
               {/* Defect Breakdown Counter List */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-2">
@@ -822,6 +891,9 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 </div>
               )}
 
+                </>
+              )}
+
               {qaError && (
                 <div className="p-2.5 bg-red-50 text-red-800 text-xs font-bold rounded-lg border border-red-200">
                   ⚠️ {qaError}
@@ -837,10 +909,12 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
               <div className="flex justify-end pt-2">
                 <button
                   type="submit"
-                  disabled={qaMode === 'BI_HOURLY_AUDIT' && !canWriteAuditOrWeekly}
+                  disabled={(qaMode === 'BI_HOURLY_AUDIT' && !canWriteAuditOrWeekly) || noQcFloor}
                   className="bg-[#002D62] disabled:bg-slate-400 hover:bg-blue-900 text-white font-black text-xs px-6 py-2.5 rounded-xl shadow transition"
                 >
-                  {qaMode === 'BI_HOURLY_AUDIT'
+                  {deptFloor
+                    ? 'Save Checked & QC Pass'
+                    : qaMode === 'BI_HOURLY_AUDIT'
                     ? 'Save 2-Hr Bi-Hourly Audit (OQL)'
                     : 'Save 1-Hr Quality DHU'}
                 </button>

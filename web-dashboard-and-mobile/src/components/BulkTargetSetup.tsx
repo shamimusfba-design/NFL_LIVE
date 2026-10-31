@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { LineMasterItem, LineTargetConfig, FloorManpowerRecord, PhysicalFloor } from '../types';
+import { isDepartmentFloor, lineDisplayName, unitWord } from '../data/masterData';
 
 type FloorName = PhysicalFloor;
 
@@ -8,6 +9,8 @@ interface Row {
   smv: string;
   total: string;
   eff: string;
+  /** Cutting / Print / Embroidery: the hourly target is typed directly, in pieces */
+  hr: string;
 }
 
 interface Props {
@@ -52,6 +55,8 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
   const [fm, setFm] = useState<Record<string, string>>({});
   const [fmMessage, setFmMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const isDesktop = useIsDesktop();
+  const dept = isDepartmentFloor(floor);
+  const unit = unitWord(floor);
 
   const floorLines = useMemo(
     () => lines.filter(l => l.isActive && l.floor === floor && !/^(iron|packing)/i.test(l.id)),
@@ -68,10 +73,11 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
         style: saved.styleNumber || '',
         smv: saved.smv ? String(saved.smv) : '',
         total: total > 0 ? String(total) : '',
-        eff: String(saved.targetEfficiencyPct ?? 100)
+        eff: String(saved.targetEfficiencyPct ?? 100),
+        hr: saved.hourlyTargetPcs ? String(saved.hourlyTargetPcs) : ''
       };
     }
-    return { style: '', smv: '', total: '', eff: '100' };
+    return { style: '', smv: '', total: '', eff: '100', hr: '' };
   };
 
   const setField = (id: string, key: keyof Row, value: string) => {
@@ -80,6 +86,7 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
   };
 
   const problemWith = (id: string, r: Row): string | null => {
+    if (dept) return num(r.hr) > 0 ? null : `${lineDisplayName(id)}: enter the hourly target (pcs).`;
     if (!(num(r.smv) > 0)) return `Line ${id}: enter the SMV.`;
     if (!(num(r.total) > 0)) return `Line ${id}: enter the total manpower.`;
     if (!(num(r.eff) > 0)) return `Line ${id}: enter the target %.`;
@@ -87,8 +94,8 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
   };
 
   const toSetup = (id: string, r: Row): LineTargetConfig => {
-    const total = num(r.total), smv = num(r.smv), eff = num(r.eff);
-    const hourly = autoHourlyTarget(total, smv, eff);
+    const total = dept ? 0 : num(r.total), smv = dept ? 0 : num(r.smv), eff = dept ? 100 : num(r.eff);
+    const hourly = dept ? Math.round(num(r.hr)) : autoHourlyTarget(total, smv, eff);
     return {
       lineId: id,
       floor,
@@ -111,15 +118,15 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
     };
   };
 
-  const touched = (r: Row) => r.smv.trim() !== '' || r.total.trim() !== '';
+  const touched = (r: Row) => (dept ? r.hr.trim() !== '' : r.smv.trim() !== '' || r.total.trim() !== '');
 
   const saveAll = () => {
     const active = floorLines.map(l => ({ id: l.id, r: rowFor(l.id) })).filter(x => touched(x.r));
     const first = active.map(x => problemWith(x.id, x.r)).find(Boolean);
     if (first) { setMessage({ ok: false, text: `${first} Nothing was saved.` }); return; }
-    if (active.length === 0) { setMessage({ ok: false, text: 'Enter SMV and total manpower for at least one line.' }); return; }
+    if (active.length === 0) { setMessage({ ok: false, text: dept ? `Enter the hourly target for at least one ${unit.toLowerCase()}.` : 'Enter SMV and total manpower for at least one line.' }); return; }
     active.forEach(x => onSaveSetup(toSetup(x.id, x.r)));
-    setMessage({ ok: true, text: `Saved ${active.length} lines for ${floor}. Hourly targets were worked out automatically.` });
+    setMessage({ ok: true, text: dept ? `Saved ${active.length} ${unit.toLowerCase()}${active.length === 1 ? '' : 's'} for ${floor}.` : `Saved ${active.length} lines for ${floor}. Hourly targets were worked out automatically.` });
   };
 
   const saveOne = (id: string) => {
@@ -127,13 +134,13 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
     const p = problemWith(id, r);
     if (p) { setMessage({ ok: false, text: p }); return; }
     onSaveSetup(toSetup(id, r));
-    setMessage({ ok: true, text: `Saved line ${id}.` });
+    setMessage({ ok: true, text: `Saved ${lineDisplayName(id)}.` });
   };
 
   const lineStats = floorLines.map(l => {
     const r = rowFor(l.id);
-    const total = num(r.total) || 0;
-    const hourly = autoHourlyTarget(total, num(r.smv), num(r.eff));
+    const total = dept ? 0 : num(r.total) || 0;
+    const hourly = dept ? Math.max(0, Math.round(num(r.hr) || 0)) : autoHourlyTarget(total, num(r.smv), num(r.eff));
     return { id: l.id, r, total, hourly, daily: hourly * 8, ready: hourly > 0 };
   });
   const setCount = lineStats.filter(x => x.ready).length;
@@ -184,9 +191,9 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
   return (
     <div className="space-y-3">
       <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="text-sm font-black text-slate-900">Target Setting: all lines of the floor at once</div>
+        <div className="text-sm font-black text-slate-900">Target Setting: all {dept ? `${unit.toLowerCase()}s` : 'lines'} of {floor} at once</div>
         <div className="mt-1 text-[11px] text-slate-500">
-          Hourly target = total manpower x 60 x target % / SMV. It is worked out for you. Daily = hourly x 8.
+          {dept ? `Type the hourly target of each ${unit.toLowerCase()} in pieces. Daily = hourly x 8.` : 'Hourly target = total manpower x 60 x target % / SMV. It is worked out for you. Daily = hourly x 8.'}
           A line without a target today is treated as not running that day.
         </div>
         <div className="mt-3 grid grid-cols-3 gap-1.5 sm:inline-grid">
@@ -212,8 +219,8 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
       {/* summary strip */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
-          ['Lines set', `${setCount} / ${floorLines.length}`],
-          ['Total manpower', String(sumTotal)],
+          [dept ? `${unit}s set` : 'Lines set', `${setCount} / ${floorLines.length}`],
+          ...(dept ? [] : [['Total manpower', String(sumTotal)]]),
           ['Hourly target (floor)', String(sumHourly)],
           ['Daily target (floor)', String(sumDaily)]
         ].map(([k, v]) => (
@@ -229,11 +236,17 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
           <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="bg-[#0A2558] text-[11px] uppercase tracking-wide text-white">
-                <th className="px-3 py-2.5 text-left">Line</th>
+                <th className="px-3 py-2.5 text-left">{unit}</th>
                 <th className="px-2 py-2.5 text-left">Item / Style</th>
-                <th className="px-2 py-2.5">SMV</th>
-                <th className="px-2 py-2.5">Total manpower</th>
-                <th className="px-2 py-2.5">Target %</th>
+                {dept ? (
+                  <th className="px-2 py-2.5">Hourly target (pcs)</th>
+                ) : (
+                  <>
+                    <th className="px-2 py-2.5">SMV</th>
+                    <th className="px-2 py-2.5">Total manpower</th>
+                    <th className="px-2 py-2.5">Target %</th>
+                  </>
+                )}
                 <th className="px-2 py-2.5">Hourly</th>
                 <th className="px-2 py-2.5">Daily</th>
                 <th className="px-2 py-2.5" />
@@ -244,11 +257,17 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
                 const cell = 'w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-center text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500';
                 return (
                   <tr key={x.id} className={idx % 2 ? 'bg-slate-50' : 'bg-white'}>
-                    <td className="px-3 py-1.5"><span className="rounded bg-[#0A2558] px-2.5 py-1 text-xs font-black text-white">{x.id}</span></td>
+                    <td className="px-3 py-1.5"><span className="rounded bg-[#0A2558] px-2.5 py-1 text-xs font-black text-white">{lineDisplayName(x.id)}</span></td>
                     <td className="px-2 py-1.5"><input type="text" value={x.r.style} onChange={e => setField(x.id, 'style', e.target.value)} className={cell + ' text-left'} /></td>
+                    {dept ? (
+                      <td className="w-40 px-2 py-1.5"><input type="number" inputMode="numeric" min={0} value={x.r.hr} onChange={e => setField(x.id, 'hr', e.target.value)} className={cell} /></td>
+                    ) : (
+                      <>
                     <td className="w-24 px-2 py-1.5"><input type="number" inputMode="decimal" step="any" min={0} value={x.r.smv} onChange={e => setField(x.id, 'smv', e.target.value)} className={cell} /></td>
                     <td className="w-32 px-2 py-1.5"><input type="number" inputMode="numeric" min={0} value={x.r.total} onChange={e => setField(x.id, 'total', e.target.value)} className={cell} /></td>
                     <td className="w-24 px-2 py-1.5"><input type="number" inputMode="decimal" step="any" min={0} value={x.r.eff} onChange={e => setField(x.id, 'eff', e.target.value)} className={cell} /></td>
+                      </>
+                    )}
                     <td className="w-24 px-2 py-1.5 text-center font-black text-emerald-700">{x.ready ? x.hourly : '—'}</td>
                     <td className="w-24 px-2 py-1.5 text-center font-black text-slate-700">{x.ready ? x.daily : '—'}</td>
                     <td className="w-20 px-2 py-1.5"><button type="button" onClick={() => saveOne(x.id)} className="rounded-md bg-slate-100 px-3 py-1.5 text-[11px] font-black text-slate-700 hover:bg-slate-200">Save</button></td>
@@ -258,9 +277,8 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-slate-300 bg-slate-100 font-black text-slate-900">
-                <td className="px-3 py-2" colSpan={3}>Floor total ({setCount} lines)</td>
-                <td className="px-2 py-2 text-center">{sumTotal}</td>
-                <td className="px-2 py-2" />
+                <td className="px-3 py-2" colSpan={dept ? 2 : 3}>Floor total ({setCount} {dept ? `${unit.toLowerCase()}s` : 'lines'})</td>
+                {dept ? <td /> : (<><td className="px-2 py-2 text-center">{sumTotal}</td><td className="px-2 py-2" /></>)}
                 <td className="px-2 py-2 text-center text-emerald-700">{sumHourly}</td>
                 <td className="px-2 py-2 text-center">{sumDaily}</td>
                 <td />
@@ -273,37 +291,45 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
           {lineStats.map(x => (
             <div key={x.id} className="rounded-xl border border-slate-200 bg-white p-3">
               <div className="mb-2 flex items-center gap-2">
-                <span className="rounded bg-[#0A2558] px-2.5 py-1 text-xs font-black text-white">{x.id}</span>
+                <span className="rounded bg-[#0A2558] px-2.5 py-1 text-xs font-black text-white">{lineDisplayName(x.id)}</span>
                 <span className={`ml-auto rounded-lg px-2.5 py-1 text-xs font-black ${x.ready ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-400'}`}>
                   {x.ready ? `${x.hourly} /hr · ${x.daily}/day` : '— /hr'}
                 </span>
                 <button type="button" onClick={() => saveOne(x.id)} className="rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-700">Save</button>
               </div>
               <input type="text" placeholder="Item / Style" value={x.r.style} onChange={e => setField(x.id, 'style', e.target.value)} className={box + ' mb-2'} />
+              {dept ? (
+                <label className="block">
+                  <span className="mb-0.5 block text-[10px] font-bold text-slate-500">Hourly target (pcs)</span>
+                  <input type="number" inputMode="numeric" min={0} value={x.r.hr} onChange={e => setField(x.id, 'hr', e.target.value)} className={box} />
+                </label>
+              ) : (
               <div className="grid grid-cols-3 gap-2">
-                <label>
-                  <span className="mb-0.5 block text-[10px] font-bold text-slate-500">SMV</span>
-                  <input type="number" inputMode="decimal" step="any" min={0} value={x.r.smv} onChange={e => setField(x.id, 'smv', e.target.value)} className={box} />
-                </label>
-                <label>
-                  <span className="mb-0.5 block text-[10px] font-bold text-slate-500">Manpower</span>
-                  <input type="number" inputMode="numeric" min={0} value={x.r.total} onChange={e => setField(x.id, 'total', e.target.value)} className={box} />
-                </label>
-                <label>
-                  <span className="mb-0.5 block text-[10px] font-bold text-slate-500">Target %</span>
-                  <input type="number" inputMode="decimal" step="any" min={0} value={x.r.eff} onChange={e => setField(x.id, 'eff', e.target.value)} className={box} />
-                </label>
-              </div>
+                  <label>
+                    <span className="mb-0.5 block text-[10px] font-bold text-slate-500">SMV</span>
+                    <input type="number" inputMode="decimal" step="any" min={0} value={x.r.smv} onChange={e => setField(x.id, 'smv', e.target.value)} className={box} />
+                  </label>
+                  <label>
+                    <span className="mb-0.5 block text-[10px] font-bold text-slate-500">Manpower</span>
+                    <input type="number" inputMode="numeric" min={0} value={x.r.total} onChange={e => setField(x.id, 'total', e.target.value)} className={box} />
+                  </label>
+                  <label>
+                    <span className="mb-0.5 block text-[10px] font-bold text-slate-500">Target %</span>
+                    <input type="number" inputMode="decimal" step="any" min={0} value={x.r.eff} onChange={e => setField(x.id, 'eff', e.target.value)} className={box} />
+                  </label>
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
 
       <button type="button" onClick={saveAll} className="w-full rounded-xl bg-[#1976D2] py-3 text-sm font-black text-white hover:bg-blue-700">
-        Save all {floorLines.length} lines for {floor}
+        Save all {floorLines.length} {dept ? `${unit.toLowerCase()}s` : 'lines'} for {floor}
       </button>
 
-      {/* ---------- floor-wise total data ---------- */}
+      {/* ---------- floor-wise total data (sewing floors only) ---------- */}
+      {!dept && (
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="text-sm font-black text-slate-900">{floor}: floor-wise total data (today)</div>
         <div className="mt-1 text-[11px] text-slate-500">
@@ -333,6 +359,7 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
           Save {floor} totals
         </button>
       </div>
+      )}
     </div>
   );
 };

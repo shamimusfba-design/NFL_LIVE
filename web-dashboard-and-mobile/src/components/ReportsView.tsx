@@ -10,7 +10,7 @@ import {
   UserRole
 } from '../types';
 import { formatHourSlot12h,
-  hourLabelOfSlot, isBiHourlyAuditSlot } from '../data/masterData';
+  hourLabelOfSlot, isBiHourlyAuditSlot, lineDisplayName } from '../data/masterData';
 
 interface ReportsViewProps {
   selectedFloor: FloorId;
@@ -138,7 +138,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         ...productions.map(p => [
           '1-Hr Production',
           p.floor,
-          p.lineId,
+          lineDisplayName(p.lineId),
           p.date,
           hourLabelOfSlot(p.lineId, p.hourSlot),
           p.outputQty,
@@ -149,7 +149,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         ...qualities.map(q => [
           isBiHourlyAuditSlot(q.hourSlot) ? '2-Hr Bi-Hourly Audit (OQL)' : '1-Hr Quality DHU',
           q.floor,
-          q.lineId,
+          lineDisplayName(q.lineId),
           q.date,
           hourLabelOfSlot(q.lineId, q.hourSlot),
           q.checkedGarments,
@@ -408,7 +408,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                     <>
                       {productions.slice(0, 40).map(p => (
                         <tr key={p.id}>
-                          <td className="py-2 px-3 font-black text-[#002D62]">{p.lineId}</td>
+                          <td className="py-2 px-3 font-black text-[#002D62]">{lineDisplayName(p.lineId)}</td>
                           <td className="py-2 px-3">{p.date}</td>
                           <td className="py-2 px-3 font-black">{hourLabelOfSlot(p.lineId, p.hourSlot)}</td>
                           <td className="py-2 px-3 text-blue-700">1-Hr Production</td>
@@ -430,7 +430,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                       ))}
                       {qualities.slice(0, 40).map(q => (
                         <tr key={q.id}>
-                          <td className="py-2 px-3 font-black text-[#002D62]">{q.lineId}</td>
+                          <td className="py-2 px-3 font-black text-[#002D62]">{lineDisplayName(q.lineId)}</td>
                           <td className="py-2 px-3">{q.date}</td>
                           <td className="py-2 px-3 font-black">{hourLabelOfSlot(q.lineId, q.hourSlot)}</td>
                           <td className="py-2 px-3 text-emerald-700">

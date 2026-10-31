@@ -444,8 +444,12 @@ export default function App() {
     if (alertArmedRef.current) playNewIncidentAlert();
   }, [incidents, currentUser, highOqlToday]);
 
+  // Cutting, Print and Embroidery count different pieces from sewing, so they are never added into sewing totals.
+  // "Factory" therefore shows all sewing in its charts plus a separate department strip.
+  const sewingView: FloorId = selectedFloor === 'Factory' ? 'All Sewing' : selectedFloor;
+
   const targetedConfigs = useMemo(() => {
-    const all = CalculationEngine.getTargetedLines(lines, targets, selectedFloor, todayIso, !isDemoMode);
+    const all = CalculationEngine.getTargetedLines(lines, targets, sewingView, todayIso, !isDemoMode);
     if (isDemoMode) return all;
     // A line is running on a day only when its target was set for that day.
     // Lines without a target in the selected period are not shown anywhere (charts, KPIs, tables).
@@ -455,7 +459,7 @@ export default function App() {
         .map(t => t.lineId)
     );
     return all.filter(c => active.has(c.lineId));
-  }, [lines, targets, selectedFloor, todayIso, isDemoMode, selectedPeriod]);
+  }, [lines, targets, sewingView, todayIso, isDemoMode, selectedPeriod]);
 
   const lineSummaries = useMemo(() => {
     return CalculationEngine.computeLineSummaries(
@@ -473,16 +477,16 @@ export default function App() {
       lineSummaries,
       incidents,
       monthlyTargets,
-      selectedFloor
+      sewingView
     );
-  }, [lineSummaries, incidents, monthlyTargets, selectedFloor]);
+  }, [lineSummaries, incidents, monthlyTargets, sewingView]);
 
   const floorBenchmarks = useMemo(() => {
     const scopes: Array<{ id: FloorId; label: string }> = [
       { id: 'Sew 1', label: 'Sew 1' },
       { id: 'Sew 2', label: 'Sew 2' },
       { id: 'Sew 3', label: 'Sew 3' },
-      { id: 'Factory', label: 'Factory' }
+      { id: 'All Sewing', label: 'All Sewing' }
     ];
     return scopes.map(sc => {
       const cfgs = CalculationEngine.getTargetedLines(lines, targets, sc.id, todayIso, !isDemoMode);
@@ -508,15 +512,37 @@ export default function App() {
       lineSummaries,
       productions,
       qualities,
-      selectedFloor,
+      sewingView,
       todayIso,
       selectedPeriod
     );
-  }, [lineSummaries, productions, qualities, selectedFloor, todayIso, selectedPeriod]);
+  }, [lineSummaries, productions, qualities, sewingView, todayIso, selectedPeriod]);
+
+  const departmentSummaries = useMemo(() => {
+    return (['Cutting', 'Print', 'Embroidery'] as FloorId[]).map(dep => {
+      const cfgs = CalculationEngine.getTargetedLines(lines, targets, dep, todayIso, !isDemoMode).filter(
+        c => isDemoMode || targets.some(t => !t.isDemo && t.lineId === c.lineId && (t.hourlyTargetPcs > 0 || t.dailyTargetPcs > 0) && CalculationEngine.isDateInPeriod(t.date, todayIso, selectedPeriod))
+      );
+      const sums = CalculationEngine.computeLineSummaries(cfgs, productions, qualities, incidents, todayIso, selectedPeriod);
+      const target = sums.reduce((a, x) => a + (x.target || 0), 0);
+      const output = sums.reduce((a, x) => a + (x.output || 0), 0);
+      const checked = sums.reduce((a, x) => a + (x.checkedGarments || 0), 0);
+      const defective = sums.reduce((a, x) => a + (x.defectiveGarments || 0), 0);
+      return {
+        floor: dep as string,
+        units: sums.length,
+        target,
+        output,
+        achievementPct: target > 0 ? (output / target) * 100 : null,
+        checked,
+        passed: Math.max(0, checked - defective)
+      };
+    });
+  }, [lines, targets, productions, qualities, incidents, todayIso, selectedPeriod, isDemoMode]);
 
   const topDefects = useMemo(() => {
-    return CalculationEngine.computeTopDefects(qualities, selectedFloor, todayIso, selectedPeriod);
-  }, [qualities, selectedFloor, todayIso, selectedPeriod]);
+    return CalculationEngine.computeTopDefects(qualities, sewingView, todayIso, selectedPeriod);
+  }, [qualities, sewingView, todayIso, selectedPeriod]);
 
   const highestDhuLines = useMemo(() => {
     return CalculationEngine.computeHighestDhuLines(lineSummaries);
@@ -1030,6 +1056,7 @@ export default function App() {
               floorBenchmarks={floorBenchmarks}
               lineSummaries={lineSummaries}
               hourlySeries={hourlySeries}
+            departmentSummaries={departmentSummaries}
               weeklyQuality={weeklyQuality}
               productions={productions}
               qualities={qualities}
@@ -1057,6 +1084,7 @@ export default function App() {
             floorBenchmarks={floorBenchmarks}
             lineSummaries={lineSummaries}
             hourlySeries={hourlySeries}
+            departmentSummaries={departmentSummaries}
             weeklyQuality={weeklyQuality}
             productions={productions}
             qualities={qualities}

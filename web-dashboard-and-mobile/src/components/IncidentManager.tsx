@@ -1,5 +1,6 @@
 import { AlertComment } from '../types';
 import { CommentThread } from './CommentThread';
+import { lineDisplayName } from '../data/masterData';
 import React, { useState, useEffect } from 'react';
 import {
   IncidentRecord,
@@ -223,7 +224,7 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                   {highOqlLines.map(h => (
                     <div key={h.lineId} className="rounded-lg border border-red-200 bg-white p-2.5">
                       <div className="flex items-center gap-2">
-                        <span className="rounded bg-[#0A2558] px-2 py-0.5 text-xs font-black text-white">{h.lineId}</span>
+                        <span className="rounded bg-[#0A2558] px-2 py-0.5 text-xs font-black text-white">{lineDisplayName(h.lineId)}</span>
                         <span className="text-xs text-slate-500">{h.floor}</span>
                         <span className="ml-auto text-sm font-black text-red-700">OQL {h.oqlPct.toFixed(1)}%</span>
                         <span className="text-[11px] text-slate-500">{h.checked} pcs checked</span>
@@ -265,7 +266,7 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="font-black text-sm text-slate-900">
-                                Line {inc.lineId} ({inc.floor})
+                                {lineDisplayName(inc.lineId)} ({inc.floor})
                               </span>
                               <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-800">
                                 {inc.category.replace('_', ' ')}
@@ -516,7 +517,7 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                   <div key={inc.id} className="bg-white border rounded-xl p-3 shadow-sm space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="font-bold text-xs text-slate-900">
-                        Line {inc.lineId} — {inc.category}
+                        {lineDisplayName(inc.lineId)} — {inc.category}
                       </span>
                       <span className="font-mono text-xs font-bold text-red-600">
                         Elapsed: {formatElapsed(inc.startTimeMillis)}
@@ -557,7 +558,7 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                 resolvedIncidents.map(inc => (
                   <div key={inc.id} className="bg-white border border-slate-200 rounded-xl p-3 text-xs space-y-1">
                     <div className="flex justify-between font-bold text-slate-800">
-                      <span>Line {inc.lineId} ({inc.category})</span>
+                      <span>{lineDisplayName(inc.lineId)} ({inc.category})</span>
                       <span className="text-green-700">✓ Total Duration: {formatElapsed(inc.startTimeMillis, inc.endTimeMillis)}</span>
                     </div>
                     <div className="text-slate-600">{inc.description}</div>

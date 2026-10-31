@@ -19,7 +19,7 @@ import {
 } from '../types';
 import { HourlyWallboardBucket } from '../services/calculationEngine';
 import { formatHourSlot12h,
-  hourLabelOfSlot, isBiHourlyAuditSlot, floorMatches } from '../data/masterData';
+  hourLabelOfSlot, isBiHourlyAuditSlot, floorMatches, lineDisplayName, isDepartmentFloor, unitWord } from '../data/masterData';
 
 export type WbPageId = 'PRODUCTION' | 'QUALITY' | 'ALL' | 'TABLE';
 
@@ -60,6 +60,8 @@ interface TvDesktopDashboardProps {
   openIncidents: IncidentRecord[];
   allIncidents?: IncidentRecord[];
   onOpenIncidentPanel: () => void;
+  /** Cutting / Print / Embroidery totals, shown as a strip on the Factory view */
+  departmentSummaries?: Array<{ floor: string; units: number; target: number; output: number; achievementPct: number | null; checked: number; passed: number }>;
   /** The side menu can ask for a page. n changes on every request so the same page can be asked twice. */
   pageRequest?: { page: WbPageId; n: number };
 }
@@ -112,7 +114,8 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   onToggleDemo,
   openIncidents,
   allIncidents = [],
-  onOpenIncidentPanel
+  onOpenIncidentPanel,
+  departmentSummaries = []
 }) => {
   const [page, setPage] = useState<WbPageId>('ALL');
   // A page chosen in the side menu is shown at once.
@@ -124,13 +127,22 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   const interval = WB_INTERVALS[intervalIdx];
   const [countdown, setCountdown] = useState(WB_INTERVALS[0]);
   const [deepDiveLine, setDeepDiveLine] = useState<LinePerformanceSummary | null>(null);
+  // Cutting, Print and Embroidery get their own page: no sewing cards (DHU, OQL, operator vs machine, efficiency).
+  const isDept = isDepartmentFloor(selectedFloor);
+  const hasQc = selectedFloor === 'Print' || selectedFloor === 'Embroidery';
+  const unit = unitWord(selectedFloor);
 
   // Auto-slide Production -> Quality -> All (pauses on Table or when interval === 0)
   useEffect(() => {
     const timer = window.setInterval(() => {
-      if (interval > 0 && page !== 'TABLE') {
+      if (interval > 0 && (isDept || page !== 'TABLE')) {
         setCountdown(prev => {
           if (prev > 1) return prev - 1;
+          if (isDept) {
+            if (selectedFloor === 'Print') onSelectFloor('Embroidery');
+            else if (selectedFloor === 'Embroidery') onSelectFloor('Print');
+            return interval;
+          }
           setPage(curr => {
             if (curr === 'PRODUCTION') return 'QUALITY';
             if (curr === 'QUALITY') return 'ALL';
@@ -142,7 +154,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [interval, page]);
+  }, [interval, page, isDept, selectedFloor]);
 
   const activeLines = useMemo(
     () => lineSummaries.filter(l => l.target > 0 || l.output !== null || l.checkedGarments > 0),
@@ -220,10 +232,10 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           </span>
         </div>
 
-        {/* 4-Page Segment: Production | Quality | All | Table */}
+        {/* 4-Page Segment: Production | Quality | All | Table (sewing only) */}
         <div
           style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-          className="grid grid-cols-4 sm:flex w-full sm:w-auto items-center p-0.5 rounded-md border gap-0.5"
+          className={`${isDept ? 'hidden' : 'grid'} grid-cols-4 sm:flex w-full sm:w-auto items-center p-0.5 rounded-md border gap-0.5`}
         >
           {(
             [
@@ -392,8 +404,88 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
         </div>
       </div>
 
+      {/* ==================== DEPARTMENT PAGE: CUTTING / PRINT / EMBROIDERY ==================== */}
+      {isDept && (() => {
+        const target = activeLines.reduce((a, l) => a + (l.target || 0), 0);
+        const output = activeLines.reduce((a, l) => a + (l.output || 0), 0);
+        const ach = target > 0 ? (output / target) * 100 : null;
+        const checked = activeLines.reduce((a, l) => a + (l.checkedGarments || 0), 0);
+        const defective = activeLines.reduce((a, l) => a + (l.defectiveGarments || 0), 0);
+        const passed = Math.max(0, checked - defective);
+        const passPct = checked > 0 ? (passed / checked) * 100 : null;
+        const reporting = activeLines.filter(l => (l.output ?? 0) > 0).length;
+        if (activeLines.length === 0) {
+          return (
+            <div style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE, color: WB_THEME.MUTED }} className="rounded-lg border p-8 text-center text-sm font-bold">
+              No {unit.toLowerCase()} target is set for {selectedFloor} in this period. Set targets in Data entry, Target Setting, {selectedFloor}.
+            </div>
+          );
+        }
+        return (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <WbTile label="Target" value={target.toLocaleString()} unit="pcs" color={WB_THEME.BLUE} sub={`${activeLines.length} ${unit.toLowerCase()}${activeLines.length === 1 ? '' : 's'} with a target`} />
+              <WbTile label="Output" value={output.toLocaleString()} unit="pcs" color={achColor(ach)} sub={`${reporting} of ${activeLines.length} reporting`} />
+              <WbTile label="Achievement" value={ach !== null ? `${ach.toFixed(1)}%` : '—'} color={achColor(ach)} sub={`Gap ${(output - target).toLocaleString()} pcs`} />
+              {hasQc ? (
+                <WbTile label="QC Pass rate" value={passPct !== null ? `${passPct.toFixed(1)}%` : '—'} color={passPct === null ? WB_THEME.MUTED : passPct >= 97 ? WB_THEME.GREEN : passPct >= 93 ? WB_THEME.AMBER : WB_THEME.RED} sub={`${passed.toLocaleString()} passed of ${checked.toLocaleString()} checked`} />
+              ) : (
+                <WbTile label="Open NPT" value={String(openIncidents.length)} color={openIncidents.length > 0 ? WB_THEME.RED : WB_THEME.GREEN} sub="stoppages now" />
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2">
+              <WbPanel title="Hourly Target vs Output" sub="By hour of work (1st hr, 2nd hr…) · Target (back) vs Output (front) · pcs" className="lg:col-span-7">
+                <HourlyOutputWallboardChart buckets={hourlySeries} />
+              </WbPanel>
+              <WbPanel title={`${unit} Target vs Achievement`} sub={`Each ${unit.toLowerCase()} · Grey: target · Coloured: output · % below`} className="lg:col-span-5">
+                <LiveTargetVsAchievementChart lines={activeLines} onSelectLine={setDeepDiveLine} />
+              </WbPanel>
+              {hasQc && (
+                <WbPanel title="Hourly Checked vs QC Pass" sub="By hour of work · Blue: checked · Green: QC pass · pcs" className="lg:col-span-7">
+                  <HourlyQcPassChart buckets={hourlySeries} />
+                </WbPanel>
+              )}
+              <WbPanel
+                title="Open NPT"
+                sub={`${selectedFloor} stoppages now`}
+                className={hasQc ? 'lg:col-span-5' : 'lg:col-span-12'}
+                right={<WbBadge text={`${openIncidents.length} open`} bg={openIncidents.length > 0 ? WB_THEME.RED : WB_THEME.GREEN} fg={openIncidents.length > 0 ? 'var(--wb-on-red)' : 'var(--wb-on-green)'} />}
+              >
+                <OpenStoppagesList incidents={openIncidents} onClick={onOpenIncidentPanel} />
+              </WbPanel>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ==================== FACTORY: department strip above the sewing pages ==================== */}
+      {selectedFloor === 'Factory' && departmentSummaries.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+          {departmentSummaries.map(d => (
+            <button
+              key={d.floor}
+              onClick={() => onSelectFloor(d.floor as FloorId)}
+              style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
+              className="rounded-lg border p-2.5 text-left"
+              title={`Open ${d.floor}`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black">{d.floor}</span>
+                <span style={{ color: achColor(d.achievementPct) }} className="text-sm font-black">
+                  {d.achievementPct !== null ? `${d.achievementPct.toFixed(0)}%` : '—'}
+                </span>
+              </div>
+              <div style={{ color: WB_THEME.MUTED }} className="text-[11px] font-semibold">
+                {d.units > 0 ? `Output ${d.output.toLocaleString()} / Target ${d.target.toLocaleString()} pcs` : 'No target set'}
+                {d.floor !== 'Cutting' && d.checked > 0 ? ` · QC pass ${d.passed.toLocaleString()} of ${d.checked.toLocaleString()}` : ''}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ==================== PAGE 1: PRODUCTION ==================== */}
-      {page === 'PRODUCTION' && (
+      {!isDept && page === 'PRODUCTION' && (
         <div className="flex-1 flex flex-col gap-2">
           {/* 5 KPI Tiles */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
@@ -522,7 +614,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       )}
 
       {/* ==================== PAGE 2: QUALITY ==================== */}
-      {page === 'QUALITY' && (
+      {!isDept && page === 'QUALITY' && (
         <div className="flex-1 flex flex-col gap-2">
           {/* 5 KPI Tiles */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
@@ -665,7 +757,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       )}
 
       {/* ==================== PAGE 3: ALL (EXECUTIVE COMBINED WALLBOARD) ==================== */}
-      {page === 'ALL' && (
+      {!isDept && page === 'ALL' && (
         <div className="flex-1 flex flex-col gap-2">
           {/* Top 7 Summary Panels */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7 gap-2">
@@ -904,7 +996,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       )}
 
       {/* ==================== PAGE 4: TABLE (15-COLUMN LIVE LINE PERFORMANCE TABLE) ==================== */}
-      {page === 'TABLE' && (
+      {!isDept && page === 'TABLE' && (
         <div className="flex-1 bg-slate-100 text-slate-900 rounded-lg overflow-auto p-3">
           <div className="flex items-center justify-between mb-2">
             <div>
@@ -944,7 +1036,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                   onClick={() => setDeepDiveLine(l)}
                   className="hover:bg-blue-50 cursor-pointer transition"
                 >
-                  <td className="py-1.5 px-2 font-black text-[#002D62]">{l.lineId}</td>
+                  <td className="py-1.5 px-2 font-black text-[#002D62]">{lineDisplayName(l.lineId)}</td>
                   <td className="py-1.5 px-2 text-slate-700">{l.styleNumber}</td>
                   <td className="py-1.5 px-2 text-right">{l.smv > 0 ? l.smv.toFixed(1) : '—'}</td>
                   <td className="py-1.5 px-2 text-right">{l.hourlyTarget || '—'}</td>
@@ -1292,7 +1384,7 @@ const LiveTargetVsAchievementChart: React.FC<{
                 title={`Output: ${l.output ?? 0}`}
               />
             </div>
-            <div className="text-[9px] font-black mt-0.5">{l.lineId}</div>
+            <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
             <div style={{ color: col }} className="text-[8px] font-bold">
               {l.achievementPct !== null ? `${l.achievementPct.toFixed(0)}%` : '—'}
             </div>
@@ -1338,7 +1430,7 @@ const EfficiencyByLineChart: React.FC<{
                 className="w-2.5 rounded-t-sm"
               />
             </div>
-            <div className="text-[9px] font-black mt-0.5">{l.lineId}</div>
+            <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
           </div>
         );
       })}
@@ -1373,7 +1465,7 @@ const MetricByLineBarChart: React.FC<{
             <div className="w-full h-24 flex items-end justify-center border-b" style={{ borderColor: WB_THEME.LINE }}>
               <div style={{ height: `${hPct}%`, backgroundColor: col }} className="w-3 rounded-t-sm" />
             </div>
-            <div className="text-[9px] font-black mt-0.5">{l.lineId}</div>
+            <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
           </div>
         );
       })}
@@ -1403,6 +1495,30 @@ const HourlyOutputWallboardChart: React.FC<{ buckets: HourlyWallboardBucket[] }>
             <div style={{ color: col }} className="text-[8px] font-bold">
               {b.output > 0 && b.target > 0 ? `${pct}%` : ''}
             </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const HourlyQcPassChart: React.FC<{ buckets: HourlyWallboardBucket[] }> = ({ buckets }) => {
+  const maxVal = Math.max(10, ...buckets.map(b => b.checked));
+  return (
+    <div className="nfl-scroll flex items-end justify-between gap-1.5 h-full pt-3 pb-2 overflow-x-auto">
+      {buckets.map(b => {
+        const passed = Math.max(0, b.checked - b.defective);
+        const pct = b.checked > 0 ? Math.round((passed / b.checked) * 100) : null;
+        return (
+          <div key={b.slot24} className="flex flex-col items-center flex-1 min-w-[46px] h-full justify-end">
+            <div className="text-[8px] font-black leading-tight" style={{ color: WB_THEME.BLUE }}>{b.checked > 0 ? b.checked : '—'}</div>
+            <div className="text-[8px] font-black mb-0.5 leading-tight" style={{ color: WB_THEME.GREEN }}>{b.checked > 0 ? passed : ''}</div>
+            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
+              <div style={{ height: `${Math.round((b.checked / maxVal) * 100)}%`, backgroundColor: WB_THEME.BLUE }} className="w-2.5 rounded-t-sm" title={`Checked: ${b.checked}`} />
+              <div style={{ height: `${Math.round((passed / maxVal) * 100)}%`, backgroundColor: WB_THEME.GREEN }} className="w-2.5 rounded-t-sm" title={`QC pass: ${passed}`} />
+            </div>
+            <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{b.label12h}</div>
+            <div className="text-[8px] font-bold" style={{ color: WB_THEME.GREEN }}>{pct !== null ? `${pct}%` : ''}</div>
           </div>
         );
       })}
@@ -1479,7 +1595,7 @@ const RectificationPendingChart: React.FC<{
               <div style={{ height: `${spotH}%`, backgroundColor: WB_THEME.BLUE }} className="w-3.5 rounded-t-sm" />
               <div style={{ height: `${sewH}%`, backgroundColor: WB_THEME.ORANGE }} className="w-3.5" />
             </div>
-            <div className="text-[9px] font-black mt-0.5">{l.lineId}</div>
+            <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
           </div>
         );
       })}
@@ -1586,7 +1702,7 @@ const OpenStoppagesList: React.FC<{
           >
             <div className="pr-2 min-w-0">
               <div className="font-black">
-                Line {inc.lineId} · {inc.category.replace(/_/g, ' ')}
+                {lineDisplayName(inc.lineId)} · {inc.category.replace(/_/g, ' ')}
               </div>
               <div style={{ color: WB_THEME.MUTED }} className="text-[10px] break-words">
                 {inc.description}

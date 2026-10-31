@@ -571,3 +571,24 @@ export function floorMatches(recordFloor: string, view: string): boolean {
   if (view === 'All Sewing') return (SEWING_FLOORS as readonly string[]).includes(recordFloor);
   return recordFloor === view;
 }
+
+export function isDepartmentFloor(floor: string): boolean {
+  return (DEPARTMENT_FLOORS as readonly string[]).includes(floor);
+}
+
+/** What one working unit is called on screen in each department */
+export function unitWord(floor: string): string {
+  if (floor === 'Cutting') return 'Table';
+  if (floor === 'Print' || floor === 'Embroidery') return 'Machine';
+  return 'Line';
+}
+
+/**
+ * The name people read. Sewing lines keep their names (J1, FA...).
+ * Department units drop the technical prefix: CUT-Table-3 -> "Table 3", PRT-Manual -> "Manual", EMB-Machine-2 -> "Machine 2".
+ */
+export function lineDisplayName(lineId: string): string {
+  const m = /^(CUT|PRT|EMB)-(.+)$/.exec(String(lineId || ''));
+  if (!m) return lineId;
+  return m[2].replace(/-/g, ' ');
+}
