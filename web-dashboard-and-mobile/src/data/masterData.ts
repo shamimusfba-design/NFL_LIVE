@@ -573,6 +573,7 @@ export const DEPARTMENT_FLOORS = ['Cutting', 'Print', 'Embroidery'] as const;
 export function floorMatches(recordFloor: string, view: string): boolean {
   if (view === 'Factory') return true;
   if (view === 'All Sewing') return (SEWING_FLOORS as readonly string[]).includes(recordFloor);
+  if (view === 'Print & Embroidery') return recordFloor === 'Print' || recordFloor === 'Embroidery';
   return recordFloor === view;
 }
 
@@ -583,7 +584,7 @@ export function isDepartmentFloor(floor: string): boolean {
 /** What one working unit is called on screen in each department */
 export function unitWord(floor: string): string {
   if (floor === 'Cutting') return 'Table';
-  if (floor === 'Print' || floor === 'Embroidery') return 'Machine';
+  if (floor === 'Print' || floor === 'Embroidery' || floor === 'Print & Embroidery') return 'Machine';
   return 'Line';
 }
 

@@ -1,7 +1,7 @@
 /** Physical floors (where data is entered) */
 export type PhysicalFloor = 'Sew 1' | 'Sew 2' | 'Sew 3' | 'Cutting' | 'Print' | 'Embroidery';
 /** What the dashboard can show: one floor, all sewing, or the whole factory */
-export type FloorId = PhysicalFloor | 'All Sewing' | 'Factory';
+export type FloorId = PhysicalFloor | 'All Sewing' | 'Print & Embroidery' | 'Factory';
 export type PeriodId = 'Today' | 'Yesterday' | 'Week' | 'Month';
 
 export type UserRole =

@@ -3,10 +3,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 /** Button and title text for every view */
 const FLOOR_LABEL: Record<FloorId, string> = {
   'Sew 1': 'Sew 1', 'Sew 2': 'Sew 2', 'Sew 3': 'Sew 3',
-  'All Sewing': 'Sewing', 'Cutting': 'Cutting', 'Print': 'Print', 'Embroidery': 'Embroidery', 'Factory': 'Factory'
+  'All Sewing': 'Sewing', 'Cutting': 'Cutting', 'Print': 'Print', 'Embroidery': 'Embroidery', 'Print & Embroidery': 'Print & Embroidery', 'Factory': 'Factory'
 };
 /** Buttons in order: the three sewing floors, all sewing, the departments, then the whole factory */
-const FLOOR_BUTTONS: FloorId[] = ['Sew 1', 'Sew 2', 'Sew 3', 'All Sewing', 'Cutting', 'Print', 'Embroidery', 'Factory'];
+const FLOOR_BUTTONS: FloorId[] = ['Sew 1', 'Sew 2', 'Sew 3', 'All Sewing', 'Cutting', 'Print & Embroidery', 'Factory'];
 import {
   FloorId,
   PeriodId,
@@ -144,8 +144,8 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   useEffect(() => { try { localStorage.setItem('nfl_tv_fit', tvFit ? '1' : '0'); } catch {} }, [tvFit]);
   const canFit = vw >= 1100;
   const fitScale = tvFit && canFit ? Math.min(1.6, Math.max(0.6, vw / 1600)) : 1;
-  const isDept = isDepartmentFloor(selectedFloor);
-  const hasQc = selectedFloor === 'Print' || selectedFloor === 'Embroidery';
+  const isDept = isDepartmentFloor(selectedFloor) || selectedFloor === 'Print & Embroidery';
+  const hasQc = selectedFloor === 'Print' || selectedFloor === 'Embroidery' || selectedFloor === 'Print & Embroidery';
   const unit = unitWord(selectedFloor);
   const todayW = getBangladeshTodayIso();
   const auditByLine = useMemo(() => {
@@ -447,6 +447,30 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           </span>
         </div>
       </div>
+
+      {/* ==================== FACTORY COMMON STRIP: same on every section ==================== */}
+      {(() => {
+        const inP = (d: string) => CalcForPeriod.isDateInPeriod(d, todayW, selectedPeriod);
+        const all = qualities.filter(q => inP(q.date));
+        const checked = all.reduce((a, q) => a + (q.checkedGarments || 0), 0);
+        const defective = all.reduce((a, q) => a + (q.defectiveGarments || 0), 0);
+        const defects = all.reduce((a, q) => a + (q.totalDefects || 0), 0);
+        const oql = checked > 0 ? (defective / checked) * 100 : null;
+        const dhu = checked > 0 ? (defects / checked) * 100 : null;
+        const pass = oql !== null ? 100 - oql : null;
+        const latestW = [...weeklyQuality].filter(w => w.bsOqlPct !== null || w.nflAqcPct !== null).sort((a, b) => (a.weekKey < b.weekKey ? 1 : -1))[0];
+        const pc = (v: number | null, good: number, warn: number, lowerBetter: boolean) =>
+          v === null ? WB_THEME.GREY : lowerBetter ? (v <= good ? WB_THEME.GREEN : v <= warn ? WB_THEME.AMBER : WB_THEME.RED) : (v >= good ? WB_THEME.GREEN : v >= warn ? WB_THEME.AMBER : WB_THEME.RED);
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <WbTile label="Factory QC pass" value={pass !== null ? `${pass.toFixed(1)}%` : '—'} color={pc(pass, 97, 93, false)} sub={`${(checked - defective).toLocaleString()} passed of ${checked.toLocaleString()} checked`} />
+            <WbTile label="Factory DHU" value={dhu !== null ? `${dhu.toFixed(2)}%` : '—'} color={pc(dhu, 3.2, 5, true)} sub={`${defects.toLocaleString()} defects`} />
+            <WbTile label="Factory OQL" value={oql !== null ? `${oql.toFixed(2)}%` : '—'} color={pc(oql, AUDIT_PASS_OQL_PCT, 7, true)} sub={`limit ${AUDIT_PASS_OQL_PCT}%`} />
+            <WbTile label="BS OQL (weekly)" value={latestW && latestW.bsOqlPct !== null ? `${latestW.bsOqlPct.toFixed(2)}%` : '—'} color={pc(latestW?.bsOqlPct ?? null, 4.5, 7, true)} sub={latestW ? `Week ${latestW.weekKey.replace(/^\d{4}-/, '')}` : 'No weekly record yet'} />
+            <WbTile label="NFL AQC (weekly)" value={latestW && latestW.nflAqcPct !== null ? `${latestW.nflAqcPct.toFixed(2)}%` : '—'} color={pc(latestW?.nflAqcPct ?? null, 4.5, 7, true)} sub={latestW ? `Week ${latestW.weekKey.replace(/^\d{4}-/, '')}` : 'No weekly record yet'} />
+          </div>
+        );
+      })()}
 
       {/* ==================== DEPARTMENT PAGE: CUTTING / PRINT / EMBROIDERY ==================== */}
       {isDept && (() => {
@@ -967,7 +991,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                           { v: b.monthEff, c: WB_THEME.GREEN, tip: 'Month' }
                         ].map(bar => (
                           <div key={bar.tip} className="flex flex-col items-center justify-end h-full">
-                            <span style={{ color: bar.c }} className="text-[9px] font-black leading-none mb-0.5">
+                            <span style={{ color: bar.c }} className="text-[11px] font-black leading-none mb-0.5">
                               {Math.round(bar.v)}
                             </span>
                             <div
@@ -1455,7 +1479,7 @@ const WbSummaryCard: React.FC<{
       {badge && (
         <span
           style={{ backgroundColor: badgeColor || WB_THEME.BLUE, color: 'var(--wb-on-selected)' }}
-          className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black"
+          className="shrink-0 px-1.5 py-0.5 rounded text-[11px] font-black"
         >
           {badge}
         </span>
@@ -1487,12 +1511,12 @@ const WbPanel: React.FC<{
       </div>
       {right}
     </div>
-    <div className="flex-1 flex flex-col justify-end min-h-[140px]">{children}</div>
+    <div className="flex-1 flex flex-col justify-end min-h-[200px]">{children}</div>
   </div>
 );
 
 const WbBadge: React.FC<{ text: string; bg: string; fg: string }> = ({ text, bg, fg }) => (
-  <span style={{ backgroundColor: bg, color: fg }} className="px-1.5 py-0.5 rounded text-[9px] font-black">
+  <span style={{ backgroundColor: bg, color: fg }} className="px-1.5 py-0.5 rounded text-[11px] font-black">
     {text}
   </span>
 );
@@ -1554,10 +1578,10 @@ const LiveTargetVsAchievementChart: React.FC<{
             onClick={() => onSelectLine(l)}
             className="flex flex-col items-center flex-1 min-w-[38px] h-full justify-end cursor-pointer group"
           >
-            <div className="text-[9px] font-black mb-0.5" style={{ color: col }}>
+            <div className="text-[11px] font-black mb-0.5" style={{ color: col }}>
               {l.output ?? '—'}
             </div>
-            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
+            <div className="w-full h-40 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
               <div
                 style={{ height: `${tgtH}%`, backgroundColor: WB_THEME.DIM }}
                 className="w-2 rounded-t-sm"
@@ -1569,7 +1593,7 @@ const LiveTargetVsAchievementChart: React.FC<{
                 title={`Output: ${l.output ?? 0}`}
               />
             </div>
-            <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
+            <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
             <div style={{ color: col }} className="text-[8px] font-bold">
               {l.achievementPct !== null ? `${l.achievementPct.toFixed(0)}%` : '—'}
             </div>
@@ -1602,10 +1626,10 @@ const EfficiencyByLineChart: React.FC<{
             onClick={() => onSelectLine(l)}
             className="flex flex-col items-center flex-1 min-w-[24px] h-full justify-end cursor-pointer"
           >
-            <div style={{ color: col }} className="text-[9px] font-black mb-0.5">
+            <div style={{ color: col }} className="text-[11px] font-black mb-0.5">
               {l.efficiencyPct !== null ? `${eff.toFixed(0)}%` : '—'}
             </div>
-            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
+            <div className="w-full h-40 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
               <div
                 style={{ height: `${Math.min(100, mo)}%`, backgroundColor: WB_THEME.DIM }}
                 className="w-2 rounded-t-sm"
@@ -1615,7 +1639,7 @@ const EfficiencyByLineChart: React.FC<{
                 className="w-2.5 rounded-t-sm"
               />
             </div>
-            <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
+            <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
           </div>
         );
       })}
@@ -1644,13 +1668,13 @@ const MetricByLineBarChart: React.FC<{
             onClick={() => onSelectLine(l)}
             className="flex flex-col items-center flex-1 min-w-[24px] h-full justify-end cursor-pointer"
           >
-            <div style={{ color: col }} className="text-[9px] font-black mb-0.5">
+            <div style={{ color: col }} className="text-[11px] font-black mb-0.5">
               {val !== null ? formatVal(val) : '—'}
             </div>
             <div className="w-full h-24 flex items-end justify-center border-b" style={{ borderColor: WB_THEME.LINE }}>
               <div style={{ height: `${hPct}%`, backgroundColor: col }} className="w-3 rounded-t-sm" />
             </div>
-            <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
+            <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
           </div>
         );
       })}
@@ -1669,14 +1693,14 @@ const HourlyOutputWallboardChart: React.FC<{ buckets: HourlyWallboardBucket[] }>
         const col = b.output === 0 ? WB_THEME.DIM : achColor(pct);
         return (
           <div key={b.slot24} className="flex flex-col items-center flex-1 min-w-[46px] h-full justify-end">
-            <div style={{ color: col }} className="text-[9px] font-black mb-0.5">
+            <div style={{ color: col }} className="text-[11px] font-black mb-0.5">
               {b.output > 0 ? b.output : '—'}
             </div>
-            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
+            <div className="w-full h-40 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
               <div style={{ height: `${tgtH}%`, backgroundColor: WB_THEME.DIM }} className="w-2.5 rounded-t-sm" />
               <div style={{ height: `${outH}%`, backgroundColor: col }} className="w-3 rounded-t-sm" />
             </div>
-            <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{b.label12h}</div>
+            <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{b.label12h}</div>
             <div style={{ color: col }} className="text-[8px] font-bold">
               {b.output > 0 && b.target > 0 ? `${pct}%` : ''}
             </div>
@@ -1697,15 +1721,15 @@ const AuditPassFailChart: React.FC<{ rows: Array<{ lineId: string; pass: number;
     <div className="nfl-scroll flex items-end justify-between gap-1.5 h-full pt-3 pb-2 overflow-x-auto">
       {rows.map(r => (
         <div key={r.lineId} className="flex flex-col items-center flex-1 min-w-[46px] h-full justify-end">
-          <div className="flex gap-0.5 text-[9px] font-black mb-0.5">
+          <div className="flex gap-0.5 text-[11px] font-black mb-0.5">
             <span style={{ color: WB_THEME.GREEN }}>{r.pass}</span>
             <span style={{ color: WB_THEME.RED }}>{r.fail}</span>
           </div>
-          <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
+          <div className="w-full h-40 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
             <div style={{ height: `${Math.round((r.pass / maxVal) * 100)}%`, backgroundColor: WB_THEME.GREEN }} className="w-2.5 rounded-t-sm" title={`Pass: ${r.pass}`} />
             <div style={{ height: `${Math.round((r.fail / maxVal) * 100)}%`, backgroundColor: WB_THEME.RED }} className="w-2.5 rounded-t-sm" title={`Fail: ${r.fail}`} />
           </div>
-          <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(r.lineId)}</div>
+          <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(r.lineId)}</div>
         </div>
       ))}
     </div>
@@ -1721,13 +1745,13 @@ const HourlyQcPassChart: React.FC<{ buckets: HourlyWallboardBucket[] }> = ({ buc
         const pct = b.checked > 0 ? Math.round((passed / b.checked) * 100) : null;
         return (
           <div key={b.slot24} className="flex flex-col items-center flex-1 min-w-[46px] h-full justify-end">
-            <div className="text-[8px] font-black leading-tight" style={{ color: WB_THEME.BLUE }}>{b.checked > 0 ? b.checked : '—'}</div>
-            <div className="text-[8px] font-black mb-0.5 leading-tight" style={{ color: WB_THEME.GREEN }}>{b.checked > 0 ? passed : ''}</div>
-            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
+            <div className="text-[10px] font-black leading-tight" style={{ color: WB_THEME.BLUE }}>{b.checked > 0 ? b.checked : '—'}</div>
+            <div className="text-[10px] font-black mb-0.5 leading-tight" style={{ color: WB_THEME.GREEN }}>{b.checked > 0 ? passed : ''}</div>
+            <div className="w-full h-40 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
               <div style={{ height: `${Math.round((b.checked / maxVal) * 100)}%`, backgroundColor: WB_THEME.BLUE }} className="w-2.5 rounded-t-sm" title={`Checked: ${b.checked}`} />
               <div style={{ height: `${Math.round((passed / maxVal) * 100)}%`, backgroundColor: WB_THEME.GREEN }} className="w-2.5 rounded-t-sm" title={`QC pass: ${passed}`} />
             </div>
-            <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{b.label12h}</div>
+            <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{b.label12h}</div>
             <div className="text-[8px] font-bold" style={{ color: WB_THEME.GREEN }}>{pct !== null ? `${pct}%` : ''}</div>
           </div>
         );
@@ -1747,13 +1771,13 @@ const HourlyQualityLineChart: React.FC<{ buckets: HourlyWallboardBucket[]; limit
         const oqlH = b.oqlPct !== null ? Math.min(100, Math.round((b.oqlPct / maxQ) * 100)) : 0;
         return (
           <div key={b.slot24} className="flex flex-col items-center flex-1 min-w-[46px] h-full justify-end">
-            <div className="text-[8px] font-black leading-tight text-center" style={{ color: WB_THEME.ORANGE }}>
+            <div className="text-[10px] font-black leading-tight text-center" style={{ color: WB_THEME.ORANGE }}>
               {b.dhuPct !== null ? b.dhuPct.toFixed(1) : '—'}
             </div>
-            <div className="text-[8px] font-black mb-0.5 leading-tight text-center" style={{ color: WB_THEME.BLUE }}>
+            <div className="text-[10px] font-black mb-0.5 leading-tight text-center" style={{ color: WB_THEME.BLUE }}>
               {b.oqlPct !== null ? `${b.oqlPct.toFixed(1)}%` : '—'}
             </div>
-            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
+            <div className="w-full h-40 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
               <div
                 style={{ height: `${dhuH}%`, backgroundColor: WB_THEME.ORANGE }}
                 className="w-2.5 rounded-t-sm"
@@ -1765,7 +1789,7 @@ const HourlyQualityLineChart: React.FC<{ buckets: HourlyWallboardBucket[]; limit
                 title={`OQL: ${b.oqlPct ?? 0}%`}
               />
             </div>
-            <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{b.label12h}</div>
+            <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{b.label12h}</div>
           </div>
         );
       })}
@@ -1798,14 +1822,14 @@ const RectificationPendingChart: React.FC<{
             onClick={() => onSelectLine(l)}
             className="flex flex-col items-center flex-1 h-full justify-end cursor-pointer"
           >
-            <div style={{ color: WB_THEME.AMBER }} className="text-[9px] font-black mb-0.5">
+            <div style={{ color: WB_THEME.AMBER }} className="text-[11px] font-black mb-0.5">
               {total}
             </div>
             <div className="w-full h-24 flex flex-col justify-end items-center border-b" style={{ borderColor: WB_THEME.LINE }}>
               <div style={{ height: `${spotH}%`, backgroundColor: WB_THEME.BLUE }} className="w-3.5 rounded-t-sm" />
               <div style={{ height: `${sewH}%`, backgroundColor: WB_THEME.ORANGE }} className="w-3.5" />
             </div>
-            <div className="text-[9px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
+            <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
           </div>
         );
       })}
@@ -1831,10 +1855,10 @@ const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: n
         const aqcH = r.nflAqcPct !== null ? Math.round((r.nflAqcPct / maxVal) * 100) : 0;
         return (
           <div key={r.weekKey} className="flex flex-col items-center flex-1 h-full justify-end">
-            <div className="text-[8px] font-black mb-0.5" style={{ color: WB_THEME.BLUE }}>
+            <div className="text-[10px] font-black mb-0.5" style={{ color: WB_THEME.BLUE }}>
               {r.bsOqlPct !== null ? `${r.bsOqlPct.toFixed(1)}%` : ''}
             </div>
-            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
+            <div className="w-full h-40 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
               <div
                 style={{ height: `${bsH}%`, backgroundColor: WB_THEME.BLUE }}
                 className="w-2.5 rounded-t-sm"
@@ -1846,7 +1870,7 @@ const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: n
                 title={`NFL AQC: ${r.nflAqcPct ?? '—'}%`}
               />
             </div>
-            <div className="text-[9px] font-black mt-0.5">{r.weekKey.replace(/^\d{4}-/, '')}</div>
+            <div className="text-[11px] font-black mt-0.5">{r.weekKey.replace(/^\d{4}-/, '')}</div>
             <div className="text-[8px] font-bold" style={{ color: WB_THEME.ORANGE }}>
               {r.nflAqcPct !== null ? `${r.nflAqcPct.toFixed(1)}%` : ''}
             </div>
