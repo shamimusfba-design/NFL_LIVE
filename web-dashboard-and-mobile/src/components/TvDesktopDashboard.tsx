@@ -1090,12 +1090,16 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
       {/* ==================== PAGE 4: TABLE (15-COLUMN LIVE LINE PERFORMANCE TABLE) ==================== */}
       {!isDept && page === 'TABLE' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 mb-2">
-          <WbPanel title="Audit: Pass / Fail by Line" sub={`Bi-hourly OQL audits · PASS when OQL is at or below ${AUDIT_PASS_OQL_PCT}%`} className="lg:col-span-7">
-            <AuditPassFailChart rows={auditByLine} />
-          </WbPanel>
-          <WbPanel title="Audit results by Line" sub="How many audits passed and failed in this period" className="lg:col-span-5">
-            <div className="max-h-[260px] overflow-auto">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-1.5 mb-1.5">
+          <div style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }} className="rounded-lg border p-2 lg:col-span-7">
+            <div className="text-[11px] font-black">Audit: Pass / Fail by Line</div>
+            <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold mb-1">Bi-hourly OQL audits · PASS when OQL is at or below {AUDIT_PASS_OQL_PCT}%</div>
+            <div className="h-20"><AuditPassFailChart rows={auditByLine} /></div>
+          </div>
+          <div style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }} className="rounded-lg border p-2 lg:col-span-5">
+            <div className="text-[11px] font-black">Audit results by Line</div>
+            <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold mb-1">Passed and failed audits in this period</div>
+            <div className="max-h-[92px] overflow-auto">
               <table className="w-full text-xs border-collapse">
                 <thead className="sticky top-0" style={{ backgroundColor: WB_THEME.BG }}>
                   <tr className="text-left" style={{ color: WB_THEME.MUTED }}>
@@ -1119,12 +1123,12 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 </tbody>
               </table>
             </div>
-          </WbPanel>
+          </div>
         </div>
       )}
       {!isDept && page === 'TABLE' && (
-        <div className="flex-1 bg-slate-100 text-slate-900 rounded-lg overflow-auto p-3">
-          <div className="flex items-center justify-between mb-2">
+        <div className="flex-1 min-h-[72vh] bg-slate-100 text-slate-900 rounded-lg overflow-auto p-2">
+          <div className="flex items-center justify-between mb-1">
             <div>
               <h3 className="text-sm font-black text-[#002D62]">
                 Live Line Performance Table ({FLOOR_LABEL[selectedFloor]} · {selectedPeriod})
@@ -1135,7 +1139,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             </div>
           </div>
           <table className="w-full text-xs border-collapse bg-white rounded-lg overflow-hidden shadow">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr className="bg-[#002D62] text-white text-[11px] font-black">
                 <th className="py-2 px-2 text-left">Line</th>
                 <th className="py-2 px-2 text-left">Item</th>
