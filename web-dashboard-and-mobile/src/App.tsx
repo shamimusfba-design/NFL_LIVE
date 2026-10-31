@@ -75,7 +75,8 @@ export default function App() {
     try {
       const q = new URLSearchParams(window.location.search).get('theme');
       if (q === 'light' || q === 'dark') return q;
-      return localStorage.getItem('nfl_theme') === 'light' ? 'light' : 'dark';
+      const saved = localStorage.getItem('nfl_theme') || new URLSearchParams(window.location.search).get('defaultTheme');
+      return saved === 'light' ? 'light' : 'dark';
     } catch { return 'dark'; }
   });
   useEffect(() => {
