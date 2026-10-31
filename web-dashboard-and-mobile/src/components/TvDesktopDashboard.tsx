@@ -133,6 +133,17 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   const [countdown, setCountdown] = useState(WB_INTERVALS[0]);
   const [deepDiveLine, setDeepDiveLine] = useState<LinePerformanceSummary | null>(null);
   // Cutting, Print and Embroidery get their own page: no sewing cards (DHU, OQL, operator vs machine, efficiency).
+  // TV fit: scale the whole wallboard to the width of the screen (a 43-inch TV fits the 1600px design at about 1.6x).
+  const [tvFit, setTvFit] = useState<boolean>(() => { try { return localStorage.getItem('nfl_tv_fit') === '1'; } catch { return false; } });
+  const [vw, setVw] = useState<number>(() => (typeof window !== 'undefined' ? window.innerWidth : 1200));
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  useEffect(() => { try { localStorage.setItem('nfl_tv_fit', tvFit ? '1' : '0'); } catch {} }, [tvFit]);
+  const canFit = vw >= 1100;
+  const fitScale = tvFit && canFit ? Math.min(1.6, Math.max(0.6, vw / 1600)) : 1;
   const isDept = isDepartmentFloor(selectedFloor);
   const hasQc = selectedFloor === 'Print' || selectedFloor === 'Embroidery';
   const unit = unitWord(selectedFloor);
@@ -237,12 +248,12 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
   return (
     <div
-      style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.TXT }}
+      style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.TXT, ...(fitScale !== 1 ? { zoom: fitScale } : {}) }}
       className="min-h-[calc(100vh-42px)] flex flex-col p-2.5 gap-2 select-none font-sans tabular-nums"
     >
       {/* ==================== HEADER BAR (Matches TvDashboardScreen.kt) ==================== */}
       <div className="flex flex-wrap items-center justify-between gap-2 min-h-[40px]">
-        <div className="flex items-center gap-2">
+        <div className="hidden md:flex items-center gap-2">
           <div className="bg-white text-[#002D62] px-2.5 py-1 rounded flex items-center gap-1.5 font-black text-sm shadow">
             <span>🏭</span>
             <span>NFL LIVE</span>
@@ -407,6 +418,16 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             </div>
           </button>
 
+          {canFit && (
+            <button
+              onClick={() => setTvFit(v => !v)}
+              title="Scale the whole screen to fill this TV or monitor"
+              className="px-2 py-0.5 rounded border text-[11px] font-black"
+              style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE, color: tvFit ? WB_THEME.BLUE : WB_THEME.MUTED }}
+            >
+              {tvFit ? 'TV fit: On' : 'TV fit: Off'}
+            </button>
+          )}
           {isDemoMode && (
             <button
               onClick={onToggleDemo}
@@ -707,6 +728,22 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       )}
 
       {/* ==================== PAGE 2: QUALITY ==================== */}
+      {!isDept && (page === 'QUALITY' || page === 'ALL') && (() => {
+        const done = auditByLine.reduce((a, r) => a + r.pass + r.fail, 0);
+        const passed = auditByLine.reduce((a, r) => a + r.pass, 0);
+        const failed = auditByLine.reduce((a, r) => a + r.fail, 0);
+        const rate = done > 0 ? (passed / done) * 100 : null;
+        const linesAudited = auditByLine.length;
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+            <WbTile label="Audits done" value={String(done)} color={WB_THEME.BLUE} sub={`${linesAudited} line${linesAudited === 1 ? '' : 's'} audited · ${selectedFloor === 'All Sewing' ? 'all sewing' : FLOOR_LABEL[selectedFloor]}`} />
+            <WbTile label="Passed" value={String(passed)} color={WB_THEME.GREEN} sub={`OQL at or below ${AUDIT_PASS_OQL_PCT}%`} />
+            <WbTile label="Failed" value={String(failed)} color={failed > 0 ? WB_THEME.RED : WB_THEME.GREEN} sub="OQL above the limit" />
+            <WbTile label="Pass rate" value={rate !== null ? `${rate.toFixed(1)}%` : '—'} color={rate === null ? WB_THEME.GREY : rate >= 90 ? WB_THEME.GREEN : rate >= 70 ? WB_THEME.AMBER : WB_THEME.RED} sub="of audits done" />
+          </div>
+        );
+      })()}
+
       {!isDept && page === 'QUALITY' && (
         <div className="flex-1 flex flex-col gap-2">
           {/* 5 KPI Tiles */}
