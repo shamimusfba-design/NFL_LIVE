@@ -5519,25 +5519,16 @@ class NflRepository(private val context: Context) {
         it.lineId.equals(lineId, ignoreCase = true) && isDateInPeriod(it.date, period)
       }
     )
-    val randomSeeds = listOf(58, 62, 60, 56, 64, 59, 61, 57, 63, 60)
     var cumTgt = 0
     var cumAch = 0
-
-    val sampleCleared = isSampleDataCleared() && !_isDemoMode.value
     return slots.mapIndexed { idx, slot ->
       val recordedForSlot = lineProds.filter { it.hourSlot.equals(slot, ignoreCase = true) }
       val realForSlot = recordedForSlot.filter { !it.isDemo }
       val effectiveSlotRecords = realForSlot.ifEmpty { recordedForSlot }
       val ach = if (effectiveSlotRecords.isNotEmpty()) {
         effectiveSlotRecords.sumOf { it.outputQty }
-      } else if (sampleCleared) {
-        0
       } else {
-        when (period) {
-          PeriodScope.TODAY -> if (idx < 7 && !_productionEntries.value.any { !it.isDemo && it.lineId.equals(lineId, ignoreCase = true) }) randomSeeds[idx % randomSeeds.size] else 0
-          PeriodScope.YESTERDAY -> (randomSeeds[idx % randomSeeds.size] - 2).coerceAtLeast(30)
-          else -> randomSeeds[idx % randomSeeds.size]
-        }
+        0
       }
       cumTgt += tgt
       cumAch += ach
@@ -5653,9 +5644,7 @@ class NflRepository(private val context: Context) {
         it.lineId.equals(lineId, ignoreCase = true) && isDateInPeriod(it.date, period)
       }
     )
-    val dhuValues = listOf(1.85, 2.10, 1.65, 1.95, 2.30, 1.70, 1.80, 2.05, 1.90, 1.75)
-    val oqlValues = listOf(3.5, 3.8, 3.2, 4.0, 3.6, 3.4, 3.7, 3.9, 3.5, 3.3)
-    val defectNames = listOf("Puckering, Skip stitch", "Broken stitch", "Open seam", "Uneven seam", "Needle cut", "Puckering", "Skip stitch", "Broken stitch", "Pleat", "Dirty spot")
+
 
     return slots.mapIndexed { idx, slot ->
       val slotHours = parseSlotHours24(slot)
@@ -5700,19 +5689,12 @@ class NflRepository(private val context: Context) {
           oqlPct = oqlPct,
           majorDefectsName = topDefNames
         )
-      } else if (isSampleDataCleared() && !_isDemoMode.value) {
+      } else {
         HourlyQualityRow(
           hourSlot = slot,
           dhuPct = 0.0,
           oqlPct = 0.0,
-          majorDefectsName = "None"
-        )
-      } else {
-        HourlyQualityRow(
-          hourSlot = slot,
-          dhuPct = dhuValues[idx % dhuValues.size],
-          oqlPct = oqlValues[idx % oqlValues.size],
-          majorDefectsName = defectNames[idx % defectNames.size]
+          majorDefectsName = "No inspection"
         )
       }
     }
@@ -5724,61 +5706,25 @@ class NflRepository(private val context: Context) {
         it.lineId.equals(lineId, ignoreCase = true) && isDateInPeriod(it.date, period)
       }
     )
-    val point = getLinePerformancePoint(lineId, periodScope = period)
-    val totalSewSent = point.defectSent
-    val totalSewRecv = point.defectReceived
-    val totalSpotSent = point.spotSent
-    val totalSpotRecv = point.spotReceived
     val slots = defaultHourSlots.take(8)
 
-    var remSewSent = totalSewSent
-    var remSewRecv = totalSewRecv
-    var remSpotSent = totalSpotSent
-    var remSpotRecv = totalSpotRecv
+    return slots.map { slot ->
+      val slotRecords = lineQas.filter { normalizeHourSlot24h(it.hourSlot).equals(slot, ignoreCase = true) }
+      val effectiveRecords = slotRecords.filter { !it.isDemo }.ifEmpty { slotRecords }
+      val sewingSent = effectiveRecords.sumOf { it.defectSent }
+      val sewingReceived = effectiveRecords.sumOf { it.defectReceived }
+      val spotSent = effectiveRecords.sumOf { it.spotSent }
+      val spotReceived = effectiveRecords.sumOf { it.spotReceived }
 
-    return slots.mapIndexed { idx, slot ->
-      val realSlotQas = lineQas.filter { !it.isDemo && it.hourSlot.equals(slot, ignoreCase = true) }
-      if (realSlotQas.isNotEmpty()) {
-        val sSent = realSlotQas.sumOf { it.defectSent }
-        val sRecv = realSlotQas.sumOf { it.defectReceived }
-        val spSent = realSlotQas.sumOf { it.spotSent }
-        val spRecv = realSlotQas.sumOf { it.spotReceived }
-        LineHourlyDefectRecord(
-          hourSlot = slot,
-          sewingSent = sSent,
-          sewingReceived = sRecv,
-          sewingBalance = (sSent - sRecv).coerceAtLeast(0),
-          spotSent = spSent,
-          spotReceived = spRecv,
-          spotBalance = (spSent - spRecv).coerceAtLeast(0)
-        )
-      } else {
-        val isLast = idx == slots.lastIndex
-        val sewSentShare = if (isLast) remSewSent else ((totalSewSent / 8) + (if (idx % 3 == 0) 1 else 0)).coerceAtMost(remSewSent).coerceAtLeast(0)
-        remSewSent = (remSewSent - sewSentShare).coerceAtLeast(0)
-
-        val sewRecvShare = if (isLast) remSewRecv else ((totalSewRecv / 8) + (if (idx % 2 == 0) 1 else 0)).coerceAtMost(remSewRecv).coerceAtLeast(0)
-        remSewRecv = (remSewRecv - sewRecvShare).coerceAtLeast(0)
-
-        val spotSentShare = if (isLast) remSpotSent else ((totalSpotSent / 8) + (if (idx % 4 == 0) 1 else 0)).coerceAtMost(remSpotSent).coerceAtLeast(0)
-        remSpotSent = (remSpotSent - spotSentShare).coerceAtLeast(0)
-
-        val spotRecvShare = if (isLast) remSpotRecv else ((totalSpotRecv / 8) + (if (idx % 3 == 1) 1 else 0)).coerceAtMost(remSpotRecv).coerceAtLeast(0)
-        remSpotRecv = (remSpotRecv - spotRecvShare).coerceAtLeast(0)
-
-        val sewBal = (sewSentShare - sewRecvShare).coerceAtLeast(0)
-        val spotBal = (spotSentShare - spotRecvShare).coerceAtLeast(0)
-
-        LineHourlyDefectRecord(
-          hourSlot = slot,
-          sewingSent = sewSentShare,
-          sewingReceived = sewRecvShare,
-          sewingBalance = sewBal,
-          spotSent = spotSentShare,
-          spotReceived = spotRecvShare,
-          spotBalance = spotBal
-        )
-      }
+      LineHourlyDefectRecord(
+        hourSlot = slot,
+        sewingSent = sewingSent,
+        sewingReceived = sewingReceived,
+        sewingBalance = (sewingSent - sewingReceived).coerceAtLeast(0),
+        spotSent = spotSent,
+        spotReceived = spotReceived,
+        spotBalance = (spotSent - spotReceived).coerceAtLeast(0)
+      )
     }
   }
 
