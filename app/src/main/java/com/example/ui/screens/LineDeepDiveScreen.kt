@@ -123,7 +123,7 @@ fun LineDeepDiveScreen(
   }
 
   val paretoDefects = remember(selectedLineId, qualityEntries, refreshTrigger) {
-    repository.getParetoDefects(selectedLineId)
+    repository.getParetoDefects(selectedLineId, selectedPeriod)
   }
 
   val linePerformancePoint = remember(selectedLineId, selectedPeriod, productionEntries, qualityEntries, targets, incidents, refreshTrigger) {
