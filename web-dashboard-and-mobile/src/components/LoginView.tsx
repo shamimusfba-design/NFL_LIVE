@@ -28,6 +28,7 @@ const DESIGNATIONS: Array<{ name: string; department: string; role: string; scop
   { name: 'Head of Production', department: 'Production', role: 'PRODUCTION_MANAGER', scope: 'ALL' },
   { name: 'Head of Quality', department: 'Quality', role: 'QUALITY_MANAGER', scope: 'ALL' },
   { name: 'IE', department: 'IE & Planning', role: 'IE', scope: null },
+  { name: 'IEM', department: 'IE & Planning', role: 'IE', scope: 'ALL' },
   { name: 'Reporter', department: 'IE & Planning', role: 'PRODUCTION_REPORTER', scope: null },
   { name: 'Production Supervisor', department: 'Production', role: 'SUPERVISOR', scope: null },
   { name: 'Production Officer', department: 'Production', role: 'SUPERVISOR', scope: null },

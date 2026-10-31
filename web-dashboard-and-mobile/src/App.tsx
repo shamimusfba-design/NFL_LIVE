@@ -24,6 +24,7 @@ import {
   startLiveFirestoreListeners,
   pushFloorManpowerToCloud,
   pushAlertCommentToCloud,
+  pushDemoModeToCloud,
   signOutWebCloudSession,
   restoreWebSession,
   pushProductionToCloud,
@@ -107,6 +108,7 @@ export default function App() {
   const [entryModule, setEntryModule] = useState<EntryModuleId | undefined>(undefined);
   const [floorTotals, setFloorTotals] = useState<FloorManpowerRecord[]>([]);
   const [alertComments, setAlertComments] = useState<AlertComment[]>([]);
+  const demoSwitchRef = useRef<(on: boolean) => void>(() => {});
   const [sidebarHidden, setSidebarHidden] = useState<boolean>(() => { try { return localStorage.getItem('nfl_sidebar_hidden') === '1'; } catch { return false; } });
   const [pageRequest, setPageRequest] = useState<{ page: 'PRODUCTION' | 'QUALITY' | 'ALL' | 'TABLE'; n: number } | undefined>(undefined);
   const [adminStart, setAdminStart] = useState<'DEMO' | 'LINES' | 'USERS' | undefined>(undefined);
@@ -312,6 +314,7 @@ export default function App() {
       },
       onFloorManpowerUpdated: remote => setFloorTotals(remote),
       onAlertCommentsUpdated: remote => setAlertComments(remote),
+      onDemoModeUpdated: enabled => { demoSwitchRef.current(enabled); },
       onUsersUpdated: remoteUsers => {
         if (remoteUsers.length === 0) return;
         setUsers(prev => {
@@ -563,29 +566,39 @@ export default function App() {
     );
   };
 
+  // Turns the demo data on or off on THIS screen only. Used for the Admin's own click and for the shared switch.
+  const applyDemo = (on: boolean) => {
+    if (on) {
+      const demo = generateSyntheticDemoDataset();
+      setTargets(prev => [...prev.filter(t => !t.isDemo), ...demo.targets]);
+      setProductions(prev => [...prev.filter(p => !p.isDemo), ...demo.productions]);
+      setQualities(prev => [...prev.filter(q => !q.isDemo), ...demo.qualities]);
+      setIncidents(prev => [...prev.filter(i => !i.isDemo), ...demo.incidents]);
+      setWeeklyQuality(prev => [...prev.filter(w => !w.isDemo), ...demo.weeklyQuality]);
+      setIsDemoMode(true);
+      try { localStorage.setItem(STORAGE_KEYS.SAMPLE_CLEARED, 'false'); } catch {}
+    } else {
+      setTargets(prev => prev.filter(t => !t.isDemo));
+      setProductions(prev => prev.filter(p => !p.isDemo));
+      setQualities(prev => prev.filter(q => !q.isDemo));
+      setIncidents(prev => prev.filter(i => !i.isDemo));
+      setWeeklyQuality(prev => prev.filter(w => !w.isDemo));
+      setIsDemoMode(false);
+      try { localStorage.setItem(STORAGE_KEYS.SAMPLE_CLEARED, 'true'); } catch {}
+    }
+  };
+
+  // The Admin's switch: it changes the shared setting, so every signed-in person gets the same demo (or loses it).
+  demoSwitchRef.current = (on: boolean) => { if (on !== isDemoMode) applyDemo(on); };
+
   const handleLoadDemoData = () => {
-    const demo = generateSyntheticDemoDataset();
-    setTargets(prev => [...prev.filter(t => !t.isDemo), ...demo.targets]);
-    setProductions(prev => [...prev.filter(p => !p.isDemo), ...demo.productions]);
-    setQualities(prev => [...prev.filter(q => !q.isDemo), ...demo.qualities]);
-    setIncidents(prev => [...prev.filter(i => !i.isDemo), ...demo.incidents]);
-    setWeeklyQuality(prev => [...prev.filter(w => !w.isDemo), ...demo.weeklyQuality]);
-    setIsDemoMode(true);
-    try {
-      localStorage.setItem(STORAGE_KEYS.SAMPLE_CLEARED, 'false');
-    } catch {}
+    applyDemo(true);
+    void pushDemoModeToCloud(true, currentUser?.name || '');
   };
 
   const handleRemoveAllDemoData = () => {
-    setTargets(prev => prev.filter(t => !t.isDemo));
-    setProductions(prev => prev.filter(p => !p.isDemo));
-    setQualities(prev => prev.filter(q => !q.isDemo));
-    setIncidents(prev => prev.filter(i => !i.isDemo));
-    setWeeklyQuality(prev => prev.filter(w => !w.isDemo));
-    setIsDemoMode(false);
-    try {
-      localStorage.setItem(STORAGE_KEYS.SAMPLE_CLEARED, 'true');
-    } catch {}
+    applyDemo(false);
+    void pushDemoModeToCloud(false, currentUser?.name || '');
   };
 
   const handleFactoryResetAll = async (): Promise<number> => {
@@ -944,7 +957,7 @@ export default function App() {
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
-          <div className="min-w-0 flex-1 truncate text-[14px] font-extrabold md:text-[16px]">NFL LIVE PRODUCTION &amp; Quality</div>
+          <div className="min-w-0 flex-1 truncate text-[14px] font-extrabold md:text-[16px]">NFL LIVE Production &amp; Quality</div>
           {notificationCount > 0 && (
             <button
               onClick={() => setShowIncidentModal(true)}

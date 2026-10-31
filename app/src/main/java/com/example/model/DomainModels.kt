@@ -56,6 +56,7 @@ enum class EmployeeDesignation(
   HEAD_OF_PRODUCTION("Head of Production", "Production", UserRole.PRODUCTION_MANAGER, FloorScope.ALL, true, true),
   HEAD_OF_QUALITY("Head of Quality", "Quality", UserRole.QUALITY_MANAGER, FloorScope.ALL, true, true),
   IE("IE", "IE & Planning", UserRole.IE, null, true, true),
+  IEM("IEM", "IE & Planning", UserRole.IE, FloorScope.ALL, true, true),
   REPORTER("Reporter", "IE & Planning", UserRole.PRODUCTION_REPORTER, null, true, true),
   PRODUCTION_SUPERVISOR("Production Supervisor", "Production", UserRole.SUPERVISOR, null, true, true),
   PRODUCTION_OFFICER("Production Officer", "Production", UserRole.SUPERVISOR, null, true, true),

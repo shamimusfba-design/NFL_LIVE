@@ -449,6 +449,15 @@ service cloud.firestore {
         || (isApprovedCaller() && resource.data.get('authorId', '') == boundEmployeeId());
     }
 
+    // Shared app settings. For now: the demo-data switch. Everyone approved reads it; only the Admin changes it.
+    match /app_settings/{docId} {
+      allow read: if isApprovedCaller();
+      allow create, update: if isAdmin()
+        && docId == 'demo'
+        && request.resource.data.get('enabled', null) is bool;
+      allow delete: if false;
+    }
+
     // Employee Registration Requests
     match /registration_requests/{requestId} {
       allow get: if isAdmin() || (isSignedIn() && resource.data.get('requestedByUid', '') == request.auth.uid);

@@ -401,6 +401,7 @@ export interface LiveCloudCallbacks {
   onWeeklyQualityUpdated?: (records: WeeklyQualityRecord[]) => void;
   onFloorManpowerUpdated?: (records: FloorManpowerRecord[]) => void;
   onAlertCommentsUpdated?: (records: AlertComment[]) => void;
+  onDemoModeUpdated?: (enabled: boolean) => void;
   onWeeklyQualityUpdate?: (records: WeeklyQualityRecord[]) => void;
   onMonthlyTargetsUpdated?: (records: MonthlyTargetConfig[]) => void;
   onMonthlyTargetsUpdate?: (records: MonthlyTargetConfig[]) => void;
@@ -727,6 +728,14 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
     );
 
     // 5. Weekly BS OQL & NFL AQC
+    unsubscribers.push(
+      onSnapshot(
+        doc(db, 'app_settings', 'demo'),
+        snap => callbacks.onDemoModeUpdated?.(snap.exists() && snap.data()?.enabled === true),
+        () => {}
+      )
+    );
+
     const commentsQ = query(collection(db, 'alert_comments'), orderBy('createdMillis', 'desc'), limit(600));
     unsubscribers.push(
       onSnapshot(
@@ -1076,6 +1085,18 @@ export async function pushIncidentToCloud(inc: IncidentRecord): Promise<boolean>
     return true;
   } catch (e) {
     console.warn('pushIncidentToCloud error:', e);
+    return false;
+  }
+}
+
+export async function pushDemoModeToCloud(enabled: boolean, by: string): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    await setDoc(doc(db, 'app_settings', 'demo'), { enabled, updatedBy: by, updatedMillis: Date.now() });
+    return true;
+  } catch (err) {
+    console.warn('pushDemoModeToCloud error:', err);
     return false;
   }
 }
