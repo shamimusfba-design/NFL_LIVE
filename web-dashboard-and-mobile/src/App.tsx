@@ -17,7 +17,8 @@ import {
   ALL_FACTORY_LINES,
   STANDARD_USERS,
   getBangladeshTodayIso,
-  generateSyntheticDemoDataset
+  generateSyntheticDemoDataset,
+  floorMatches
 } from './data/masterData';
 import { CalculationEngine } from './services/calculationEngine';
 import {
@@ -481,7 +482,7 @@ export default function App() {
       { id: 'Sew 1', label: 'Sew 1' },
       { id: 'Sew 2', label: 'Sew 2' },
       { id: 'Sew 3', label: 'Sew 3' },
-      { id: 'All', label: 'Factory' }
+      { id: 'Factory', label: 'Factory' }
     ];
     return scopes.map(sc => {
       const cfgs = CalculationEngine.getTargetedLines(lines, targets, sc.id, todayIso, !isDemoMode);
@@ -523,7 +524,7 @@ export default function App() {
 
   const openIncidents = useMemo(() => {
     return incidents.filter(
-      i => i.status !== 'RESOLVED' && (selectedFloor === 'All' || i.floor === selectedFloor)
+      i => i.status !== 'RESOLVED' && floorMatches(i.floor, selectedFloor)
     );
   }, [incidents, selectedFloor]);
 

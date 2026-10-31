@@ -1,4 +1,7 @@
-export type FloorId = 'Sew 1' | 'Sew 2' | 'Sew 3' | 'All';
+/** Physical floors (where data is entered) */
+export type PhysicalFloor = 'Sew 1' | 'Sew 2' | 'Sew 3' | 'Cutting' | 'Print' | 'Embroidery';
+/** What the dashboard can show: one floor, all sewing, or the whole factory */
+export type FloorId = PhysicalFloor | 'All Sewing' | 'Factory';
 export type PeriodId = 'Today' | 'Yesterday' | 'Week' | 'Month';
 
 export type UserRole =
@@ -33,7 +36,7 @@ export interface UserAccount {
 
 export interface LineMasterItem {
   id: string;
-  floor: 'Sew 1' | 'Sew 2' | 'Sew 3';
+  floor: PhysicalFloor;
   aliases?: string[];
   isActive: boolean;
   notes?: string;
@@ -41,7 +44,7 @@ export interface LineMasterItem {
 
 export interface LineTargetConfig {
   lineId: string;
-  floor: 'Sew 1' | 'Sew 2' | 'Sew 3';
+  floor: PhysicalFloor;
   date: string;
   dailyTargetPcs: number;
   hourlyTargetPcs: number;
@@ -86,7 +89,7 @@ export interface ProductionEntryRecord {
   id: string;
   submissionId: string;
   lineId: string;
-  floor: 'Sew 1' | 'Sew 2' | 'Sew 3';
+  floor: PhysicalFloor;
   date: string;
   hourSlot: string;
   styleNumber: string;
@@ -108,7 +111,7 @@ export interface QualityEntryRecord {
   id: string;
   submissionId: string;
   lineId: string;
-  floor: 'Sew 1' | 'Sew 2' | 'Sew 3';
+  floor: PhysicalFloor;
   date: string;
   hourSlot: string;
   styleNumber: string;
@@ -140,7 +143,7 @@ export type IncidentStatus = 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED';
 
 export interface IncidentRecord {
   id: string;
-  floor: 'Sew 1' | 'Sew 2' | 'Sew 3';
+  floor: PhysicalFloor;
   lineId: string;
   category: IncidentCategory;
   machineRef?: string;
@@ -162,7 +165,7 @@ export interface IncidentRecord {
 
 export interface LinePerformanceSummary {
   lineId: string;
-  floor: 'Sew 1' | 'Sew 2' | 'Sew 3';
+  floor: PhysicalFloor;
   styleNumber: string;
   smv: number;
   hourlyTarget: number;
@@ -233,7 +236,7 @@ export interface FloorKpis {
 
 /** Floor totals typed once a day under the line-wise target set-up (same record as the Android app). */
 export interface FloorManpowerRecord {
-  floor: 'Sew 1' | 'Sew 2' | 'Sew 3';
+  floor: PhysicalFloor;
   date: string;
   totalMachines: number;
   machinesRunning: number;

@@ -12,6 +12,7 @@ import {
 } from '../types';
 import {
   STANDARD_HOUR_SLOTS,
+  floorMatches,
   hourNoOfSlot,
   hourOptionsForLine,
   ordinalHr,
@@ -52,7 +53,7 @@ export class CalculationEngine {
     onlyConfiguredOrReported = false
   ): LineTargetConfig[] {
     return allLines
-      .filter(line => line.isActive !== false && (floor === 'All' || line.floor === floor))
+      .filter(line => line.isActive !== false && floorMatches(line.floor, floor))
       .map(line => {
         const target =
           targets.find(t => t.lineId === line.id && t.date === date) ||
@@ -234,7 +235,7 @@ export class CalculationEngine {
     const todayEfficiencyPct = activeOps > 0 ? Number((effSum / activeOps).toFixed(1)) : 0;
 
     const floorMonthly = monthlyTargets.find(
-      m => !m.lineId && (floor === 'All' || m.floor === floor)
+      m => !m.lineId && floorMatches(m.floor, floor)
     );
     const targetEfficiencyPct = floorMonthly?.targetEfficiencyPct || 75;
     const dhuLimitPct = floorMonthly?.targetDhuPct || 2.0;
@@ -266,7 +267,7 @@ export class CalculationEngine {
     const reportingCoveragePct =
       targetedCount > 0 ? Math.round((reportedCount / targetedCount) * 100) : 0;
 
-    const floorIncidents = incidents.filter(i => floor === 'All' || i.floor === floor);
+    const floorIncidents = incidents.filter(i => floorMatches(i.floor, floor));
     const openIncidentsCount = floorIncidents.filter(i => i.status !== 'RESOLVED').length;
     const downtimeMinutes = floorIncidents.reduce((sum, i) => {
       const end = i.endTimeMillis || Date.now();
@@ -322,10 +323,10 @@ export class CalculationEngine {
     const hourlyTargetTotal = activeLines.reduce((s, l) => s + l.hourlyTarget, 0);
 
     const floorProds = productions.filter(
-      p => (floor === 'All' || p.floor === floor) && this.isDateInPeriod(p.date, todayIso, period)
+      p => floorMatches(p.floor, floor) && this.isDateInPeriod(p.date, todayIso, period)
     );
     const floorQas = qualities.filter(
-      q => (floor === 'All' || q.floor === floor) && this.isDateInPeriod(q.date, todayIso, period)
+      q => floorMatches(q.floor, floor) && this.isDateInPeriod(q.date, todayIso, period)
     );
 
     // Hour numbers, not clock time: hour 1 of every line (General, Shift A, Shift B) is counted together.
@@ -368,7 +369,7 @@ export class CalculationEngine {
 
   public static computeTopDefects(
     qualities: QualityEntryRecord[],
-    floor: FloorId = 'All',
+    floor: FloorId = 'Factory',
     todayIso?: string,
     period: PeriodId = 'Today'
   ): Array<{ defect: string; count: number; dhu: number }> {
@@ -377,7 +378,7 @@ export class CalculationEngine {
 
     const filtered = qualities.filter(
       q =>
-        (floor === 'All' || q.floor === floor) &&
+        floorMatches(q.floor, floor) &&
         (!todayIso || this.isDateInPeriod(q.date, todayIso, period))
     );
 

@@ -11,6 +11,7 @@ import {
   UserRole
 } from '../types';
 import { BulkTargetSetup } from './BulkTargetSetup';
+import type { PhysicalFloor } from '../types';
 import { EntryModuleId, ENTRY_MODULES } from '../data/entryModules';
 import {
   STANDARD_HOUR_SLOTS,
@@ -76,7 +77,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
   // Shared state
   const [formDate, setFormDate] = useState(getBangladeshTodayIso());
-  const [formFloor, setFormFloor] = useState<'Sew 1' | 'Sew 2' | 'Sew 3'>('Sew 2');
+  const [formFloor, setFormFloor] = useState<PhysicalFloor>('Sew 2');
   const [formLine, setFormLine] = useState('K1');
   // The hour is chosen by number (1st hr, 2nd hr...). The stored slot of each line is worked out from it.
   const [formHourNo, setFormHourNo] = useState(1);
@@ -455,7 +456,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 <select
                   value={formFloor}
                   onChange={e => {
-                    const newFloor = e.target.value as 'Sew 1' | 'Sew 2' | 'Sew 3';
+                    const newFloor = e.target.value as PhysicalFloor;
                     setFormFloor(newFloor);
                     const firstLine = lines.find(l => l.floor === newFloor)?.id || 'K1';
                     setFormLine(firstLine);
@@ -465,6 +466,9 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                   <option value="Sew 1">Sew 1</option>
                   <option value="Sew 2">Sew 2</option>
                   <option value="Sew 3">Sew 3</option>
+                  <option value="Cutting">Cutting</option>
+                  <option value="Print">Print</option>
+                  <option value="Embroidery">Embroidery</option>
                 </select>
               </div>
 

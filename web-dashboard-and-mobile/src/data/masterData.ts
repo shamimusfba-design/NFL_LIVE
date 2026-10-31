@@ -65,7 +65,17 @@ export const ALL_FACTORY_LINES: LineMasterItem[] = [
   { id: 'Y2', floor: 'Sew 3', isActive: true }, { id: 'Z1', floor: 'Sew 3', isActive: true },
   { id: 'Z2', floor: 'Sew 3', isActive: true }, { id: 'ZA1A', floor: 'Sew 3', isActive: true },
   { id: 'ZA1B', floor: 'Sew 3', isActive: true }, { id: 'ZA2A', floor: 'Sew 3', isActive: true },
-  { id: 'ZA2B', floor: 'Sew 3', isActive: true }
+  { id: 'ZA2B', floor: 'Sew 3', isActive: true },
+  // Cutting: 7 tables (no shift, no overtime). Ids have no spaces so the cloud keys stay safe.
+  ...Array.from({ length: 7 }, (_, i) => ({ id: `CUT-Table-${i + 1}`, floor: 'Cutting' as const, isActive: true })),
+  // Print: machines 1-3, one table, one manual machine
+  { id: 'PRT-Machine-1', floor: 'Print' as const, isActive: true },
+  { id: 'PRT-Machine-2', floor: 'Print' as const, isActive: true },
+  { id: 'PRT-Machine-3', floor: 'Print' as const, isActive: true },
+  { id: 'PRT-Table', floor: 'Print' as const, isActive: true },
+  { id: 'PRT-Manual', floor: 'Print' as const, isActive: true },
+  // Embroidery: machines 1-5
+  ...Array.from({ length: 5 }, (_, i) => ({ id: `EMB-Machine-${i + 1}`, floor: 'Embroidery' as const, isActive: true })),
 ];
 
 export const GARMENT_STYLES = [
@@ -545,4 +555,19 @@ export function hourLabelOfSlot(lineId: string, slotKey: string): string {
     if (idx >= 0 && idx % 2 === 0) return `${ordinalHr(idx + 1)}-${ordinalHr(idx + 2)} hr`;
   }
   return formatHourSlot12h(slotKey);
+}
+
+export const SEWING_FLOORS = ['Sew 1', 'Sew 2', 'Sew 3'] as const;
+export const DEPARTMENT_FLOORS = ['Cutting', 'Print', 'Embroidery'] as const;
+
+/**
+ * Does a record of `recordFloor` belong to the chosen view?
+ *  - a single floor: exact match (Sew 1, Cutting, Print...)
+ *  - "All Sewing": Sew 1 + Sew 2 + Sew 3 only (Iron, Packing, Quality of those floors are inside)
+ *  - "Factory": every floor
+ */
+export function floorMatches(recordFloor: string, view: string): boolean {
+  if (view === 'Factory') return true;
+  if (view === 'All Sewing') return (SEWING_FLOORS as readonly string[]).includes(recordFloor);
+  return recordFloor === view;
 }

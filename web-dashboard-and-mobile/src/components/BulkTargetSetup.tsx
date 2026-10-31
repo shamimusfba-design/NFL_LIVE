@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { LineMasterItem, LineTargetConfig, FloorManpowerRecord } from '../types';
+import { LineMasterItem, LineTargetConfig, FloorManpowerRecord, PhysicalFloor } from '../types';
 
-type FloorName = 'Sew 1' | 'Sew 2' | 'Sew 3';
+type FloorName = PhysicalFloor;
 
 interface Row {
   style: string;
@@ -190,7 +190,7 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
           A line without a target today is treated as not running that day.
         </div>
         <div className="mt-3 grid grid-cols-3 gap-1.5 sm:inline-grid">
-          {(['Sew 1', 'Sew 2', 'Sew 3'] as FloorName[]).map(f => (
+          {(['Sew 1', 'Sew 2', 'Sew 3', 'Cutting', 'Print', 'Embroidery'] as FloorName[]).map(f => (
             <button
               key={f}
               type="button"

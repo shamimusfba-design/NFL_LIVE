@@ -1,4 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
+
+/** Button and title text for every view */
+const FLOOR_LABEL: Record<FloorId, string> = {
+  'Sew 1': 'Sew 1', 'Sew 2': 'Sew 2', 'Sew 3': 'Sew 3',
+  'All Sewing': 'All Sewing', 'Cutting': 'Cutting', 'Print': 'Print', 'Embroidery': 'Embroidery', 'Factory': 'Factory'
+};
+/** Buttons in order: the three sewing floors, all sewing, the departments, then the whole factory */
+const FLOOR_BUTTONS: FloorId[] = ['Sew 1', 'Sew 2', 'Sew 3', 'All Sewing', 'Cutting', 'Print', 'Embroidery', 'Factory'];
 import {
   FloorId,
   PeriodId,
@@ -11,7 +19,7 @@ import {
 } from '../types';
 import { HourlyWallboardBucket } from '../services/calculationEngine';
 import { formatHourSlot12h,
-  hourLabelOfSlot, isBiHourlyAuditSlot } from '../data/masterData';
+  hourLabelOfSlot, isBiHourlyAuditSlot, floorMatches } from '../data/masterData';
 
 export type WbPageId = 'PRODUCTION' | 'QUALITY' | 'ALL' | 'TABLE';
 
@@ -157,7 +165,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
     const map: Record<string, number> = {};
     const list = allIncidents.length > 0 ? allIncidents : openIncidents;
     list
-      .filter(i => selectedFloor === 'All' || i.floor === selectedFloor)
+      .filter(i => floorMatches(i.floor, selectedFloor))
       .forEach(i => {
         const mins = Math.max(1, Math.round(((i.endTimeMillis || Date.now()) - i.startTimeMillis) / 60000));
         const label = i.category.replace(/_/g, ' ');
@@ -174,7 +182,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   const mainDefectWorstLines = useMemo(() => {
     const map: Record<string, number> = {};
     qualities
-      .filter(q => selectedFloor === 'All' || q.floor === selectedFloor)
+      .filter(q => floorMatches(q.floor, selectedFloor))
       .forEach(q => {
         q.defects.forEach(d => {
           if (d.defectType.toLowerCase() === mainDefectName.toLowerCase()) {
@@ -235,7 +243,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 backgroundColor: page === item.id ? WB_THEME.BLUE : 'transparent',
                 color: page === item.id ? 'var(--wb-on-selected)' : WB_THEME.MUTED
               }}
-              className="px-3 py-1.5 sm:py-1 rounded text-xs font-black transition text-center"
+              className="shrink-0 px-3 py-1.5 sm:py-1 rounded text-xs font-black transition text-center whitespace-nowrap"
             >
               {item.label}
             </button>
@@ -245,9 +253,9 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
         {/* Floor Segment: Sew 1 | Sew 2 | Sew 3 | All Floors */}
         <div
           style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-          className="grid grid-cols-4 sm:flex w-full sm:w-auto items-center p-0.5 rounded-md border gap-0.5"
+          className="nfl-scroll flex w-full sm:w-auto items-center p-0.5 rounded-md border gap-0.5 overflow-x-auto"
         >
-          {(['Sew 1', 'Sew 2', 'Sew 3', 'All'] as FloorId[]).map(fl => (
+          {FLOOR_BUTTONS.map(fl => (
             <button
               key={fl}
               onClick={() => onSelectFloor(fl)}
@@ -257,7 +265,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               }}
               className="px-3 py-1.5 sm:py-1 rounded text-xs font-black transition text-center"
             >
-              {fl === 'All' ? 'All Floors' : fl}
+              {FLOOR_LABEL[fl]}
             </button>
           ))}
         </div>
@@ -287,7 +295,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex w-full sm:w-auto items-center gap-1.5 overflow-x-auto whitespace-nowrap sm:flex-wrap sm:overflow-visible pb-1 sm:pb-0">
           <span className="font-extrabold text-sm mr-1 shrink-0">
-            {selectedFloor === 'All' ? 'All Floors' : selectedFloor} ·{' '}
+            {FLOOR_LABEL[selectedFloor]} ·{' '}
             {page === 'PRODUCTION'
               ? 'Production'
               : page === 'QUALITY'
@@ -901,7 +909,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           <div className="flex items-center justify-between mb-2">
             <div>
               <h3 className="text-sm font-black text-[#002D62]">
-                Live Line Performance Table ({selectedFloor === 'All' ? 'All Floors' : selectedFloor} · {selectedPeriod})
+                Live Line Performance Table ({FLOOR_LABEL[selectedFloor]} · {selectedPeriod})
               </h3>
               <p className="text-[11px] text-slate-500">
                 Click any line row to open its Line Deep Dive &amp; Rectification Ledger

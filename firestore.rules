@@ -18,7 +18,8 @@ service cloud.firestore {
         'Sew-1', 'Sew-2', 'Sew-3', 'Sew-4',
         'Sew 1', 'Sew 2', 'Sew 3', 'Sew 4',
         'SEW_1', 'SEW_2', 'SEW_3', 'SEW_4',
-        'Finishing', 'FINISHING'
+        'Finishing', 'FINISHING',
+        'Cutting', 'Print', 'Embroidery'
       ];
     }
 
@@ -28,7 +29,8 @@ service cloud.firestore {
         'Sew-1', 'Sew-2', 'Sew-3', 'Sew-4',
         'Sew 1', 'Sew 2', 'Sew 3', 'Sew 4',
         'SEW_1', 'SEW_2', 'SEW_3', 'SEW_4',
-        'Finishing', 'FINISHING'
+        'Finishing', 'FINISHING',
+        'Cutting', 'Print', 'Embroidery'
       ];
     }
 
