@@ -5682,7 +5682,7 @@ class NflRepository(private val context: Context) {
           .sortedByDescending { it.value }
           .take(2)
           .joinToString(", ") { it.key }
-          .ifBlank { defectNames[idx % defectNames.size] }
+          .ifBlank { "No defect breakdown" }
         HourlyQualityRow(
           hourSlot = slot,
           dhuPct = dhuPct,
