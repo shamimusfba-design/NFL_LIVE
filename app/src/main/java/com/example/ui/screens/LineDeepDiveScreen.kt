@@ -37,6 +37,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.BuildConfig
 import com.example.data.NflRepository
 import com.example.model.PeriodScope
+import com.example.model.QualityRecord
+import com.example.model.ParetoDefectPoint
 import com.example.ui.components.NptPieChartCard
 import com.example.ui.components.SpeedometerGauge
 import com.example.ui.theme.NflRoyalBlue
@@ -68,6 +70,9 @@ fun LineDeepDiveScreen(
   val floorLinesForDropdown = remember(floorName) { repository.allLinesMaster.filter { it.floor == floorName } }
 
   val monthlyTarget = remember(floorName, monthlyTargets, refreshTrigger) { repository.getMonthlyTarget(floorName) }
+  val lineMonthlyTarget = remember(floorName, selectedLineId, monthlyTargets, refreshTrigger) {
+    repository.getMonthlyLineTarget(floorName, selectedLineId) ?: monthlyTarget
+  }
 
   val hourlyProd = remember(selectedLineId, selectedPeriod, productionEntries, targets, refreshTrigger) {
     val startMs = if (BuildConfig.DEBUG) SystemClock.elapsedRealtime() else 0L
@@ -87,8 +92,34 @@ fun LineDeepDiveScreen(
     rows
   }
 
-  val paretoDefects = remember(selectedLineId, qualityEntries, refreshTrigger) {
-    repository.getParetoDefects(selectedLineId)
+  val lineQualityRecords = remember(selectedLineId, selectedPeriod, qualityEntries, refreshTrigger) {
+    qualityEntries.filter {
+      it.lineId.equals(selectedLineId, ignoreCase = true) &&
+        repository.isDateInPeriod(it.date, selectedPeriod)
+    }.groupBy { "${NflRepository.normalizeHourSlot24h(it.hourSlot)}|${it.date}" }
+      .values.mapNotNull { records -> records.maxByOrNull { it.revision } }
+  }
+
+  val lineBiHourlyAudits = remember(lineQualityRecords) {
+    lineQualityRecords.filter { repository.isBiHourlyAuditSlot(it.hourSlot) }
+  }
+
+  val paretoDefects = remember(lineQualityRecords) {
+    val counts = lineQualityRecords.flatMap { it.defects }
+      .filter { it.count > 0 }
+      .groupBy { it.defectType }
+      .mapValues { (_, defects) -> defects.sumOf { it.count } }
+    val total = counts.values.sum().coerceAtLeast(1)
+    var running = 0
+    counts.entries.sortedByDescending { it.value }.take(5).map { entry ->
+      running += entry.value
+      ParetoDefectPoint(
+        defectName = entry.key,
+        count = entry.value,
+        percentage = Math.round(entry.value.toDouble() / total * 1000.0) / 10.0,
+        cumulativePercentage = Math.round(running.toDouble() / total * 1000.0) / 10.0
+      )
+    }
   }
 
   val linePerformancePoint = remember(selectedLineId, selectedPeriod, productionEntries, qualityEntries, targets, incidents, refreshTrigger) {
@@ -112,22 +143,26 @@ fun LineDeepDiveScreen(
     hourlyProd.lastOrNull()?.totalTarget ?: lineSetup.targetDailyPcs
   }
   val totalAchieve = remember(hourlyProd) {
-    hourlyProd.lastOrNull()?.totalAchieve ?: 420
+    hourlyProd.lastOrNull()?.totalAchieve ?: 0
   }
   val overallAchievePct = remember(totalTarget, totalAchieve) {
     if (totalTarget > 0) Math.round((totalAchieve.toDouble() / totalTarget) * 1000.0) / 10.0 else 0.0
   }
-  val todayEffPct = remember(hourlyProd) {
-    if (hourlyProd.isNotEmpty()) hourlyProd.filter { it.efficiencyPct > 0 }.map { it.efficiencyPct }.average().let { if (it.isNaN()) 68.5 else Math.round(it * 10.0) / 10.0 } else 68.5
+  val todayEffPct = remember(linePerformancePoint) {
+    linePerformancePoint.todayEfficiencyPct?.let { Math.round(it * 10.0) / 10.0 } ?: 0.0
   }
   val avgOee = remember(hourlyProd) {
-    hourlyProd.filter { it.oeePct > 0 }.map { it.oeePct }.average().let { if (it.isNaN()) 72.8 else Math.round(it * 10.0) / 10.0 }
+    hourlyProd.filter { it.oeePct > 0 }.map { it.oeePct }.average().let { if (it.isNaN()) 0.0 else Math.round(it * 10.0) / 10.0 }
   }
-  val avgDhu = remember(hourlyQuality) {
-    hourlyQuality.map { it.dhuPct }.average().let { if (it.isNaN()) 1.85 else Math.round(it * 100.0) / 100.0 }
+  val avgDhu = remember(lineQualityRecords) {
+    val hourlyRecords = lineQualityRecords.filterNot { repository.isBiHourlyAuditSlot(it.hourSlot) }
+    val checked = hourlyRecords.sumOf { it.checkedGarments }
+    if (checked > 0) Math.round(hourlyRecords.sumOf { it.totalDefects }.toDouble() / checked * 10000.0) / 100.0 else 0.0
   }
-  val avgOql = remember(hourlyQuality) {
-    hourlyQuality.map { it.oqlPct }.average().let { if (it.isNaN()) 3.55 else Math.round(it * 100.0) / 100.0 }
+  val avgOql = remember(lineBiHourlyAudits, lineQualityRecords) {
+    val auditSource = lineBiHourlyAudits.ifEmpty { lineQualityRecords }
+    val checked = auditSource.sumOf { it.checkedGarments }
+    if (checked > 0) Math.round(auditSource.sumOf { it.defectiveGarments }.toDouble() / checked * 10000.0) / 100.0 else 0.0
   }
   val totalNptMins = remember(lineIssues) { lineIssues.sumOf { it.durationMins } }
   val totalLostPcs = remember(lineIssues) { lineIssues.sumOf { it.outputImpactPcs } }
@@ -267,8 +302,8 @@ fun LineDeepDiveScreen(
                 modifier = Modifier.weight(1f)
               )
               KpiCard(
-                title = "Up to Date Eff",
-                value = "${monthlyTarget.updateEfficiencyPct}%",
+                title = "Monthly Efficiency",
+                value = "${lineMonthlyTarget.updateEfficiencyPct}%",
                 subtext = "MTD Average",
                 valueColor = Color(0xFF2563EB),
                 modifier = Modifier.weight(1f)
@@ -404,8 +439,14 @@ fun LineDeepDiveScreen(
           }
 
           // Top 5 Defects Solid Pie Chart for this Line (Requested order: right below production section)
-          Text("Line Top 5 Defects — Today (Endline QC)", fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
+          Text("Line Top 5 Defects — ${selectedPeriod.displayName} (Endline QC)", fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
           ParetoDefectPieChart(paretoDefects)
+
+          // Bi-hourly audit pass/fail analytics for this line and selected period.
+          BiHourlyAuditPerformanceCard(
+            lineId = selectedLineId,
+            records = lineBiHourlyAudits
+          )
 
           // Sliding Selector: Hourly DHU vs Hourly OQL Column Charts
           Text("Hourly Quality Trend Analysis (Column Charts):", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569))
@@ -634,6 +675,110 @@ fun LineDeepDiveScreen(
           }
         }
       }
+      }
+    }
+  }
+}
+
+private data class LineAuditSlotSummary(
+  val slot: String,
+  val audits: Int,
+  val passed: Int,
+  val failed: Int,
+  val checked: Int,
+  val passedPcs: Int,
+  val failedPcs: Int
+)
+
+@Composable
+private fun BiHourlyAuditPerformanceCard(lineId: String, records: List<QualityRecord>) {
+  val summaries = remember(records) {
+    records.groupBy { NflRepository.normalizeHourSlot24h(it.hourSlot) }
+      .map { (slot, slotRecords) ->
+        val passed = slotRecords.count { record ->
+          record.checkedGarments > 0 &&
+            record.defectiveGarments.toDouble() * 100.0 / record.checkedGarments <= 3.5
+        }
+        val failed = slotRecords.size - passed
+        LineAuditSlotSummary(
+          slot = slot,
+          audits = slotRecords.size,
+          passed = passed,
+          failed = failed,
+          checked = slotRecords.sumOf { it.checkedGarments },
+          passedPcs = slotRecords.sumOf { (it.checkedGarments - it.defectiveGarments).coerceAtLeast(0) },
+          failedPcs = slotRecords.sumOf { it.defectiveGarments }
+        )
+      }.sortedBy { NflRepository.parseSlotHours24(it.slot)?.first ?: Int.MAX_VALUE }
+  }
+  val totalAudits = summaries.sumOf { it.audits }
+  val totalPassed = summaries.sumOf { it.passed }
+  val totalFailed = summaries.sumOf { it.failed }
+  val totalChecked = summaries.sumOf { it.checked }
+  val totalPassPcs = summaries.sumOf { it.passedPcs }
+  val totalFailPcs = summaries.sumOf { it.failedPcs }
+  val passRate = if (totalAudits > 0) totalPassed * 100.0 / totalAudits else 0.0
+
+  Card(
+    shape = RoundedCornerShape(12.dp),
+    colors = CardDefaults.cardColors(containerColor = Color.White),
+    elevation = CardDefaults.cardElevation(2.dp),
+    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+    modifier = Modifier.fillMaxWidth()
+  ) {
+    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+      Text("Line $lineId — Bi-Hourly Audit Pass / Fail", fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color(0xFF0F172A))
+      Text("Audit result is classified using the existing OQL acceptance limit of 3.50%.", fontSize = 9.sp, color = Color(0xFF64748B))
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        KpiCard("Total Audits", totalAudits.toString(), "Saved audit records", Color(0xFF1D4ED8), Modifier.weight(1f))
+        KpiCard("Passed", totalPassed.toString(), "≤ 3.50% OQL", Color(0xFF15803D), Modifier.weight(1f))
+        KpiCard("Failed", totalFailed.toString(), "> 3.50% OQL", Color(0xFFDC2626), Modifier.weight(1f))
+      }
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        KpiCard("Pass Rate", String.format(java.util.Locale.US, "%.1f%%", passRate), "Audit pass rate", Color(0xFF0F766E), Modifier.weight(1f))
+        KpiCard("Checked pcs", totalChecked.toString(), "Inspected garments", Color(0xFF334155), Modifier.weight(1f))
+        KpiCard("Pass / Fail pcs", "$totalPassPcs / $totalFailPcs", "Garment quantity", Color(0xFF7C3AED), Modifier.weight(1f))
+      }
+      if (summaries.isEmpty()) {
+        Surface(Modifier.fillMaxWidth(), color = Color(0xFFF8FAFC), shape = RoundedCornerShape(7.dp)) {
+          Text("No bi-hourly audit records are available for this line and period.", modifier = Modifier.padding(12.dp), color = Color(0xFF64748B), fontSize = 10.sp)
+        }
+      } else {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.Bottom) {
+          val maxAudits = summaries.maxOf { it.audits }.coerceAtLeast(1)
+          summaries.forEach { row ->
+            Column(Modifier.width(76.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+              Text("P ${row.passed} / F ${row.failed}", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155))
+              Row(Modifier.height(78.dp), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
+                Box(Modifier.width(18.dp).height((row.passed.toFloat() / maxAudits * 64f).coerceAtLeast(if (row.passed > 0) 3f else 0f).dp).background(Color(0xFF16A34A), RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)))
+                Box(Modifier.width(18.dp).height((row.failed.toFloat() / maxAudits * 64f).coerceAtLeast(if (row.failed > 0) 3f else 0f).dp).background(Color(0xFFDC2626), RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)))
+              }
+              Text(NflRepository.formatHourSlot12h(row.slot), fontSize = 7.5.sp, color = Color(0xFF475569), textAlign = TextAlign.Center, maxLines = 2)
+            }
+          }
+        }
+        Column(Modifier.horizontalScroll(rememberScrollState())) {
+          Row(Modifier.background(Color(0xFF0F172A), RoundedCornerShape(5.dp)).padding(horizontal = 7.dp, vertical = 6.dp)) {
+            Text("Audit Slot", Modifier.width(112.dp), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("Audits", Modifier.width(48.dp), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("Pass", Modifier.width(42.dp), color = Color(0xFF86EFAC), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("Fail", Modifier.width(42.dp), color = Color(0xFFFCA5A5), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("Checked", Modifier.width(58.dp), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("Pass pcs", Modifier.width(60.dp), color = Color(0xFF86EFAC), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("Fail pcs", Modifier.width(58.dp), color = Color(0xFFFCA5A5), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+          }
+          summaries.forEachIndexed { index, row ->
+            Row(Modifier.background(if (index % 2 == 0) Color.White else Color(0xFFF8FAFC)).padding(horizontal = 7.dp, vertical = 6.dp)) {
+              Text(NflRepository.formatHourSlot12h(row.slot), Modifier.width(112.dp), color = Color(0xFF334155), fontSize = 9.sp)
+              Text(row.audits.toString(), Modifier.width(48.dp), color = Color(0xFF334155), fontSize = 9.sp)
+              Text(row.passed.toString(), Modifier.width(42.dp), color = Color(0xFF15803D), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+              Text(row.failed.toString(), Modifier.width(42.dp), color = Color(0xFFDC2626), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+              Text(row.checked.toString(), Modifier.width(58.dp), color = Color(0xFF334155), fontSize = 9.sp)
+              Text(row.passedPcs.toString(), Modifier.width(60.dp), color = Color(0xFF15803D), fontSize = 9.sp)
+              Text(row.failedPcs.toString(), Modifier.width(58.dp), color = Color(0xFFDC2626), fontSize = 9.sp)
+            }
+          }
+        }
       }
     }
   }
