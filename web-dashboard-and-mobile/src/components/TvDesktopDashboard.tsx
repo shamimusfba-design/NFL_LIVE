@@ -526,6 +526,12 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
         );
       })()}
 
+      {isDept && (
+        <WbPanel title="Weekly BS OQL vs NFL AQC (from week 32)" sub="Blue: BS OQL · Orange: NFL AQC · Red dashed: 4.5% commitment">
+          <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} />
+        </WbPanel>
+      )}
+
       {/* ==================== FINISHING: IRON · PACKING · QUALITY ==================== */}
       {!isDept && page === 'FINISHING' && (() => {
         const sum = (f: (x: FinishingFloorSummary) => number) => finishing.reduce((a, x) => a + f(x), 0);
@@ -911,6 +917,12 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       )}
 
       {/* ==================== PAGE 3: ALL (EXECUTIVE COMBINED WALLBOARD) ==================== */}
+      {!isDept && page === 'QUALITY' && (
+        <WbPanel title="Weekly BS OQL vs NFL AQC (from week 32)" sub="Blue: BS OQL · Orange: NFL AQC · Red dashed: 4.5% commitment">
+          <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} />
+        </WbPanel>
+      )}
+
       {!isDept && page === 'ALL' && (
         <div className="flex-1 flex flex-col gap-2">
           {/* Top 7 Summary Panels */}
@@ -1561,46 +1573,64 @@ const SemicircleGauge: React.FC<{
   );
 };
 
+/* ---------- shared column-chart pieces: the scale follows the data, labels sit on top of their bar ---------- */
+/** Highest value of the chart plus 18% headroom for the label, so the tallest bar nearly fills the area. */
+const niceMax = (vals: number[]): number => Math.max(1e-9, ...vals.filter(v => isFinite(v))) * 1.18 || 1;
+const PLOT_H = 'h-44 md:h-52 xl:h-60';
+
+/** One column; its value label sits just above the top of the column. */
+const Col: React.FC<{ v: number; max: number; color: string; label?: React.ReactNode; w?: string; title?: string }> = ({ v, max, color, label, w = 'w-3 md:w-4', title }) => {
+  const h = Math.max(0, Math.min(100, (v / max) * 100));
+  return (
+    <div className={`relative ${w} h-full flex items-end`}>
+      {label !== undefined && label !== null && label !== '' && (
+        <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] md:text-xs font-black leading-none" style={{ bottom: `calc(${h}% + 3px)`, color }}>
+          {label}
+        </div>
+      )}
+      <div style={{ height: `${h}%`, backgroundColor: color }} className="w-full rounded-t-sm" title={title} />
+    </div>
+  );
+};
+
+/** The scrolling row of column groups, with an optional dashed reference line. */
+const ChartRow: React.FC<{ children: React.ReactNode; refPct?: number | null; refColor?: string }> = ({ children, refPct, refColor }) => (
+  <div className="nfl-scroll overflow-x-auto pb-2">
+    <div className="relative flex items-end justify-between gap-1.5 min-w-full pt-5">{children}
+      {refPct !== undefined && refPct !== null && (
+        <div className={`absolute left-0 right-0 pointer-events-none ${PLOT_H}`} style={{ top: 20 }}>
+          <div className="absolute left-0 right-0 border-t-2 border-dashed" style={{ bottom: `${Math.min(100, refPct)}%`, borderColor: refColor || WB_THEME.AMBER }} />
+        </div>
+      )}
+    </div>
+  </div>
+);
+
+const Group: React.FC<{ children: React.ReactNode; name: React.ReactNode; sub?: React.ReactNode; subColor?: string; onClick?: () => void; minW?: string }> = ({ children, name, sub, subColor, onClick, minW = 'min-w-[44px] md:min-w-[54px]' }) => (
+  <div onClick={onClick} className={`flex flex-col items-center flex-1 ${minW} ${onClick ? 'cursor-pointer' : ''}`}>
+    <div className={`w-full ${PLOT_H} flex items-end justify-center gap-1 border-b`} style={{ borderColor: WB_THEME.LINE }}>{children}</div>
+    <div className="text-[11px] md:text-xs font-black mt-1 whitespace-nowrap">{name}</div>
+    {sub !== undefined && <div style={{ color: subColor }} className="text-[10px] md:text-[11px] font-bold leading-tight">{sub}</div>}
+  </div>
+);
+
 const LiveTargetVsAchievementChart: React.FC<{
   lines: LinePerformanceSummary[];
   onSelectLine: (l: LinePerformanceSummary) => void;
 }> = ({ lines, onSelectLine }) => {
-  const maxVal = Math.max(100, ...lines.map(l => Math.max(l.target, l.output ?? 0)));
+  const max = niceMax(lines.flatMap(l => [l.target, l.output ?? 0]));
   return (
-    <div className="nfl-scroll flex items-end justify-between gap-1 h-full pt-4 pb-2 overflow-x-auto">
+    <ChartRow>
       {lines.map(l => {
-        const tgtH = Math.round((l.target / maxVal) * 100);
-        const outH = Math.round(((l.output ?? 0) / maxVal) * 100);
         const col = achColor(l.achievementPct);
         return (
-          <div
-            key={l.lineId}
-            onClick={() => onSelectLine(l)}
-            className="flex flex-col items-center flex-1 min-w-[38px] h-full justify-end cursor-pointer group"
-          >
-            <div className="text-[11px] font-black mb-0.5" style={{ color: col }}>
-              {l.output ?? '—'}
-            </div>
-            <div className="w-full h-40 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div
-                style={{ height: `${tgtH}%`, backgroundColor: WB_THEME.DIM }}
-                className="w-2 rounded-t-sm"
-                title={`Target: ${l.target}`}
-              />
-              <div
-                style={{ height: `${outH}%`, backgroundColor: col }}
-                className="w-2.5 rounded-t-sm"
-                title={`Output: ${l.output ?? 0}`}
-              />
-            </div>
-            <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
-            <div style={{ color: col }} className="text-[8px] font-bold">
-              {l.achievementPct !== null ? `${l.achievementPct.toFixed(0)}%` : '—'}
-            </div>
-          </div>
+          <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)} sub={l.achievementPct !== null ? `${l.achievementPct.toFixed(0)}%` : '—'} subColor={col}>
+            <Col v={l.target} max={max} color={WB_THEME.DIM} w="w-2.5 md:w-3.5" title={`Target: ${l.target}`} />
+            <Col v={l.output ?? 0} max={max} color={col} label={l.output ?? '—'} w="w-3 md:w-4" title={`Output: ${l.output ?? 0}`} />
+          </Group>
         );
       })}
-    </div>
+    </ChartRow>
   );
 };
 
@@ -1609,41 +1639,19 @@ const EfficiencyByLineChart: React.FC<{
   targetEff: number;
   onSelectLine: (l: LinePerformanceSummary) => void;
 }> = ({ lines, targetEff, onSelectLine }) => {
+  const max = niceMax([targetEff, ...lines.flatMap(l => [l.efficiencyPct ?? 0, l.monthlyEfficiencyPct ?? 0])]);
   return (
-    <div className="nfl-scroll relative flex items-end justify-between gap-1 h-full pt-4 pb-2 overflow-x-auto">
-      {/* Dashed Target Line */}
-      <div
-        style={{ bottom: `${Math.min(95, Math.max(15, targetEff))}%`, borderColor: WB_THEME.AMBER }}
-        className="absolute left-0 right-0 border-t border-dashed pointer-events-none z-10"
-      />
+    <ChartRow refPct={(targetEff / max) * 100}>
       {lines.map(l => {
-        const eff = l.efficiencyPct ?? 0;
-        const mo = l.monthlyEfficiencyPct ?? 0;
         const col = effColor(l.efficiencyPct, l.targetEfficiencyPct);
         return (
-          <div
-            key={l.lineId}
-            onClick={() => onSelectLine(l)}
-            className="flex flex-col items-center flex-1 min-w-[24px] h-full justify-end cursor-pointer"
-          >
-            <div style={{ color: col }} className="text-[11px] font-black mb-0.5">
-              {l.efficiencyPct !== null ? `${eff.toFixed(0)}%` : '—'}
-            </div>
-            <div className="w-full h-40 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div
-                style={{ height: `${Math.min(100, mo)}%`, backgroundColor: WB_THEME.DIM }}
-                className="w-2 rounded-t-sm"
-              />
-              <div
-                style={{ height: `${Math.min(100, eff)}%`, backgroundColor: col }}
-                className="w-2.5 rounded-t-sm"
-              />
-            </div>
-            <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
-          </div>
+          <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)}>
+            <Col v={l.monthlyEfficiencyPct ?? 0} max={max} color={WB_THEME.DIM} w="w-2.5 md:w-3.5" title={`Month: ${l.monthlyEfficiencyPct ?? 0}%`} />
+            <Col v={l.efficiencyPct ?? 0} max={max} color={col} label={l.efficiencyPct !== null ? `${(l.efficiencyPct ?? 0).toFixed(0)}%` : '—'} title={`Today: ${l.efficiencyPct ?? 0}%`} />
+          </Group>
         );
       })}
-    </div>
+    </ChartRow>
   );
 };
 
@@ -1655,145 +1663,87 @@ const MetricByLineBarChart: React.FC<{
   limitVal: number;
   onSelectLine: (l: LinePerformanceSummary) => void;
 }> = ({ lines, getValue, getColor, formatVal, limitVal, onSelectLine }) => {
-  const maxVal = Math.max(limitVal * 2, 8, ...lines.map(l => getValue(l) ?? 0));
+  const max = niceMax([limitVal, ...lines.map(l => getValue(l) ?? 0)]);
   return (
-    <div className="nfl-scroll flex items-end justify-between gap-1 h-full pt-4 pb-2 overflow-x-auto">
+    <ChartRow refPct={(limitVal / max) * 100} refColor={WB_THEME.RED}>
       {lines.map(l => {
         const val = getValue(l);
-        const hPct = val !== null ? Math.min(100, Math.round((val / maxVal) * 100)) : 0;
         const col = getColor(val);
         return (
-          <div
-            key={l.lineId}
-            onClick={() => onSelectLine(l)}
-            className="flex flex-col items-center flex-1 min-w-[24px] h-full justify-end cursor-pointer"
-          >
-            <div style={{ color: col }} className="text-[11px] font-black mb-0.5">
-              {val !== null ? formatVal(val) : '—'}
-            </div>
-            <div className="w-full h-24 flex items-end justify-center border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div style={{ height: `${hPct}%`, backgroundColor: col }} className="w-3 rounded-t-sm" />
-            </div>
-            <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
-          </div>
+          <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)}>
+            <Col v={val ?? 0} max={max} color={col} label={val !== null ? formatVal(val) : '—'} w="w-4 md:w-6" />
+          </Group>
         );
       })}
-    </div>
+    </ChartRow>
   );
 };
 
 const HourlyOutputWallboardChart: React.FC<{ buckets: HourlyWallboardBucket[] }> = ({ buckets }) => {
-  const maxVal = Math.max(100, ...buckets.map(b => Math.max(b.target, b.output)));
+  const max = niceMax(buckets.flatMap(b => [b.target, b.output]));
   return (
-    <div className="nfl-scroll flex items-end justify-between gap-1.5 h-full pt-3 pb-2 overflow-x-auto">
+    <ChartRow>
       {buckets.map(b => {
-        const tgtH = Math.round((b.target / maxVal) * 100);
-        const outH = Math.round((b.output / maxVal) * 100);
         const pct = b.target > 0 ? Math.round((b.output / b.target) * 100) : 0;
         const col = b.output === 0 ? WB_THEME.DIM : achColor(pct);
         return (
-          <div key={b.slot24} className="flex flex-col items-center flex-1 min-w-[46px] h-full justify-end">
-            <div style={{ color: col }} className="text-[11px] font-black mb-0.5">
-              {b.output > 0 ? b.output : '—'}
-            </div>
-            <div className="w-full h-40 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div style={{ height: `${tgtH}%`, backgroundColor: WB_THEME.DIM }} className="w-2.5 rounded-t-sm" />
-              <div style={{ height: `${outH}%`, backgroundColor: col }} className="w-3 rounded-t-sm" />
-            </div>
-            <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{b.label12h}</div>
-            <div style={{ color: col }} className="text-[8px] font-bold">
-              {b.output > 0 && b.target > 0 ? `${pct}%` : ''}
-            </div>
-          </div>
+          <Group key={b.slot24} name={b.label12h} sub={b.output > 0 && b.target > 0 ? `${pct}%` : ''} subColor={col} minW="min-w-[52px] md:min-w-[64px]">
+            <Col v={b.target} max={max} color={WB_THEME.DIM} w="w-3 md:w-5" title={`Target: ${b.target}`} />
+            <Col v={b.output} max={max} color={col} label={b.output > 0 ? b.output : '—'} w="w-4 md:w-6" title={`Output: ${b.output}`} />
+          </Group>
         );
       })}
-    </div>
+    </ChartRow>
   );
 };
 
 /** Pass and fail counts of the bi-hourly audits, one pair of columns per line. */
 const AuditPassFailChart: React.FC<{ rows: Array<{ lineId: string; pass: number; fail: number }> }> = ({ rows }) => {
-  const maxVal = Math.max(3, ...rows.map(r => Math.max(r.pass, r.fail)));
   if (rows.length === 0) {
     return <div style={{ color: WB_THEME.MUTED }} className="flex items-center justify-center h-full text-xs font-bold">No audits recorded in this period</div>;
   }
+  const max = niceMax(rows.flatMap(r => [r.pass, r.fail]));
   return (
-    <div className="nfl-scroll flex items-end justify-between gap-1.5 h-full pt-3 pb-2 overflow-x-auto">
+    <ChartRow>
       {rows.map(r => (
-        <div key={r.lineId} className="flex flex-col items-center flex-1 min-w-[46px] h-full justify-end">
-          <div className="flex gap-0.5 text-[11px] font-black mb-0.5">
-            <span style={{ color: WB_THEME.GREEN }}>{r.pass}</span>
-            <span style={{ color: WB_THEME.RED }}>{r.fail}</span>
-          </div>
-          <div className="w-full h-40 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
-            <div style={{ height: `${Math.round((r.pass / maxVal) * 100)}%`, backgroundColor: WB_THEME.GREEN }} className="w-2.5 rounded-t-sm" title={`Pass: ${r.pass}`} />
-            <div style={{ height: `${Math.round((r.fail / maxVal) * 100)}%`, backgroundColor: WB_THEME.RED }} className="w-2.5 rounded-t-sm" title={`Fail: ${r.fail}`} />
-          </div>
-          <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(r.lineId)}</div>
-        </div>
+        <Group key={r.lineId} name={lineDisplayName(r.lineId)}>
+          <Col v={r.pass} max={max} color={WB_THEME.GREEN} label={r.pass} title={`Pass: ${r.pass}`} />
+          <Col v={r.fail} max={max} color={WB_THEME.RED} label={r.fail} title={`Fail: ${r.fail}`} />
+        </Group>
       ))}
-    </div>
+    </ChartRow>
   );
 };
 
 const HourlyQcPassChart: React.FC<{ buckets: HourlyWallboardBucket[] }> = ({ buckets }) => {
-  const maxVal = Math.max(10, ...buckets.map(b => b.checked));
+  const max = niceMax(buckets.map(b => b.checked));
   return (
-    <div className="nfl-scroll flex items-end justify-between gap-1.5 h-full pt-3 pb-2 overflow-x-auto">
+    <ChartRow>
       {buckets.map(b => {
         const passed = Math.max(0, b.checked - b.defective);
         const pct = b.checked > 0 ? Math.round((passed / b.checked) * 100) : null;
         return (
-          <div key={b.slot24} className="flex flex-col items-center flex-1 min-w-[46px] h-full justify-end">
-            <div className="text-[10px] font-black leading-tight" style={{ color: WB_THEME.BLUE }}>{b.checked > 0 ? b.checked : '—'}</div>
-            <div className="text-[10px] font-black mb-0.5 leading-tight" style={{ color: WB_THEME.GREEN }}>{b.checked > 0 ? passed : ''}</div>
-            <div className="w-full h-40 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div style={{ height: `${Math.round((b.checked / maxVal) * 100)}%`, backgroundColor: WB_THEME.BLUE }} className="w-2.5 rounded-t-sm" title={`Checked: ${b.checked}`} />
-              <div style={{ height: `${Math.round((passed / maxVal) * 100)}%`, backgroundColor: WB_THEME.GREEN }} className="w-2.5 rounded-t-sm" title={`QC pass: ${passed}`} />
-            </div>
-            <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{b.label12h}</div>
-            <div className="text-[8px] font-bold" style={{ color: WB_THEME.GREEN }}>{pct !== null ? `${pct}%` : ''}</div>
-          </div>
+          <Group key={b.slot24} name={b.label12h} sub={pct !== null ? `${pct}%` : ''} subColor={WB_THEME.GREEN} minW="min-w-[52px] md:min-w-[64px]">
+            <Col v={b.checked} max={max} color={WB_THEME.BLUE} label={b.checked > 0 ? b.checked : '—'} title={`Checked: ${b.checked}`} />
+            <Col v={passed} max={max} color={WB_THEME.GREEN} label={b.checked > 0 ? passed : ''} title={`QC pass: ${passed}`} />
+          </Group>
         );
       })}
-    </div>
+    </ChartRow>
   );
 };
 
-const HourlyQualityLineChart: React.FC<{ buckets: HourlyWallboardBucket[]; limit: number }> = ({
-  buckets
-}) => {
+const HourlyQualityLineChart: React.FC<{ buckets: HourlyWallboardBucket[]; limit: number }> = ({ buckets, limit }) => {
+  const max = niceMax([limit, ...buckets.flatMap(b => [b.dhuPct ?? 0, b.oqlPct ?? 0])]);
   return (
-    <div className="nfl-scroll flex items-end justify-between gap-1.5 h-full pt-3 pb-2 overflow-x-auto">
-      {buckets.map(b => {
-        const maxQ = 12;
-        const dhuH = b.dhuPct !== null ? Math.min(100, Math.round((b.dhuPct / maxQ) * 100)) : 0;
-        const oqlH = b.oqlPct !== null ? Math.min(100, Math.round((b.oqlPct / maxQ) * 100)) : 0;
-        return (
-          <div key={b.slot24} className="flex flex-col items-center flex-1 min-w-[46px] h-full justify-end">
-            <div className="text-[10px] font-black leading-tight text-center" style={{ color: WB_THEME.ORANGE }}>
-              {b.dhuPct !== null ? b.dhuPct.toFixed(1) : '—'}
-            </div>
-            <div className="text-[10px] font-black mb-0.5 leading-tight text-center" style={{ color: WB_THEME.BLUE }}>
-              {b.oqlPct !== null ? `${b.oqlPct.toFixed(1)}%` : '—'}
-            </div>
-            <div className="w-full h-40 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div
-                style={{ height: `${dhuH}%`, backgroundColor: WB_THEME.ORANGE }}
-                className="w-2.5 rounded-t-sm"
-                title={`DHU: ${b.dhuPct ?? 0}%`}
-              />
-              <div
-                style={{ height: `${oqlH}%`, backgroundColor: WB_THEME.BLUE }}
-                className="w-2.5 rounded-t-sm"
-                title={`OQL: ${b.oqlPct ?? 0}%`}
-              />
-            </div>
-            <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{b.label12h}</div>
-          </div>
-        );
-      })}
-    </div>
+    <ChartRow refPct={(limit / max) * 100} refColor={WB_THEME.RED}>
+      {buckets.map(b => (
+        <Group key={b.slot24} name={b.label12h} minW="min-w-[56px] md:min-w-[70px]">
+          <Col v={b.dhuPct ?? 0} max={max} color={WB_THEME.ORANGE} label={b.dhuPct !== null ? b.dhuPct.toFixed(1) : '—'} title={`DHU: ${b.dhuPct ?? 0}%`} />
+          <Col v={b.oqlPct ?? 0} max={max} color={WB_THEME.BLUE} label={b.oqlPct !== null ? `${b.oqlPct.toFixed(1)}%` : ''} title={`OQL: ${b.oqlPct ?? 0}%`} />
+        </Group>
+      ))}
+    </ChartRow>
   );
 };
 
@@ -1801,7 +1751,7 @@ const RectificationPendingChart: React.FC<{
   lines: LinePerformanceSummary[];
   onSelectLine: (l: LinePerformanceSummary) => void;
 }> = ({ lines, onSelectLine }) => {
-  const pendingLines = lines.filter(l => l.sewBal + l.spotBal > 0).slice(0, 10);
+  const pendingLines = lines.filter(l => l.sewBal + l.spotBal > 0).slice(0, 14);
   if (pendingLines.length === 0) {
     return (
       <div style={{ color: WB_THEME.GREEN }} className="flex items-center justify-center h-full text-xs font-black">
@@ -1809,75 +1759,43 @@ const RectificationPendingChart: React.FC<{
       </div>
     );
   }
-  const maxP = Math.max(5, ...pendingLines.map(l => l.sewBal + l.spotBal));
+  const max = niceMax(pendingLines.flatMap(l => [l.sewBal, l.spotBal]));
   return (
-    <div className="flex items-end justify-around gap-1.5 h-full pt-3">
-      {pendingLines.map(l => {
-        const total = l.sewBal + l.spotBal;
-        const sewH = Math.round((l.sewBal / maxP) * 100);
-        const spotH = Math.round((l.spotBal / maxP) * 100);
-        return (
-          <div
-            key={l.lineId}
-            onClick={() => onSelectLine(l)}
-            className="flex flex-col items-center flex-1 h-full justify-end cursor-pointer"
-          >
-            <div style={{ color: WB_THEME.AMBER }} className="text-[11px] font-black mb-0.5">
-              {total}
-            </div>
-            <div className="w-full h-24 flex flex-col justify-end items-center border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div style={{ height: `${spotH}%`, backgroundColor: WB_THEME.BLUE }} className="w-3.5 rounded-t-sm" />
-              <div style={{ height: `${sewH}%`, backgroundColor: WB_THEME.ORANGE }} className="w-3.5" />
-            </div>
-            <div className="text-[11px] font-black mt-0.5 whitespace-nowrap">{lineDisplayName(l.lineId)}</div>
-          </div>
-        );
-      })}
-    </div>
+    <ChartRow>
+      {pendingLines.map(l => (
+        <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)} sub={`${l.sewBal + l.spotBal} pcs`} subColor={WB_THEME.AMBER}>
+          <Col v={l.sewBal} max={max} color={WB_THEME.ORANGE} label={l.sewBal} title={`Sewing: ${l.sewBal}`} />
+          <Col v={l.spotBal} max={max} color={WB_THEME.BLUE} label={l.spotBal} title={`Spot: ${l.spotBal}`} />
+        </Group>
+      ))}
+    </ChartRow>
   );
 };
 
-const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: number }> = ({
-  records
-}) => {
-  if (records.length === 0) {
+/** Weekly BS OQL vs NFL AQC, from ISO week 32 of the current year onwards (blue: BS OQL, orange: NFL AQC). */
+const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: number }> = ({ records, commitment }) => {
+  const year = new Date().getFullYear();
+  const from = `${year}-W32`;
+  const rows = [...records]
+    .filter(r => r.weekKey >= from && (r.bsOqlPct !== null || r.nflAqcPct !== null))
+    .sort((a, b) => (a.weekKey < b.weekKey ? -1 : 1));
+  if (rows.length === 0) {
     return (
       <div style={{ color: WB_THEME.MUTED }} className="flex items-center justify-center h-full text-xs font-bold">
-        No Weekly BS OQL / NFL AQC records entered yet
+        No weekly BS OQL / NFL AQC records from week 32 yet
       </div>
     );
   }
-  const maxVal = Math.max(10, ...records.map(r => Math.max(r.bsOqlPct ?? 0, r.nflAqcPct ?? 0)));
+  const max = niceMax([commitment, ...rows.flatMap(r => [r.bsOqlPct ?? 0, r.nflAqcPct ?? 0])]);
   return (
-    <div className="flex items-end justify-between gap-2 h-full pt-3">
-      {records.map(r => {
-        const bsH = r.bsOqlPct !== null ? Math.round((r.bsOqlPct / maxVal) * 100) : 0;
-        const aqcH = r.nflAqcPct !== null ? Math.round((r.nflAqcPct / maxVal) * 100) : 0;
-        return (
-          <div key={r.weekKey} className="flex flex-col items-center flex-1 h-full justify-end">
-            <div className="text-[10px] font-black mb-0.5" style={{ color: WB_THEME.BLUE }}>
-              {r.bsOqlPct !== null ? `${r.bsOqlPct.toFixed(1)}%` : ''}
-            </div>
-            <div className="w-full h-40 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div
-                style={{ height: `${bsH}%`, backgroundColor: WB_THEME.BLUE }}
-                className="w-2.5 rounded-t-sm"
-                title={`BS OQL: ${r.bsOqlPct ?? '—'}%`}
-              />
-              <div
-                style={{ height: `${aqcH}%`, backgroundColor: WB_THEME.ORANGE }}
-                className="w-2.5 rounded-t-sm"
-                title={`NFL AQC: ${r.nflAqcPct ?? '—'}%`}
-              />
-            </div>
-            <div className="text-[11px] font-black mt-0.5">{r.weekKey.replace(/^\d{4}-/, '')}</div>
-            <div className="text-[8px] font-bold" style={{ color: WB_THEME.ORANGE }}>
-              {r.nflAqcPct !== null ? `${r.nflAqcPct.toFixed(1)}%` : ''}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+    <ChartRow refPct={(commitment / max) * 100} refColor={WB_THEME.RED}>
+      {rows.map(r => (
+        <Group key={r.weekKey} name={`W${r.weekKey.replace(/^\d{4}-W/, '')}`} minW="min-w-[56px] md:min-w-[70px]">
+          <Col v={r.bsOqlPct ?? 0} max={max} color={WB_THEME.BLUE} label={r.bsOqlPct !== null ? `${r.bsOqlPct.toFixed(1)}` : ''} title={`BS OQL: ${r.bsOqlPct ?? '—'}%`} />
+          <Col v={r.nflAqcPct ?? 0} max={max} color={WB_THEME.ORANGE} label={r.nflAqcPct !== null ? `${r.nflAqcPct.toFixed(1)}` : ''} title={`NFL AQC: ${r.nflAqcPct ?? '—'}%`} />
+        </Group>
+      ))}
+    </ChartRow>
   );
 };
 
