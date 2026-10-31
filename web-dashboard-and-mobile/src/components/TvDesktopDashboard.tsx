@@ -17,11 +17,11 @@ import {
   ProductionEntryRecord,
   QualityEntryRecord
 } from '../types';
-import { HourlyWallboardBucket } from '../services/calculationEngine';
+import { HourlyWallboardBucket, FinishingFloorSummary } from '../services/calculationEngine';
 import { formatHourSlot12h,
   hourLabelOfSlot, isBiHourlyAuditSlot, floorMatches, lineDisplayName, isDepartmentFloor, unitWord } from '../data/masterData';
 
-export type WbPageId = 'PRODUCTION' | 'QUALITY' | 'ALL' | 'TABLE';
+export type WbPageId = 'PRODUCTION' | 'QUALITY' | 'FINISHING' | 'ALL' | 'TABLE';
 
 const WB_INTERVALS = [30, 60, 10, 15, 0];
 
@@ -60,6 +60,8 @@ interface TvDesktopDashboardProps {
   openIncidents: IncidentRecord[];
   allIncidents?: IncidentRecord[];
   onOpenIncidentPanel: () => void;
+  /** Iron, Packing and Quality of each sewing floor in the view */
+  finishing?: FinishingFloorSummary[];
   /** Cutting / Print / Embroidery totals, shown as a strip on the Factory view */
   departmentSummaries?: Array<{ floor: string; units: number; target: number; output: number; achievementPct: number | null; checked: number; passed: number }>;
   /** The side menu can ask for a page. n changes on every request so the same page can be asked twice. */
@@ -115,7 +117,8 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   openIncidents,
   allIncidents = [],
   onOpenIncidentPanel,
-  departmentSummaries = []
+  departmentSummaries = [],
+  finishing = []
 }) => {
   const [page, setPage] = useState<WbPageId>('ALL');
   // A page chosen in the side menu is shown at once.
@@ -145,7 +148,8 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           }
           setPage(curr => {
             if (curr === 'PRODUCTION') return 'QUALITY';
-            if (curr === 'QUALITY') return 'ALL';
+            if (curr === 'QUALITY') return 'FINISHING';
+            if (curr === 'FINISHING') return 'ALL';
             if (curr === 'ALL') return 'PRODUCTION';
             return 'TABLE';
           });
@@ -235,12 +239,13 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
         {/* 4-Page Segment: Production | Quality | All | Table (sewing only) */}
         <div
           style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-          className={`${isDept ? 'hidden' : 'grid'} grid-cols-4 sm:flex w-full sm:w-auto items-center p-0.5 rounded-md border gap-0.5`}
+          className={`${isDept ? 'hidden' : 'grid'} grid-cols-5 sm:flex w-full sm:w-auto items-center p-0.5 rounded-md border gap-0.5`}
         >
           {(
             [
               { id: 'PRODUCTION', label: 'Production' },
               { id: 'QUALITY', label: 'Quality' },
+              { id: 'FINISHING', label: 'Finishing' },
               { id: 'ALL', label: 'All' },
               { id: 'TABLE', label: 'Table' }
             ] as Array<{ id: WbPageId; label: string }>
@@ -310,6 +315,8 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             {FLOOR_LABEL[selectedFloor]} ·{' '}
             {page === 'PRODUCTION'
               ? 'Production'
+              : page === 'FINISHING'
+              ? 'Finishing'
               : page === 'QUALITY'
               ? 'Quality'
               : page === 'ALL'
@@ -374,7 +381,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               {interval > 0 ? `Auto-slide ${interval}s · next ${countdown}s` : 'Auto-slide paused'}
             </span>
             <div className="flex items-center gap-1">
-              {(['PRODUCTION', 'QUALITY', 'ALL'] as WbPageId[]).map(p => (
+              {(['PRODUCTION', 'QUALITY', 'FINISHING', 'ALL'] as WbPageId[]).map(p => (
                 <span
                   key={p}
                   style={{ backgroundColor: page === p ? WB_THEME.BLUE : WB_THEME.DIM }}
@@ -453,6 +460,76 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               >
                 <OpenStoppagesList incidents={openIncidents} onClick={onOpenIncidentPanel} />
               </WbPanel>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ==================== FINISHING: IRON · PACKING · QUALITY ==================== */}
+      {!isDept && page === 'FINISHING' && (() => {
+        const sum = (f: (x: FinishingFloorSummary) => number) => finishing.reduce((a, x) => a + f(x), 0);
+        const addBuckets = (pick: (x: FinishingFloorSummary) => HourlyWallboardBucket[]) => {
+          const len = Math.max(0, ...finishing.map(x => pick(x).length));
+          return Array.from({ length: len }, (_, i) => {
+            const parts = finishing.map(x => pick(x)[i]).filter(Boolean) as HourlyWallboardBucket[];
+            const b = parts[0];
+            return {
+              ...b,
+              target: parts.reduce((a, p) => a + p.target, 0),
+              output: parts.reduce((a, p) => a + p.output, 0),
+              checked: parts.reduce((a, p) => a + p.checked, 0),
+              defective: parts.reduce((a, p) => a + p.defective, 0)
+            };
+          });
+        };
+        const ironT = sum(x => x.iron.target), ironO = sum(x => x.iron.output);
+        const packT = sum(x => x.packing.target), packO = sum(x => x.packing.output);
+        const qcC = sum(x => x.quality.checked), qcP = sum(x => x.quality.passed);
+        const pct = (o: number, t: number) => (t > 0 ? (o / t) * 100 : null);
+        const many = finishing.length > 1;
+        const floorBars = (pick: (x: FinishingFloorSummary) => { target: number; output: number }) =>
+          finishing.map(x => {
+            const v = pick(x);
+            return { lineId: x.floor, target: v.target, output: v.output, achievementPct: pct(v.output, v.target) } as unknown as LinePerformanceSummary;
+          });
+        return (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <WbTile label="Iron" value={ironO.toLocaleString()} unit="pcs" color={achColor(pct(ironO, ironT))} sub={ironT > 0 ? `Target ${ironT.toLocaleString()} · ${pct(ironO, ironT)!.toFixed(0)}%` : 'No iron target set'} />
+              <WbTile label="Packing" value={packO.toLocaleString()} unit="pcs" color={achColor(pct(packO, packT))} sub={packT > 0 ? `Target ${packT.toLocaleString()} · ${pct(packO, packT)!.toFixed(0)}%` : 'No packing target set'} />
+              <WbTile label="Quality: QC Pass" value={qcP.toLocaleString()} unit="pcs" color={qcC === 0 ? WB_THEME.MUTED : qcP / qcC >= 0.97 ? WB_THEME.GREEN : qcP / qcC >= 0.93 ? WB_THEME.AMBER : WB_THEME.RED} sub={qcC > 0 ? `of ${qcC.toLocaleString()} checked · ${((qcP / qcC) * 100).toFixed(1)}% pass` : 'No quality check yet'} />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+              <WbPanel title="Iron: Hourly Target vs Output" sub={`${many ? 'All sewing floors' : finishing[0]?.floor ?? ''} · by hour of work · pcs`}>
+                <HourlyOutputWallboardChart buckets={addBuckets(x => x.iron.buckets)} />
+              </WbPanel>
+              <WbPanel title="Packing: Hourly Target vs Output" sub={`${many ? 'All sewing floors' : finishing[0]?.floor ?? ''} · by hour of work · pcs`}>
+                <HourlyOutputWallboardChart buckets={addBuckets(x => x.packing.buckets)} />
+              </WbPanel>
+              <WbPanel title="Quality: Hourly Checked vs QC Pass" sub="From the line-wise hourly quality entries · Blue: checked · Green: pass">
+                <HourlyQcPassChart buckets={addBuckets(x => x.quality.buckets)} />
+              </WbPanel>
+              {many && (
+                <>
+                  <WbPanel title="Iron by Floor" sub="Grey: target · Coloured: output · % below">
+                    <LiveTargetVsAchievementChart lines={floorBars(x => x.iron)} onSelectLine={() => {}} />
+                  </WbPanel>
+                  <WbPanel title="Packing by Floor" sub="Grey: target · Coloured: output · % below">
+                    <LiveTargetVsAchievementChart lines={floorBars(x => x.packing)} onSelectLine={() => {}} />
+                  </WbPanel>
+                  <WbPanel title="QC Pass by Floor" sub="Pass rate of the checked pieces">
+                    <HorizontalRankBars
+                      rows={finishing.map(x => ({
+                        label: x.floor,
+                        value: x.quality.checked > 0 ? (x.quality.passed / x.quality.checked) * 100 : 0,
+                        text: x.quality.checked > 0 ? `${((x.quality.passed / x.quality.checked) * 100).toFixed(1)}% (${x.quality.passed}/${x.quality.checked})` : '—',
+                        color: x.quality.checked === 0 ? WB_THEME.GREY : x.quality.passed / x.quality.checked >= 0.97 ? WB_THEME.GREEN : x.quality.passed / x.quality.checked >= 0.93 ? WB_THEME.AMBER : WB_THEME.RED
+                      }))}
+                      maxVal={100}
+                    />
+                  </WbPanel>
+                </>
+              )}
             </div>
           </div>
         );

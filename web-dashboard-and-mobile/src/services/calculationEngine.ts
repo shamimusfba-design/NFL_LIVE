@@ -13,12 +13,21 @@ import {
 import {
   STANDARD_HOUR_SLOTS,
   floorMatches,
+  isFinishingUnit,
   hourNoOfSlot,
   hourOptionsForLine,
   ordinalHr,
   formatSlotShortLabel12h,
   normalizeHourSlot24h
 } from '../data/masterData';
+
+/** One sewing floor's Iron, Packing and Quality totals (hourly and for the period). */
+export interface FinishingFloorSummary {
+  floor: 'Sew 1' | 'Sew 2' | 'Sew 3';
+  iron: { hourlyTarget: number; target: number; output: number; buckets: HourlyWallboardBucket[] };
+  packing: { hourlyTarget: number; target: number; output: number; buckets: HourlyWallboardBucket[] };
+  quality: { checked: number; passed: number; buckets: HourlyWallboardBucket[] };
+}
 
 export interface HourlyWallboardBucket {
   slot24: string;
@@ -53,7 +62,7 @@ export class CalculationEngine {
     onlyConfiguredOrReported = false
   ): LineTargetConfig[] {
     return allLines
-      .filter(line => line.isActive !== false && floorMatches(line.floor, floor))
+      .filter(line => line.isActive !== false && floorMatches(line.floor, floor) && !isFinishingUnit(line.id))
       .map(line => {
         const target =
           targets.find(t => t.lineId === line.id && t.date === date) ||
@@ -365,6 +374,66 @@ export class CalculationEngine {
       });
     }
     return result;
+  }
+
+  /**
+   * Iron, Packing and Quality for each sewing floor in the view.
+   *  - Iron / Packing: the hourly target set for IRON-n / PACK-n and the hourly output typed for them.
+   *  - Quality: the line-wise hourly quality entries of that floor added up; QC pass = checked - defective.
+   */
+  public static computeFinishing(
+    lines: LineMasterItem[],
+    targets: LineTargetConfig[],
+    productions: ProductionEntryRecord[],
+    qualities: QualityEntryRecord[],
+    view: FloorId,
+    todayIso: string,
+    period: PeriodId,
+    includeDemo: boolean
+  ): FinishingFloorSummary[] {
+    const floors = (['Sew 1', 'Sew 2', 'Sew 3'] as const).filter(f => floorMatches(f, view));
+    const inPeriod = (date: string) => this.isDateInPeriod(date, todayIso, period);
+    const ok = (isDemo?: boolean) => includeDemo || !isDemo;
+
+    const unitPart = (unitId: string) => {
+      const tg = targets
+        .filter(t => t.lineId === unitId && ok(t.isDemo) && inPeriod(t.date) && (t.hourlyTargetPcs > 0 || t.dailyTargetPcs > 0))
+        .sort((a, b) => (a.date < b.date ? 1 : -1));
+      const hourlyTarget = tg.length ? tg[0].hourlyTargetPcs : 0;
+      const target = tg.reduce((a, t) => a + (t.dailyTargetPcs || t.hourlyTargetPcs * 8), 0);
+      const prods = productions.filter(p => p.lineId === unitId && ok(p.isDemo) && inPeriod(p.date));
+      const output = prods.reduce((a, p) => a + (p.outputQty || 0), 0);
+      const maxHour = Math.max(8, ...prods.map(p => hourNoOfSlot(unitId, p.hourSlot) ?? 0));
+      const buckets: HourlyWallboardBucket[] = [];
+      for (let k = 1; k <= Math.min(15, maxHour); k++) {
+        const out = prods.filter(p => hourNoOfSlot(unitId, p.hourSlot) === k).reduce((a, p) => a + (p.outputQty || 0), 0);
+        buckets.push({ slot24: String(k), label12h: `${ordinalHr(k)} hr`, target: hourlyTarget, output: out, checked: 0, defective: 0, defects: 0, dhuPct: null, oqlPct: null });
+      }
+      return { hourlyTarget, target, output, buckets };
+    };
+
+    return floors.map(floor => {
+      const n = floor.replace(/\D/g, '');
+      const floorLineIds = new Set(lines.filter(l => l.floor === floor && !isFinishingUnit(l.id)).map(l => l.id));
+      const qs = qualities.filter(q => floorLineIds.has(q.lineId) && ok(q.isDemo) && inPeriod(q.date));
+      const maxHour = Math.max(8, ...qs.map(q => hourNoOfSlot(q.lineId, q.hourSlot) ?? 0));
+      const qBuckets: HourlyWallboardBucket[] = [];
+      for (let k = 1; k <= Math.min(15, maxHour); k++) {
+        const hq = qs.filter(q => hourNoOfSlot(q.lineId, q.hourSlot) === k);
+        const checked = hq.reduce((a, q) => a + (q.checkedGarments || 0), 0);
+        const defective = hq.reduce((a, q) => a + (q.defectiveGarments || 0), 0);
+        qBuckets.push({ slot24: String(k), label12h: `${ordinalHr(k)} hr`, target: 0, output: 0, checked, defective, defects: 0, dhuPct: null, oqlPct: null });
+      }
+      // only the 1-hour entries are counted, so a 2-hour audit is never added twice
+      const checked = qBuckets.reduce((a, b) => a + b.checked, 0);
+      const defective = qBuckets.reduce((a, b) => a + b.defective, 0);
+      return {
+        floor,
+        iron: unitPart(`IRON-${n}`),
+        packing: unitPart(`PACK-${n}`),
+        quality: { checked, passed: Math.max(0, checked - defective), buckets: qBuckets }
+      };
+    });
   }
 
   public static computeTopDefects(

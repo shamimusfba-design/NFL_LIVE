@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { LineMasterItem, LineTargetConfig, FloorManpowerRecord, PhysicalFloor } from '../types';
-import { isDepartmentFloor, lineDisplayName, unitWord } from '../data/masterData';
+import { isDepartmentFloor, lineDisplayName, unitWord, isFinishingUnit, finishingUnitId } from '../data/masterData';
 
 type FloorName = PhysicalFloor;
 
@@ -59,7 +59,7 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
   const unit = unitWord(floor);
 
   const floorLines = useMemo(
-    () => lines.filter(l => l.isActive && l.floor === floor && !/^(iron|packing)/i.test(l.id)),
+    () => lines.filter(l => l.isActive && l.floor === floor && !isFinishingUnit(l.id)),
     [lines, floor]
   );
 
@@ -327,6 +327,46 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
       <button type="button" onClick={saveAll} className="w-full rounded-xl bg-[#1976D2] py-3 text-sm font-black text-white hover:bg-blue-700">
         Save all {floorLines.length} {dept ? `${unit.toLowerCase()}s` : 'lines'} for {floor}
       </button>
+
+      {/* ---------- Iron and Packing: hourly target on the floor total (sewing floors only) ---------- */}
+      {!dept && (
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="text-sm font-black text-slate-900">{floor}: Iron &amp; Packing target (floor total)</div>
+          <div className="mt-1 text-[11px] text-slate-500">One hourly target each for the whole floor, not line-wise. Daily = hourly x 8.</div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {([['IRON', 'Iron'], ['PACK', 'Packing']] as Array<['IRON' | 'PACK', string]>).map(([kind, name]) => {
+              const id = finishingUnitId(kind, floor);
+              const r = rowFor(id);
+              return (
+                <label key={id}>
+                  <span className="mb-0.5 block text-[10px] font-bold text-slate-500">{name} {floor.replace('Sew ', '')}: hourly target (pcs)</span>
+                  <input type="number" inputMode="numeric" min={0} value={r.hr} onChange={e => setField(id, 'hr', e.target.value)} className={box} />
+                </label>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const items = (['IRON', 'PACK'] as const).map(k => finishingUnitId(k, floor)).filter(id => rowFor(id).hr.trim() !== '');
+              if (items.length === 0) { setMessage({ ok: false, text: 'Enter the Iron or Packing hourly target.' }); return; }
+              if (items.some(id => !(Number(rowFor(id).hr) > 0))) { setMessage({ ok: false, text: 'The hourly target must be more than 0.' }); return; }
+              items.forEach(id => {
+                const hourly = Math.round(Number(rowFor(id).hr));
+                onSaveSetup({
+                  lineId: id, floor, date, dailyTargetPcs: hourly * 8, hourlyTargetPcs: hourly, targetEfficiencyPct: 100,
+                  buyer: '', styleNumber: '', smv: 0, operatorsCount: 0, machinesCount: 0, helpersCount: 0, finishingStaffCount: 0,
+                  includeHelpersInEfficiency: true, workingHoursSoFar: 8, totalShiftHours: 8, isDemo: false
+                });
+              });
+              setMessage({ ok: true, text: `Saved the Iron/Packing target for ${floor}.` });
+            }}
+            className="mt-3 w-full rounded-xl bg-[#0A2558] py-2.5 text-sm font-black text-white hover:bg-blue-900"
+          >
+            Save Iron &amp; Packing target for {floor}
+          </button>
+        </div>
+      )}
 
       {/* ---------- floor-wise total data (sewing floors only) ---------- */}
       {!dept && (

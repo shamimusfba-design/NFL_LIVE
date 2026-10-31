@@ -11,6 +11,7 @@ import {
   UserRole
 } from '../types';
 import { BulkTargetSetup } from './BulkTargetSetup';
+import { FinishingEntry } from './FinishingEntry';
 import type { PhysicalFloor } from '../types';
 import { EntryModuleId, ENTRY_MODULES } from '../data/entryModules';
 import {
@@ -22,6 +23,7 @@ import {
   hourOptionsForLine,
   lineDisplayName,
   isDepartmentFloor,
+  isFinishingUnit,
   biHourlyOptionsForLine,
   ordinalHr,
   canWriteWeeklyQualityOrBiHourlyAudit,
@@ -68,9 +70,10 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   onClose
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'PRODUCTION' | 'QUALITY' | 'WEEKLY_OQL' | 'SETUP' | 'MONTHLY'
+    'PRODUCTION' | 'QUALITY' | 'WEEKLY_OQL' | 'SETUP' | 'MONTHLY' | 'FINISHING'
   >(
     module === 'TARGET' ? 'SETUP'
+      : module === 'FINISHING' ? 'FINISHING'
       : module === 'DHU' || module === 'AUDIT' ? 'QUALITY'
       : module === 'MONTHLY' ? 'MONTHLY'
       : module === 'WEEKLY' ? 'WEEKLY_OQL'
@@ -143,7 +146,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const [moSuccess, setMoSuccess] = useState(false);
 
   const canWriteAuditOrWeekly = canWriteWeeklyQualityOrBiHourlyAudit(currentUserRole);
-  const floorLines = lines.filter(l => l.floor === formFloor && l.isActive && !/^(iron|packing)/i.test(l.id));
+  const floorLines = lines.filter(l => l.floor === formFloor && l.isActive && !isFinishingUnit(l.id));
   const withTarget = floorLines.filter(l => targets.some(t => t.lineId === l.id && t.date === formDate && !t.isDemo && (t.hourlyTargetPcs > 0 || t.dailyTargetPcs > 0)));
   // Lines without a target that day are not running. If no target was set at all yet, every line is shown.
   const availableLines = withTarget.length > 0 ? withTarget : floorLines;
@@ -479,7 +482,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
         <div className="flex-1 overflow-y-auto p-5 bg-[#F8FAFC] space-y-4">
           {/* Shared Date / Floor / Line / Style bar (hidden on Weekly tab) */}
-          {activeTab !== 'WEEKLY_OQL' && activeTab !== 'SETUP' && (
+          {activeTab !== 'WEEKLY_OQL' && activeTab !== 'SETUP' && activeTab !== 'FINISHING' && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-white p-3 rounded-xl border border-slate-200">
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 mb-1">Date</label>
@@ -1075,6 +1078,10 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
           )}
 
           {/* ==================== TAB 4: MORNING LINE SETUP ==================== */}
+          {activeTab === 'FINISHING' && (
+            <FinishingEntry date={formDate} userName={currentUserName} targets={targets} onSaveProduction={onSaveProduction} />
+          )}
+
           {activeTab === 'SETUP' && (
             <BulkTargetSetup lines={lines} targets={targets} floorTotals={floorTotals} date={formDate} userName={currentUserName} onSaveSetup={onSaveSetup} onSaveFloorManpower={r => onSaveFloorManpower?.(r)} />
           )}

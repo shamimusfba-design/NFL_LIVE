@@ -518,6 +518,11 @@ export default function App() {
     );
   }, [lineSummaries, productions, qualities, sewingView, todayIso, selectedPeriod]);
 
+  const finishing = useMemo(
+    () => CalculationEngine.computeFinishing(lines, targets, productions, qualities, sewingView, todayIso, selectedPeriod, isDemoMode),
+    [lines, targets, productions, qualities, sewingView, todayIso, selectedPeriod, isDemoMode]
+  );
+
   const departmentSummaries = useMemo(() => {
     return (['Cutting', 'Print', 'Embroidery'] as FloorId[]).map(dep => {
       const cfgs = CalculationEngine.getTargetedLines(lines, targets, dep, todayIso, !isDemoMode).filter(
@@ -1057,6 +1062,7 @@ export default function App() {
               lineSummaries={lineSummaries}
               hourlySeries={hourlySeries}
             departmentSummaries={departmentSummaries}
+            finishing={finishing}
               weeklyQuality={weeklyQuality}
               productions={productions}
               qualities={qualities}
@@ -1085,6 +1091,7 @@ export default function App() {
             lineSummaries={lineSummaries}
             hourlySeries={hourlySeries}
             departmentSummaries={departmentSummaries}
+            finishing={finishing}
             weeklyQuality={weeklyQuality}
             productions={productions}
             qualities={qualities}

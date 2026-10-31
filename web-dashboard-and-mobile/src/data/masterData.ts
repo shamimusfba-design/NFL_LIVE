@@ -76,6 +76,10 @@ export const ALL_FACTORY_LINES: LineMasterItem[] = [
   { id: 'PRT-Manual', floor: 'Print' as const, isActive: true },
   // Embroidery: machines 1-5
   ...Array.from({ length: 5 }, (_, i) => ({ id: `EMB-Machine-${i + 1}`, floor: 'Embroidery' as const, isActive: true })),
+  // Iron and Packing of each sewing floor: one unit each, targets and hourly output are on the floor total
+  { id: 'IRON-1', floor: 'Sew 1' as const, isActive: true }, { id: 'PACK-1', floor: 'Sew 1' as const, isActive: true },
+  { id: 'IRON-2', floor: 'Sew 2' as const, isActive: true }, { id: 'PACK-2', floor: 'Sew 2' as const, isActive: true },
+  { id: 'IRON-3', floor: 'Sew 3' as const, isActive: true }, { id: 'PACK-3', floor: 'Sew 3' as const, isActive: true },
 ];
 
 export const GARMENT_STYLES = [
@@ -588,7 +592,18 @@ export function unitWord(floor: string): string {
  * Department units drop the technical prefix: CUT-Table-3 -> "Table 3", PRT-Manual -> "Manual", EMB-Machine-2 -> "Machine 2".
  */
 export function lineDisplayName(lineId: string): string {
+  const f = /^(IRON|PACK)-(\d)$/.exec(String(lineId || ''));
+  if (f) return `${f[1] === 'IRON' ? 'Iron' : 'Packing'} ${f[2]}`;
   const m = /^(CUT|PRT|EMB)-(.+)$/.exec(String(lineId || ''));
   if (!m) return lineId;
   return m[2].replace(/-/g, ' ');
+}
+
+/** Iron and Packing units (IRON-1, PACK-2...). They are never counted as sewing lines. */
+export function isFinishingUnit(lineId: string): boolean {
+  return /^(IRON|PACK)-\d$/.test(String(lineId || ''));
+}
+
+export function finishingUnitId(kind: 'IRON' | 'PACK', floor: string): string {
+  return `${kind}-${String(floor).replace(/\D/g, '')}`;
 }
