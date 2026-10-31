@@ -513,6 +513,7 @@ private fun OqlComparisonTrendCanvas(points: List<DailyQaTrend>) {
       }
     }
   }
+}
 
 /**
  * 3. DHU Day-by-Day Line Chart (Direct Numeric Values without %)
