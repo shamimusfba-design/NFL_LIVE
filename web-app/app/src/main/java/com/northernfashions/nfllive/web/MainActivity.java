@@ -44,6 +44,10 @@ public class MainActivity extends Activity {
     setContentView(web);
 
     WebSettings s = web.getSettings();
+    // The phone's dark mode must not darken the page: Day stays light, Night stays dark, as chosen in the app.
+    if (Build.VERSION.SDK_INT >= 29) {
+      s.setForceDark(WebSettings.FORCE_DARK_OFF);
+    }
     s.setJavaScriptEnabled(true);
     s.setDomStorageEnabled(true);        // keeps the sign-in and the Day/Night choice
     s.setDatabaseEnabled(true);
