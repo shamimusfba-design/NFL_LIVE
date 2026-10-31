@@ -1,0 +1,100 @@
+run #48  branch secure-signin  commit 2bc8deb42526def9b1d92504f352d196c4ccb359
+
+=== compile / build errors (build.log) ===
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/MainActivity.kt:667:21 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/data/NflRepository.kt:2197:32 Condition is always 'false'.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/data/NflRepository.kt:6450:39 Condition is always 'true'.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/data/NflRepository.kt:6678:39 'val token: Task<String!>' is deprecated. Deprecated in Java.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/service/FactoryAlertManager.kt:91:35 'static field USAGE_NOTIFICATION_COMMUNICATION_INSTANT: Int' is deprecated. Deprecated in Java.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/service/NflFirebaseMessagingService.kt:18:16 This declaration overrides a deprecated member but is not marked as deprecated itself. Add the '@Deprecated' annotation or suppress the diagnostic.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/service/NflFirebaseMessagingService.kt:19:11 'fun onNewToken(p0: String): Unit' is deprecated. Deprecated in Java.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/components/BsOqlTrendChart.kt:132:47 'val Icons.Filled.ShowChart: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.ShowChart.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/AdminUsersScreen.kt:1427:34 'fun Modifier.menuAnchor(): Modifier' is deprecated. Use overload that takes MenuAnchorType and enabled parameters.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/HomeScreen.kt:705:40 'val Icons.Filled.FactCheck: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.FactCheck.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/HomeScreen.kt:1248:11 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/LineDeepDiveScreen.kt:250:34 'val Icons.Filled.TrendingUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.TrendingUp.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/LoginScreen.kt:847:24 'fun Modifier.menuAnchor(): Modifier' is deprecated. Use overload that takes MenuAnchorType and enabled parameters.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/MonthlySetupScreen.kt:247:23 'when' is exhaustive so 'else' is redundant here.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/MonthlySetupScreen.kt:557:11 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/MonthlySetupScreen.kt:586:13 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/NotificationCenterScreen.kt:133:61 'val Icons.Filled.VolumeOff: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.VolumeOff.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/NotificationCenterScreen.kt:133:90 'val Icons.Filled.VolumeUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.VolumeUp.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/NotificationCenterScreen.kt:670:32 'val Icons.Filled.VolumeMute: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.VolumeMute.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/ProductionEntryScreen.kt:942:32 'val Icons.Filled.Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.Send.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/QualityEntryScreen.kt:1289:15 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+
+> Task :app:processDebugJavaRes
+> Task :app:compileDebugJavaWithJavac
+> Task :app:mergeDebugJavaResource
+
+=== last 40 lines of build.log ===
+Unable to strip the following libraries, packaging them as they are: libandroidx.graphics.path.so, libdatastore_shared_counter.so. Run with --info option to learn more.
+
+> Task :app:mergeExtDexDebug FROM-CACHE
+> Task :app:kspDebugKotlin
+> Task :app:compileDebugKotlin
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/MainActivity.kt:667:21 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/data/NflRepository.kt:2197:32 Condition is always 'false'.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/data/NflRepository.kt:6450:39 Condition is always 'true'.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/data/NflRepository.kt:6678:39 'val token: Task<String!>' is deprecated. Deprecated in Java.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/service/FactoryAlertManager.kt:91:35 'static field USAGE_NOTIFICATION_COMMUNICATION_INSTANT: Int' is deprecated. Deprecated in Java.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/service/NflFirebaseMessagingService.kt:18:16 This declaration overrides a deprecated member but is not marked as deprecated itself. Add the '@Deprecated' annotation or suppress the diagnostic.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/service/NflFirebaseMessagingService.kt:19:11 'fun onNewToken(p0: String): Unit' is deprecated. Deprecated in Java.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/components/BsOqlTrendChart.kt:132:47 'val Icons.Filled.ShowChart: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.ShowChart.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/AdminUsersScreen.kt:1427:34 'fun Modifier.menuAnchor(): Modifier' is deprecated. Use overload that takes MenuAnchorType and enabled parameters.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/HomeScreen.kt:705:40 'val Icons.Filled.FactCheck: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.FactCheck.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/HomeScreen.kt:1248:11 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/LineDeepDiveScreen.kt:250:34 'val Icons.Filled.TrendingUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.TrendingUp.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/LoginScreen.kt:847:24 'fun Modifier.menuAnchor(): Modifier' is deprecated. Use overload that takes MenuAnchorType and enabled parameters.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/MonthlySetupScreen.kt:247:23 'when' is exhaustive so 'else' is redundant here.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/MonthlySetupScreen.kt:557:11 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/MonthlySetupScreen.kt:586:13 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/NotificationCenterScreen.kt:133:61 'val Icons.Filled.VolumeOff: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.VolumeOff.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/NotificationCenterScreen.kt:133:90 'val Icons.Filled.VolumeUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.VolumeUp.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/NotificationCenterScreen.kt:670:32 'val Icons.Filled.VolumeMute: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.VolumeMute.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/ProductionEntryScreen.kt:942:32 'val Icons.Filled.Send: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.Send.
+w: file:///home/runner/work/NFL_LIVE/NFL_LIVE/app/src/main/java/com/example/ui/screens/QualityEntryScreen.kt:1289:15 'fun Divider(modifier: Modifier = ..., thickness: Dp = ..., color: Color = ...): Unit' is deprecated. Renamed to HorizontalDivider.
+
+> Task :app:processDebugJavaRes
+> Task :app:compileDebugJavaWithJavac
+> Task :app:mergeDebugJavaResource
+> Task :app:dexBuilderDebug
+> Task :app:mergeProjectDexDebug
+> Task :app:packageDebug
+> Task :app:assembleDebug
+> Task :app:createDebugApkListingFileRedirect
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_2-1793449104717.json
+
+BUILD SUCCESSFUL in 1m 56s
+39 actionable tasks: 20 executed, 19 from cache
+Configuration cache entry stored.
+
+=== failing unit tests ===
+tests run: 65  failed: 0
+
+=== last 25 lines of test.log ===
+
+WeeklyQualityTest > remote weekly values keep the newer one and survive a restart PASSED
+
+WeeklyQualityTest > TV colours follow the same OQL limits PASSED
+
+WeeklyQualityTest > admin can save and a blank value keeps the saved one PASSED
+
+WeeklyQualityTest > auditor and IE can save weekly BS OQL while quality manager is rejected PASSED
+
+WeeklyQualityTest > recent weeks are consecutive and start with the current week PASSED
+
+WeeklyQualityTest > logged out user cannot save weekly values PASSED
+
+WeeklyQualityTest > 12-hour AM PM formatting converts 24h and bi-hourly slots cleanly PASSED
+
+WeeklyQualityTest > week keys follow ISO weeks in Bangladesh time PASSED
+
+WeeklyQualityTest > bad values and future weeks are rejected PASSED
+
+WeeklyQualityTest > OQL limits are commitment 4_5, Level 1 below 7 and red above 10 PASSED
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1793449257443.json
+
+BUILD SUCCESSFUL in 50s
+33 actionable tasks: 9 executed, 1 from cache, 23 up-to-date
+Configuration cache entry stored.
