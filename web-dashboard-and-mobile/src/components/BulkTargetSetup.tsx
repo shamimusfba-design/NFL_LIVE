@@ -14,6 +14,8 @@ interface Row {
 }
 
 interface Props {
+  /** A floor-bound person sees only their own floor */
+  onlyFloor?: PhysicalFloor | null;
   lines: LineMasterItem[];
   targets: LineTargetConfig[];
   floorTotals: FloorManpowerRecord[];
@@ -48,8 +50,8 @@ function useIsDesktop(): boolean {
 
 const box = 'w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500';
 
-export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, date, userName, onSaveSetup, onSaveFloorManpower }) => {
-  const [floor, setFloor] = useState<FloorName>('Sew 2');
+export const BulkTargetSetup: React.FC<Props> = ({ onlyFloor = null, lines, targets, floorTotals, date, userName, onSaveSetup, onSaveFloorManpower }) => {
+  const [floor, setFloor] = useState<FloorName>(onlyFloor || 'Sew 2');
   const [rows, setRows] = useState<Record<string, Row>>({});
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [fm, setFm] = useState<Record<string, string>>({});
@@ -197,7 +199,7 @@ export const BulkTargetSetup: React.FC<Props> = ({ lines, targets, floorTotals, 
           A line without a target today is treated as not running that day.
         </div>
         <div className="mt-3 grid grid-cols-3 gap-1.5 sm:inline-grid">
-          {(['Sew 1', 'Sew 2', 'Sew 3', 'Cutting', 'Print', 'Embroidery'] as FloorName[]).map(f => (
+          {(onlyFloor ? [onlyFloor] : (['Sew 1', 'Sew 2', 'Sew 3', 'Cutting', 'Print', 'Embroidery'] as FloorName[])).map(f => (
             <button
               key={f}
               type="button"

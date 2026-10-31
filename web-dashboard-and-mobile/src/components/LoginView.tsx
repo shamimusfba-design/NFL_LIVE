@@ -34,6 +34,12 @@ const DESIGNATIONS: Array<{ name: string; department: string; role: string; scop
   { name: 'Production Officer', department: 'Production', role: 'SUPERVISOR', scope: null },
   { name: 'Quality Supervisor', department: 'Quality', role: 'QUALITY_REPORTER', scope: null },
   { name: 'Quality Officer', department: 'Quality', role: 'AUDITOR', scope: null },
+  { name: 'QI (Quality Inspector)', department: 'Quality', role: 'QUALITY_REPORTER', scope: null },
+  { name: 'Iron Supervisor', department: 'Finishing', role: 'SUPERVISOR', scope: null },
+  { name: 'Packing Supervisor', department: 'Finishing', role: 'SUPERVISOR', scope: null },
+  { name: 'Cutting Supervisor', department: 'Cutting', role: 'SUPERVISOR', scope: null },
+  { name: 'Print Supervisor', department: 'Print', role: 'SUPERVISOR', scope: null },
+  { name: 'Embroidery Supervisor', department: 'Embroidery', role: 'SUPERVISOR', scope: null },
   { name: 'Finishing Supervisor', department: 'Finishing', role: 'SUPERVISOR', scope: 'FINISHING' },
   { name: 'Finishing In-charge', department: 'Finishing', role: 'SUPERVISOR', scope: 'FINISHING' },
   { name: 'Finishing Manager', department: 'Finishing', role: 'PRODUCTION_MANAGER', scope: 'FINISHING' },
@@ -42,10 +48,13 @@ const DESIGNATIONS: Array<{ name: string; department: string; role: string; scop
   { name: 'Other', department: 'Other', role: 'MANAGEMENT_VIEW', scope: null }
 ];
 
-const FLOOR_CHOICES: Array<{ key: 'SEW_1' | 'SEW_2' | 'SEW_3'; label: string }> = [
+const FLOOR_CHOICES: Array<{ key: string; label: string }> = [
   { key: 'SEW_1', label: 'Sew 1' },
   { key: 'SEW_2', label: 'Sew 2' },
-  { key: 'SEW_3', label: 'Sew 3' }
+  { key: 'SEW_3', label: 'Sew 3' },
+  { key: 'Cutting', label: 'Cutting' },
+  { key: 'Print', label: 'Print' },
+  { key: 'Embroidery', label: 'Embroidery' }
 ];
 
 const OWNER_EMPLOYEE_ID = '1015198';
@@ -162,7 +171,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, notice }) => {
   const [regName, setRegName] = useState('');
   const [regId, setRegId] = useState('');
   const [regDesignation, setRegDesignation] = useState('Production Supervisor');
-  const [regFloor, setRegFloor] = useState<'SEW_1' | 'SEW_2' | 'SEW_3'>('SEW_2');
+  const [regFloor, setRegFloor] = useState<string>('SEW_2');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirm, setRegConfirm] = useState('');
 
@@ -261,7 +270,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, notice }) => {
     if (pw.length < 6) return setErrorMessage('Password must be at least 6 characters long.');
     if (pw !== regConfirm.trim()) return setErrorMessage('Password and Confirm Password do not match.');
     const d = DESIGNATIONS.find(x => x.name === regDesignation) || DESIGNATIONS[DESIGNATIONS.length - 1];
-    let physical: 'SEW_1' | 'SEW_2' | 'SEW_3' | 'FINISHING' = regFloor;
+    let physical: string | 'FINISHING' = regFloor;
     let scopeName: string = regFloor;
     let scopeDisplay: string = FLOOR_CHOICES.find(f => f.key === regFloor)?.label || 'Sew 2';
     if (d.scope === 'FINISHING') { physical = 'FINISHING'; scopeName = 'FINISHING'; scopeDisplay = 'Finishing'; }
@@ -344,7 +353,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, notice }) => {
                 {DESIGNATIONS.map(x => <option key={x.name} value={x.name}>{x.name}</option>)}
               </select>
               {d && d.scope === null ? (
-                <select value={regFloor} onChange={e => setRegFloor(e.target.value as 'SEW_1' | 'SEW_2' | 'SEW_3')} style={selectStyle}>
+                <select value={regFloor} onChange={e => setRegFloor(e.target.value as string)} style={selectStyle}>
                   {FLOOR_CHOICES.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
                 </select>
               ) : (

@@ -28,6 +28,11 @@ export interface UserAccount {
   department?: string;
   accountStatus?: string;
   isActive?: boolean;
+  /** Admin-set entry modules this person may write. null = the role's defaults. */
+  permissions?: string[] | null;
+  /** Admin-set lines this person may enter for. null or empty = all lines of the floor. */
+  allowedLines?: string[] | null;
+  firebaseUid?: string;
   authorizedDeviceId?: string;
   authorizedDeviceName?: string;
   rejectionReason?: string;
@@ -137,6 +142,14 @@ export type IncidentCategory =
   | 'LINE_BALANCING'
   | 'INPUT_MATERIAL'
   | 'LOW_PRODUCTION'
+  // Cutting
+  | 'FABRIC_ISSUE' | 'MARKER_PATTERN' | 'FABRIC_FAULT' | 'APPROVAL_WAIT'
+  // Print
+  | 'CHANGEOVER' | 'SCREEN_PREP' | 'INK_COLOR' | 'DRYER_CURING'
+  // Embroidery
+  | 'MACHINE_SETTING' | 'DESIGN_FILE' | 'THREAD_NEEDLE' | 'FRAME_HOOP'
+  // Cutting / Print / Embroidery
+  | 'WAITING_CUT_PANELS' | 'POWER_FAILURE' | 'MANPOWER_SHORTAGE'
   | 'OTHER';
 
 export type IncidentStatus = 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED';

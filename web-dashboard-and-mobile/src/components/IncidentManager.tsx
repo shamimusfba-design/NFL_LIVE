@@ -1,6 +1,6 @@
 import { AlertComment } from '../types';
 import { CommentThread } from './CommentThread';
-import { lineDisplayName } from '../data/masterData';
+import { lineDisplayName, nptCategoriesFor } from '../data/masterData';
 import React, { useState, useEffect } from 'react';
 import {
   IncidentRecord,
@@ -23,6 +23,8 @@ interface IncidentManagerProps {
   onAddComment?: (targetId: string, text: string, parentId: string | null) => void;
   /** Lines whose OQL today is above 10%. They are notifications too. */
   highOqlLines?: Array<{ lineId: string; floor: string; oqlPct: number; checked: number; date: string }>;
+  /** A floor-bound person reports only for their own floor */
+  lockedFloor?: string | null;
   onClose: () => void;
 }
 
@@ -38,12 +40,13 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
   comments = [],
   onAddComment,
   highOqlLines = [],
+  lockedFloor = null,
   onClose
 }) => {
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'REPORT' | 'INBOX' | 'HISTORY'>('ACTIVE');
 
   // Form State
-  const [formFloor, setFormFloor] = useState<'Sew 1' | 'Sew 2' | 'Sew 3'>('Sew 2');
+  const [formFloor, setFormFloor] = useState<string>(lockedFloor || 'Sew 2');
   const [formLine, setFormLine] = useState('K1');
   const [formCategory, setFormCategory] = useState<IncidentCategory>('MACHINE_BREAKDOWN');
   const [formMachineRef, setFormMachineRef] = useState('SNLS-04');
@@ -90,6 +93,8 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
         return 'Production Manager / Officer';
       case 'OTHER':
         return 'Floor Supervisor';
+      default:
+        return 'Section Supervisor';
     }
   };
 
@@ -113,7 +118,7 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
     if (!formDescription.trim()) return;
 
     onReportIncident({
-      floor: formFloor,
+      floor: formFloor as any,
       lineId: formLine,
       category: formCategory,
       machineRef: formMachineRef,
@@ -370,12 +375,19 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                   <label className="block text-xs font-bold text-slate-700 mb-1">Floor</label>
                   <select
                     value={formFloor}
-                    onChange={e => setFormFloor(e.target.value as any)}
+                    disabled={!!lockedFloor}
+                    onChange={e => {
+                      const f = e.target.value;
+                      setFormFloor(f);
+                      setFormCategory(nptCategoriesFor(f)[0].id as IncidentCategory);
+                      const first = lines.find(l => l.floor === f && !/^(IRON|PACK)-/.test(l.id));
+                      if (first) setFormLine(first.id);
+                    }}
                     className="w-full text-xs font-bold border border-slate-300 rounded-lg p-2 bg-white"
                   >
-                    <option value="Sew 1">Sew 1</option>
-                    <option value="Sew 2">Sew 2</option>
-                    <option value="Sew 3">Sew 3</option>
+                    {['Sew 1', 'Sew 2', 'Sew 3', 'Cutting', 'Print', 'Embroidery'].map(f => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -390,7 +402,7 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                       .filter(l => l.floor === formFloor)
                       .map(l => (
                         <option key={l.id} value={l.id}>
-                          Line {l.id}
+                          {lineDisplayName(l.id)}
                         </option>
                       ))}
                   </select>
@@ -405,12 +417,9 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                     onChange={e => setFormCategory(e.target.value as any)}
                     className="w-full text-xs font-bold border border-slate-300 rounded-lg p-2 bg-white"
                   >
-                    <option value="MACHINE_BREAKDOWN">🔧 Machine Breakdown (→ Mechanic)</option>
-                    <option value="QUALITY_PROBLEM">🔍 Quality Problem (→ Quality Mgr)</option>
-                    <option value="LINE_BALANCING">⚖️ Line Balancing (→ IE Officer)</option>
-                    <option value="INPUT_MATERIAL">📦 Input / Material (→ Input Team)</option>
-                    <option value="LOW_PRODUCTION">📉 Low Production (→ Prod Mgr)</option>
-                    <option value="OTHER">⚠️ Other Operational</option>
+                    {nptCategoriesFor(formFloor).map(c => (
+                      <option key={c.id} value={c.id}>{c.label}</option>
+                    ))}
                   </select>
                 </div>
 

@@ -26,6 +26,9 @@ import {
   pushFloorManpowerToCloud,
   pushAlertCommentToCloud,
   pushDemoModeToCloud,
+  updateCloudUserAccess,
+  setCloudUserBlocked,
+  deleteCloudUser,
   signOutWebCloudSession,
   restoreWebSession,
   pushProductionToCloud,
@@ -377,6 +380,11 @@ export default function App() {
     });
   }, [incidents, currentUser]);
 
+  // A person tied to one floor sees only that floor's notifications; Admin and all-floor heads see every floor.
+  const seesAllFloors = !currentUser || currentUser.role === 'ADMIN' || !currentUser.floor || currentUser.floor === 'Factory' || currentUser.floor === 'All Sewing';
+  const myFloorOk = (floor: string) => seesAllFloors || floor === currentUser?.floor;
+  const lockedFloor = !seesAllFloors && currentUser?.floor ? (currentUser.floor as any) : null;
+
   // Notifications are: (1) NPT incidents that were raised, (2) lines whose OQL today is above 10%.
   // Hourly quality entries are never notifications by themselves.
   const highOqlToday = useMemo(() => {
@@ -392,10 +400,10 @@ export default function App() {
     const hasTarget = (id: string) =>
       isDemoMode || targets.some(t => !t.isDemo && t.lineId === id && t.date === todayIso && (t.hourlyTargetPcs > 0 || t.dailyTargetPcs > 0));
     return Array.from(byLine.entries())
-      .filter(([id, v]) => v.checked > 0 && hasTarget(id) && (v.defective / v.checked) * 100 > 10)
+      .filter(([id, v]) => v.checked > 0 && hasTarget(id) && myFloorOk(v.floor) && (v.defective / v.checked) * 100 > 10)
       .map(([id, v]) => ({ lineId: id, floor: v.floor, oqlPct: (v.defective / v.checked) * 100, checked: v.checked, date: todayIso }))
       .sort((a, b) => b.oqlPct - a.oqlPct);
-  }, [qualities, targets, todayIso, isDemoMode]);
+  }, [qualities, targets, todayIso, isDemoMode, seesAllFloors, currentUser?.floor]);
 
   // The alert sounds ONLY for an incident that is new, once, for about 3 seconds, with vibration on a phone.
   // Incidents that were already there when the page opened never make a sound.
@@ -424,6 +432,7 @@ export default function App() {
     const seen = seenIncidentsRef.current;
     const fresh = incidents.filter(inc => {
       if (seen.has(inc.id)) return false;
+      if (!myFloorOk(inc.floor)) return false;
       if (inc.status === 'RESOLVED' || inc.isMutedOnCurrentDevice) return false;
       if (currentUser.role === 'ADMIN') return true;
       if (inc.category === 'MACHINE_BREAKDOWN' && currentUser.role === 'MECHANIC') return true;
@@ -744,6 +753,22 @@ export default function App() {
     }
   };
 
+  const handleSaveAccess = async (u: UserAccount, permissions: string[] | null, allowedLines: string[] | null) => {
+    const ok = await updateCloudUserAccess(u.id, { permissions, allowedLines }, currentUser?.name || '');
+    if (ok) setUsers(prev => prev.map(x => (x.id === u.id ? { ...x, permissions, allowedLines } : x)));
+    return ok;
+  };
+  const handleBlockUser = async (u: UserAccount, blocked: boolean) => {
+    const ok = await setCloudUserBlocked(u.id, blocked, currentUser?.name || '');
+    if (ok) setUsers(prev => prev.map(x => (x.id === u.id ? { ...x, accountStatus: blocked ? 'SUSPENDED' : 'APPROVED', isActive: !blocked } : x)));
+    return ok;
+  };
+  const handleDeleteUser = async (u: UserAccount) => {
+    const ok = await deleteCloudUser(u.id, u.firebaseUid);
+    if (ok) setUsers(prev => prev.filter(x => x.id !== u.id));
+    return ok;
+  };
+
   const handleAddComment = (targetId: string, text: string, parentId: string | null) => {
     if (!currentUser) return;
     const c: AlertComment = {
@@ -815,7 +840,8 @@ export default function App() {
       setMenuOpen(v => !v);
     }
   };
-  const notificationCount = openIncidents.length + highOqlToday.length;
+  const myIncidents = incidents.filter(i => myFloorOk(i.floor));
+  const notificationCount = myIncidents.filter(i => i.status !== 'RESOLVED').length + highOqlToday.length;
 
   if (authChecking) {
     return <LoadingScreen />;
@@ -894,7 +920,7 @@ export default function App() {
             <span className="flex-1">Compact view</span>
           </button>
           <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Data entry</div>
-          {ENTRY_MODULES.filter(m => canUseEntryModule(m.id, currentUser?.role)).map(m => (
+          {ENTRY_MODULES.filter(m => canUseEntryModule(m.id, currentUser?.role, currentUser?.permissions)).map(m => (
             <button
               key={m.id}
               onClick={() => { closeMenu(); setEntryModule(m.id); setShowEntryModal(true); }}
@@ -1160,7 +1186,7 @@ export default function App() {
       {/* MODAL 2: INCIDENT MANAGER & STOPWATCH */}
       {showIncidentModal && (
         <IncidentManager
-          incidents={incidents}
+          incidents={myIncidents}
           lines={lines}
           currentUserRole={currentUser.role}
           currentUserName={currentUser.name}
@@ -1169,6 +1195,7 @@ export default function App() {
           onAcknowledgeIncident={handleAcknowledgeIncident}
           onResolveIncident={handleResolveIncident}
           comments={alertComments}
+          lockedFloor={lockedFloor}
           onAddComment={handleAddComment}
           highOqlLines={highOqlToday}
           onClose={() => setShowIncidentModal(false)}
@@ -1189,6 +1216,8 @@ export default function App() {
           onSaveMonthlyTarget={handleSaveMonthlyTarget}
           module={entryModule}
           targets={targets}
+          allowedLines={currentUser.allowedLines ?? null}
+          lockedFloor={lockedFloor}
           floorTotals={floorTotals}
           onSaveFloorManpower={handleSaveFloorManpower}
           onClose={() => { setShowEntryModal(false); setEntryModule(undefined); }}
@@ -1217,6 +1246,9 @@ export default function App() {
       {showAdminModal && (
         <AdminView
           initialTab={adminStart}
+          onSaveAccess={handleSaveAccess}
+          onBlockUser={handleBlockUser}
+          onDeleteUser={handleDeleteUser}
           lines={lines}
           users={users}
           demoStats={demoStats}

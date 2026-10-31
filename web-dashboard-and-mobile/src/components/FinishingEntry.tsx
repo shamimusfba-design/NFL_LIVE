@@ -5,6 +5,7 @@ import { hourOptionsForLine, ordinalHr, finishingUnitId } from '../data/masterDa
 type SewFloor = 'Sew 1' | 'Sew 2' | 'Sew 3';
 
 interface Props {
+  onlyFloor?: string | null;
   date: string;
   userName: string;
   targets: LineTargetConfig[];
@@ -12,8 +13,9 @@ interface Props {
 }
 
 /** Iron and Packing output of a sewing floor, hour by hour, on the floor total (not line-wise). */
-export const FinishingEntry: React.FC<Props> = ({ date, userName, targets, onSaveProduction }) => {
-  const [floor, setFloor] = useState<SewFloor>('Sew 2');
+export const FinishingEntry: React.FC<Props> = ({ onlyFloor = null, date, userName, targets, onSaveProduction }) => {
+  const fixed = onlyFloor === 'Sew 1' || onlyFloor === 'Sew 2' || onlyFloor === 'Sew 3' ? (onlyFloor as SewFloor) : null;
+  const [floor, setFloor] = useState<SewFloor>(fixed || 'Sew 2');
   const [hourNo, setHourNo] = useState(1);
   const [iron, setIron] = useState('');
   const [pack, setPack] = useState('');
@@ -58,7 +60,7 @@ export const FinishingEntry: React.FC<Props> = ({ date, userName, targets, onSav
         <div className="text-sm font-black text-slate-900">Iron &amp; Packing output (floor total)</div>
         <div className="mt-1 text-[11px] text-slate-500">Hour by hour, for the whole floor. The hourly target comes from Target Setting.</div>
         <div className="mt-3 grid grid-cols-3 gap-1.5 sm:inline-grid">
-          {(['Sew 1', 'Sew 2', 'Sew 3'] as SewFloor[]).map(f => (
+          {(fixed ? [fixed] : (['Sew 1', 'Sew 2', 'Sew 3'] as SewFloor[])).map(f => (
             <button key={f} type="button" onClick={() => { setFloor(f); setMsg(null); }}
               className={`rounded-lg px-4 py-2 text-xs font-black ${floor === f ? 'bg-[#1976D2] text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
               {f}

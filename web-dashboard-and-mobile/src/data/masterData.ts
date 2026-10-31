@@ -607,3 +607,47 @@ export function isFinishingUnit(lineId: string): boolean {
 export function finishingUnitId(kind: 'IRON' | 'PACK', floor: string): string {
   return `${kind}-${String(floor).replace(/\D/g, '')}`;
 }
+
+/** NPT reasons offered for each kind of floor. "Other" lets people describe anything else. */
+export function nptCategoriesFor(floor: string): Array<{ id: string; label: string }> {
+  if (floor === 'Cutting') return [
+    { id: 'FABRIC_ISSUE', label: 'Fabric not received / late' },
+    { id: 'MARKER_PATTERN', label: 'Marker / pattern not ready' },
+    { id: 'MACHINE_BREAKDOWN', label: 'Machine breakdown' },
+    { id: 'FABRIC_FAULT', label: 'Fabric fault / shade problem' },
+    { id: 'APPROVAL_WAIT', label: 'Waiting for approval / instruction' },
+    { id: 'POWER_FAILURE', label: 'Power failure' },
+    { id: 'MANPOWER_SHORTAGE', label: 'Manpower shortage' },
+    { id: 'OTHER', label: 'Other (describe below)' }
+  ];
+  if (floor === 'Print') return [
+    { id: 'CHANGEOVER', label: 'Changeover (style / colour)' },
+    { id: 'SCREEN_PREP', label: 'Screen / plate preparation' },
+    { id: 'MACHINE_BREAKDOWN', label: 'Machine breakdown' },
+    { id: 'QUALITY_PROBLEM', label: 'Print quality issue / rework' },
+    { id: 'INK_COLOR', label: 'Ink / colour mixing wait' },
+    { id: 'WAITING_CUT_PANELS', label: 'Waiting for cut panels' },
+    { id: 'DRYER_CURING', label: 'Dryer / curing problem' },
+    { id: 'POWER_FAILURE', label: 'Power failure' },
+    { id: 'OTHER', label: 'Other (describe below)' }
+  ];
+  if (floor === 'Embroidery') return [
+    { id: 'MACHINE_SETTING', label: 'Machine setting for new style' },
+    { id: 'DESIGN_FILE', label: 'Design file not ready' },
+    { id: 'THREAD_NEEDLE', label: 'Thread / needle problem' },
+    { id: 'FRAME_HOOP', label: 'Frame / hoop change' },
+    { id: 'MACHINE_BREAKDOWN', label: 'Machine breakdown' },
+    { id: 'WAITING_CUT_PANELS', label: 'Waiting for cut panels' },
+    { id: 'QUALITY_PROBLEM', label: 'Quality issue' },
+    { id: 'POWER_FAILURE', label: 'Power failure' },
+    { id: 'OTHER', label: 'Other (describe below)' }
+  ];
+  return [
+    { id: 'MACHINE_BREAKDOWN', label: 'Machine breakdown (to Mechanic)' },
+    { id: 'QUALITY_PROBLEM', label: 'Quality problem (to Quality Mgr)' },
+    { id: 'LINE_BALANCING', label: 'Line balancing (to IE)' },
+    { id: 'INPUT_MATERIAL', label: 'Input / material (to Input team)' },
+    { id: 'LOW_PRODUCTION', label: 'Low production (to Prod Mgr)' },
+    { id: 'OTHER', label: 'Other (describe below)' }
+  ];
+}

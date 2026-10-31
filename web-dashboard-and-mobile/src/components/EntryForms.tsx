@@ -48,6 +48,10 @@ interface EntryFormsProps {
   /** One module per kind of person. When set, only that module is shown. */
   module?: EntryModuleId;
   targets?: LineTargetConfig[];
+  /** Lines this person may enter for (null = all) */
+  allowedLines?: string[] | null;
+  /** A floor-bound person can only use their own floor */
+  lockedFloor?: PhysicalFloor | null;
   floorTotals?: FloorManpowerRecord[];
   onSaveFloorManpower?: (record: FloorManpowerRecord) => void;
   onClose: () => void;
@@ -65,6 +69,8 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   onSaveMonthlyTarget,
   module,
   targets = [],
+  allowedLines = null,
+  lockedFloor = null,
   floorTotals = [],
   onSaveFloorManpower,
   onClose
@@ -82,7 +88,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
   // Shared state
   const [formDate, setFormDate] = useState(getBangladeshTodayIso());
-  const [formFloor, setFormFloor] = useState<PhysicalFloor>('Sew 2');
+  const [formFloor, setFormFloor] = useState<PhysicalFloor>(lockedFloor || 'Sew 2');
   const [formLine, setFormLine] = useState('K1');
   // The hour is chosen by number (1st hr, 2nd hr...). The stored slot of each line is worked out from it.
   const [formHourNo, setFormHourNo] = useState(1);
@@ -149,7 +155,8 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const floorLines = lines.filter(l => l.floor === formFloor && l.isActive && !isFinishingUnit(l.id));
   const withTarget = floorLines.filter(l => targets.some(t => t.lineId === l.id && t.date === formDate && !t.isDemo && (t.hourlyTargetPcs > 0 || t.dailyTargetPcs > 0)));
   // Lines without a target that day are not running. If no target was set at all yet, every line is shown.
-  const availableLines = withTarget.length > 0 ? withTarget : floorLines;
+  const allowedSet = Array.isArray(allowedLines) && allowedLines.length > 0 ? new Set(allowedLines) : null;
+  const availableLines = (withTarget.length > 0 ? withTarget : floorLines).filter(l => !allowedSet || allowedSet.has(l.id));
   // Departments: Cutting has no quality check; Print and Embroidery record checked and QC pass only.
   const deptFloor = isDepartmentFloor(formFloor);
   const noQcFloor = formFloor === 'Cutting';
@@ -498,6 +505,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 <label className="block text-[11px] font-bold text-slate-600 mb-1">Floor</label>
                 <select
                   value={formFloor}
+                  disabled={!!lockedFloor}
                   onChange={e => {
                     const newFloor = e.target.value as PhysicalFloor;
                     setFormFloor(newFloor);
@@ -1079,11 +1087,11 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
           {/* ==================== TAB 4: MORNING LINE SETUP ==================== */}
           {activeTab === 'FINISHING' && (
-            <FinishingEntry date={formDate} userName={currentUserName} targets={targets} onSaveProduction={onSaveProduction} />
+            <FinishingEntry onlyFloor={lockedFloor} date={formDate} userName={currentUserName} targets={targets} onSaveProduction={onSaveProduction} />
           )}
 
           {activeTab === 'SETUP' && (
-            <BulkTargetSetup lines={lines} targets={targets} floorTotals={floorTotals} date={formDate} userName={currentUserName} onSaveSetup={onSaveSetup} onSaveFloorManpower={r => onSaveFloorManpower?.(r)} />
+            <BulkTargetSetup onlyFloor={lockedFloor} lines={lines} targets={targets} floorTotals={floorTotals} date={formDate} userName={currentUserName} onSaveSetup={onSaveSetup} onSaveFloorManpower={r => onSaveFloorManpower?.(r)} />
           )}
 
           {activeTab === 'MONTHLY' && (

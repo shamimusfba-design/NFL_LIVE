@@ -14,9 +14,11 @@ export const ENTRY_MODULES: Array<{ id: EntryModuleId; label: string; who: strin
   { id: 'WEEKLY', label: 'Weekly BS OQL / NFL AQC', who: 'Auditor · IE', icon: 'M3 17l6-6 4 4 8-9M15 6h6v6' }
 ];
 
-export function canUseEntryModule(id: EntryModuleId, role?: UserRole | null): boolean {
+export function canUseEntryModule(id: EntryModuleId, role?: UserRole | null, permissions?: string[] | null): boolean {
   if (!role) return false;
   if (role === 'ADMIN') return true;
+  // When the Admin has chosen this person's modules, only those count.
+  if (Array.isArray(permissions)) return permissions.includes(id);
   switch (id) {
     case 'PRODUCTION':
       return ['IE', 'SUPERVISOR', 'PRODUCTION_REPORTER', 'PRODUCTION_MANAGER'].includes(role);

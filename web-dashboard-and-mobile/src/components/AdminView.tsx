@@ -1,3 +1,4 @@
+import { UserAccessPanel } from './UserAccessPanel';
 import React, { useState } from 'react';
 import { LineMasterItem, UserAccount } from '../types';
 
@@ -24,6 +25,9 @@ interface AdminViewProps {
   onRejectRegistration?: (userId: string) => Promise<void>;
   onApproveDeviceOrTv?: (userId: string, deviceId: string, deviceName: string) => Promise<void>;
   initialTab?: 'DEMO' | 'LINES' | 'USERS';
+  onSaveAccess?: (u: UserAccount, permissions: string[] | null, allowedLines: string[] | null) => Promise<boolean>;
+  onBlockUser?: (u: UserAccount, blocked: boolean) => Promise<boolean>;
+  onDeleteUser?: (u: UserAccount) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -40,6 +44,9 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onRejectRegistration,
   onApproveDeviceOrTv,
   initialTab,
+  onSaveAccess,
+  onBlockUser,
+  onDeleteUser,
   onClose
 }) => {
   const pendingRegistrations = users.filter(u => u.accountStatus === 'PENDING_APPROVAL');
@@ -356,6 +363,9 @@ export const AdminView: React.FC<AdminViewProps> = ({
           {/* TAB 3: USERS, PENDING REGISTRATIONS & TV/DEVICE REQUESTS */}
           {adminTab === 'USERS' && (
             <div className="space-y-4">
+              {onSaveAccess && onBlockUser && onDeleteUser && (
+                <UserAccessPanel users={users} lines={lines} onSaveAccess={onSaveAccess} onBlock={onBlockUser} onDelete={onDeleteUser} />
+              )}
               {pendingRegistrations.length > 0 && (
                 <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-2.5 shadow-sm">
                   <div className="text-xs font-black text-amber-950">

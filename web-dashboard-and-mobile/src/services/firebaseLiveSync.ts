@@ -17,6 +17,7 @@ import {
   collection,
   doc,
   setDoc,
+  deleteDoc,
   getDocs,
   writeBatch,
   onSnapshot,
@@ -305,7 +306,7 @@ export interface WebRegistrationInput {
   designationName: string;     // e.g. "Production Supervisor"
   department: string;
   role: string;                // role name chosen by the designation policy, e.g. SUPERVISOR
-  physicalFloor: 'SEW_1' | 'SEW_2' | 'SEW_3' | 'FINISHING';
+  physicalFloor: string | 'FINISHING';
   scopeName: string;           // FloorScope name, e.g. SEW_2 or ALL
   scopeDisplay: string;        // e.g. "Sew 2" or "All Floor"
 }
@@ -860,7 +861,13 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
                 ? 'Sew 2'
                 : rawFloor.toUpperCase().includes('SEW_3') || rawFloor === 'Sew 3'
                 ? 'Sew 3'
-                : 'All';
+                : /cut/i.test(rawFloor)
+                ? 'Cutting'
+                : /print/i.test(rawFloor)
+                ? 'Print'
+                : /emb/i.test(rawFloor)
+                ? 'Embroidery'
+                : 'Factory';
             list.push({
               id,
               name: String(data.name || id),
@@ -874,6 +881,9 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
               isActive: data.isActive !== false,
               authorizedDeviceId: String(data.authorizedDeviceId || ''),
               authorizedDeviceName: String(data.authorizedDeviceName || ''),
+              permissions: Array.isArray(data.permissions) ? data.permissions.map(String) : null,
+              allowedLines: Array.isArray(data.allowedLines) ? data.allowedLines.map(String) : null,
+              firebaseUid: String(data.firebaseUid || ''),
               rejectionReason: String(data.rejectionReason || ''),
               updatedAtMillis: Number(data.updatedAtMillis || 0)
             });
@@ -1191,6 +1201,60 @@ export async function purgeAllOperationalCloudRecords(): Promise<number> {
     }
   }
   return totalDeleted;
+}
+
+/** Admin: which entry modules and lines a person may use (null = role defaults / all lines). */
+export async function updateCloudUserAccess(
+  userId: string,
+  access: { permissions: string[] | null; allowedLines: string[] | null },
+  by: string
+): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    await setDoc(
+      doc(db, 'users', userId),
+      { permissions: access.permissions, allowedLines: access.allowedLines, accessUpdatedBy: by, updatedAtMillis: Date.now() },
+      { merge: true }
+    );
+    return true;
+  } catch (e) {
+    console.warn('updateCloudUserAccess error:', e);
+    return false;
+  }
+}
+
+/** Admin: block (no access at all, reversible) or unblock a person. */
+export async function setCloudUserBlocked(userId: string, blocked: boolean, by: string): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    await setDoc(
+      doc(db, 'users', userId),
+      { accountStatus: blocked ? 'SUSPENDED' : 'APPROVED', isActive: !blocked, blockedBy: blocked ? by : '', updatedAtMillis: Date.now() },
+      { merge: true }
+    );
+    return true;
+  } catch (e) {
+    console.warn('setCloudUserBlocked error:', e);
+    return false;
+  }
+}
+
+/** Admin: delete a person. Their record and sign-in link are removed, so they have no access. */
+export async function deleteCloudUser(userId: string, firebaseUid?: string): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    await deleteDoc(doc(db, 'users', userId));
+  } catch (e) {
+    console.warn('deleteCloudUser error:', e);
+    return false;
+  }
+  if (firebaseUid) {
+    try { await deleteDoc(doc(db, 'auth_bindings', firebaseUid)); } catch {}
+  }
+  return true;
 }
 
 export async function approveCloudUserRegistration(

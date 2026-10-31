@@ -136,6 +136,16 @@ service cloud.firestore {
         );
     }
 
+    // Admin-set limits on a person. A person the Admin never limited keeps the role rules only.
+    function callerMayWrite(module) {
+      let p = callerUser().get('permissions', null);
+      return isAdmin() || p == null || (p is list && module in p);
+    }
+    function callerMayUseLine(lineId) {
+      let l = callerUser().get('allowedLines', null);
+      return isAdmin() || l == null || (l is list && (l.size() == 0 || lineId in l));
+    }
+
     function callerHasFloorAccess(targetFloor) {
       let u = callerUser();
       let role = u.get('role', '');
@@ -279,6 +289,9 @@ service cloud.firestore {
             && getUserAssignedFloor(request.resource.data) == getUserAssignedFloor(resource.data)
             && request.resource.data.get('department', '') == resource.data.get('department', '')
             && request.resource.data.get('isAdmin', false) == resource.data.get('isAdmin', false)
+            && request.resource.data.get('permissions', null) == resource.data.get('permissions', null)
+            && request.resource.data.get('allowedLines', null) == resource.data.get('allowedLines', null)
+            && request.resource.data.get('isActive', true) == resource.data.get('isActive', true)
           )
         );
 
@@ -297,6 +310,8 @@ service cloud.firestore {
         && isNonEmptyString(request.resource.data.get('date', ''))
         && isNonEmptyString(request.resource.data.get('hourSlot', ''))
         && hasValidOutputQty(request.resource.data)
+        && (callerMayWrite('PRODUCTION') || callerMayWrite('FINISHING'))
+        && callerMayUseLine(request.resource.data.get('lineId', ''))
         && (isPrivilegedPlanner() || isCurrentOperationalWindowCreate());
 
       allow update: if isApprovedCaller()
@@ -308,6 +323,8 @@ service cloud.firestore {
         && isNonEmptyString(request.resource.data.get('date', ''))
         && isNonEmptyString(request.resource.data.get('hourSlot', ''))
         && hasValidOutputQty(request.resource.data)
+        && (callerMayWrite('PRODUCTION') || callerMayWrite('FINISHING'))
+        && callerMayUseLine(request.resource.data.get('lineId', ''))
         && (isPrivilegedPlanner() || isCurrentOperationalWindowUpdate());
 
       allow delete: if isAdmin();
@@ -325,6 +342,8 @@ service cloud.firestore {
         && isNonEmptyString(request.resource.data.get('date', ''))
         && isNonEmptyString(request.resource.data.get('hourSlot', ''))
         && hasValidCheckedGarments(request.resource.data)
+        && (callerMayWrite('DHU') || callerMayWrite('AUDIT'))
+        && callerMayUseLine(request.resource.data.get('lineId', ''))
         && (isPrivilegedPlanner() || isCurrentOperationalWindowCreate());
 
       allow update: if isApprovedCaller()
@@ -336,6 +355,8 @@ service cloud.firestore {
         && isNonEmptyString(request.resource.data.get('date', ''))
         && isNonEmptyString(request.resource.data.get('hourSlot', ''))
         && hasValidCheckedGarments(request.resource.data)
+        && (callerMayWrite('DHU') || callerMayWrite('AUDIT'))
+        && callerMayUseLine(request.resource.data.get('lineId', ''))
         && (isPrivilegedPlanner() || isCurrentOperationalWindowUpdate());
 
       allow delete: if isAdmin();
@@ -381,6 +402,7 @@ service cloud.firestore {
         && isNonEmptyString(request.resource.data.get('date', ''))
         && request.resource.data.get('targetDailyPcs', -1) is number
         && request.resource.data.get('targetDailyPcs', -1) >= 0
+        && callerMayWrite('TARGET')
         && (isPrivilegedPlanner() || isCurrentOperationalWindowCreate());
 
       allow update: if isApprovedCaller()
@@ -392,6 +414,7 @@ service cloud.firestore {
         && isNonEmptyString(request.resource.data.get('date', ''))
         && request.resource.data.get('targetDailyPcs', -1) is number
         && request.resource.data.get('targetDailyPcs', -1) >= 0
+        && callerMayWrite('TARGET')
         && (isPrivilegedPlanner() || isCurrentOperationalWindowUpdate());
 
       allow delete: if isAdmin();
