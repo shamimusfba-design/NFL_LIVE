@@ -72,7 +72,11 @@ export default function App() {
   const [restoreNotice, setRestoreNotice] = useState<string | undefined>(undefined);
   const [menuOpen, setMenuOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    try { return localStorage.getItem('nfl_theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; }
+    try {
+      const q = new URLSearchParams(window.location.search).get('theme');
+      if (q === 'light' || q === 'dark') return q;
+      return localStorage.getItem('nfl_theme') === 'light' ? 'light' : 'dark';
+    } catch { return 'dark'; }
   });
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -965,19 +969,31 @@ export default function App() {
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
           <div className="min-w-0 flex-1 truncate text-[14px] font-extrabold md:text-[16px]">NFL LIVE Production &amp; Quality</div>
-          <button
-            onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
-            aria-label="Switch Day and Night mode"
-            title={theme === 'dark' ? 'Switch to Day mode' : 'Switch to Night mode'}
-            className="flex items-center gap-1.5 rounded-full border border-[var(--shell-top-line)] bg-[var(--shell-top-btn)] px-2.5 py-1.5 text-[11px] font-bold"
+          {/* Two clear choices; the one in use is filled. */}
+          <div
+            role="group"
+            aria-label="Day or Night mode"
+            className="flex items-center rounded-full border border-[var(--shell-top-line)] bg-[var(--shell-top-btn)] p-0.5 text-[11px] font-bold"
           >
-            {theme === 'dark' ? (
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
-            ) : (
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
-            )}
-            <span>{theme === 'dark' ? 'Day' : 'Night'}</span>
-          </button>
+            <button
+              onClick={() => setTheme('light')}
+              aria-pressed={theme === 'light'}
+              title="Day mode"
+              className={`flex items-center gap-1 rounded-full px-2.5 py-1 ${theme === 'light' ? 'bg-[#1A62D6] text-white shadow' : 'opacity-70 hover:opacity-100'}`}
+            >
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
+              <span>Day</span>
+            </button>
+            <button
+              onClick={() => setTheme('dark')}
+              aria-pressed={theme === 'dark'}
+              title="Night mode"
+              className={`flex items-center gap-1 rounded-full px-2.5 py-1 ${theme === 'dark' ? 'bg-[#1A62D6] text-white shadow' : 'opacity-70 hover:opacity-100'}`}
+            >
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
+              <span>Night</span>
+            </button>
+          </div>
           {notificationCount > 0 && (
             <button
               onClick={() => setShowIncidentModal(true)}
