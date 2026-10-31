@@ -6238,7 +6238,7 @@ class NflRepository(private val context: Context) {
       categoryMinutes[categoryName] = Pair(current.first + minutes, current.second + 1)
     }
 
-    val colors = mapOf(
+    val colors = mapOf<String, Long>(
       "Machine Breakdown" to 0xFFEF4444,
       "Cutting Rip / Input Due" to 0xFFF97316,
       "Line Balancing" to 0xFF8B5CF6,
