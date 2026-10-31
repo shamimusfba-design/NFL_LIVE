@@ -67,6 +67,7 @@ fun HomeScreen(
   val incidents by repository.incidents.collectAsStateWithLifecycle()
   val productionEntries by repository.productionEntries.collectAsStateWithLifecycle()
   val qualityEntries by repository.qualityEntries.collectAsStateWithLifecycle()
+  val weeklyQuality by repository.weeklyQuality.collectAsStateWithLifecycle()
   val targets by repository.targets.collectAsStateWithLifecycle()
   val monthlyTargets by repository.monthlyTargets.collectAsStateWithLifecycle()
   val isSyncing by repository.isSyncing.collectAsStateWithLifecycle()
@@ -541,16 +542,10 @@ fun HomeScreen(
       // NEW CHART: Weekly Trend Chart for "BS OQL" (Insaf Life Dashboard Module)
       // Placed directly below the existing "Up-to-Date OQL" metric card
       // =========================================================================
-      BsOqlWeeklyTrendChartCard(
-        modifier = Modifier
-          .fillMaxWidth()
-          .testTag("insaf_life_bs_oql_weekly_chart")
-      )
-
       OqlTrendChart(
         title = "${currentFloor.displayName} — BS OQL vs NFL OQL Trend",
-        subtitle = "Compare buyer standard OQL with actual NFL audit OQL",
-        points = tvData.weeklyQaTrend
+        subtitle = "Weekly IE-entered BS OQL compared with weekly NFL AQC OQL",
+        points = weeklyQuality.sortedBy { it.weekStartIso }.takeLast(12)
       )
 
       // Row 3: BS OQL (Buyer Standard OQL entered by IE) & FRI Pass Rate
@@ -1304,8 +1299,9 @@ fun HomeScreen(
 private fun OqlTrendChart(
   title: String,
   subtitle: String,
-  points: List<DailyQaTrend>
+  points: List<WeeklyQualityEntry>
 ) {
+  val chartPoints = remember(points) { points.filter { it.bsOqlPct != null || it.nflAqcPct != null } }
   Card(
     modifier = Modifier.fillMaxWidth(),
     shape = RoundedCornerShape(12.dp),
@@ -1325,12 +1321,12 @@ private fun OqlTrendChart(
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
           Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFFF59E0B)))
-          Text("NFL OQL", fontSize = 10.sp, color = Color(0xFF334155))
+          Text("NFL AQC OQL", fontSize = 10.sp, color = Color(0xFF334155))
         }
       }
-      if (points.isEmpty()) {
+      if (chartPoints.isEmpty()) {
         Box(Modifier.fillMaxWidth().height(145.dp), contentAlignment = Alignment.Center) {
-          Text("No quality records for this period yet", fontSize = 12.sp, color = Color(0xFF64748B))
+          Text("No weekly BS OQL / NFL AQC records entered yet", fontSize = 12.sp, color = Color(0xFF64748B))
         }
       } else {
         Canvas(modifier = Modifier.fillMaxWidth().height(150.dp)) {
@@ -1339,35 +1335,42 @@ private fun OqlTrendChart(
           val top = 10f
           val bottom = size.height - 12f
           val plotHeight = bottom - top
-          val maxValue = maxOf(5.0, points.maxOf { maxOf(it.bsOqlPct, it.nflAqcPct) } + 1.0).toFloat()
+          val maxValue = maxOf(
+            5.0,
+            (chartPoints.maxOfOrNull { maxOf(it.bsOqlPct ?: 0.0, it.nflAqcPct ?: 0.0) } ?: 4.0) + 1.0
+          ).toFloat()
           for (i in 0..4) {
             val y = top + plotHeight * i / 4f
             drawLine(Color(0xFFE2E8F0), Offset(left, y), Offset(right, y), strokeWidth = 1f)
           }
           fun pointAt(index: Int, value: Double): Offset {
-            val x = if (points.size == 1) (left + right) / 2f else left + (right - left) * index / (points.size - 1).toFloat()
+            val x = if (chartPoints.size == 1) (left + right) / 2f
+              else left + (right - left) * index / (chartPoints.size - 1).toFloat()
             val y = bottom - (value.toFloat() / maxValue) * plotHeight
             return Offset(x, y)
           }
           fun drawSeries(
-            values: (DailyQaTrend) -> Double,
-            otherValues: (DailyQaTrend) -> Double,
+            valueSelector: (WeeklyQualityEntry) -> Double?,
+            otherSelector: (WeeklyQualityEntry) -> Double?,
             color: Color,
             placeAboveWhenClose: Boolean
           ) {
-            val path = Path()
-            points.forEachIndexed { index, point ->
-              val rawPoint = pointAt(index, values(point))
-              val otherPoint = pointAt(index, otherValues(point))
-              // When the two values are visually close, separate their markers vertically.
-              val offset = if (kotlin.math.abs(rawPoint.y - otherPoint.y) < 14f) {
-                if (placeAboveWhenClose) -7f else 7f
-              } else 0f
-              val p = Offset(rawPoint.x, (rawPoint.y + offset).coerceIn(top + 2f, bottom - 2f))
-              if (index == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
-              drawCircle(color, radius = 3.5f, center = p)
+            var previous: Offset? = null
+            chartPoints.forEachIndexed { index, point ->
+              val value = valueSelector(point)
+              if (value == null) {
+                previous = null
+              } else {
+                val raw = pointAt(index, value)
+                val other = otherSelector(point)
+                val close = other?.let { kotlin.math.abs(raw.y - pointAt(index, it).y) < 14f } == true
+                val offset = if (close) if (placeAboveWhenClose) -7f else 7f else 0f
+                val plotted = Offset(raw.x, (raw.y + offset).coerceIn(top + 2f, bottom - 2f))
+                previous?.let { drawLine(color, it, plotted, strokeWidth = 3f) }
+                drawCircle(color, radius = 3.5f, center = plotted)
+                previous = plotted
+              }
             }
-            if (points.size > 1) drawPath(path, color, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f))
           }
           drawSeries({ it.bsOqlPct }, { it.nflAqcPct }, Color(0xFF1976D2), true)
           drawSeries({ it.nflAqcPct }, { it.bsOqlPct }, Color(0xFFF59E0B), false)
@@ -1376,9 +1379,14 @@ private fun OqlTrendChart(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween
         ) {
-          Text(points.first().dateLabel, fontSize = 9.sp, color = Color(0xFF64748B))
-          if (points.size > 2) Text(points[points.size / 2].dateLabel, fontSize = 9.sp, color = Color(0xFF64748B))
-          if (points.size > 1) Text(points.last().dateLabel, fontSize = 9.sp, color = Color(0xFF64748B))
+          chartPoints.forEach { point ->
+            Text(
+              text = point.weekKey.substringAfter("-W", point.weekKey).let { "W$it" },
+              fontSize = 8.sp,
+              color = Color(0xFF64748B),
+              maxLines = 1
+            )
+          }
         }
       }
     }
