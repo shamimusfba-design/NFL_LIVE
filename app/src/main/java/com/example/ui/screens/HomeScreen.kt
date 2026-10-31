@@ -45,6 +45,7 @@ fun HomeScreen(
   repository: NflRepository,
   onNavigateToProduction: () -> Unit,
   onNavigateToQuality: () -> Unit,
+  onNavigateToQualityDashboard: () -> Unit = {},
   onNavigateToNpt: () -> Unit,
   onNavigateToSetup: () -> Unit,
   onNavigateToTv: () -> Unit,
@@ -601,6 +602,31 @@ fun HomeScreen(
           periodScope = currentPeriod,
           points = tvData.weeklyQaTrend
         )
+      }
+
+      if (canViewDeepDive) {
+        Surface(
+          onClick = onNavigateToQualityDashboard,
+          shape = RoundedCornerShape(9.dp),
+          color = Color(0xFFEFF6FF),
+          border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE)),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              Icon(Icons.Default.FactCheck, contentDescription = null, tint = Color(0xFF1D4ED8))
+              Column {
+                Text("Quality Analytics Dashboard", color = Color(0xFF1E3A8A), fontWeight = FontWeight.Black, fontSize = 12.sp)
+                Text("Bi-hourly audit • Pass/Fail • Defect trends", color = Color(0xFF475569), fontSize = 9.sp)
+              }
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Open quality dashboard", tint = Color(0xFF1D4ED8))
+          }
+        }
       }
 
       // 4. Quick Action Modules (Entry, Supervisor, TV, History - Strictly gated by RBAC Write Permissions)
