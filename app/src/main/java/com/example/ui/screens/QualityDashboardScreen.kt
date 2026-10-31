@@ -289,6 +289,7 @@ fun QualityDashboardScreen(
         QualityPanel(title = "Line-Wise DHU", subtitle = "Calculated from hourly endline quality inspections; bi-hourly audit records are excluded.") {
           if (lineDhu.isEmpty()) QualityEmptyState("No hourly DHU records available.")
           else {
+            val maxDhu = lineDhu.maxOfOrNull { it.second }?.coerceAtLeast(0.01) ?: 1.0
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
               lineDhu.take(12).forEach { (lineId, dhu) ->
                 Row(
@@ -300,7 +301,7 @@ fun QualityDashboardScreen(
                     Text(lineId, modifier = Modifier.width(42.dp).padding(vertical = 5.dp), textAlign = TextAlign.Center, color = Color(0xFF1D4ED8), fontWeight = FontWeight.Bold, fontSize = 10.sp)
                   }
                   Box(Modifier.weight(1f).height(12.dp).background(Color(0xFFE2E8F0), RoundedCornerShape(8.dp))) {
-                    Box(Modifier.fillMaxWidth((dhu / (lineDhu.firstOrNull()?.second ?: 1.0)).toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(if (dhu <= 2.0) Color(0xFF16A34A) else Color(0xFFF59E0B), RoundedCornerShape(8.dp)))
+                    Box(Modifier.fillMaxWidth((dhu / maxDhu).toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(if (dhu <= 2.0) Color(0xFF16A34A) else Color(0xFFF59E0B), RoundedCornerShape(8.dp)))
                   }
                   Text("${String.format(java.util.Locale.US, "%.2f", dhu)}%", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF334155), modifier = Modifier.width(52.dp), textAlign = TextAlign.End)
                 }
