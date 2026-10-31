@@ -15,6 +15,8 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import androidx.webkit.WebSettingsCompat;
+import androidx.webkit.WebViewFeature;
 import android.view.WindowManager;
 import android.window.OnBackInvokedDispatcher;
 
@@ -47,6 +49,12 @@ public class MainActivity extends Activity {
     // The phone's dark mode must not darken the page: Day stays light, Night stays dark, as chosen in the app.
     if (Build.VERSION.SDK_INT >= 29) {
       s.setForceDark(WebSettings.FORCE_DARK_OFF);
+      web.setForceDarkAllowed(false);
+      getWindow().getDecorView().setForceDarkAllowed(false);
+    }
+    // Android 13+: no automatic darkening of the page by WebView.
+    if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+      WebSettingsCompat.setAlgorithmicDarkeningAllowed(s, false);
     }
     s.setJavaScriptEnabled(true);
     s.setDomStorageEnabled(true);        // keeps the sign-in and the Day/Night choice
