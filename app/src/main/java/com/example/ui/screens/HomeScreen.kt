@@ -1379,13 +1379,15 @@ private fun OqlTrendChart(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween
         ) {
-          chartPoints.forEach { point ->
-            Text(
-              text = point.weekKey.substringAfter("-W", point.weekKey).let { "W$it" },
-              fontSize = 8.sp,
-              color = Color(0xFF64748B),
-              maxLines = 1
-            )
+          chartPoints.forEachIndexed { index, point ->
+            if (index == 0 || index == chartPoints.lastIndex || index % 3 == 0) {
+              Text(
+                text = point.weekKey.substringAfter("-W", point.weekKey).let { "W$it" },
+                fontSize = 8.sp,
+                color = Color(0xFF64748B),
+                maxLines = 1
+              )
+            }
           }
         }
       }
@@ -1799,7 +1801,7 @@ fun LineWiseDhuCard(
         // Frozen column separator line
         Box(
           modifier = Modifier
-            .width(2.dp)
+            .width(1.dp)
             .height((36 + lines.size * 42).dp)
             .background(Color(0xFFCBD5E1))
         )
