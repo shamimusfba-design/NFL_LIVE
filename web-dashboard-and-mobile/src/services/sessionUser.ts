@@ -1,4 +1,5 @@
 import { UserAccount, UserRole, FloorId } from '../types';
+import { formatUserDesignation } from '../data/designations';
 
 const KNOWN_ROLES: UserRole[] = [
   'ADMIN', 'PRODUCTION_REPORTER', 'QUALITY_REPORTER', 'AUDITOR', 'SUPERVISOR', 'PRODUCTION_MANAGER',
@@ -22,13 +23,24 @@ export function accountFromRecord(rec: Record<string, any>, fallbackId: string):
   const role = (KNOWN_ROLES as string[]).includes(String(rec.role))
     ? (String(rec.role) as UserRole)
     : ('MANAGEMENT_VIEW' as UserRole); // unknown role: view only
+  const rawFloor = String(rec.authorizedFloorScope || rec.floor || 'ALL');
+  const floor = toFloorId(rawFloor);
+  const department = rec.department ? String(rec.department) : undefined;
+  const rawDesig = rec.designation || rec.requestedDesignation ? String(rec.designation || rec.requestedDesignation) : undefined;
+  const designation = formatUserDesignation({
+    designation: rawDesig,
+    role,
+    department,
+    floor: rawFloor
+  });
   return {
     id,
     name: String(rec.name || fallbackId),
     username: id.toLowerCase(),
     role,
-    floor: toFloorId(String(rec.authorizedFloorScope || rec.floor || 'ALL')),
-    designation: rec.designation ? String(rec.designation) : undefined,
+    floor,
+    designation,
+    department,
     permissions: Array.isArray(rec.permissions) ? rec.permissions.map(String) : null,
     allowedLines: Array.isArray(rec.allowedLines) ? rec.allowedLines.map(String) : null
   };

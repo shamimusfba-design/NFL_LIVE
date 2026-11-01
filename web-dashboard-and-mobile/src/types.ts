@@ -270,6 +270,7 @@ export interface AlertComment {
   authorId: string;
   authorName: string;
   authorRole: string;
+  authorDesignation?: string;
   text: string;
   createdMillis: number;
 }

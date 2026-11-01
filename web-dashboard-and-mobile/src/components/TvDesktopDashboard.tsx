@@ -22,6 +22,7 @@ import { formatHourSlot12h,
   hourLabelOfSlot, isBiHourlyAuditSlot, floorMatches, lineDisplayName, isDepartmentFloor, unitWord,
   AUDIT_PASS_OQL_PCT, auditResultOf, getBangladeshTodayIso } from '../data/masterData';
 import { CalculationEngine as CalcForPeriod } from '../services/calculationEngine';
+import { NflLogo } from './NflLogo';
 
 export type WbPageId = 'PRODUCTION' | 'QUALITY' | 'FINISHING' | 'ALL' | 'TABLE';
 
@@ -242,8 +243,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   const sortedWeekly = useMemo(() => {
     return [...weeklyQuality]
       .filter(w => w.bsOqlPct !== null || w.nflAqcPct !== null)
-      .sort((a, b) => a.weekKey.localeCompare(b.weekKey))
-      .slice(-8);
+      .sort((a, b) => a.weekKey.localeCompare(b.weekKey));
   }, [weeklyQuality]);
 
   return (
@@ -255,7 +255,9 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-2 min-h-[40px]">
         <div className="hidden md:flex items-center gap-2">
           <div className="bg-white text-[#002D62] px-2.5 py-1 rounded flex items-center gap-1.5 font-black text-sm shadow">
-            <span>🏭</span>
+            <span className="inline-flex h-5 w-5 items-center justify-center overflow-hidden rounded-sm">
+              <NflLogo size={20} />
+            </span>
             <span>NFL LIVE</span>
           </div>
           <span className="hidden sm:inline text-xs font-bold" style={{ color: WB_THEME.MUTED }}>
@@ -1776,54 +1778,230 @@ const RectificationPendingChart: React.FC<{
 
 /** Weekly BS OQL vs NFL AQC trend, from ISO week 32 of the current year (blue: BS OQL, orange: NFL AQC). */
 const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: number }> = ({ records, commitment }) => {
-  const year = new Date().getFullYear();
-  const rows = [...records]
-    .filter(r => r.weekKey >= `${year}-W32` && (r.bsOqlPct !== null || r.nflAqcPct !== null))
-    .sort((a, b) => (a.weekKey < b.weekKey ? -1 : 1));
-  if (rows.length === 0) {
-    return (
-      <div style={{ color: WB_THEME.MUTED }} className="flex items-center justify-center h-full text-xs font-bold">
-        No weekly BS OQL / NFL AQC records from week 32 yet
-      </div>
-    );
-  }
-  const step = 70, padL = 30, padR = 30, top = 26, plotH = 170, W = Math.max(320, padL + padR + step * (rows.length - 1));
-  const max = niceMax([commitment, ...rows.flatMap(r => [r.bsOqlPct ?? 0, r.nflAqcPct ?? 0])]);
-  const x = (i: number) => (rows.length === 1 ? W / 2 : padL + i * step);
-  const y = (v: number) => top + plotH - (v / max) * plotH;
-  const series = [
-    { key: 'bs', name: 'BS OQL', color: WB_THEME.BLUE, get: (r: WeeklyQualityRecord) => r.bsOqlPct, dy: -10 },
-    { key: 'aqc', name: 'NFL AQC', color: WB_THEME.ORANGE, get: (r: WeeklyQualityRecord) => r.nflAqcPct, dy: 18 }
+  const now = new Date();
+  const tempUtc = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const dayNum = tempUtc.getUTCDay() || 7;
+  tempUtc.setUTCDate(tempUtc.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(tempUtc.getUTCFullYear(), 0, 1));
+  const currentIsoWeek = Math.ceil((((tempUtc.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+
+  const validRecords = [...records].filter(r => r.bsOqlPct !== null || r.nflAqcPct !== null);
+  const recordYears = validRecords
+    .map(r => {
+      const m = r.weekKey.match(/^(\d{4})-W(\d{2})$/);
+      return m ? Number(m[1]) : null;
+    })
+    .filter((y): y is number => y !== null);
+  const year = recordYears.length > 0 ? Math.max(...recordYears) : tempUtc.getUTCFullYear();
+
+  const byWeekNo = new Map<number, WeeklyQualityRecord>();
+  validRecords.forEach(r => {
+    const m = r.weekKey.match(/^(\d{4})-W(\d{2})$/);
+    if (m && Number(m[1]) === year) {
+      const wNo = Number(m[2]);
+      if (wNo >= 32) {
+        byWeekNo.set(wNo, r);
+      }
+    }
+  });
+
+  const maxRecordWeek = byWeekNo.size > 0 ? Math.max(...Array.from(byWeekNo.keys())) : 32;
+  const startWeek = 32;
+  const endWeek = Math.min(52, Math.max(44, currentIsoWeek >= 32 ? currentIsoWeek : 44, maxRecordWeek));
+
+  const slots = Array.from({ length: endWeek - startWeek + 1 }, (_, idx) => {
+    const weekNo = startWeek + idx;
+    const weekKey = `${year}-W${String(weekNo).padStart(2, '0')}`;
+    const rec = byWeekNo.get(weekNo);
+    return {
+      weekNo,
+      weekKey,
+      bsOqlPct: rec?.bsOqlPct ?? null,
+      nflAqcPct: rec?.nflAqcPct ?? null
+    };
+  });
+
+  const allValues = [
+    commitment,
+    ...slots.flatMap(s => [s.bsOqlPct, s.nflAqcPct]).filter((v): v is number => v !== null)
   ];
+  const minVal = Math.max(0, Math.floor(Math.min(...allValues) - 1.2));
+  const maxVal = Math.max(minVal + 2, Math.ceil(Math.max(...allValues) + 1.2));
+  const span = Math.max(1, maxVal - minVal);
+
+  const step = 74;
+  const padL = 44;
+  const padR = 134;
+  const top = 38;
+  const plotH = 180;
+  const bottom = 38;
+  const lastSlotX = padL + step * Math.max(0, slots.length - 1);
+  const W = Math.max(480, lastSlotX + padR);
+  const H = top + plotH + bottom;
+
+  const x = (i: number) => (slots.length === 1 ? (W - padR) / 2 : padL + i * step);
+  const y = (v: number) => top + plotH - ((v - minVal) / span) * plotH;
+
+  // Compute non-overlapping label positions in the empty space above the top point and below the bottom point
+  const labelYFor = (i: number, key: 'bs' | 'aqc'): number => {
+    const s = slots[i];
+    const bs = s.bsOqlPct;
+    const aqc = s.nflAqcPct;
+    const v = key === 'bs' ? bs : aqc;
+    if (v === null) return 0;
+    if (bs !== null && aqc !== null) {
+      const isBsUpper = bs > aqc || (bs === aqc && key === 'bs');
+      const isThisUpper = (key === 'bs' && isBsUpper) || (key === 'aqc' && !isBsUpper);
+      return isThisUpper ? y(v) - 14 : y(v) + 22;
+    }
+    return y(v) - 14;
+  };
+
+  const bsPts = slots
+    .map((s, i) => (s.bsOqlPct !== null ? { i, v: s.bsOqlPct } : null))
+    .filter((p): p is { i: number; v: number } => p !== null);
+  const aqcPts = slots
+    .map((s, i) => (s.nflAqcPct !== null ? { i, v: s.nflAqcPct } : null))
+    .filter((p): p is { i: number; v: number } => p !== null);
+
   return (
     <div className="nfl-scroll overflow-x-auto pb-1">
-      <svg viewBox={`0 0 ${W} ${top + plotH + 30}`} style={{ width: '100%', minWidth: W, height: top + plotH + 30 }}>
-        <line x1={0} x2={W} y1={y(commitment)} y2={y(commitment)} stroke={WB_THEME.RED} strokeWidth={2} strokeDasharray="6 5" />
-        <text x={W - 4} y={y(commitment) - 5} textAnchor="end" fontSize={11} fontWeight={800} fill={WB_THEME.RED}>{commitment}% commitment</text>
-        <line x1={0} x2={W} y1={top + plotH} y2={top + plotH} stroke={WB_THEME.LINE} strokeWidth={1} />
-        {series.map(sr => {
-          const pts = rows.map((r, i) => ({ i, v: sr.get(r) })).filter(p => p.v !== null) as Array<{ i: number; v: number }>;
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', minWidth: W, height: H }}>
+        {/* Subtle vertical week slot guides from W32 so empty weeks clearly show their reserved space */}
+        {slots.map((s, i) => {
+          const hasData = s.bsOqlPct !== null || s.nflAqcPct !== null;
           return (
-            <g key={sr.key}>
-              <polyline fill="none" stroke={sr.color} strokeWidth={3} strokeLinejoin="round" points={pts.map(p => `${x(p.i)},${y(p.v)}`).join(' ')} />
-              {pts.map(p => (
-                <g key={p.i}>
-                  <circle cx={x(p.i)} cy={y(p.v)} r={5} fill={sr.color} />
-                  <text x={x(p.i)} y={y(p.v) + sr.dy} textAnchor="middle" fontSize={12} fontWeight={900} fill={sr.color}>{p.v.toFixed(1)}</text>
-                </g>
-              ))}
+            <g key={s.weekKey}>
+              <line
+                x1={x(i)}
+                x2={x(i)}
+                y1={top}
+                y2={top + plotH}
+                stroke={WB_THEME.LINE}
+                strokeWidth={1}
+                strokeDasharray={hasData ? '2 4' : '3 5'}
+                opacity={hasData ? 0.45 : 0.3}
+              />
+              {!hasData && (
+                <text
+                  x={x(i)}
+                  y={top + plotH - 8}
+                  textAnchor="middle"
+                  fontSize={10}
+                  fontWeight={700}
+                  fill={WB_THEME.MUTED}
+                  opacity={0.65}
+                >
+                  —
+                </text>
+              )}
             </g>
           );
         })}
-        {rows.map((r, i) => (
-          <text key={r.weekKey} x={x(i)} y={top + plotH + 20} textAnchor="middle" fontSize={12} fontWeight={800} fill={WB_THEME.TXT}>
-            W{r.weekKey.replace(/^\d{4}-W/, '')}
-          </text>
+
+        {/* Red dashed commitment line + label placed in the dedicated empty right margin */}
+        <line
+          x1={padL - 16}
+          x2={lastSlotX + 14}
+          y1={y(commitment)}
+          y2={y(commitment)}
+          stroke={WB_THEME.RED}
+          strokeWidth={2}
+          strokeDasharray="6 5"
+        />
+        <text
+          x={lastSlotX + 20}
+          y={y(commitment) + 4}
+          textAnchor="start"
+          fontSize={11}
+          fontWeight={800}
+          fill={WB_THEME.RED}
+          style={{ paintOrder: 'stroke', stroke: 'var(--wb-panel)', strokeWidth: 4, strokeLinejoin: 'round' }}
+        >
+          {commitment}% commitment
+        </text>
+
+        {/* Bottom axis line */}
+        <line x1={padL - 16} x2={lastSlotX + 14} y1={top + plotH} y2={top + plotH} stroke={WB_THEME.LINE} strokeWidth={1.5} />
+
+        {/* Polylines drawn first so value labels always render cleanly on top */}
+        {bsPts.length > 1 && (
+          <polyline
+            fill="none"
+            stroke={WB_THEME.BLUE}
+            strokeWidth={3}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            points={bsPts.map(p => `${x(p.i)},${y(p.v)}`).join(' ')}
+          />
+        )}
+        {aqcPts.length > 1 && (
+          <polyline
+            fill="none"
+            stroke={WB_THEME.ORANGE}
+            strokeWidth={3}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            points={aqcPts.map(p => `${x(p.i)},${y(p.v)}`).join(' ')}
+          />
+        )}
+
+        {/* Dots and non-overlapping labels in empty space above/below */}
+        {bsPts.map(p => (
+          <g key={`bs-${p.i}`}>
+            <circle cx={x(p.i)} cy={y(p.v)} r={5} fill={WB_THEME.BLUE} stroke="var(--wb-panel)" strokeWidth={1.5} />
+            <text
+              x={x(p.i)}
+              y={labelYFor(p.i, 'bs')}
+              textAnchor="middle"
+              fontSize={12}
+              fontWeight={900}
+              fill={WB_THEME.BLUE}
+              style={{ paintOrder: 'stroke', stroke: 'var(--wb-panel)', strokeWidth: 4, strokeLinejoin: 'round' }}
+            >
+              {p.v.toFixed(1)}
+            </text>
+          </g>
         ))}
+
+        {aqcPts.map(p => (
+          <g key={`aqc-${p.i}`}>
+            <circle cx={x(p.i)} cy={y(p.v)} r={5} fill={WB_THEME.ORANGE} stroke="var(--wb-panel)" strokeWidth={1.5} />
+            <text
+              x={x(p.i)}
+              y={labelYFor(p.i, 'aqc')}
+              textAnchor="middle"
+              fontSize={12}
+              fontWeight={900}
+              fill={WB_THEME.ORANGE}
+              style={{ paintOrder: 'stroke', stroke: 'var(--wb-panel)', strokeWidth: 4, strokeLinejoin: 'round' }}
+            >
+              {p.v.toFixed(1)}
+            </text>
+          </g>
+        ))}
+
+        {/* Week labels from W32 onwards */}
+        {slots.map((s, i) => {
+          const hasData = s.bsOqlPct !== null || s.nflAqcPct !== null;
+          return (
+            <text
+              key={`lbl-${s.weekKey}`}
+              x={x(i)}
+              y={top + plotH + 22}
+              textAnchor="middle"
+              fontSize={12}
+              fontWeight={hasData ? 800 : 700}
+              fill={hasData ? WB_THEME.TXT : WB_THEME.MUTED}
+            >
+              W{String(s.weekNo).padStart(2, '0')}
+            </text>
+          );
+        })}
       </svg>
       <div className="flex justify-center gap-4 text-xs font-bold" style={{ color: WB_THEME.MUTED }}>
-        <span><span className="inline-block w-3 h-1 align-middle mr-1" style={{ backgroundColor: WB_THEME.BLUE }} />BS OQL</span>
-        <span><span className="inline-block w-3 h-1 align-middle mr-1" style={{ backgroundColor: WB_THEME.ORANGE }} />NFL AQC</span>
+        <span><span className="inline-block w-3 h-1 align-middle mr-1" style={{ backgroundColor: WB_THEME.BLUE }} />BS OQL (empty space below/above line)</span>
+        <span><span className="inline-block w-3 h-1 align-middle mr-1" style={{ backgroundColor: WB_THEME.ORANGE }} />NFL AQC (from Week 32)</span>
       </div>
     </div>
   );

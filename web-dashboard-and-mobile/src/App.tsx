@@ -18,7 +18,8 @@ import {
   STANDARD_USERS,
   getBangladeshTodayIso,
   generateSyntheticDemoDataset,
-  floorMatches
+  floorMatches,
+  lineDisplayName
 } from './data/masterData';
 import { CalculationEngine } from './services/calculationEngine';
 import {
@@ -55,7 +56,8 @@ import { AdminView } from './components/AdminView';
 import { LoginView } from './components/LoginView';
 import { NflLogo } from './components/NflLogo';
 import { LoadingScreen } from './components/LoadingScreen';
-import { designationFields } from './data/designations';
+import { formatCommentAgo } from './components/CommentThread';
+import { designationFields, formatUserDesignation, resolveCommentDesignation } from './data/designations';
 import { ENTRY_MODULES, canUseEntryModule, EntryModuleId } from './data/entryModules';
 import { accountFromRecord, saveSessionCache, readSessionCache, clearSessionCache } from './services/sessionUser';
 
@@ -126,6 +128,7 @@ export default function App() {
   const [entryModule, setEntryModule] = useState<EntryModuleId | undefined>(undefined);
   const [floorTotals, setFloorTotals] = useState<FloorManpowerRecord[]>([]);
   const [alertComments, setAlertComments] = useState<AlertComment[]>([]);
+  const [dismissedCommentId, setDismissedCommentId] = useState<string | null>(null);
   const demoSwitchRef = useRef<(on: boolean) => void>(() => {});
   const [sidebarHidden, setSidebarHidden] = useState<boolean>(() => { try { return localStorage.getItem('nfl_sidebar_hidden') === '1'; } catch { return false; } });
   const [pageRequest, setPageRequest] = useState<{ page: 'PRODUCTION' | 'QUALITY' | 'ALL' | 'TABLE'; n: number } | undefined>(undefined);
@@ -783,13 +786,15 @@ export default function App() {
 
   const handleAddComment = (targetId: string, text: string, parentId: string | null) => {
     if (!currentUser) return;
+    const desig = formatUserDesignation(currentUser);
     const c: AlertComment = {
       id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       targetId,
       parentId,
       authorId: currentUser.id,
       authorName: currentUser.name,
-      authorRole: currentUser.role,
+      authorRole: desig,
+      authorDesignation: desig,
       text: text.slice(0, 1000),
       createdMillis: Date.now()
     };
@@ -854,6 +859,30 @@ export default function App() {
   };
   const myIncidents = incidents.filter(i => myFloorOk(i.floor));
   const notificationCount = myIncidents.filter(i => i.status !== 'RESOLVED').length + highOqlToday.length;
+
+  const latestBannerComment = useMemo(() => {
+    if (alertComments.length === 0) return null;
+    const validTargets = new Set<string>([
+      ...myIncidents.map(i => i.id),
+      ...highOqlToday.map(h => `oql|${h.lineId}|${h.date}`)
+    ]);
+    const sorted = [...alertComments]
+      .filter(c => validTargets.size === 0 || validTargets.has(c.targetId))
+      .sort((a, b) => b.createdMillis - a.createdMillis);
+    return sorted.length > 0 ? sorted[0] : null;
+  }, [alertComments, myIncidents, highOqlToday]);
+
+  const describeCommentTarget = (targetId: string): string => {
+    if (targetId.startsWith('oql|')) {
+      const parts = targetId.split('|');
+      return `${lineDisplayName(parts[1] || '')} · High OQL`;
+    }
+    const inc = incidents.find(i => i.id === targetId);
+    if (inc) {
+      return `${lineDisplayName(inc.lineId)} (${inc.floor})`;
+    }
+    return 'Notification';
+  };
 
   if (authChecking) {
     return <LoadingScreen />;
@@ -1008,7 +1037,7 @@ export default function App() {
             </span>
             <span className="min-w-0 flex-1 leading-tight">
               <span className="block truncate text-[13px] font-bold">{currentUser.name}</span>
-              <span className="block text-[11px] text-slate-400">{currentUser.role}</span>
+              <span className="block text-[11px] text-slate-400">{formatUserDesignation(currentUser)}</span>
             </span>
           </button>
           <button
@@ -1039,7 +1068,13 @@ export default function App() {
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
-          <div className="min-w-0 flex-1 whitespace-nowrap text-[15px] font-extrabold md:text-[16px]"><span className="md:hidden">NFL LIVE</span><span className="hidden md:inline">NFL LIVE Production &amp; Quality</span></div>
+          <div className="flex min-w-0 flex-1 items-center gap-2 whitespace-nowrap text-[15px] font-extrabold md:text-[16px]">
+            <span className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-md bg-white shadow-sm">
+              <NflLogo size={22} />
+            </span>
+            <span className="md:hidden">NFL LIVE</span>
+            <span className="hidden md:inline">NFL LIVE Production &amp; Quality</span>
+          </div>
           {/* Two clear choices; the one in use is filled. */}
           <div
             role="group"
@@ -1085,6 +1120,42 @@ export default function App() {
             <span className="hidden sm:inline">{cloudConnected ? 'Cloud Live' : 'Local'}</span>
           </span>
         </header>
+
+        {/* ---------- Top Notification Comment Strip (shows Name, Designation, and What They Said) ---------- */}
+        {latestBannerComment && latestBannerComment.id !== dismissedCommentId && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-400/50 bg-[#0A2558] px-3 py-2 text-xs text-white shadow-md">
+            <button
+              type="button"
+              onClick={() => setShowIncidentModal(true)}
+              className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-left hover:opacity-95"
+            >
+              <span className="rounded bg-amber-400 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-950">
+                💬 Notification Comment
+              </span>
+              <b className="font-black text-white">{latestBannerComment.authorName}</b>
+              <span className="rounded bg-blue-700 border border-blue-400/60 px-2 py-0.5 text-[10px] font-extrabold text-blue-100">
+                {resolveCommentDesignation(latestBannerComment, users)}
+              </span>
+              <span className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-bold text-slate-200">
+                {describeCommentTarget(latestBannerComment.targetId)}
+              </span>
+              <span className="min-w-[160px] flex-1 truncate font-bold text-amber-200">
+                “{latestBannerComment.text}”
+              </span>
+              <span className="text-[10px] text-blue-200">
+                {formatCommentAgo(latestBannerComment.createdMillis)}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDismissedCommentId(latestBannerComment.id)}
+              title="Dismiss comment banner"
+              className="rounded px-2 py-0.5 text-xs font-bold text-blue-200 hover:bg-white/10 hover:text-white"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
       {/* Main View Area */}
       <main className="flex-1">
@@ -1183,7 +1254,7 @@ export default function App() {
                   <div>
                     <div className="text-xs font-black text-slate-900">{u.name}</div>
                     <div className="text-[10px] text-slate-500">
-                      ID: <b>{u.username}</b> • Role: <b className="text-blue-800">{u.role}</b> • Floor: {u.floor || 'All'}
+                      ID: <b>{u.username}</b> • Designation: <b className="text-blue-800">{formatUserDesignation(u)}</b> • Floor: {u.floor || 'All'}
                     </div>
                   </div>
                   {currentUser.id === u.id && (
@@ -1201,8 +1272,10 @@ export default function App() {
         <IncidentManager
           incidents={myIncidents}
           lines={lines}
+          users={users}
           currentUserRole={currentUser.role}
           currentUserName={currentUser.name}
+          currentUserDesignation={currentUser.designation}
           onReportIncident={handleReportIncident}
           onMuteDeviceAlarm={handleMuteAlarm}
           onAcknowledgeIncident={handleAcknowledgeIncident}

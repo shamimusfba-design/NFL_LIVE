@@ -1,4 +1,4 @@
-import type { UserRole } from '../types';
+import type { UserRole, UserAccount, AlertComment } from '../types';
 
 /** Floors a person can be registered on */
 export const FLOOR_CHOICES: Array<{ key: string; label: string }> = [
@@ -36,6 +36,112 @@ export const DESIGNATIONS: Array<{ name: string; department: string; role: strin
   { name: 'Mechanic', department: 'Maintenance', role: 'MECHANIC', scope: null },
   { name: 'Other', department: 'Other', role: 'MANAGEMENT_VIEW', scope: null }
 ];
+
+const RAW_ROLE_CODES = new Set([
+  'ADMIN',
+  'AUDITOR',
+  'PRODUCTION_REPORTER',
+  'QUALITY_REPORTER',
+  'SUPERVISOR',
+  'PRODUCTION_MANAGER',
+  'QUALITY_MANAGER',
+  'MECHANIC',
+  'IE',
+  'INPUT_MATERIAL',
+  'MANAGEMENT_VIEW',
+  'MANAGEMENT',
+  'QUALITY',
+  'PACKING',
+  'TV_VIEWER',
+  'OTHER'
+]);
+
+/**
+ * Returns the proper human-readable designation for a user or comment author.
+ * For people who do not have a separate designation (especially Management / Admin or role-only records),
+ * returns the appropriate title (e.g. "Management", "Head of Production", "Head of Quality", etc.).
+ */
+export function formatUserDesignation(input: {
+  designation?: string | null;
+  role?: string | null;
+  department?: string | null;
+  floor?: string | null;
+}): string {
+  const rawDesig = (input.designation || '').trim();
+  const rawRole = (input.role || '').trim().toUpperCase();
+  const rawDept = (input.department || '').trim();
+  const rawFloor = (input.floor || '').trim();
+
+  if (
+    rawDesig &&
+    rawDesig.toLowerCase() !== 'other' &&
+    !RAW_ROLE_CODES.has(rawDesig.toUpperCase())
+  ) {
+    if (rawDesig.toLowerCase() === 'admin' || rawDesig.toLowerCase() === 'administrator') {
+      return 'Management';
+    }
+    return rawDesig;
+  }
+
+  switch (rawRole) {
+    case 'MANAGEMENT_VIEW':
+    case 'MANAGEMENT':
+    case 'ADMIN':
+      return 'Management';
+    case 'PRODUCTION_MANAGER':
+      return /finish/i.test(rawFloor) || /finish/i.test(rawDept)
+        ? 'Finishing Manager'
+        : 'Head of Production';
+    case 'QUALITY_MANAGER':
+      return 'Head of Quality';
+    case 'IE':
+      return rawFloor === 'ALL' || rawFloor === 'All Floor' || rawFloor === 'Factory' ? 'IEM' : 'IE';
+    case 'AUDITOR':
+      return 'Quality Officer';
+    case 'QUALITY_REPORTER':
+    case 'QUALITY':
+      return 'Quality Supervisor';
+    case 'PRODUCTION_REPORTER':
+      return 'Reporter';
+    case 'PACKING':
+      return 'Packing Supervisor';
+    case 'SUPERVISOR':
+      if (/cut/i.test(rawFloor) || /cut/i.test(rawDept)) return 'Cutting Supervisor';
+      if (/print/i.test(rawFloor) || /print/i.test(rawDept)) return 'Print Supervisor';
+      if (/emb/i.test(rawFloor) || /emb/i.test(rawDept)) return 'Embroidery Supervisor';
+      if (/finish/i.test(rawFloor) || /finish/i.test(rawDept)) return 'Finishing Supervisor';
+      return 'Production Supervisor';
+    case 'MECHANIC':
+      return 'Maintenance';
+    case 'INPUT_MATERIAL':
+      return 'Input / Material';
+    default:
+      if (/manage/i.test(rawDept)) return 'Management';
+      return rawDesig && rawDesig.toLowerCase() !== 'other' ? rawDesig : 'Management';
+  }
+}
+
+export function resolveCommentDesignation(c: AlertComment, users?: UserAccount[]): string {
+  if (users && users.length > 0) {
+    const matched = users.find(
+      u =>
+        (c.authorId && (u.id.toLowerCase() === c.authorId.toLowerCase() || u.username.toLowerCase() === c.authorId.toLowerCase())) ||
+        (c.authorName && u.name.trim().toLowerCase() === c.authorName.trim().toLowerCase())
+    );
+    if (matched) {
+      return formatUserDesignation({
+        designation: c.authorDesignation || matched.designation,
+        role: matched.role || c.authorRole,
+        department: matched.department,
+        floor: matched.floor
+      });
+    }
+  }
+  return formatUserDesignation({
+    designation: c.authorDesignation || c.authorRole,
+    role: c.authorRole
+  });
+}
 
 /** The user-record fields for a designation + floor, exactly as registration writes them. */
 export function designationFields(designationName: string, floorKey: string) {

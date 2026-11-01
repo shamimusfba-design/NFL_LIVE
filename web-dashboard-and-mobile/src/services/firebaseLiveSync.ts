@@ -40,6 +40,7 @@ import {
   AlertComment
 } from '../types';
 import { normalizeHourSlot24h } from '../data/masterData';
+import { formatUserDesignation } from '../data/designations';
 
 const FIREBASE_CONFIG = {
   apiKey: ['AIzaSyD2cLbgk', '-35grtBXRju3gg8OgD4LHYnEs8'].join(''),
@@ -753,6 +754,7 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
               authorId: String(data.authorId || ''),
               authorName: String(data.authorName || ''),
               authorRole: String(data.authorRole || ''),
+              authorDesignation: data.authorDesignation ? String(data.authorDesignation) : undefined,
               text: String(data.text),
               createdMillis: Number(data.createdMillis || 0)
             });
@@ -875,7 +877,12 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
               role: (data.role as any) || 'SUPERVISOR',
               floor: normFloor as any,
               assignedLine: String(data.assignedLine || ''),
-              designation: String(data.designation || ''),
+              designation: formatUserDesignation({
+                designation: String(data.designation || data.requestedDesignation || ''),
+                role: String(data.role || ''),
+                department: String(data.department || ''),
+                floor: rawFloor
+              }),
               department: String(data.department || ''),
               accountStatus: String(data.accountStatus || 'APPROVED'),
               isActive: data.isActive !== false,
