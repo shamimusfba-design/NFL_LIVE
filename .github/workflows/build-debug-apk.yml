@@ -83,6 +83,19 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Deploy Web Dashboard to Firebase Hosting
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.FIREBASE_SERVICE_ACCOUNT_NFL_LIVE_72213 != ''
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_NFL_LIVE_72213 }}
+          projectId: nfl-live-72213
+          channelId: live
+
+      - name: Warn when Firebase Hosting deployment credentials are missing
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.FIREBASE_SERVICE_ACCOUNT_NFL_LIVE_72213 == ''
+        run: echo "::warning::Web dashboard was built and archived, but Firebase Hosting deployment was skipped because FIREBASE_SERVICE_ACCOUNT_NFL_LIVE_72213 is not configured."
+
       # Tests run LAST so a failing test can never stop the installable APK from being built and uploaded above.
       # A failing test still turns this run red, so it stays visible.
       - name: Run Android unit & RBAC regression tests
