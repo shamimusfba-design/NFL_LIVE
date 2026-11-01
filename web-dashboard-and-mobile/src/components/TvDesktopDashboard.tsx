@@ -478,12 +478,18 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       {page === 'PRODUCTION' && (
         <div className="flex-1 flex flex-col gap-2">
           {/* 5 KPI Tiles */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
             <WbTile
-              label={`EFFICIENCY · target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
+              label={`TODAY EFFICIENCY · target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
               value={kpis.reportedLinesCount > 0 ? `${kpis.todayEfficiencyPct.toFixed(1)}%` : '—'}
               color={effColor(kpis.reportedLinesCount > 0 ? kpis.todayEfficiencyPct : null, kpis.targetEfficiencyPct)}
-              sub={`Month ${kpis.monthlyEfficiencyPct.toFixed(1)}% · Δ ${kpis.monthlyEfficiencyDelta >= 0 ? '+' : ''}${kpis.monthlyEfficiencyDelta.toFixed(1)} pp`}
+              sub="Current-day production efficiency"
+            />
+            <WbTile
+              label="MONTHLY UPDATED EFFICIENCY"
+              value={kpis.monthlyEfficiencyPct > 0 ? `${kpis.monthlyEfficiencyPct.toFixed(1)}%` : '—'}
+              color={effColor(kpis.monthlyEfficiencyPct, kpis.targetEfficiencyPct)}
+              sub={`Month-to-date · Target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
             />
             <WbTile
               label="OUTPUT vs TARGET"
@@ -1771,14 +1777,14 @@ const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: n
   }
   const maxVal = Math.max(10, ...records.map(r => Math.max(r.bsOqlPct ?? 0, r.nflAqcPct ?? 0)));
   return (
-    <div className="flex items-end justify-between gap-2 h-full pt-3">
+    <div className="flex items-end justify-between gap-2 h-full min-w-[520px] pt-2 overflow-x-auto">
       {records.map(r => {
         const bsH = r.bsOqlPct !== null ? Math.round((r.bsOqlPct / maxVal) * 100) : 0;
         const aqcH = r.nflAqcPct !== null ? Math.round((r.nflAqcPct / maxVal) * 100) : 0;
         return (
-          <div key={r.weekKey} className="flex flex-col items-center flex-1 h-full justify-end">
-            <div className="text-[8px] font-black mb-0.5" style={{ color: WB_THEME.BLUE }}>
-              {r.bsOqlPct !== null ? `${r.bsOqlPct.toFixed(1)}%` : ''}
+          <div key={r.weekKey} className="flex flex-col items-center flex-1 min-w-[48px] h-full justify-end">
+            <div className="h-4 flex items-end justify-center text-[8px] font-black whitespace-nowrap" style={{ color: WB_THEME.BLUE }}>
+              {r.bsOqlPct !== null ? `${r.bsOqlPct.toFixed(1)}%` : '—'}
             </div>
             <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
               <div
@@ -1793,8 +1799,8 @@ const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: n
               />
             </div>
             <div className="text-[9px] font-black mt-0.5">{r.weekKey.replace(/^\d{4}-/, '')}</div>
-            <div className="text-[8px] font-bold" style={{ color: WB_THEME.ORANGE }}>
-              {r.nflAqcPct !== null ? `${r.nflAqcPct.toFixed(1)}%` : ''}
+            <div className="h-4 flex items-start justify-center text-[8px] font-bold whitespace-nowrap" style={{ color: WB_THEME.ORANGE }}>
+              {r.nflAqcPct !== null ? `${r.nflAqcPct.toFixed(1)}%` : '—'}
             </div>
           </div>
         );
