@@ -1347,6 +1347,20 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                         </tr>
                       );
                     })}
+                    {selectedLineProduction.length > 0 && selectedLineHourlyQuality
+                      .filter(q => !selectedLineProduction.some(p => p.date === q.date && p.hourSlot === q.hourSlot))
+                      .map(q => (
+                        <tr key={q.id} className="border-b" style={{ borderColor: WB_THEME.LINE }}>
+                          <td className="p-2 font-black">{q.date} · {formatHourSlot12h(q.hourSlot)}</td>
+                          <td className="p-2">Hourly QC only</td>
+                          <td className="p-2 text-right">—</td>
+                          <td className="p-2 text-right">{q.checkedGarments}</td>
+                          <td className="p-2 text-right">{q.defectiveGarments}</td>
+                          <td className="p-2 text-right">{q.totalDefects}</td>
+                          <td className="p-2 text-right">{q.defectSent || 0} / {q.defectReceived || 0}</td>
+                          <td className="p-2 text-right">{q.spotSent || 0} / {q.spotReceived || 0}</td>
+                        </tr>
+                      ))}
                     {selectedLineProduction.length === 0 && selectedLineHourlyQuality.map(q => (
                       <tr key={q.id} className="border-b" style={{ borderColor: WB_THEME.LINE }}>
                         <td className="p-2 font-black">{q.date} · {formatHourSlot12h(q.hourSlot)}</td>
