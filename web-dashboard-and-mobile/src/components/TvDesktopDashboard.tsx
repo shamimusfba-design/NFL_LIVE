@@ -1157,13 +1157,13 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 sub={`Achievement ${deepDiveLine.achievementPct ?? 0}%`}
               />
               <WbTile
-                label="DAY DHU"
+                label={`${selectedPeriod.toUpperCase()} DHU`}
                 value={deepDiveLine.dhu !== null ? `${deepDiveLine.dhu.toFixed(2)}%` : '—'}
                 color={dhuColor(deepDiveLine.dhu)}
                 sub={`${deepDiveLine.totalDefects} defects / ${deepDiveLine.checkedGarments} checked`}
               />
               <WbTile
-                label="DAY OQL"
+                label={`${selectedPeriod.toUpperCase()} OQL`}
                 value={deepDiveLine.todayOqlPct !== null ? `${deepDiveLine.todayOqlPct.toFixed(2)}%` : '—'}
                 color={oqlColor(deepDiveLine.todayOqlPct)}
                 sub={`${deepDiveLine.defectiveGarments} defective pcs`}
@@ -1244,7 +1244,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
             <WbPanel
               title="Bi-hourly Audit — Hour-wise Pass / Fail"
-              sub={`Total ${selectedLineAuditRecords.length} audits · ${selectedLineAuditByHour.reduce((s, r) => s + r.pass, 0)} pass · ${selectedLineAuditByHour.reduce((s, r) => s + r.fail, 0)} fail · Pass standard: OQL ≤ ${kpis.oqlCommitmentPct.toFixed(2)}%`}
+              sub={`Total ${selectedLineAuditRecords.length} audits · ${selectedLineAuditByHour.reduce((s, r) => s + r.pass, 0)} pass · ${selectedLineAuditByHour.reduce((s, r) => s + r.fail, 0)} fail · ${selectedLineAuditByHour.reduce((s, r) => s + r.unrated, 0)} no result · Pass standard: OQL ≤ ${kpis.oqlCommitmentPct.toFixed(2)}%`}
             >
               <div className="overflow-x-auto">
                 <table className="w-full text-xs border-collapse min-w-[560px]">
