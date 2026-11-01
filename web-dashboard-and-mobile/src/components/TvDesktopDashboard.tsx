@@ -1134,7 +1134,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
               <WbTile
-                label="TODAY EFFICIENCY"
+                label={`${selectedPeriod.toUpperCase()} EFFICIENCY`}
                 value={deepDiveLine.efficiencyPct !== null ? `${deepDiveLine.efficiencyPct.toFixed(1)}%` : '—'}
                 color={effColor(deepDiveLine.efficiencyPct, deepDiveLine.targetEfficiencyPct)}
                 sub={`Target ${deepDiveLine.targetEfficiencyPct}%`}
