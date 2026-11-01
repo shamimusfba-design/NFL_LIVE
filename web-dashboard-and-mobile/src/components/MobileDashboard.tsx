@@ -13,6 +13,7 @@ import { HourlyWallboardBucket } from '../services/calculationEngine';
 import { TvDesktopDashboard } from './TvDesktopDashboard';
 
 interface MobileDashboardProps {
+  todayIso: string;
   selectedFloor: FloorId;
   onSelectFloor: (floor: FloorId) => void;
   selectedPeriod: PeriodId;
