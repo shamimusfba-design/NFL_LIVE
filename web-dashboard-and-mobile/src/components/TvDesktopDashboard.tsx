@@ -1,4 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
+
+/** Button and title text for every view */
+const FLOOR_LABEL: Record<FloorId, string> = {
+  'Sew 1': 'Sew 1', 'Sew 2': 'Sew 2', 'Sew 3': 'Sew 3',
+  'All Sewing': 'Sewing', 'Cutting': 'Cutting', 'Print': 'Print', 'Embroidery': 'Embroidery', 'Print & Embroidery': 'Print & Embroidery', 'Factory': 'Factory'
+};
+/** Buttons in order: the three sewing floors, all sewing, the departments, then the whole factory */
+const FLOOR_BUTTONS: FloorId[] = ['Sew 1', 'Sew 2', 'Sew 3', 'All Sewing', 'Cutting', 'Print & Embroidery', 'Factory'];
 import {
   FloorId,
   PeriodId,
@@ -9,30 +17,33 @@ import {
   ProductionEntryRecord,
   QualityEntryRecord
 } from '../types';
-import { HourlyWallboardBucket } from '../services/calculationEngine';
-import { formatHourSlot12h, isBiHourlyAuditSlot } from '../data/masterData';
+import { HourlyWallboardBucket, FinishingFloorSummary } from '../services/calculationEngine';
+import { formatHourSlot12h,
+  hourLabelOfSlot, isBiHourlyAuditSlot, floorMatches, lineDisplayName, isDepartmentFloor, unitWord,
+  AUDIT_PASS_OQL_PCT, auditResultOf, getBangladeshTodayIso } from '../data/masterData';
+import { CalculationEngine as CalcForPeriod } from '../services/calculationEngine';
 
-export type WbPageId = 'PRODUCTION' | 'QUALITY' | 'ALL' | 'TABLE';
+export type WbPageId = 'PRODUCTION' | 'QUALITY' | 'FINISHING' | 'ALL' | 'TABLE';
 
 const WB_INTERVALS = [30, 60, 10, 15, 0];
 
+// Colours come from CSS variables (see index.html) so one definition serves the Night and the Day theme.
 const WB_THEME = {
-  BG: '#0A1522',
-  PANEL: '#101E30',
-  LINE: '#1B2E45',
-  TXT: '#EAF0F7',
-  MUTED: '#8FA3B8',
-  RED: '#FF6B6B',
-  AMBER: '#F5B73B',
-  GREEN: '#3DD68C',
-  BLUE: '#5AA9FF',
-  ORANGE: '#F59E6B',
-  GREY: '#7C8B9E',
-  DIM: '#2A4560'
+  BG: 'var(--wb-bg)',
+  PANEL: 'var(--wb-panel)',
+  LINE: 'var(--wb-line)',
+  TXT: 'var(--wb-txt)',
+  MUTED: 'var(--wb-muted)',
+  RED: 'var(--wb-red)',
+  AMBER: 'var(--wb-amber)',
+  GREEN: 'var(--wb-green)',
+  BLUE: 'var(--wb-blue)',
+  ORANGE: 'var(--wb-orange)',
+  GREY: 'var(--wb-grey)',
+  DIM: 'var(--wb-dim)'
 };
 
 interface TvDesktopDashboardProps {
-  todayIso: string;
   selectedFloor: FloorId;
   onSelectFloor: (floor: FloorId) => void;
   selectedPeriod: PeriodId;
@@ -51,6 +62,12 @@ interface TvDesktopDashboardProps {
   openIncidents: IncidentRecord[];
   allIncidents?: IncidentRecord[];
   onOpenIncidentPanel: () => void;
+  /** Iron, Packing and Quality of each sewing floor in the view */
+  finishing?: FinishingFloorSummary[];
+  /** Cutting / Print / Embroidery totals, shown as a strip on the Factory view */
+  departmentSummaries?: Array<{ floor: string; units: number; target: number; output: number; achievementPct: number | null; checked: number; passed: number }>;
+  /** The side menu can ask for a page. n changes on every request so the same page can be asked twice. */
+  pageRequest?: { page: WbPageId; n: number };
 }
 
 function effColor(val: number | null, target = 75): string {
@@ -83,7 +100,7 @@ function oqlColor(oql: number | null, target = 4.5): string {
 }
 
 export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
-  todayIso,
+  pageRequest,
   selectedFloor,
   onSelectFloor,
   selectedPeriod,
@@ -101,23 +118,65 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   onToggleDemo,
   openIncidents,
   allIncidents = [],
-  onOpenIncidentPanel
+  onOpenIncidentPanel,
+  departmentSummaries = [],
+  finishing = []
 }) => {
   const [page, setPage] = useState<WbPageId>('ALL');
+  // A page chosen in the side menu is shown at once.
+  useEffect(() => {
+    if (pageRequest) setPage(pageRequest.page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageRequest?.n]);
   const [intervalIdx, setIntervalIdx] = useState(0);
   const interval = WB_INTERVALS[intervalIdx];
   const [countdown, setCountdown] = useState(WB_INTERVALS[0]);
   const [deepDiveLine, setDeepDiveLine] = useState<LinePerformanceSummary | null>(null);
+  // Cutting, Print and Embroidery get their own page: no sewing cards (DHU, OQL, operator vs machine, efficiency).
+  // TV fit: scale the whole wallboard to the width of the screen (a 43-inch TV fits the 1600px design at about 1.6x).
+  const [tvFit, setTvFit] = useState<boolean>(() => { try { return localStorage.getItem('nfl_tv_fit') === '1'; } catch { return false; } });
+  const [vw, setVw] = useState<number>(() => (typeof window !== 'undefined' ? window.innerWidth : 1200));
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  useEffect(() => { try { localStorage.setItem('nfl_tv_fit', tvFit ? '1' : '0'); } catch {} }, [tvFit]);
+  const canFit = vw >= 1100;
+  const fitScale = tvFit && canFit ? Math.min(1.6, Math.max(0.6, vw / 1600)) : 1;
+  const isDept = isDepartmentFloor(selectedFloor) || selectedFloor === 'Print & Embroidery';
+  const hasQc = selectedFloor === 'Print' || selectedFloor === 'Embroidery' || selectedFloor === 'Print & Embroidery';
+  const unit = unitWord(selectedFloor);
+  const todayW = getBangladeshTodayIso();
+  const auditByLine = useMemo(() => {
+    const m = new Map<string, { lineId: string; floor: string; pass: number; fail: number }>();
+    qualities
+      .filter(q => isBiHourlyAuditSlot(q.hourSlot) && floorMatches(q.floor, selectedFloor) && CalcForPeriod.isDateInPeriod(q.date, todayW, selectedPeriod))
+      .forEach(q => {
+        const r = auditResultOf(q.checkedGarments, q.defectiveGarments);
+        if (!r) return;
+        const v = m.get(q.lineId) || { lineId: q.lineId, floor: q.floor, pass: 0, fail: 0 };
+        if (r === 'PASS') v.pass++; else v.fail++;
+        m.set(q.lineId, v);
+      });
+    return Array.from(m.values()).sort((a, b) => a.lineId.localeCompare(b.lineId, undefined, { numeric: true }));
+  }, [qualities, selectedFloor, selectedPeriod, todayW]);
 
   // Auto-slide Production -> Quality -> All (pauses on Table or when interval === 0)
   useEffect(() => {
     const timer = window.setInterval(() => {
-      if (interval > 0 && page !== 'TABLE') {
+      if (interval > 0 && (isDept || page !== 'TABLE')) {
         setCountdown(prev => {
           if (prev > 1) return prev - 1;
+          if (isDept) {
+            if (selectedFloor === 'Print') onSelectFloor('Embroidery');
+            else if (selectedFloor === 'Embroidery') onSelectFloor('Print');
+            return interval;
+          }
           setPage(curr => {
             if (curr === 'PRODUCTION') return 'QUALITY';
-            if (curr === 'QUALITY') return 'ALL';
+            if (curr === 'QUALITY') return 'FINISHING';
+            if (curr === 'FINISHING') return 'ALL';
             if (curr === 'ALL') return 'PRODUCTION';
             return 'TABLE';
           });
@@ -126,7 +185,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [interval, page]);
+  }, [interval, page, isDept, selectedFloor]);
 
   const activeLines = useMemo(
     () => lineSummaries.filter(l => l.target > 0 || l.output !== null || l.checkedGarments > 0),
@@ -149,7 +208,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
     const map: Record<string, number> = {};
     const list = allIncidents.length > 0 ? allIncidents : openIncidents;
     list
-      .filter(i => selectedFloor === 'All' || i.floor === selectedFloor)
+      .filter(i => floorMatches(i.floor, selectedFloor))
       .forEach(i => {
         const mins = Math.max(1, Math.round(((i.endTimeMillis || Date.now()) - i.startTimeMillis) / 60000));
         const label = i.category.replace(/_/g, ' ');
@@ -166,7 +225,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   const mainDefectWorstLines = useMemo(() => {
     const map: Record<string, number> = {};
     qualities
-      .filter(q => selectedFloor === 'All' || q.floor === selectedFloor)
+      .filter(q => floorMatches(q.floor, selectedFloor))
       .forEach(q => {
         q.defects.forEach(d => {
           if (d.defectType.toLowerCase() === mainDefectName.toLowerCase()) {
@@ -187,134 +246,33 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       .slice(-8);
   }, [weeklyQuality]);
 
-  const isDateInSelectedPeriod = (date: string) => {
-    if (!date) return false;
-    if (selectedPeriod === 'Today') return date === todayIso;
-    const d = new Date(`${date}T00:00:00Z`);
-    const t = new Date(`${todayIso}T00:00:00Z`);
-    const days = Math.round((t.getTime() - d.getTime()) / 86400000);
-    if (selectedPeriod === 'Yesterday') return days === 1;
-    if (selectedPeriod === 'Week') return days >= 0 && days <= 6;
-    return date.slice(0, 7) === todayIso.slice(0, 7);
-  };
-
-  const auditRecords = useMemo(
-    () => qualities.filter(q =>
-      isBiHourlyAuditSlot(q.hourSlot) &&
-      (selectedFloor === 'All' || q.floor === selectedFloor) &&
-      isDateInSelectedPeriod(q.date)
-    ),
-    [qualities, selectedFloor, selectedPeriod, todayIso]
-  );
-
-  const auditLineStats = useMemo(() => lineSummaries.map(line => {
-    const records = auditRecords.filter(q => q.lineId === line.lineId);
-    const validRecords = records.filter(q => q.checkedGarments > 0);
-    const pass = validRecords.filter(q =>
-      (q.defectiveGarments / q.checkedGarments) * 100 <= kpis.oqlCommitmentPct
-    ).length;
-    const fail = validRecords.length - pass;
-    return {
-      lineId: line.lineId,
-      pass,
-      fail,
-      unrated: records.length - validRecords.length,
-      total: records.length,
-      checked: records.reduce((sum, q) => sum + q.checkedGarments, 0)
-    };
-  }).filter(row => row.total > 0), [lineSummaries, auditRecords, kpis.oqlCommitmentPct]);
-
-  const auditTopDefects = useMemo(() => {
-    const counts: Record<string, number> = {};
-    auditRecords.forEach(q => q.defects.forEach(d => {
-      if (d.count > 0) counts[d.defectType] = (counts[d.defectType] || 0) + d.count;
-    }));
-    return Object.entries(counts)
-      .map(([label, value]) => ({ label, value, text: String(value), color: WB_THEME.RED }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
-  }, [auditRecords]);
-
-  const selectedLineAuditRecords = useMemo(() =>
-    deepDiveLine ? auditRecords
-      .filter(q => q.lineId === deepDiveLine.lineId)
-      .sort((a, b) => a.date.localeCompare(b.date) || a.hourSlot.localeCompare(b.hourSlot)) : [],
-    [auditRecords, deepDiveLine]
-  );
-
-  const selectedLineAuditByHour = useMemo(() => {
-    const grouped: Record<string, { slot: string; count: number; pass: number; fail: number; unrated: number; checked: number; defective: number; defects: number }> = {};
-    selectedLineAuditRecords.forEach(q => {
-      const row = grouped[q.hourSlot] || { slot: q.hourSlot, count: 0, pass: 0, fail: 0, unrated: 0, checked: 0, defective: 0, defects: 0 };
-      const hasValidCheck = q.checkedGarments > 0;
-      const passed = hasValidCheck &&
-        (q.defectiveGarments / q.checkedGarments) * 100 <= kpis.oqlCommitmentPct;
-      row.count += 1;
-      row.pass += passed ? 1 : 0;
-      row.fail += hasValidCheck && !passed ? 1 : 0;
-      row.unrated += hasValidCheck ? 0 : 1;
-      row.checked += q.checkedGarments;
-      row.defective += q.defectiveGarments;
-      row.defects += q.totalDefects;
-      grouped[q.hourSlot] = row;
-    });
-    return Object.values(grouped).sort((a, b) => a.slot.localeCompare(b.slot));
-  }, [selectedLineAuditRecords, kpis.oqlCommitmentPct]);
-
-  const selectedLineAuditTopDefects = useMemo(() => {
-    const counts: Record<string, number> = {};
-    selectedLineAuditRecords.forEach(q => q.defects.forEach(d => {
-      if (d.count > 0) counts[d.defectType] = (counts[d.defectType] || 0) + d.count;
-    }));
-    return Object.entries(counts).map(([label, value]) => ({ label, value, text: String(value), color: WB_THEME.RED }))
-      .sort((a, b) => b.value - a.value).slice(0, 5);
-  }, [selectedLineAuditRecords]);
-
-  const selectedLineIncidents = useMemo(() => {
-    if (!deepDiveLine) return [];
-    return allIncidents
-      .filter(i => i.lineId === deepDiveLine.lineId && isDateInSelectedPeriod(
-        new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(new Date(i.startTimeMillis))
-      ))
-      .sort((a, b) => b.startTimeMillis - a.startTimeMillis);
-  }, [allIncidents, deepDiveLine, selectedPeriod, todayIso]);
-
-  const selectedLineProduction = useMemo(() => deepDiveLine
-    ? productions.filter(p => p.lineId === deepDiveLine.lineId && isDateInSelectedPeriod(p.date))
-      .sort((a, b) => b.timestamp - a.timestamp)
-    : [], [productions, deepDiveLine, selectedPeriod, todayIso]);
-
-  const selectedLineHourlyQuality = useMemo(() => deepDiveLine
-    ? qualities.filter(q => q.lineId === deepDiveLine.lineId && !isBiHourlyAuditSlot(q.hourSlot) && isDateInSelectedPeriod(q.date))
-      .sort((a, b) => b.timestamp - a.timestamp)
-    : [], [qualities, deepDiveLine, selectedPeriod, todayIso]);
-
   return (
     <div
-      style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.TXT }}
+      style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.TXT, ...(fitScale !== 1 ? { zoom: fitScale } : {}) }}
       className="min-h-[calc(100vh-42px)] flex flex-col p-2.5 gap-2 select-none font-sans tabular-nums"
     >
       {/* ==================== HEADER BAR (Matches TvDashboardScreen.kt) ==================== */}
       <div className="flex flex-wrap items-center justify-between gap-2 min-h-[40px]">
-        <div className="flex items-center gap-2">
+        <div className="hidden md:flex items-center gap-2">
           <div className="bg-white text-[#002D62] px-2.5 py-1 rounded flex items-center gap-1.5 font-black text-sm shadow">
             <span>🏭</span>
             <span>NFL LIVE</span>
           </div>
-          <span className="text-xs font-bold" style={{ color: WB_THEME.MUTED }}>
+          <span className="hidden sm:inline text-xs font-bold" style={{ color: WB_THEME.MUTED }}>
             TV Wallboard &amp; Command Center
           </span>
         </div>
 
-        {/* 4-Page Segment: Production | Quality | All | Table */}
+        {/* 4-Page Segment: Production | Quality | All | Table (sewing only) */}
         <div
           style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-          className="flex items-center p-0.5 rounded-md border gap-0.5"
+          className={`${isDept ? 'hidden' : 'grid'} grid-cols-5 sm:flex w-full sm:w-auto items-center p-0.5 rounded-md border gap-0.5`}
         >
           {(
             [
               { id: 'PRODUCTION', label: 'Production' },
               { id: 'QUALITY', label: 'Quality' },
+              { id: 'FINISHING', label: 'Finishing' },
               { id: 'ALL', label: 'All' },
               { id: 'TABLE', label: 'Table' }
             ] as Array<{ id: WbPageId; label: string }>
@@ -327,9 +285,9 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               }}
               style={{
                 backgroundColor: page === item.id ? WB_THEME.BLUE : 'transparent',
-                color: page === item.id ? '#031225' : WB_THEME.MUTED
+                color: page === item.id ? 'var(--wb-on-selected)' : WB_THEME.MUTED
               }}
-              className="px-3 py-1 rounded text-xs font-black transition"
+              className="shrink-0 px-3 py-1.5 sm:py-1 rounded text-xs font-black transition text-center whitespace-nowrap"
             >
               {item.label}
             </button>
@@ -339,19 +297,19 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
         {/* Floor Segment: Sew 1 | Sew 2 | Sew 3 | All Floors */}
         <div
           style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-          className="flex items-center p-0.5 rounded-md border gap-0.5"
+          className="nfl-scroll flex w-full sm:w-auto items-center p-0.5 rounded-md border gap-0.5 overflow-x-auto"
         >
-          {(['Sew 1', 'Sew 2', 'Sew 3', 'All'] as FloorId[]).map(fl => (
+          {FLOOR_BUTTONS.map(fl => (
             <button
               key={fl}
               onClick={() => onSelectFloor(fl)}
               style={{
                 backgroundColor: selectedFloor === fl ? WB_THEME.BLUE : 'transparent',
-                color: selectedFloor === fl ? '#031225' : WB_THEME.MUTED
+                color: selectedFloor === fl ? 'var(--wb-on-selected)' : WB_THEME.MUTED
               }}
-              className="px-3 py-1 rounded text-xs font-black transition"
+              className="shrink-0 whitespace-nowrap px-2.5 py-1.5 sm:py-1 rounded text-[11px] sm:text-xs font-black transition text-center"
             >
-              {fl === 'All' ? 'All Floors' : fl}
+              {FLOOR_LABEL[fl]}
             </button>
           ))}
         </div>
@@ -359,7 +317,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
         {/* Period Segment: Today | Yesterday | Week | Month */}
         <div
           style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-          className="flex items-center p-0.5 rounded-md border gap-0.5"
+          className="grid grid-cols-4 sm:flex w-full sm:w-auto items-center p-0.5 rounded-md border gap-0.5"
         >
           {(['Today', 'Yesterday', 'Week', 'Month'] as PeriodId[]).map(p => (
             <button
@@ -367,9 +325,9 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               onClick={() => onSelectPeriod(p)}
               style={{
                 backgroundColor: selectedPeriod === p ? WB_THEME.BLUE : 'transparent',
-                color: selectedPeriod === p ? '#031225' : WB_THEME.MUTED
+                color: selectedPeriod === p ? 'var(--wb-on-selected)' : WB_THEME.MUTED
               }}
-              className="px-2.5 py-1 rounded text-xs font-black transition"
+              className="px-2.5 py-1.5 sm:py-1 rounded text-xs font-black transition text-center"
             >
               {p}
             </button>
@@ -379,11 +337,13 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
       {/* ==================== STATUS STRIP ==================== */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="font-extrabold text-sm mr-1">
-            {selectedFloor === 'All' ? 'All Floors' : selectedFloor} ·{' '}
+        <div className="flex w-full sm:w-auto items-center gap-1.5 overflow-x-auto whitespace-nowrap sm:flex-wrap sm:overflow-visible pb-1 sm:pb-0">
+          <span className="font-extrabold text-sm mr-1 shrink-0">
+            {FLOOR_LABEL[selectedFloor]} ·{' '}
             {page === 'PRODUCTION'
               ? 'Production'
+              : page === 'FINISHING'
+              ? 'Finishing'
               : page === 'QUALITY'
               ? 'Quality'
               : page === 'ALL'
@@ -394,25 +354,25 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           {selectedPeriod === 'Today' ? (
             <>
               <span
-                style={{ backgroundColor: WB_THEME.GREEN, color: '#052E22' }}
+                style={{ backgroundColor: WB_THEME.GREEN, color: 'var(--wb-on-green)' }}
                 className="px-2 py-0.5 rounded font-black text-[11px]"
               >
                 {onTargetCount} on target
               </span>
               <span
-                style={{ backgroundColor: WB_THEME.AMBER, color: '#3B2A00' }}
+                style={{ backgroundColor: WB_THEME.AMBER, color: 'var(--wb-on-amber)' }}
                 className="px-2 py-0.5 rounded font-black text-[11px]"
               >
                 {slightBehindCount} slightly behind
               </span>
               <span
-                style={{ backgroundColor: WB_THEME.RED, color: '#3B0A0A' }}
+                style={{ backgroundColor: WB_THEME.RED, color: 'var(--wb-on-red)' }}
                 className="px-2 py-0.5 rounded font-black text-[11px]"
               >
                 {farBehindCount} far behind
               </span>
               <span
-                style={{ backgroundColor: WB_THEME.GREY, color: '#0F172A' }}
+                style={{ backgroundColor: WB_THEME.GREY, color: 'var(--wb-on-grey)' }}
                 className="px-2 py-0.5 rounded font-black text-[11px]"
               >
                 {noOutputCount} no output
@@ -448,7 +408,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               {interval > 0 ? `Auto-slide ${interval}s · next ${countdown}s` : 'Auto-slide paused'}
             </span>
             <div className="flex items-center gap-1">
-              {(['PRODUCTION', 'QUALITY', 'ALL'] as WbPageId[]).map(p => (
+              {(['PRODUCTION', 'QUALITY', 'FINISHING', 'ALL'] as WbPageId[]).map(p => (
                 <span
                   key={p}
                   style={{ backgroundColor: page === p ? WB_THEME.BLUE : WB_THEME.DIM }}
@@ -458,10 +418,20 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             </div>
           </button>
 
+          {canFit && (
+            <button
+              onClick={() => setTvFit(v => !v)}
+              title="Scale the whole screen to fill this TV or monitor"
+              className="px-2 py-0.5 rounded border text-[11px] font-black"
+              style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE, color: tvFit ? WB_THEME.BLUE : WB_THEME.MUTED }}
+            >
+              {tvFit ? 'TV fit: On' : 'TV fit: Off'}
+            </button>
+          )}
           {isDemoMode && (
             <button
               onClick={onToggleDemo}
-              style={{ backgroundColor: WB_THEME.RED, color: '#3B0A0A' }}
+              style={{ backgroundColor: WB_THEME.RED, color: 'var(--wb-on-red)' }}
               className="px-2 py-0.5 rounded font-black text-[11px]"
               title="Click to clear Demo Data"
             >
@@ -478,22 +448,196 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
         </div>
       </div>
 
+      {/* ==================== FACTORY COMMON STRIP: same on every section ==================== */}
+      {(() => {
+        const inP = (d: string) => CalcForPeriod.isDateInPeriod(d, todayW, selectedPeriod);
+        const all = qualities.filter(q => inP(q.date));
+        const checked = all.reduce((a, q) => a + (q.checkedGarments || 0), 0);
+        const defective = all.reduce((a, q) => a + (q.defectiveGarments || 0), 0);
+        const defects = all.reduce((a, q) => a + (q.totalDefects || 0), 0);
+        const oql = checked > 0 ? (defective / checked) * 100 : null;
+        const dhu = checked > 0 ? (defects / checked) * 100 : null;
+        const pass = oql !== null ? 100 - oql : null;
+        const latestW = [...weeklyQuality].filter(w => w.bsOqlPct !== null || w.nflAqcPct !== null).sort((a, b) => (a.weekKey < b.weekKey ? 1 : -1))[0];
+        const pc = (v: number | null, good: number, warn: number, lowerBetter: boolean) =>
+          v === null ? WB_THEME.GREY : lowerBetter ? (v <= good ? WB_THEME.GREEN : v <= warn ? WB_THEME.AMBER : WB_THEME.RED) : (v >= good ? WB_THEME.GREEN : v >= warn ? WB_THEME.AMBER : WB_THEME.RED);
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <WbTile label="Factory QC pass" value={pass !== null ? `${pass.toFixed(1)}%` : '—'} color={pc(pass, 97, 93, false)} sub={`${(checked - defective).toLocaleString()} passed of ${checked.toLocaleString()} checked`} />
+            <WbTile label="Factory DHU" value={dhu !== null ? `${dhu.toFixed(2)}%` : '—'} color={pc(dhu, 4, 5.5, true)} sub={`${defects.toLocaleString()} defects`} />
+            <WbTile label="Factory OQL" value={oql !== null ? `${oql.toFixed(2)}%` : '—'} color={pc(oql, AUDIT_PASS_OQL_PCT, 7, true)} sub={`limit ${AUDIT_PASS_OQL_PCT}%`} />
+            <WbTile label="BS OQL (weekly)" value={latestW && latestW.bsOqlPct !== null ? `${latestW.bsOqlPct.toFixed(2)}%` : '—'} color={pc(latestW?.bsOqlPct ?? null, 4.5, 7, true)} sub={latestW ? `Week ${latestW.weekKey.replace(/^\d{4}-/, '')}` : 'No weekly record yet'} />
+            <WbTile label="NFL AQC (weekly)" value={latestW && latestW.nflAqcPct !== null ? `${latestW.nflAqcPct.toFixed(2)}%` : '—'} color={pc(latestW?.nflAqcPct ?? null, 4.5, 7, true)} sub={latestW ? `Week ${latestW.weekKey.replace(/^\d{4}-/, '')}` : 'No weekly record yet'} />
+          </div>
+        );
+      })()}
+
+      {/* ==================== DEPARTMENT PAGE: CUTTING / PRINT / EMBROIDERY ==================== */}
+      {isDept && (() => {
+        const target = activeLines.reduce((a, l) => a + (l.target || 0), 0);
+        const output = activeLines.reduce((a, l) => a + (l.output || 0), 0);
+        const ach = target > 0 ? (output / target) * 100 : null;
+        const checked = activeLines.reduce((a, l) => a + (l.checkedGarments || 0), 0);
+        const defective = activeLines.reduce((a, l) => a + (l.defectiveGarments || 0), 0);
+        const passed = Math.max(0, checked - defective);
+        const passPct = checked > 0 ? (passed / checked) * 100 : null;
+        const reporting = activeLines.filter(l => (l.output ?? 0) > 0).length;
+        if (activeLines.length === 0) {
+          return (
+            <div style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE, color: WB_THEME.MUTED }} className="rounded-lg border p-8 text-center text-sm font-bold">
+              No {unit.toLowerCase()} target is set for {selectedFloor} in this period. Set targets in Data entry, Target Setting, {selectedFloor}.
+            </div>
+          );
+        }
+        return (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <WbTile label="Target" value={target.toLocaleString()} unit="pcs" color={WB_THEME.BLUE} sub={`${activeLines.length} ${unit.toLowerCase()}${activeLines.length === 1 ? '' : 's'} with a target`} />
+              <WbTile label="Output" value={output.toLocaleString()} unit="pcs" color={achColor(ach)} sub={`${reporting} of ${activeLines.length} reporting`} />
+              <WbTile label="Achievement" value={ach !== null ? `${ach.toFixed(1)}%` : '—'} color={achColor(ach)} sub={`Gap ${(output - target).toLocaleString()} pcs`} />
+              {hasQc ? (
+                <WbTile label="QC Pass rate" value={passPct !== null ? `${passPct.toFixed(1)}%` : '—'} color={passPct === null ? WB_THEME.MUTED : passPct >= 97 ? WB_THEME.GREEN : passPct >= 93 ? WB_THEME.AMBER : WB_THEME.RED} sub={`${passed.toLocaleString()} passed of ${checked.toLocaleString()} checked`} />
+              ) : (
+                <WbTile label="Open NPT" value={String(openIncidents.length)} color={openIncidents.length > 0 ? WB_THEME.RED : WB_THEME.GREEN} sub="stoppages now" />
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2">
+              <WbPanel title="Hourly Target vs Output" sub="By hour of work (1st hr, 2nd hr…) · Target (back) vs Output (front) · pcs" className="lg:col-span-7">
+                <HourlyOutputWallboardChart buckets={hourlySeries} />
+              </WbPanel>
+              <WbPanel title={`${unit} Target vs Achievement`} sub={`Each ${unit.toLowerCase()} · Grey: target · Coloured: output · % below`} className="lg:col-span-5">
+                <LiveTargetVsAchievementChart lines={activeLines} onSelectLine={setDeepDiveLine} />
+              </WbPanel>
+              {hasQc && (
+                <WbPanel title="Hourly Checked vs QC Pass" sub="By hour of work · Blue: checked · Green: QC pass · pcs" className="lg:col-span-7">
+                  <HourlyQcPassChart buckets={hourlySeries} />
+                </WbPanel>
+              )}
+              <WbPanel
+                title="Open NPT"
+                sub={`${selectedFloor} stoppages now`}
+                className={hasQc ? 'lg:col-span-5' : 'lg:col-span-12'}
+                right={<WbBadge text={`${openIncidents.length} open`} bg={openIncidents.length > 0 ? WB_THEME.RED : WB_THEME.GREEN} fg={openIncidents.length > 0 ? 'var(--wb-on-red)' : 'var(--wb-on-green)'} />}
+              >
+                <OpenStoppagesList incidents={openIncidents} onClick={onOpenIncidentPanel} />
+              </WbPanel>
+            </div>
+          </div>
+        );
+      })()}
+
+      {isDept && (
+        <WbPanel title="Weekly BS OQL vs NFL AQC (from week 32)" sub="Blue: BS OQL · Orange: NFL AQC · Red dashed: 4.5% commitment">
+          <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} />
+        </WbPanel>
+      )}
+
+      {/* ==================== FINISHING: IRON · PACKING · QUALITY ==================== */}
+      {!isDept && page === 'FINISHING' && (() => {
+        const sum = (f: (x: FinishingFloorSummary) => number) => finishing.reduce((a, x) => a + f(x), 0);
+        const addBuckets = (pick: (x: FinishingFloorSummary) => HourlyWallboardBucket[]) => {
+          const len = Math.max(0, ...finishing.map(x => pick(x).length));
+          return Array.from({ length: len }, (_, i) => {
+            const parts = finishing.map(x => pick(x)[i]).filter(Boolean) as HourlyWallboardBucket[];
+            const b = parts[0];
+            return {
+              ...b,
+              target: parts.reduce((a, p) => a + p.target, 0),
+              output: parts.reduce((a, p) => a + p.output, 0),
+              checked: parts.reduce((a, p) => a + p.checked, 0),
+              defective: parts.reduce((a, p) => a + p.defective, 0)
+            };
+          });
+        };
+        const ironT = sum(x => x.iron.target), ironO = sum(x => x.iron.output);
+        const packT = sum(x => x.packing.target), packO = sum(x => x.packing.output);
+        const qcC = sum(x => x.quality.checked), qcP = sum(x => x.quality.passed);
+        const pct = (o: number, t: number) => (t > 0 ? (o / t) * 100 : null);
+        const many = finishing.length > 1;
+        const floorBars = (pick: (x: FinishingFloorSummary) => { target: number; output: number }) =>
+          finishing.map(x => {
+            const v = pick(x);
+            return { lineId: x.floor, target: v.target, output: v.output, achievementPct: pct(v.output, v.target) } as unknown as LinePerformanceSummary;
+          });
+        return (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <WbTile label="Iron" value={ironO.toLocaleString()} unit="pcs" color={achColor(pct(ironO, ironT))} sub={ironT > 0 ? `Target ${ironT.toLocaleString()} · ${pct(ironO, ironT)!.toFixed(0)}%` : 'No iron target set'} />
+              <WbTile label="Packing" value={packO.toLocaleString()} unit="pcs" color={achColor(pct(packO, packT))} sub={packT > 0 ? `Target ${packT.toLocaleString()} · ${pct(packO, packT)!.toFixed(0)}%` : 'No packing target set'} />
+              <WbTile label="Quality: QC Pass" value={qcP.toLocaleString()} unit="pcs" color={qcC === 0 ? WB_THEME.MUTED : qcP / qcC >= 0.97 ? WB_THEME.GREEN : qcP / qcC >= 0.93 ? WB_THEME.AMBER : WB_THEME.RED} sub={qcC > 0 ? `of ${qcC.toLocaleString()} checked · ${((qcP / qcC) * 100).toFixed(1)}% pass` : 'No quality check yet'} />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+              <WbPanel title="Iron: Hourly Target vs Output" sub={`${many ? 'All sewing floors' : finishing[0]?.floor ?? ''} · by hour of work · pcs`}>
+                <HourlyOutputWallboardChart buckets={addBuckets(x => x.iron.buckets)} />
+              </WbPanel>
+              <WbPanel title="Packing: Hourly Target vs Output" sub={`${many ? 'All sewing floors' : finishing[0]?.floor ?? ''} · by hour of work · pcs`}>
+                <HourlyOutputWallboardChart buckets={addBuckets(x => x.packing.buckets)} />
+              </WbPanel>
+              <WbPanel title="Quality: Hourly Checked vs QC Pass" sub="From the line-wise hourly quality entries · Blue: checked · Green: pass">
+                <HourlyQcPassChart buckets={addBuckets(x => x.quality.buckets)} />
+              </WbPanel>
+              {many && (
+                <>
+                  <WbPanel title="Iron by Floor" sub="Grey: target · Coloured: output · % below">
+                    <LiveTargetVsAchievementChart lines={floorBars(x => x.iron)} onSelectLine={() => {}} />
+                  </WbPanel>
+                  <WbPanel title="Packing by Floor" sub="Grey: target · Coloured: output · % below">
+                    <LiveTargetVsAchievementChart lines={floorBars(x => x.packing)} onSelectLine={() => {}} />
+                  </WbPanel>
+                  <WbPanel title="QC Pass by Floor" sub="Pass rate of the checked pieces">
+                    <HorizontalRankBars
+                      rows={finishing.map(x => ({
+                        label: x.floor,
+                        value: x.quality.checked > 0 ? (x.quality.passed / x.quality.checked) * 100 : 0,
+                        text: x.quality.checked > 0 ? `${((x.quality.passed / x.quality.checked) * 100).toFixed(1)}% (${x.quality.passed}/${x.quality.checked})` : '—',
+                        color: x.quality.checked === 0 ? WB_THEME.GREY : x.quality.passed / x.quality.checked >= 0.97 ? WB_THEME.GREEN : x.quality.passed / x.quality.checked >= 0.93 ? WB_THEME.AMBER : WB_THEME.RED
+                      }))}
+                      maxVal={100}
+                    />
+                  </WbPanel>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ==================== FACTORY: department strip above the sewing pages ==================== */}
+      {selectedFloor === 'Factory' && departmentSummaries.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+          {departmentSummaries.map(d => (
+            <button
+              key={d.floor}
+              onClick={() => onSelectFloor(d.floor as FloorId)}
+              style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
+              className="rounded-lg border p-2.5 text-left"
+              title={`Open ${d.floor}`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black">{d.floor}</span>
+                <span style={{ color: achColor(d.achievementPct) }} className="text-sm font-black">
+                  {d.achievementPct !== null ? `${d.achievementPct.toFixed(0)}%` : '—'}
+                </span>
+              </div>
+              <div style={{ color: WB_THEME.MUTED }} className="text-[11px] font-semibold">
+                {d.units > 0 ? `Output ${d.output.toLocaleString()} / Target ${d.target.toLocaleString()} pcs` : 'No target set'}
+                {d.floor !== 'Cutting' && d.checked > 0 ? ` · QC pass ${d.passed.toLocaleString()} of ${d.checked.toLocaleString()}` : ''}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ==================== PAGE 1: PRODUCTION ==================== */}
-      {page === 'PRODUCTION' && (
+      {!isDept && page === 'PRODUCTION' && (
         <div className="flex-1 flex flex-col gap-2">
           {/* 5 KPI Tiles */}
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
             <WbTile
-              label={`TODAY EFFICIENCY · target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
+              label={`EFFICIENCY · target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
               value={kpis.reportedLinesCount > 0 ? `${kpis.todayEfficiencyPct.toFixed(1)}%` : '—'}
               color={effColor(kpis.reportedLinesCount > 0 ? kpis.todayEfficiencyPct : null, kpis.targetEfficiencyPct)}
-              sub="Current-day production efficiency"
-            />
-            <WbTile
-              label="MONTHLY UPDATED EFFICIENCY"
-              value={kpis.monthlyEfficiencyPct > 0 ? `${kpis.monthlyEfficiencyPct.toFixed(1)}%` : '—'}
-              color={effColor(kpis.monthlyEfficiencyPct, kpis.targetEfficiencyPct)}
-              sub={`Month-to-date · Target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
+              sub={`Month ${kpis.monthlyEfficiencyPct.toFixed(1)}% · Δ ${kpis.monthlyEfficiencyDelta >= 0 ? '+' : ''}${kpis.monthlyEfficiencyDelta.toFixed(1)} pp`}
             />
             <WbTile
               label="OUTPUT vs TARGET"
@@ -525,15 +669,15 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           </div>
 
           {/* Row 1 Panels */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[220px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[220px]">
             <WbPanel
               title="Live Target vs Achievement"
               sub="Column: target (grey) vs output (status) · % below"
               right={
                 <div className="flex gap-1">
-                  <WbBadge text="≥95%" bg={WB_THEME.GREEN} fg="#052E22" />
-                  <WbBadge text="80-95%" bg={WB_THEME.AMBER} fg="#3B2A00" />
-                  <WbBadge text="<80%" bg={WB_THEME.RED} fg="#3B0A0A" />
+                  <WbBadge text="≥95%" bg={WB_THEME.GREEN} fg="var(--wb-on-green)" />
+                  <WbBadge text="80-95%" bg={WB_THEME.AMBER} fg="var(--wb-on-amber)" />
+                  <WbBadge text="<80%" bg={WB_THEME.RED} fg="var(--wb-on-red)" />
                 </div>
               }
               className="lg:col-span-5"
@@ -571,10 +715,10 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           </div>
 
           {/* Row 2 Panels */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
             <WbPanel
               title="Hourly Output vs Target"
-              sub="12-Hour AM/PM slots (8 AM – 6 PM) · Target (back) vs Output (front)"
+              sub="By hour of work (1st hr, 2nd hr…) · Target (back) vs Output (front)"
               className="lg:col-span-6"
             >
               <HourlyOutputWallboardChart buckets={hourlySeries} />
@@ -602,7 +746,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 <WbBadge
                   text={`${openIncidents.length} open`}
                   bg={openIncidents.length > 0 ? WB_THEME.RED : WB_THEME.GREEN}
-                  fg={openIncidents.length > 0 ? '#3B0A0A' : '#052E22'}
+                  fg={openIncidents.length > 0 ? 'var(--wb-on-red)' : 'var(--wb-on-green)'}
                 />
               }
               className="lg:col-span-3"
@@ -614,7 +758,23 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       )}
 
       {/* ==================== PAGE 2: QUALITY ==================== */}
-      {page === 'QUALITY' && (
+      {!isDept && (page === 'QUALITY' || page === 'ALL') && (() => {
+        const done = auditByLine.reduce((a, r) => a + r.pass + r.fail, 0);
+        const passed = auditByLine.reduce((a, r) => a + r.pass, 0);
+        const failed = auditByLine.reduce((a, r) => a + r.fail, 0);
+        const rate = done > 0 ? (passed / done) * 100 : null;
+        const linesAudited = auditByLine.length;
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+            <WbTile label="Audits done" value={String(done)} color={WB_THEME.BLUE} sub={`${linesAudited} line${linesAudited === 1 ? '' : 's'} audited · ${selectedFloor === 'All Sewing' ? 'all sewing' : FLOOR_LABEL[selectedFloor]}`} />
+            <WbTile label="Passed" value={String(passed)} color={WB_THEME.GREEN} sub={`OQL at or below ${AUDIT_PASS_OQL_PCT}%`} />
+            <WbTile label="Failed" value={String(failed)} color={failed > 0 ? WB_THEME.RED : WB_THEME.GREEN} sub="OQL above the limit" />
+            <WbTile label="Pass rate" value={rate !== null ? `${rate.toFixed(1)}%` : '—'} color={rate === null ? WB_THEME.GREY : rate >= 90 ? WB_THEME.GREEN : rate >= 70 ? WB_THEME.AMBER : WB_THEME.RED} sub="of audits done" />
+          </div>
+        );
+      })()}
+
+      {!isDept && page === 'QUALITY' && (
         <div className="flex-1 flex flex-col gap-2">
           {/* 5 KPI Tiles */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
@@ -657,7 +817,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           </div>
 
           {/* Row 1 Panels */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[220px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[220px]">
             <WbPanel
               title="DHU by Line"
               sub={`Dashed: limit ${kpis.dhuLimitPct.toFixed(1)}`}
@@ -705,10 +865,10 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           </div>
 
           {/* Row 2 Panels */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
             <WbPanel
               title="Hourly DHU and OQL"
-              sub="12-Hour AM/PM trend · Orange: DHU · Blue: OQL%"
+              sub="By hour of work (1st hr, 2nd hr…) · Orange: DHU · Blue: OQL%"
               className="lg:col-span-5"
             >
               <HourlyQualityLineChart buckets={hourlySeries} limit={kpis.oqlCommitmentPct} />
@@ -721,7 +881,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 <WbBadge
                   text={`${kpis.defectsPending} pcs pending`}
                   bg={kpis.defectsPending > 0 ? WB_THEME.AMBER : WB_THEME.GREEN}
-                  fg="#052E22"
+                  fg="var(--wb-on-green)"
                 />
               }
               className="lg:col-span-4"
@@ -753,35 +913,20 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               />
             </WbPanel>
           </div>
-
-          {/* Row 3: Bi-hourly audit analytics */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 min-h-[220px]">
-            <WbPanel
-              title="Bi-hourly Audit by Line · Pass / Fail"
-              sub={`Audits ${auditRecords.length} · Pass/Fail derived from valid audit OQL ≤ ${kpis.oqlCommitmentPct.toFixed(2)}% · Unchecked records are not counted as Fail`}
-              className="lg:col-span-7"
-            >
-              <BiHourlyAuditByLineChart rows={auditLineStats} onSelectLine={lineId => {
-                const line = lineSummaries.find(item => item.lineId === lineId);
-                if (line) setDeepDiveLine(line);
-              }} />
-            </WbPanel>
-            <WbPanel
-              title="Top 5 Bi-hourly Audit Defects"
-              sub="Defect quantity from saved audit records only"
-              className="lg:col-span-5"
-            >
-              <HorizontalRankBars rows={auditTopDefects} />
-            </WbPanel>
-          </div>
         </div>
       )}
 
       {/* ==================== PAGE 3: ALL (EXECUTIVE COMBINED WALLBOARD) ==================== */}
-      {page === 'ALL' && (
+      {!isDept && page === 'QUALITY' && (
+        <WbPanel title="Weekly BS OQL vs NFL AQC (from week 32)" sub="Blue: BS OQL · Orange: NFL AQC · Red dashed: 4.5% commitment">
+          <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} />
+        </WbPanel>
+      )}
+
+      {!isDept && page === 'ALL' && (
         <div className="flex-1 flex flex-col gap-2">
           {/* Top 7 Summary Panels */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7 gap-2">
             {/* 1. Today Live Efficiency Gauge */}
             <WbSummaryCard
               title="Today Live Efficiency"
@@ -807,7 +952,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 <div style={{ color: WB_THEME.BLUE }} className="text-3xl font-black">
                   {kpis.monthlyEfficiencyPct.toFixed(1)}%
                 </div>
-                <div className="w-full h-1.5 rounded bg-[#0A1522] overflow-hidden my-1">
+                <div className="w-full h-1.5 rounded bg-[var(--wb-bg)] overflow-hidden my-1">
                   <div
                     style={{
                       width: `${Math.min(100, kpis.monthlyEfficiencyPct)}%`,
@@ -843,41 +988,42 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             </WbSummaryCard>
 
             {/* 4. Floor & Factory Efficiency */}
-            <WbSummaryCard title="Floor & Factory Eff">
-              <div className="flex items-end justify-between h-16 pt-2 px-1">
-                {(floorBenchmarks.length > 0
-                  ? floorBenchmarks
-                  : [
-                      { floor: 'Sew 1', todayEff: 76, monthEff: 72 },
-                      { floor: 'Sew 2', todayEff: kpis.todayEfficiencyPct || 68, monthEff: kpis.monthlyEfficiencyPct || 65 },
-                      { floor: 'Sew 3', todayEff: 71, monthEff: 68 },
-                      { floor: 'Factory', todayEff: 72, monthEff: 69 }
-                    ]
-                ).map(b => (
-                  <div key={b.floor} className="flex flex-col items-center gap-0.5">
-                    <div className="flex items-end gap-0.5 h-10">
-                      <div
-                        style={{
-                          height: `${Math.min(100, Math.max(10, b.todayEff))}%`,
-                          backgroundColor: WB_THEME.BLUE
-                        }}
-                        className="w-2.5 rounded-t-sm"
-                        title={`Today: ${b.todayEff}%`}
-                      />
-                      <div
-                        style={{
-                          height: `${Math.min(100, Math.max(10, b.monthEff))}%`,
-                          backgroundColor: WB_THEME.GREEN
-                        }}
-                        className="w-2.5 rounded-t-sm"
-                        title={`Month: ${b.monthEff}%`}
-                      />
+            <WbSummaryCard title="Floor & Factory Efficiency (Today / Month)">
+              {floorBenchmarks.length === 0 || floorBenchmarks.every(b => !b.todayEff && !b.monthEff) ? (
+                <div style={{ color: WB_THEME.MUTED }} className="text-[11px] font-semibold text-center py-3">
+                  No data yet
+                </div>
+              ) : (
+                <div className="flex items-end justify-around gap-1 pt-1">
+                  {floorBenchmarks.map(b => (
+                    <div key={b.floor} className="flex flex-col items-center gap-0.5">
+                      <div className="flex items-end gap-1 h-14">
+                        {[
+                          { v: b.todayEff, c: WB_THEME.BLUE, tip: 'Today' },
+                          { v: b.monthEff, c: WB_THEME.GREEN, tip: 'Month' }
+                        ].map(bar => (
+                          <div key={bar.tip} className="flex flex-col items-center justify-end h-full">
+                            <span style={{ color: bar.c }} className="text-[11px] font-black leading-none mb-0.5">
+                              {Math.round(bar.v)}
+                            </span>
+                            <div
+                              style={{ height: `${Math.min(100, Math.max(6, bar.v)) * 0.62}%`, backgroundColor: bar.c }}
+                              className="w-3 rounded-t-sm"
+                              title={`${bar.tip}: ${bar.v}%`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <span style={{ color: WB_THEME.MUTED }} className="text-[9px] font-bold">
+                        {b.floor}
+                      </span>
                     </div>
-                    <span style={{ color: WB_THEME.MUTED }} className="text-[9px] font-bold">
-                      {b.floor}
-                    </span>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              )}
+              <div className="flex justify-center gap-3 pt-1 text-[9px] font-bold" style={{ color: WB_THEME.MUTED }}>
+                <span><span style={{ backgroundColor: WB_THEME.BLUE }} className="inline-block w-2 h-2 rounded-sm mr-1" />Today</span>
+                <span><span style={{ backgroundColor: WB_THEME.GREEN }} className="inline-block w-2 h-2 rounded-sm mr-1" />Month</span>
               </div>
             </WbSummaryCard>
 
@@ -933,7 +1079,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           </div>
 
           {/* Row 1 Panels */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
             <WbPanel
               title="Live Target vs Achievement"
               sub="Grey: Target · Colored: Output · % below"
@@ -974,7 +1120,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           </div>
 
           {/* Row 2 Panels */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
             <WbPanel
               title="Efficiency by Line"
               sub={`Front: ${selectedPeriod} · Back: Month · Dashed: target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
@@ -988,8 +1134,8 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               sub="Weekly trend (%) · Dashed: 4.5% commitment · Level 1 <7% · Red >10%"
               right={
                 <div className="flex gap-1">
-                  <WbBadge text="BS OQL" bg={WB_THEME.BLUE} fg="#031225" />
-                  <WbBadge text="NFL AQC" bg={WB_THEME.ORANGE} fg="#3B1A00" />
+                  <WbBadge text="BS OQL" bg={WB_THEME.BLUE} fg="var(--wb-on-selected)" />
+                  <WbBadge text="NFL AQC" bg={WB_THEME.ORANGE} fg="var(--wb-on-orange)" />
                 </div>
               }
               className="lg:col-span-4"
@@ -1016,20 +1162,57 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       )}
 
       {/* ==================== PAGE 4: TABLE (15-COLUMN LIVE LINE PERFORMANCE TABLE) ==================== */}
-      {page === 'TABLE' && (
-        <div className="flex-1 bg-slate-100 text-slate-900 rounded-lg overflow-auto p-3">
-          <div className="flex items-center justify-between mb-2">
+      {!isDept && page === 'TABLE' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-1.5 mb-1.5">
+          <div style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }} className="rounded-lg border p-2 lg:col-span-7">
+            <div className="text-[11px] font-black">Audit: Pass / Fail by Line</div>
+            <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold mb-1">Bi-hourly OQL audits · PASS when OQL is at or below {AUDIT_PASS_OQL_PCT}%</div>
+            <div className="h-20"><AuditPassFailChart rows={auditByLine} /></div>
+          </div>
+          <div style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }} className="rounded-lg border p-2 lg:col-span-5">
+            <div className="text-[11px] font-black">Audit results by Line</div>
+            <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold mb-1">Passed and failed audits in this period</div>
+            <div className="max-h-[92px] overflow-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead className="sticky top-0" style={{ backgroundColor: WB_THEME.BG }}>
+                  <tr className="text-left" style={{ color: WB_THEME.MUTED }}>
+                    <th className="p-2">Line</th><th className="p-2 text-right">Pass</th><th className="p-2 text-right">Fail</th><th className="p-2 text-right">Pass rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditByLine.length === 0 && (<tr><td colSpan={4} className="p-3 text-center" style={{ color: WB_THEME.MUTED }}>No audits yet</td></tr>)}
+                  {auditByLine.map(r => {
+                    const tot = r.pass + r.fail;
+                    const rate = tot > 0 ? (r.pass / tot) * 100 : 0;
+                    return (
+                      <tr key={r.lineId} className="border-t" style={{ borderColor: WB_THEME.LINE }}>
+                        <td className="p-2 font-black">{lineDisplayName(r.lineId)}</td>
+                        <td className="p-2 text-right font-black" style={{ color: WB_THEME.GREEN }}>{r.pass}</td>
+                        <td className="p-2 text-right font-black" style={{ color: WB_THEME.RED }}>{r.fail}</td>
+                        <td className="p-2 text-right font-black" style={{ color: rate >= 90 ? WB_THEME.GREEN : rate >= 70 ? WB_THEME.AMBER : WB_THEME.RED }}>{rate.toFixed(0)}%</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+      {!isDept && page === 'TABLE' && (
+        <div className="flex-1 min-h-[72vh] bg-slate-100 text-slate-900 rounded-lg overflow-auto p-2">
+          <div className="flex items-center justify-between mb-1">
             <div>
               <h3 className="text-sm font-black text-[#002D62]">
-                Live Line Performance Table ({selectedFloor === 'All' ? 'All Floors' : selectedFloor} · {selectedPeriod})
+                Live Line Performance Table ({FLOOR_LABEL[selectedFloor]} · {selectedPeriod})
               </h3>
               <p className="text-[11px] text-slate-500">
-                Click any line row to open its 12-Hour AM/PM Line Deep Dive &amp; Rectification Ledger
+                Click any line row to open its Line Deep Dive &amp; Rectification Ledger
               </p>
             </div>
           </div>
           <table className="w-full text-xs border-collapse bg-white rounded-lg overflow-hidden shadow">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr className="bg-[#002D62] text-white text-[11px] font-black">
                 <th className="py-2 px-2 text-left">Line</th>
                 <th className="py-2 px-2 text-left">Item</th>
@@ -1056,7 +1239,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                   onClick={() => setDeepDiveLine(l)}
                   className="hover:bg-blue-50 cursor-pointer transition"
                 >
-                  <td className="py-1.5 px-2 font-black text-[#002D62]">{l.lineId}</td>
+                  <td className="py-1.5 px-2 font-black text-[#002D62]">{lineDisplayName(l.lineId)}</td>
                   <td className="py-1.5 px-2 text-slate-700">{l.styleNumber}</td>
                   <td className="py-1.5 px-2 text-right">{l.smv > 0 ? l.smv.toFixed(1) : '—'}</td>
                   <td className="py-1.5 px-2 text-right">{l.hourlyTarget || '—'}</td>
@@ -1113,273 +1296,146 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
       {/* ==================== LINE DEEP DIVE MODAL ==================== */}
       {deepDiveLine && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-2 sm:p-4">
+        <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
           <div
             style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE, color: WB_THEME.TXT }}
-            className="w-full max-w-6xl max-h-[96vh] rounded-xl border p-3 sm:p-5 flex flex-col gap-3 overflow-y-auto shadow-2xl"
+            className="w-full max-w-4xl max-h-[90vh] rounded-xl border p-5 flex flex-col gap-4 overflow-y-auto shadow-2xl"
           >
-            <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: WB_THEME.LINE }}>
-              <div>
-                <h3 className="text-lg font-black">
-                  Line {deepDiveLine.lineId} Deep Dive ({deepDiveLine.floor}) — {deepDiveLine.styleNumber}
+            <div className="flex items-start gap-3 border-b pb-3" style={{ borderColor: WB_THEME.LINE }}>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-lg font-black leading-tight">
+                  {lineDisplayName(deepDiveLine.lineId)} <span style={{ color: WB_THEME.MUTED }} className="text-sm font-bold">({deepDiveLine.floor})</span>
                 </h3>
-                <p style={{ color: WB_THEME.MUTED }} className="text-xs">
-                  SMV {deepDiveLine.smv.toFixed(1)} · Operators {deepDiveLine.operators} · Helpers {deepDiveLine.helpers} · Daily Target {deepDiveLine.target} pcs ({deepDiveLine.hourlyTarget}/hr)
-                  · Period {selectedPeriod}
+                <p style={{ color: WB_THEME.MUTED }} className="text-xs mt-0.5">
+                  {deepDiveLine.styleNumber ? `${deepDiveLine.styleNumber} · ` : ''}SMV {deepDiveLine.smv.toFixed(1)} · Operators {deepDiveLine.operators} · Helpers {deepDiveLine.helpers} · Hourly target {deepDiveLine.hourlyTarget} pcs
                 </p>
               </div>
               <button
                 onClick={() => setDeepDiveLine(null)}
-                className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm"
+                className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-black text-sm"
+                aria-label="Close"
               >
                 ✕ Close
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
               <WbTile
-                label={`${selectedPeriod.toUpperCase()} EFFICIENCY`}
+                label="EFFICIENCY"
                 value={deepDiveLine.efficiencyPct !== null ? `${deepDiveLine.efficiencyPct.toFixed(1)}%` : '—'}
                 color={effColor(deepDiveLine.efficiencyPct, deepDiveLine.targetEfficiencyPct)}
                 sub={`Target ${deepDiveLine.targetEfficiencyPct}%`}
-              />
-              <WbTile
-                label="MONTHLY EFFICIENCY"
-                value={deepDiveLine.monthlyEfficiencyPct > 0 ? `${deepDiveLine.monthlyEfficiencyPct.toFixed(1)}%` : '—'}
-                color={effColor(deepDiveLine.monthlyEfficiencyPct, deepDiveLine.targetEfficiencyPct)}
-                sub="Actual month production calculation"
               />
               <WbTile
                 label="OUTPUT vs TARGET"
                 value={`${deepDiveLine.output ?? 0}`}
                 unit={`/ ${deepDiveLine.target}`}
                 color={achColor(deepDiveLine.achievementPct)}
-                sub={`Achievement ${deepDiveLine.achievementPct ?? 0}%`}
+                sub={`Achieve ${deepDiveLine.achievementPct ?? 0}%`}
               />
               <WbTile
-                label={`${selectedPeriod.toUpperCase()} DHU`}
+                label="DAY DHU %"
                 value={deepDiveLine.dhu !== null ? `${deepDiveLine.dhu.toFixed(2)}%` : '—'}
                 color={dhuColor(deepDiveLine.dhu)}
-                sub={`${deepDiveLine.totalDefects} defects / ${deepDiveLine.checkedGarments} checked`}
+                sub={`${deepDiveLine.totalDefects} defects / ${deepDiveLine.checkedGarments} chk`}
               />
               <WbTile
-                label={`${selectedPeriod.toUpperCase()} OQL`}
+                label="DAY OQL %"
                 value={deepDiveLine.todayOqlPct !== null ? `${deepDiveLine.todayOqlPct.toFixed(2)}%` : '—'}
                 color={oqlColor(deepDiveLine.todayOqlPct)}
                 sub={`${deepDiveLine.defectiveGarments} defective pcs`}
               />
               <WbTile
-                label="DEFECTS PENDING"
+                label="ALTER & SPOT PENDING"
                 value={`${deepDiveLine.sewBal + deepDiveLine.spotBal}`}
                 unit="pcs"
                 color={deepDiveLine.sewBal + deepDiveLine.spotBal > 0 ? WB_THEME.AMBER : WB_THEME.GREEN}
-                sub={`Sew ${deepDiveLine.sewBal} · Spot ${deepDiveLine.spotBal}`}
+                sub={`Sew Bal ${deepDiveLine.sewBal} · Spot Bal ${deepDiveLine.spotBal}`}
               />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              <WbPanel title="Line Quality Performance & Rectification" sub="Actual selected-period records · no sample/fallback values">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  <div className="rounded p-2" style={{ backgroundColor: WB_THEME.BG }}>
-                    <div style={{ color: WB_THEME.MUTED }}>Sew Defect Sent</div>
-                    <div className="text-xl font-black">{deepDiveLine.sewSent}</div>
-                  </div>
-                  <div className="rounded p-2" style={{ backgroundColor: WB_THEME.BG }}>
-                    <div style={{ color: WB_THEME.MUTED }}>Sew Defect Received</div>
-                    <div className="text-xl font-black" style={{ color: WB_THEME.GREEN }}>{deepDiveLine.sewRecv}</div>
-                  </div>
-                  <div className="rounded p-2" style={{ backgroundColor: WB_THEME.BG }}>
-                    <div style={{ color: WB_THEME.MUTED }}>Spot Sent</div>
-                    <div className="text-xl font-black">{deepDiveLine.spotSent}</div>
-                  </div>
-                  <div className="rounded p-2" style={{ backgroundColor: WB_THEME.BG }}>
-                    <div style={{ color: WB_THEME.MUTED }}>Spot Received</div>
-                    <div className="text-xl font-black" style={{ color: WB_THEME.GREEN }}>{deepDiveLine.spotRecv}</div>
-                  </div>
-                </div>
-                <div className="mt-2">
-                  <div className="text-xs font-black mb-1">Top 5 Hourly QC Defects</div>
-                  <HorizontalRankBars rows={(() => {
-                    const counts: Record<string, number> = {};
-                    selectedLineHourlyQuality.forEach(q => q.defects.forEach(d => {
-                      if (d.count > 0) counts[d.defectType] = (counts[d.defectType] || 0) + d.count;
-                    }));
-                    return Object.entries(counts).map(([label, value]) => ({
-                      label, value, text: String(value), color: WB_THEME.ORANGE
-                    })).sort((a, b) => b.value - a.value).slice(0, 5);
-                  })()} />
-                </div>
-              </WbPanel>
-
-              <WbPanel
-                title="Line NPT Notifications & Stoppages"
-                sub={`${selectedLineIncidents.length} incident(s) recorded for this line and period`}
-              >
-                {selectedLineIncidents.length === 0 ? (
-                  <div className="flex items-center justify-center h-full text-xs font-bold" style={{ color: WB_THEME.MUTED }}>
-                    No NPT incidents recorded for this line and period
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-2 overflow-y-auto max-h-48">
-                    {selectedLineIncidents.map(inc => {
-                      const elapsed = Math.max(0, Math.round(((inc.endTimeMillis || Date.now()) - inc.startTimeMillis) / 60000));
-                      return (
-                        <div key={inc.id} className="rounded border-l-4 p-2 text-xs" style={{ backgroundColor: WB_THEME.BG, borderColor: inc.status === 'RESOLVED' ? WB_THEME.GREEN : WB_THEME.RED }}>
-                          <div className="flex justify-between gap-2 font-black">
-                            <span>{inc.category.replace(/_/g, ' ')} · {inc.status}</span>
-                            <span>{elapsed} min</span>
-                          </div>
-                          <div style={{ color: WB_THEME.TXT }}>{inc.description}</div>
-                          <div style={{ color: WB_THEME.MUTED }} className="mt-1">
-                            {new Date(inc.startTimeMillis).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })} · {inc.reportedBy}
-                          </div>
-                          {inc.resolutionNote && <div style={{ color: WB_THEME.GREEN }}>Resolution: {inc.resolutionNote}</div>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </WbPanel>
+            <div className="text-xs font-black uppercase tracking-wider" style={{ color: WB_THEME.MUTED }}>
+              Hourly &amp; Bi-Hourly Records (scroll up and down)
             </div>
-
-            <WbPanel
-              title="Bi-hourly Audit — Hour-wise Pass / Fail"
-              sub={`Total ${selectedLineAuditRecords.length} audits · ${selectedLineAuditByHour.reduce((s, r) => s + r.pass, 0)} pass · ${selectedLineAuditByHour.reduce((s, r) => s + r.fail, 0)} fail · ${selectedLineAuditByHour.reduce((s, r) => s + r.unrated, 0)} no result · Pass standard: OQL ≤ ${kpis.oqlCommitmentPct.toFixed(2)}%`}
-            >
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs border-collapse min-w-[560px]">
-                  <thead>
-                    <tr style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.MUTED }}>
-                      <th className="p-2 text-left">Audit Slot</th>
-                      <th className="p-2 text-right">Audit Count</th>
-                      <th className="p-2 text-right">Checked Pcs</th>
-                      <th className="p-2 text-right">Defective Pcs</th>
-                      <th className="p-2 text-right">Total Defects</th>
-                      <th className="p-2 text-right">Pass</th>
-                      <th className="p-2 text-right">Fail</th>
-                      <th className="p-2 text-right">No Result</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedLineAuditByHour.map(row => (
-                      <tr key={row.slot} className="border-b" style={{ borderColor: WB_THEME.LINE }}>
-                        <td className="p-2 font-black">{formatHourSlot12h(row.slot)}</td>
-                        <td className="p-2 text-right">{row.count}</td>
-                        <td className="p-2 text-right">{row.checked}</td>
-                        <td className="p-2 text-right">{row.defective}</td>
-                        <td className="p-2 text-right">{row.defects}</td>
-                        <td className="p-2 text-right font-black" style={{ color: WB_THEME.GREEN }}>{row.pass}</td>
-                        <td className="p-2 text-right font-black" style={{ color: WB_THEME.RED }}>{row.fail}</td>
-                        <td className="p-2 text-right" style={{ color: WB_THEME.MUTED }}>{row.unrated}</td>
-                      </tr>
-                    ))}
-                    {selectedLineAuditByHour.length === 0 && (
-                      <tr><td colSpan={8} className="p-4 text-center" style={{ color: WB_THEME.MUTED }}>No bi-hourly audit records for this line and period</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </WbPanel>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              <WbPanel title="Top 5 Bi-hourly Audit Defects" sub="Counts from this line's saved bi-hourly audit records">
-                <HorizontalRankBars rows={selectedLineAuditTopDefects} />
-              </WbPanel>
-              <WbPanel title="Audit Record Detail" sub="Each audit slot, checked quantity, OQL result and pass/fail status">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs border-collapse min-w-[500px]">
-                    <thead><tr style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.MUTED }}>
-                      <th className="p-2 text-left">Date / Slot</th>
-                      <th className="p-2 text-right">Checked</th>
-                      <th className="p-2 text-right">Defective</th>
-                      <th className="p-2 text-right">OQL</th>
-                      <th className="p-2 text-right">Result</th>
-                    </tr></thead>
-                    <tbody>
-                      {selectedLineAuditRecords.map(q => {
-                        const auditOql = q.checkedGarments > 0 ? (q.defectiveGarments / q.checkedGarments) * 100 : null;
-                        const passed = auditOql !== null && auditOql <= kpis.oqlCommitmentPct;
-                        return (
-                          <tr key={q.id} className="border-b" style={{ borderColor: WB_THEME.LINE }}>
-                            <td className="p-2 font-bold">{q.date} · {formatHourSlot12h(q.hourSlot)}</td>
-                            <td className="p-2 text-right">{q.checkedGarments}</td>
-                            <td className="p-2 text-right">{q.defectiveGarments}</td>
-                            <td className="p-2 text-right">{auditOql !== null ? `${auditOql.toFixed(2)}%` : '—'}</td>
-                            <td className="p-2 text-right font-black" style={{ color: auditOql === null ? WB_THEME.MUTED : passed ? WB_THEME.GREEN : WB_THEME.RED }}>{auditOql === null ? 'NO RESULT' : passed ? 'PASS' : 'FAIL'}</td>
-                          </tr>
-                        );
-                      })}
-                      {selectedLineAuditRecords.length === 0 && (
-                        <tr><td colSpan={5} className="p-4 text-center" style={{ color: WB_THEME.MUTED }}>No audit records</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </WbPanel>
-            </div>
-
-            <WbPanel title="Hourly Production & Quality Records" sub="Latest records for the selected line and period">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs border-collapse min-w-[650px]">
-                  <thead><tr style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.MUTED }}>
-                    <th className="p-2 text-left">Date / Time</th>
-                    <th className="p-2 text-left">Type</th>
-                    <th className="p-2 text-right">Output</th>
-                    <th className="p-2 text-right">Checked</th>
-                    <th className="p-2 text-right">Defective</th>
-                    <th className="p-2 text-right">Defects</th>
-                    <th className="p-2 text-right">Sew Sent / Recv</th>
-                    <th className="p-2 text-right">Spot Sent / Recv</th>
-                  </tr></thead>
-                  <tbody>
-                    {selectedLineProduction.map(p => {
-                      const qa = selectedLineHourlyQuality.find(q => q.date === p.date && q.hourSlot === p.hourSlot);
+            <div className="max-h-[48vh] overflow-auto rounded-lg border" style={{ borderColor: WB_THEME.LINE }}>
+              <table className="w-full min-w-[860px] text-sm border-collapse">
+                <thead className="sticky top-0 z-10">
+                  <tr style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.MUTED }} className="text-xs uppercase tracking-wide">
+                    <th className="p-2.5 text-left">Hour</th>
+                    <th className="p-2.5 text-left">Type</th>
+                    <th className="p-2.5 text-right">Output</th>
+                    <th className="p-2.5 text-right">Checked</th>
+                    <th className="p-2.5 text-right">Defective</th>
+                    <th className="p-2.5 text-center">Result</th>
+                    <th className="p-2.5 text-right">Defects</th>
+                    <th className="p-2.5 text-right">Sew S / R</th>
+                    <th className="p-2.5 text-right">Spot S / R</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {productions
+                    .filter(p => p.lineId === deepDiveLine.lineId)
+                    .slice(0, 40)
+                    .map(p => {
+                      const matchQa = qualities.find(q => q.lineId === p.lineId && q.date === p.date && q.hourSlot === p.hourSlot);
                       return (
-                        <tr key={p.id} className="border-b" style={{ borderColor: WB_THEME.LINE }}>
-                          <td className="p-2 font-black">{p.date} · {formatHourSlot12h(p.hourSlot)}</td>
-                          <td className="p-2">Production / hourly QC</td>
-                          <td className="p-2 text-right font-black" style={{ color: WB_THEME.GREEN }}>{p.outputQty}</td>
-                          <td className="p-2 text-right">{qa?.checkedGarments ?? '—'}</td>
-                          <td className="p-2 text-right">{qa?.defectiveGarments ?? '—'}</td>
-                          <td className="p-2 text-right">{qa?.totalDefects ?? '—'}</td>
-                          <td className="p-2 text-right">{qa ? `${qa.defectSent || 0} / ${qa.defectReceived || 0}` : '—'}</td>
-                          <td className="p-2 text-right">{qa ? `${qa.spotSent || 0} / ${qa.spotReceived || 0}` : '—'}</td>
+                        <tr key={p.id} className="border-t" style={{ borderColor: WB_THEME.LINE }}>
+                          <td className="p-2.5 font-black whitespace-nowrap">{hourLabelOfSlot(p.lineId, p.hourSlot)}</td>
+                          <td className="p-2.5 whitespace-nowrap">Production &amp; QC</td>
+                          <td className="p-2.5 text-right font-black" style={{ color: WB_THEME.GREEN }}>{p.outputQty}</td>
+                          <td className="p-2.5 text-right">{matchQa?.checkedGarments ?? '—'}</td>
+                          <td className="p-2.5 text-right">{matchQa?.defectiveGarments ?? '—'}</td>
+                          <td className="p-2.5 text-center">—</td>
+                          <td className="p-2.5 text-right">{matchQa?.totalDefects ?? '—'}</td>
+                          <td className="p-2.5 text-right">{matchQa ? `${matchQa.defectSent || 0} / ${matchQa.defectReceived || 0}` : '—'}</td>
+                          <td className="p-2.5 text-right">{matchQa ? `${matchQa.spotSent || 0} / ${matchQa.spotReceived || 0}` : '—'}</td>
                         </tr>
                       );
                     })}
-                    {selectedLineProduction.length > 0 && selectedLineHourlyQuality
-                      .filter(q => !selectedLineProduction.some(p => p.date === q.date && p.hourSlot === q.hourSlot))
-                      .map(q => (
-                        <tr key={q.id} className="border-b" style={{ borderColor: WB_THEME.LINE }}>
-                          <td className="p-2 font-black">{q.date} · {formatHourSlot12h(q.hourSlot)}</td>
-                          <td className="p-2">Hourly QC only</td>
-                          <td className="p-2 text-right">—</td>
-                          <td className="p-2 text-right">{q.checkedGarments}</td>
-                          <td className="p-2 text-right">{q.defectiveGarments}</td>
-                          <td className="p-2 text-right">{q.totalDefects}</td>
-                          <td className="p-2 text-right">{q.defectSent || 0} / {q.defectReceived || 0}</td>
-                          <td className="p-2 text-right">{q.spotSent || 0} / {q.spotReceived || 0}</td>
+                  {qualities
+                    .filter(q => q.lineId === deepDiveLine.lineId && isBiHourlyAuditSlot(q.hourSlot))
+                    .map(q => {
+                      const r = auditResultOf(q.checkedGarments, q.defectiveGarments);
+                      return (
+                        <tr key={q.id} className="border-t" style={{ borderColor: WB_THEME.LINE }}>
+                          <td className="p-2.5 font-black whitespace-nowrap" style={{ color: WB_THEME.BLUE }}>{hourLabelOfSlot(q.lineId, q.hourSlot)}</td>
+                          <td className="p-2.5 font-bold whitespace-nowrap" style={{ color: WB_THEME.BLUE }}>Bi-Hourly Audit (OQL)</td>
+                          <td className="p-2.5 text-right">—</td>
+                          <td className="p-2.5 text-right font-bold">{q.checkedGarments}</td>
+                          <td className="p-2.5 text-right font-bold">{q.defectiveGarments}</td>
+                          <td className="p-2.5 text-center">
+                            <span className="rounded px-2 py-0.5 text-[11px] font-black" style={{ backgroundColor: r === 'PASS' ? WB_THEME.GREEN : WB_THEME.RED, color: r === 'PASS' ? 'var(--wb-on-green)' : 'var(--wb-on-red)' }}>{r ?? '—'}</span>
+                          </td>
+                          <td className="p-2.5 text-right font-bold">{q.totalDefects}</td>
+                          <td className="p-2.5 text-right">—</td>
+                          <td className="p-2.5 text-right">—</td>
                         </tr>
-                      ))}
-                    {selectedLineProduction.length === 0 && selectedLineHourlyQuality.map(q => (
-                      <tr key={q.id} className="border-b" style={{ borderColor: WB_THEME.LINE }}>
-                        <td className="p-2 font-black">{q.date} · {formatHourSlot12h(q.hourSlot)}</td>
-                        <td className="p-2">Hourly QC</td>
-                        <td className="p-2 text-right">—</td>
-                        <td className="p-2 text-right">{q.checkedGarments}</td>
-                        <td className="p-2 text-right">{q.defectiveGarments}</td>
-                        <td className="p-2 text-right">{q.totalDefects}</td>
-                        <td className="p-2 text-right">{q.defectSent || 0} / {q.defectReceived || 0}</td>
-                        <td className="p-2 text-right">{q.spotSent || 0} / {q.spotReceived || 0}</td>
-                      </tr>
-                    ))}
-                    {selectedLineProduction.length === 0 && selectedLineHourlyQuality.length === 0 && (
-                      <tr><td colSpan={8} className="p-4 text-center" style={{ color: WB_THEME.MUTED }}>No hourly production or quality records for this line and period</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </WbPanel>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="text-xs font-black uppercase tracking-wider" style={{ color: WB_THEME.MUTED }}>
+              NPT today on this line
+            </div>
+            <div className="space-y-1.5">
+              {allIncidents.filter(i => i.lineId === deepDiveLine.lineId).length === 0 && (
+                <div className="text-xs font-bold" style={{ color: WB_THEME.GREEN }}>No NPT on this line.</div>
+              )}
+              {allIncidents
+                .filter(i => i.lineId === deepDiveLine.lineId)
+                .sort((a, b) => b.startTimeMillis - a.startTimeMillis)
+                .slice(0, 12)
+                .map(inc => (
+                  <div key={inc.id} className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs" style={{ borderColor: WB_THEME.LINE, backgroundColor: WB_THEME.BG }}>
+                    <span className="font-black">{inc.category.replace(/_/g, ' ').toLowerCase()}</span>
+                    <span style={{ color: inc.status === 'RESOLVED' ? WB_THEME.GREEN : WB_THEME.RED }} className="font-black">{inc.status === 'RESOLVED' ? 'Resolved' : 'Open'}</span>
+                    <span style={{ color: WB_THEME.MUTED }}>{new Date(inc.startTimeMillis + 6 * 3600 * 1000).toISOString().slice(11, 16)} BD</span>
+                    <span className="flex-1 min-w-0 truncate" style={{ color: WB_THEME.MUTED }}>{inc.description}</span>
+                  </div>
+                ))}
+            </div>
           </div>
         </div>
       )}
@@ -1388,54 +1444,6 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 };
 
 /* ==================== SUB-COMPONENTS MATCHING WbComponents.kt ==================== */
-
-const BiHourlyAuditByLineChart: React.FC<{
-  rows: Array<{ lineId: string; pass: number; fail: number; unrated: number; total: number; checked: number }>;
-  onSelectLine: (lineId: string) => void;
-}> = ({ rows, onSelectLine }) => {
-  if (rows.length === 0) {
-    return (
-      <div style={{ color: WB_THEME.MUTED }} className="flex items-center justify-center h-full text-xs font-bold">
-        No bi-hourly audit records for this floor and period
-      </div>
-    );
-  }
-  const maxTotal = Math.max(1, ...rows.map(row => row.total));
-  return (
-    <div className="flex items-end gap-3 h-full min-h-[155px] overflow-x-auto px-1 pt-2">
-      {rows.map(row => {
-        const totalHeight = Math.max(8, (row.total / maxTotal) * 100);
-        const passHeight = row.total > 0 ? (row.pass / row.total) * totalHeight : 0;
-        const failHeight = row.total > 0 ? (row.fail / row.total) * totalHeight : 0;
-        const unratedHeight = row.total > 0 ? (row.unrated / row.total) * totalHeight : 0;
-        return (
-          <button
-            key={row.lineId}
-            type="button"
-            onClick={() => onSelectLine(row.lineId)}
-            className="flex flex-col items-center justify-end min-w-[48px] flex-1 h-full hover:opacity-80"
-            title={`Line ${row.lineId}: ${row.total} audits, ${row.pass} pass, ${row.fail} fail, ${row.unrated} no result, ${row.checked} pcs checked`}
-          >
-            <span className="text-[10px] font-black mb-1">{row.total}</span>
-            <div className="h-[105px] w-7 flex flex-col justify-end rounded-t overflow-hidden border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div style={{ height: `${failHeight}%`, backgroundColor: WB_THEME.RED }} />
-              <div style={{ height: `${passHeight}%`, backgroundColor: WB_THEME.GREEN }} />
-              <div style={{ height: `${unratedHeight}%`, backgroundColor: WB_THEME.GREY }} />
-            </div>
-            <span className="text-[10px] font-black mt-1">{row.lineId}</span>
-            <span className="text-[8px] font-bold whitespace-nowrap" style={{ color: WB_THEME.MUTED }}>
-              <span style={{ color: WB_THEME.GREEN }}>{row.pass}P</span>
-              {' / '}
-              <span style={{ color: WB_THEME.RED }}>{row.fail}F</span>
-              {' / '}
-              <span style={{ color: WB_THEME.GREY }}>{row.unrated}N</span>
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-};
 
 const WbTile: React.FC<{
   label: string;
@@ -1449,11 +1457,11 @@ const WbTile: React.FC<{
     className="rounded-lg border p-2.5 flex flex-col justify-between relative overflow-hidden"
   >
     <div style={{ backgroundColor: color }} className="absolute left-0 top-0 bottom-0 w-1" />
-    <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-extrabold uppercase tracking-wider pl-1.5">
+    <div style={{ color: WB_THEME.MUTED }} className="text-[11px] md:text-xs font-extrabold uppercase tracking-wider pl-1.5">
       {label}
     </div>
     <div className="flex items-baseline gap-1.5 my-1 pl-1.5">
-      <span style={{ color }} className="text-2xl font-black leading-none">
+      <span style={{ color }} className="text-2xl md:text-3xl font-black leading-none">
         {value}
       </span>
       {unit && (
@@ -1462,7 +1470,7 @@ const WbTile: React.FC<{
         </span>
       )}
     </div>
-    <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold pl-1.5 truncate">
+    <div style={{ color: WB_THEME.MUTED }} className="text-xs md:text-sm font-semibold pl-1.5 leading-snug">
       {sub}
     </div>
   </div>
@@ -1478,12 +1486,12 @@ const WbSummaryCard: React.FC<{
     style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
     className="rounded-lg border p-2.5 flex flex-col justify-between min-h-[115px]"
   >
-    <div className="flex items-center justify-between gap-1">
-      <span className="text-[11px] font-extrabold truncate">{title}</span>
+    <div className="flex items-start justify-between gap-1">
+      <span className="text-[11px] font-extrabold leading-tight">{title}</span>
       {badge && (
         <span
-          style={{ backgroundColor: badgeColor || WB_THEME.BLUE, color: '#031225' }}
-          className="px-1.5 py-0.5 rounded text-[9px] font-black"
+          style={{ backgroundColor: badgeColor || WB_THEME.BLUE, color: 'var(--wb-on-selected)' }}
+          className="shrink-0 px-1.5 py-0.5 rounded text-[11px] font-black"
         >
           {badge}
         </span>
@@ -1515,12 +1523,12 @@ const WbPanel: React.FC<{
       </div>
       {right}
     </div>
-    <div className="flex-1 flex flex-col justify-end min-h-[140px]">{children}</div>
+    <div className="flex-1 flex flex-col justify-end min-h-[200px]">{children}</div>
   </div>
 );
 
 const WbBadge: React.FC<{ text: string; bg: string; fg: string }> = ({ text, bg, fg }) => (
-  <span style={{ backgroundColor: bg, color: fg }} className="px-1.5 py-0.5 rounded text-[9px] font-black">
+  <span style={{ backgroundColor: bg, color: fg }} className="px-1.5 py-0.5 rounded text-[11px] font-black">
     {text}
   </span>
 );
@@ -1565,46 +1573,64 @@ const SemicircleGauge: React.FC<{
   );
 };
 
+/* ---------- shared column-chart pieces: the scale follows the data, labels sit on top of their bar ---------- */
+/** Highest value of the chart plus 18% headroom for the label, so the tallest bar nearly fills the area. */
+const niceMax = (vals: number[]): number => Math.max(1e-9, ...vals.filter(v => isFinite(v))) * 1.18 || 1;
+const PLOT_H = 'h-44 md:h-52 xl:h-60';
+
+/** One column; its value label sits just above the top of the column. */
+const Col: React.FC<{ v: number; max: number; color: string; label?: React.ReactNode; w?: string; title?: string; labelColor?: string }> = ({ v, max, color, label, w = 'w-3 md:w-4', title, labelColor }) => {
+  const h = Math.max(0, Math.min(100, (v / max) * 100));
+  return (
+    <div className={`relative ${w} h-full flex items-end`}>
+      {label !== undefined && label !== null && label !== '' && (
+        <div className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] md:text-xs font-black leading-none" style={{ bottom: `calc(${h}% + 3px)`, color: labelColor || color }}>
+          {label}
+        </div>
+      )}
+      <div style={{ height: `${h}%`, backgroundColor: color }} className="w-full rounded-t-sm" title={title} />
+    </div>
+  );
+};
+
+/** The scrolling row of column groups, with an optional dashed reference line. */
+const ChartRow: React.FC<{ children: React.ReactNode; refPct?: number | null; refColor?: string }> = ({ children, refPct, refColor }) => (
+  <div className="nfl-scroll overflow-x-auto pb-2">
+    <div className="relative flex items-end justify-between gap-1.5 min-w-full pt-5">{children}
+      {refPct !== undefined && refPct !== null && (
+        <div className={`absolute left-0 right-0 pointer-events-none ${PLOT_H}`} style={{ top: 20 }}>
+          <div className="absolute left-0 right-0 border-t-2 border-dashed" style={{ bottom: `${Math.min(100, refPct)}%`, borderColor: refColor || WB_THEME.AMBER }} />
+        </div>
+      )}
+    </div>
+  </div>
+);
+
+const Group: React.FC<{ children: React.ReactNode; name: React.ReactNode; sub?: React.ReactNode; subColor?: string; onClick?: () => void; minW?: string }> = ({ children, name, sub, subColor, onClick, minW = 'min-w-[44px] md:min-w-[54px]' }) => (
+  <div onClick={onClick} className={`flex flex-col items-center flex-1 ${minW} ${onClick ? 'cursor-pointer' : ''}`}>
+    <div className={`w-full ${PLOT_H} flex items-end justify-center gap-2 md:gap-3 border-b`} style={{ borderColor: WB_THEME.LINE }}>{children}</div>
+    <div className="text-[11px] md:text-xs font-black mt-1 whitespace-nowrap">{name}</div>
+    {sub !== undefined && <div style={{ color: subColor }} className="text-[10px] md:text-[11px] font-bold leading-tight">{sub}</div>}
+  </div>
+);
+
 const LiveTargetVsAchievementChart: React.FC<{
   lines: LinePerformanceSummary[];
   onSelectLine: (l: LinePerformanceSummary) => void;
 }> = ({ lines, onSelectLine }) => {
-  const maxVal = Math.max(100, ...lines.map(l => Math.max(l.target, l.output ?? 0)));
+  const max = niceMax(lines.flatMap(l => [l.target, l.output ?? 0]));
   return (
-    <div className="flex items-end justify-between gap-1 h-full pt-4 overflow-x-auto">
+    <ChartRow>
       {lines.map(l => {
-        const tgtH = Math.round((l.target / maxVal) * 100);
-        const outH = Math.round(((l.output ?? 0) / maxVal) * 100);
         const col = achColor(l.achievementPct);
         return (
-          <div
-            key={l.lineId}
-            onClick={() => onSelectLine(l)}
-            className="flex flex-col items-center flex-1 min-w-[26px] h-full justify-end cursor-pointer group"
-          >
-            <div className="text-[9px] font-black mb-0.5" style={{ color: col }}>
-              {l.output ?? '—'}
-            </div>
-            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div
-                style={{ height: `${tgtH}%`, backgroundColor: WB_THEME.DIM }}
-                className="w-2 rounded-t-sm"
-                title={`Target: ${l.target}`}
-              />
-              <div
-                style={{ height: `${outH}%`, backgroundColor: col }}
-                className="w-2.5 rounded-t-sm"
-                title={`Output: ${l.output ?? 0}`}
-              />
-            </div>
-            <div className="text-[9px] font-black mt-0.5">{l.lineId}</div>
-            <div style={{ color: col }} className="text-[8px] font-bold">
-              {l.achievementPct !== null ? `${l.achievementPct.toFixed(0)}%` : '—'}
-            </div>
-          </div>
+          <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)} sub={l.achievementPct !== null ? `${l.achievementPct.toFixed(0)}%` : '—'} subColor={col}>
+            <Col v={l.target} max={max} color={WB_THEME.DIM} labelColor={WB_THEME.MUTED} label={l.target} w="w-2.5 md:w-3.5" title={`Target: ${l.target}`} />
+            <Col v={l.output ?? 0} max={max} color={col} label={l.output ?? '—'} w="w-3 md:w-4" title={`Output: ${l.output ?? 0}`} />
+          </Group>
         );
       })}
-    </div>
+    </ChartRow>
   );
 };
 
@@ -1613,41 +1639,19 @@ const EfficiencyByLineChart: React.FC<{
   targetEff: number;
   onSelectLine: (l: LinePerformanceSummary) => void;
 }> = ({ lines, targetEff, onSelectLine }) => {
+  const max = niceMax([targetEff, ...lines.flatMap(l => [l.efficiencyPct ?? 0, l.monthlyEfficiencyPct ?? 0])]);
   return (
-    <div className="relative flex items-end justify-between gap-1 h-full pt-4 overflow-x-auto">
-      {/* Dashed Target Line */}
-      <div
-        style={{ bottom: `${Math.min(95, Math.max(15, targetEff))}%`, borderColor: WB_THEME.AMBER }}
-        className="absolute left-0 right-0 border-t border-dashed pointer-events-none z-10"
-      />
+    <ChartRow refPct={(targetEff / max) * 100}>
       {lines.map(l => {
-        const eff = l.efficiencyPct ?? 0;
-        const mo = l.monthlyEfficiencyPct ?? 0;
         const col = effColor(l.efficiencyPct, l.targetEfficiencyPct);
         return (
-          <div
-            key={l.lineId}
-            onClick={() => onSelectLine(l)}
-            className="flex flex-col items-center flex-1 min-w-[24px] h-full justify-end cursor-pointer"
-          >
-            <div style={{ color: col }} className="text-[9px] font-black mb-0.5">
-              {l.efficiencyPct !== null ? `${eff.toFixed(0)}%` : '—'}
-            </div>
-            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div
-                style={{ height: `${Math.min(100, mo)}%`, backgroundColor: WB_THEME.DIM }}
-                className="w-2 rounded-t-sm"
-              />
-              <div
-                style={{ height: `${Math.min(100, eff)}%`, backgroundColor: col }}
-                className="w-2.5 rounded-t-sm"
-              />
-            </div>
-            <div className="text-[9px] font-black mt-0.5">{l.lineId}</div>
-          </div>
+          <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)}>
+            <Col v={l.monthlyEfficiencyPct ?? 0} max={max} color={WB_THEME.DIM} w="w-2.5 md:w-3.5" title={`Month: ${l.monthlyEfficiencyPct ?? 0}%`} />
+            <Col v={l.efficiencyPct ?? 0} max={max} color={col} label={l.efficiencyPct !== null ? `${(l.efficiencyPct ?? 0).toFixed(0)}%` : '—'} title={`Today: ${l.efficiencyPct ?? 0}%`} />
+          </Group>
         );
       })}
-    </div>
+    </ChartRow>
   );
 };
 
@@ -1659,93 +1663,87 @@ const MetricByLineBarChart: React.FC<{
   limitVal: number;
   onSelectLine: (l: LinePerformanceSummary) => void;
 }> = ({ lines, getValue, getColor, formatVal, limitVal, onSelectLine }) => {
-  const maxVal = Math.max(limitVal * 2, 8, ...lines.map(l => getValue(l) ?? 0));
+  const max = niceMax([limitVal, ...lines.map(l => getValue(l) ?? 0)]);
   return (
-    <div className="flex items-end justify-between gap-1 h-full pt-4 overflow-x-auto">
+    <ChartRow refPct={(limitVal / max) * 100} refColor={WB_THEME.RED}>
       {lines.map(l => {
         const val = getValue(l);
-        const hPct = val !== null ? Math.min(100, Math.round((val / maxVal) * 100)) : 0;
         const col = getColor(val);
         return (
-          <div
-            key={l.lineId}
-            onClick={() => onSelectLine(l)}
-            className="flex flex-col items-center flex-1 min-w-[24px] h-full justify-end cursor-pointer"
-          >
-            <div style={{ color: col }} className="text-[9px] font-black mb-0.5">
-              {val !== null ? formatVal(val) : '—'}
-            </div>
-            <div className="w-full h-24 flex items-end justify-center border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div style={{ height: `${hPct}%`, backgroundColor: col }} className="w-3 rounded-t-sm" />
-            </div>
-            <div className="text-[9px] font-black mt-0.5">{l.lineId}</div>
-          </div>
+          <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)}>
+            <Col v={val ?? 0} max={max} color={col} label={val !== null ? formatVal(val) : '—'} w="w-4 md:w-6" />
+          </Group>
         );
       })}
-    </div>
+    </ChartRow>
   );
 };
 
 const HourlyOutputWallboardChart: React.FC<{ buckets: HourlyWallboardBucket[] }> = ({ buckets }) => {
-  const maxVal = Math.max(100, ...buckets.map(b => Math.max(b.target, b.output)));
+  const max = niceMax(buckets.flatMap(b => [b.target, b.output]));
   return (
-    <div className="flex items-end justify-between gap-1.5 h-full pt-3">
+    <ChartRow>
       {buckets.map(b => {
-        const tgtH = Math.round((b.target / maxVal) * 100);
-        const outH = Math.round((b.output / maxVal) * 100);
         const pct = b.target > 0 ? Math.round((b.output / b.target) * 100) : 0;
         const col = b.output === 0 ? WB_THEME.DIM : achColor(pct);
         return (
-          <div key={b.slot24} className="flex flex-col items-center flex-1 h-full justify-end">
-            <div style={{ color: col }} className="text-[9px] font-black mb-0.5">
-              {b.output > 0 ? b.output : '—'}
-            </div>
-            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div style={{ height: `${tgtH}%`, backgroundColor: WB_THEME.DIM }} className="w-2.5 rounded-t-sm" />
-              <div style={{ height: `${outH}%`, backgroundColor: col }} className="w-3 rounded-t-sm" />
-            </div>
-            <div className="text-[9px] font-black mt-0.5">{b.label12h}</div>
-            <div style={{ color: col }} className="text-[8px] font-bold">
-              {b.output > 0 && b.target > 0 ? `${pct}%` : ''}
-            </div>
-          </div>
+          <Group key={b.slot24} name={b.label12h} sub={b.output > 0 && b.target > 0 ? `${pct}%` : ''} subColor={col} minW="min-w-[52px] md:min-w-[64px]">
+            <Col v={b.target} max={max} color={WB_THEME.DIM} labelColor={WB_THEME.MUTED} label={b.target > 0 ? b.target : ""} w="w-3 md:w-5" title={`Target: ${b.target}`} />
+            <Col v={b.output} max={max} color={col} label={b.output > 0 ? b.output : '—'} w="w-4 md:w-6" title={`Output: ${b.output}`} />
+          </Group>
         );
       })}
-    </div>
+    </ChartRow>
   );
 };
 
-const HourlyQualityLineChart: React.FC<{ buckets: HourlyWallboardBucket[]; limit: number }> = ({
-  buckets
-}) => {
+/** Pass and fail counts of the bi-hourly audits, one pair of columns per line. */
+const AuditPassFailChart: React.FC<{ rows: Array<{ lineId: string; pass: number; fail: number }> }> = ({ rows }) => {
+  if (rows.length === 0) {
+    return <div style={{ color: WB_THEME.MUTED }} className="flex items-center justify-center h-full text-xs font-bold">No audits recorded in this period</div>;
+  }
+  const max = niceMax(rows.flatMap(r => [r.pass, r.fail]));
   return (
-    <div className="flex items-end justify-between gap-1.5 h-full pt-3">
+    <ChartRow>
+      {rows.map(r => (
+        <Group key={r.lineId} name={lineDisplayName(r.lineId)}>
+          <Col v={r.pass} max={max} color={WB_THEME.GREEN} label={r.pass} title={`Pass: ${r.pass}`} />
+          <Col v={r.fail} max={max} color={WB_THEME.RED} label={r.fail} title={`Fail: ${r.fail}`} />
+        </Group>
+      ))}
+    </ChartRow>
+  );
+};
+
+const HourlyQcPassChart: React.FC<{ buckets: HourlyWallboardBucket[] }> = ({ buckets }) => {
+  const max = niceMax(buckets.map(b => b.checked));
+  return (
+    <ChartRow>
       {buckets.map(b => {
-        const maxQ = 12;
-        const dhuH = b.dhuPct !== null ? Math.min(100, Math.round((b.dhuPct / maxQ) * 100)) : 0;
-        const oqlH = b.oqlPct !== null ? Math.min(100, Math.round((b.oqlPct / maxQ) * 100)) : 0;
+        const passed = Math.max(0, b.checked - b.defective);
+        const pct = b.checked > 0 ? Math.round((passed / b.checked) * 100) : null;
         return (
-          <div key={b.slot24} className="flex flex-col items-center flex-1 h-full justify-end">
-            <div className="text-[8px] font-black mb-0.5" style={{ color: WB_THEME.BLUE }}>
-              {b.oqlPct !== null ? `${b.oqlPct.toFixed(1)}%` : '—'}
-            </div>
-            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div
-                style={{ height: `${dhuH}%`, backgroundColor: WB_THEME.ORANGE }}
-                className="w-2.5 rounded-t-sm"
-                title={`DHU: ${b.dhuPct ?? 0}%`}
-              />
-              <div
-                style={{ height: `${oqlH}%`, backgroundColor: WB_THEME.BLUE }}
-                className="w-2.5 rounded-t-sm"
-                title={`OQL: ${b.oqlPct ?? 0}%`}
-              />
-            </div>
-            <div className="text-[9px] font-black mt-0.5">{b.label12h}</div>
-          </div>
+          <Group key={b.slot24} name={b.label12h} sub={pct !== null ? `${pct}%` : ''} subColor={WB_THEME.GREEN} minW="min-w-[52px] md:min-w-[64px]">
+            <Col v={b.checked} max={max} color={WB_THEME.BLUE} label={b.checked > 0 ? b.checked : '—'} title={`Checked: ${b.checked}`} />
+            <Col v={passed} max={max} color={WB_THEME.GREEN} label={b.checked > 0 ? passed : ''} title={`QC pass: ${passed}`} />
+          </Group>
         );
       })}
-    </div>
+    </ChartRow>
+  );
+};
+
+const HourlyQualityLineChart: React.FC<{ buckets: HourlyWallboardBucket[]; limit: number }> = ({ buckets, limit }) => {
+  const max = niceMax([limit, ...buckets.flatMap(b => [b.dhuPct ?? 0, b.oqlPct ?? 0])]);
+  return (
+    <ChartRow refPct={(limit / max) * 100} refColor={WB_THEME.RED}>
+      {buckets.map(b => (
+        <Group key={b.slot24} name={b.label12h} minW="min-w-[56px] md:min-w-[70px]">
+          <Col v={b.dhuPct ?? 0} max={max} color={WB_THEME.ORANGE} label={b.dhuPct !== null ? b.dhuPct.toFixed(1) : '—'} title={`DHU: ${b.dhuPct ?? 0}%`} />
+          <Col v={b.oqlPct ?? 0} max={max} color={WB_THEME.BLUE} label={b.oqlPct !== null ? `${b.oqlPct.toFixed(1)}%` : ''} title={`OQL: ${b.oqlPct ?? 0}%`} />
+        </Group>
+      ))}
+    </ChartRow>
   );
 };
 
@@ -1753,7 +1751,7 @@ const RectificationPendingChart: React.FC<{
   lines: LinePerformanceSummary[];
   onSelectLine: (l: LinePerformanceSummary) => void;
 }> = ({ lines, onSelectLine }) => {
-  const pendingLines = lines.filter(l => l.sewBal + l.spotBal > 0).slice(0, 10);
+  const pendingLines = lines.filter(l => l.sewBal + l.spotBal > 0).slice(0, 14);
   if (pendingLines.length === 0) {
     return (
       <div style={{ color: WB_THEME.GREEN }} className="flex items-center justify-center h-full text-xs font-black">
@@ -1761,74 +1759,70 @@ const RectificationPendingChart: React.FC<{
       </div>
     );
   }
-  const maxP = Math.max(5, ...pendingLines.map(l => l.sewBal + l.spotBal));
+  const max = niceMax(pendingLines.flatMap(l => [l.sewBal, l.spotBal]));
   return (
-    <div className="flex items-end justify-around gap-1.5 h-full pt-3">
-      {pendingLines.map(l => {
-        const total = l.sewBal + l.spotBal;
-        const sewH = Math.round((l.sewBal / maxP) * 100);
-        const spotH = Math.round((l.spotBal / maxP) * 100);
-        return (
-          <div
-            key={l.lineId}
-            onClick={() => onSelectLine(l)}
-            className="flex flex-col items-center flex-1 h-full justify-end cursor-pointer"
-          >
-            <div style={{ color: WB_THEME.AMBER }} className="text-[9px] font-black mb-0.5">
-              {total}
-            </div>
-            <div className="w-full h-24 flex flex-col justify-end items-center border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div style={{ height: `${spotH}%`, backgroundColor: WB_THEME.BLUE }} className="w-3.5 rounded-t-sm" />
-              <div style={{ height: `${sewH}%`, backgroundColor: WB_THEME.ORANGE }} className="w-3.5" />
-            </div>
-            <div className="text-[9px] font-black mt-0.5">{l.lineId}</div>
-          </div>
-        );
-      })}
-    </div>
+    <ChartRow>
+      {pendingLines.map(l => (
+        <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)} sub={`${l.sewBal + l.spotBal} pcs`} subColor={WB_THEME.AMBER}>
+          <Col v={l.sewBal} max={max} color={WB_THEME.ORANGE} label={l.sewBal} title={`Sewing: ${l.sewBal}`} />
+          <Col v={l.spotBal} max={max} color={WB_THEME.BLUE} label={l.spotBal} title={`Spot: ${l.spotBal}`} />
+        </Group>
+      ))}
+    </ChartRow>
   );
 };
 
-const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: number }> = ({
-  records
-}) => {
-  if (records.length === 0) {
+/** Weekly BS OQL vs NFL AQC trend, from ISO week 32 of the current year (blue: BS OQL, orange: NFL AQC). */
+const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: number }> = ({ records, commitment }) => {
+  const year = new Date().getFullYear();
+  const rows = [...records]
+    .filter(r => r.weekKey >= `${year}-W32` && (r.bsOqlPct !== null || r.nflAqcPct !== null))
+    .sort((a, b) => (a.weekKey < b.weekKey ? -1 : 1));
+  if (rows.length === 0) {
     return (
       <div style={{ color: WB_THEME.MUTED }} className="flex items-center justify-center h-full text-xs font-bold">
-        No Weekly BS OQL / NFL AQC records entered yet
+        No weekly BS OQL / NFL AQC records from week 32 yet
       </div>
     );
   }
-  const maxVal = Math.max(10, ...records.map(r => Math.max(r.bsOqlPct ?? 0, r.nflAqcPct ?? 0)));
+  const step = 70, padL = 30, padR = 30, top = 26, plotH = 170, W = Math.max(320, padL + padR + step * (rows.length - 1));
+  const max = niceMax([commitment, ...rows.flatMap(r => [r.bsOqlPct ?? 0, r.nflAqcPct ?? 0])]);
+  const x = (i: number) => (rows.length === 1 ? W / 2 : padL + i * step);
+  const y = (v: number) => top + plotH - (v / max) * plotH;
+  const series = [
+    { key: 'bs', name: 'BS OQL', color: WB_THEME.BLUE, get: (r: WeeklyQualityRecord) => r.bsOqlPct, dy: -10 },
+    { key: 'aqc', name: 'NFL AQC', color: WB_THEME.ORANGE, get: (r: WeeklyQualityRecord) => r.nflAqcPct, dy: 18 }
+  ];
   return (
-    <div className="flex items-end justify-between gap-2 h-full min-w-[520px] pt-2 overflow-x-auto">
-      {records.map(r => {
-        const bsH = r.bsOqlPct !== null ? Math.round((r.bsOqlPct / maxVal) * 100) : 0;
-        const aqcH = r.nflAqcPct !== null ? Math.round((r.nflAqcPct / maxVal) * 100) : 0;
-        return (
-          <div key={r.weekKey} className="flex flex-col items-center flex-1 min-w-[48px] h-full justify-end">
-            <div className="h-4 flex items-end justify-center text-[8px] font-black whitespace-nowrap" style={{ color: WB_THEME.BLUE }}>
-              {r.bsOqlPct !== null ? `${r.bsOqlPct.toFixed(1)}%` : '—'}
-            </div>
-            <div className="w-full h-24 flex items-end justify-center gap-0.5 border-b" style={{ borderColor: WB_THEME.LINE }}>
-              <div
-                style={{ height: `${bsH}%`, backgroundColor: WB_THEME.BLUE }}
-                className="w-2.5 rounded-t-sm"
-                title={`BS OQL: ${r.bsOqlPct ?? '—'}%`}
-              />
-              <div
-                style={{ height: `${aqcH}%`, backgroundColor: WB_THEME.ORANGE }}
-                className="w-2.5 rounded-t-sm"
-                title={`NFL AQC: ${r.nflAqcPct ?? '—'}%`}
-              />
-            </div>
-            <div className="text-[9px] font-black mt-0.5">{r.weekKey.replace(/^\d{4}-/, '')}</div>
-            <div className="h-4 flex items-start justify-center text-[8px] font-bold whitespace-nowrap" style={{ color: WB_THEME.ORANGE }}>
-              {r.nflAqcPct !== null ? `${r.nflAqcPct.toFixed(1)}%` : '—'}
-            </div>
-          </div>
-        );
-      })}
+    <div className="nfl-scroll overflow-x-auto pb-1">
+      <svg viewBox={`0 0 ${W} ${top + plotH + 30}`} style={{ width: '100%', minWidth: W, height: top + plotH + 30 }}>
+        <line x1={0} x2={W} y1={y(commitment)} y2={y(commitment)} stroke={WB_THEME.RED} strokeWidth={2} strokeDasharray="6 5" />
+        <text x={W - 4} y={y(commitment) - 5} textAnchor="end" fontSize={11} fontWeight={800} fill={WB_THEME.RED}>{commitment}% commitment</text>
+        <line x1={0} x2={W} y1={top + plotH} y2={top + plotH} stroke={WB_THEME.LINE} strokeWidth={1} />
+        {series.map(sr => {
+          const pts = rows.map((r, i) => ({ i, v: sr.get(r) })).filter(p => p.v !== null) as Array<{ i: number; v: number }>;
+          return (
+            <g key={sr.key}>
+              <polyline fill="none" stroke={sr.color} strokeWidth={3} strokeLinejoin="round" points={pts.map(p => `${x(p.i)},${y(p.v)}`).join(' ')} />
+              {pts.map(p => (
+                <g key={p.i}>
+                  <circle cx={x(p.i)} cy={y(p.v)} r={5} fill={sr.color} />
+                  <text x={x(p.i)} y={y(p.v) + sr.dy} textAnchor="middle" fontSize={12} fontWeight={900} fill={sr.color}>{p.v.toFixed(1)}</text>
+                </g>
+              ))}
+            </g>
+          );
+        })}
+        {rows.map((r, i) => (
+          <text key={r.weekKey} x={x(i)} y={top + plotH + 20} textAnchor="middle" fontSize={12} fontWeight={800} fill={WB_THEME.TXT}>
+            W{r.weekKey.replace(/^\d{4}-W/, '')}
+          </text>
+        ))}
+      </svg>
+      <div className="flex justify-center gap-4 text-xs font-bold" style={{ color: WB_THEME.MUTED }}>
+        <span><span className="inline-block w-3 h-1 align-middle mr-1" style={{ backgroundColor: WB_THEME.BLUE }} />BS OQL</span>
+        <span><span className="inline-block w-3 h-1 align-middle mr-1" style={{ backgroundColor: WB_THEME.ORANGE }} />NFL AQC</span>
+      </div>
     </div>
   );
 };
@@ -1851,11 +1845,11 @@ const HorizontalRankBars: React.FC<{
         const pct = Math.min(100, Math.max(6, Math.round((r.value / computedMax) * 100)));
         return (
           <div key={r.label} className="flex items-center gap-2 text-xs">
-            <span className="w-20 font-black truncate text-[11px]">{r.label}</span>
-            <div className="flex-1 h-3 rounded bg-[#0A1522] overflow-hidden">
+            <span className="w-28 shrink-0 font-black text-[11px] leading-tight break-words">{r.label}</span>
+            <div className="flex-1 h-3 rounded bg-[var(--wb-bg)] overflow-hidden">
               <div style={{ width: `${pct}%`, backgroundColor: r.color }} className="h-full rounded" />
             </div>
-            <span style={{ color: r.color }} className="w-16 text-right font-black text-[11px]">
+            <span style={{ color: r.color }} className="w-20 shrink-0 text-right font-black text-[11px] whitespace-nowrap">
               {r.text}
             </span>
           </div>
@@ -1886,11 +1880,11 @@ const OpenStoppagesList: React.FC<{
             style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.RED }}
             className="p-2 rounded border-l-4 flex items-center justify-between text-xs"
           >
-            <div className="truncate pr-2">
+            <div className="pr-2 min-w-0">
               <div className="font-black">
-                Line {inc.lineId} · {inc.category.replace(/_/g, ' ')}
+                {lineDisplayName(inc.lineId)} · {inc.category.replace(/_/g, ' ')}
               </div>
-              <div style={{ color: WB_THEME.MUTED }} className="text-[10px] truncate">
+              <div style={{ color: WB_THEME.MUTED }} className="text-[10px] break-words">
                 {inc.description}
               </div>
             </div>

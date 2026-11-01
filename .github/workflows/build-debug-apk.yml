@@ -51,6 +51,26 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
 
+      - name: Set up Node.js 20 for Web Dashboard
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web-dashboard-and-mobile/package-lock.json
+
+      - name: Install and build Firebase-connected Web Dashboard
+        working-directory: web-dashboard-and-mobile
+        env:
+          NODE_ENV: production
+        run: |
+          npm ci
+          npm run build
+
+      - name: Sync Web Dashboard bundle into Android APK assets
+        run: |
+          mkdir -p app/src/main/assets/webapp
+          cp -R web-dashboard-and-mobile/dist/. app/src/main/assets/webapp/
+
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 
@@ -64,19 +84,6 @@ jobs:
           path: NOS-Live-app-debug.apk
           if-no-files-found: error
           retention-days: 30
-
-      - name: Set up Node.js 20 for Web Dashboard
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: web-dashboard-and-mobile/package-lock.json
-
-      - name: Install and build Firebase-connected Web Dashboard
-        working-directory: web-dashboard-and-mobile
-        run: |
-          npm ci
-          npm run build
 
       - name: Upload Web Dashboard production bundle
         uses: actions/upload-artifact@v4

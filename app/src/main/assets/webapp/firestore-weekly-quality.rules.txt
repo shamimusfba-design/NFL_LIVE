@@ -1,0 +1,7 @@
+    // Weekly Quality (BS OQL & NFL AQC)
+    match /weekly_quality/{weekKey} {
+      allow read: if true;
+      allow create, update: if isNonEmptyString(request.resource.data.weekKey)
+        && isNonEmptyString(request.resource.data.weekStartIso);
+      allow delete: if true;
+    }

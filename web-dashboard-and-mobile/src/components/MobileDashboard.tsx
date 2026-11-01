@@ -13,7 +13,6 @@ import { HourlyWallboardBucket } from '../services/calculationEngine';
 import { TvDesktopDashboard } from './TvDesktopDashboard';
 
 interface MobileDashboardProps {
-  todayIso: string;
   selectedFloor: FloorId;
   onSelectFloor: (floor: FloorId) => void;
   selectedPeriod: PeriodId;
@@ -33,11 +32,14 @@ interface MobileDashboardProps {
   allIncidents?: IncidentRecord[];
   onOpenIncidentPanel: () => void;
   onNavigateToReports: () => void;
+  pageRequest?: { page: 'PRODUCTION' | 'QUALITY' | 'ALL' | 'TABLE'; n: number };
+  finishing?: import('../services/calculationEngine').FinishingFloorSummary[];
+  departmentSummaries?: Array<{ floor: string; units: number; target: number; output: number; achievementPct: number | null; checked: number; passed: number }>;
 }
 
 export const MobileDashboard: React.FC<MobileDashboardProps> = props => {
   return (
-    <div className="pb-16 bg-[#0A1522]">
+    <div className="pb-16 bg-[var(--wb-bg)]">
       <TvDesktopDashboard {...props} />
     </div>
   );

@@ -1,3 +1,4 @@
+import { UserAccessPanel } from './UserAccessPanel';
 import React, { useState } from 'react';
 import { LineMasterItem, UserAccount } from '../types';
 
@@ -23,6 +24,11 @@ interface AdminViewProps {
   onApproveRegistration?: (userId: string) => Promise<void>;
   onRejectRegistration?: (userId: string) => Promise<void>;
   onApproveDeviceOrTv?: (userId: string, deviceId: string, deviceName: string) => Promise<void>;
+  initialTab?: 'DEMO' | 'LINES' | 'USERS';
+  onSaveAccess?: (u: UserAccount, permissions: string[] | null, allowedLines: string[] | null) => Promise<boolean>;
+  onBlockUser?: (u: UserAccount, blocked: boolean) => Promise<boolean>;
+  onDeleteUser?: (u: UserAccount) => Promise<boolean>;
+  onSaveProfile?: (u: UserAccount, designation: string, floorKey: string) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -38,6 +44,11 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onApproveRegistration,
   onRejectRegistration,
   onApproveDeviceOrTv,
+  initialTab,
+  onSaveAccess,
+  onBlockUser,
+  onDeleteUser,
+  onSaveProfile,
   onClose
 }) => {
   const pendingRegistrations = users.filter(u => u.accountStatus === 'PENDING_APPROVAL');
@@ -49,7 +60,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const totalPendingRequests = pendingRegistrations.length + pendingDeviceOrTvUsers.length;
 
   const [adminTab, setAdminTab] = useState<'DEMO' | 'LINES' | 'USERS'>(
-    totalPendingRequests > 0 ? 'USERS' : 'DEMO'
+    initialTab ?? (totalPendingRequests > 0 ? 'USERS' : 'DEMO')
   );
   const [confirmRemoval, setConfirmRemoval] = useState(false);
   const [confirmFactoryReset, setConfirmFactoryReset] = useState(false);
@@ -354,6 +365,9 @@ export const AdminView: React.FC<AdminViewProps> = ({
           {/* TAB 3: USERS, PENDING REGISTRATIONS & TV/DEVICE REQUESTS */}
           {adminTab === 'USERS' && (
             <div className="space-y-4">
+              {onSaveAccess && onBlockUser && onDeleteUser && (
+                <UserAccessPanel users={users} lines={lines} onSaveAccess={onSaveAccess} onBlock={onBlockUser} onDelete={onDeleteUser} onSaveProfile={onSaveProfile || (async () => false)} />
+              )}
               {pendingRegistrations.length > 0 && (
                 <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-2.5 shadow-sm">
                   <div className="text-xs font-black text-amber-950">

@@ -1531,6 +1531,7 @@ class NflRepository(private val context: Context) {
     var didChange = false
     var finalSize = 0
     val newAlertsToTrigger = mutableListOf<IncidentItem>()
+    val recentAlertCutoffMillis = System.currentTimeMillis() - 30 * 60 * 1000L
     synchronized(stateLock) {
       val current = _incidents.value
       val existingNonDemoById = current.filter { !it.isDemo }.associateBy { it.id }.toMutableMap()
@@ -1543,7 +1544,13 @@ class NflRepository(private val context: Context) {
           existingNonDemoById[cleanRemote.id] = cleanRemote
           changed = true
           if (cleanRemote.status != IncidentStatus.RESOLVED) {
-            newAlertsToTrigger.add(cleanRemote)
+            if (cleanRemote.startTimeMillis >= recentAlertCutoffMillis &&
+                !alertManager.hasNotifiedIncident(cleanRemote.id)
+            ) {
+              newAlertsToTrigger.add(cleanRemote)
+            } else {
+              alertManager.markIncidentNotified(cleanRemote.id)
+            }
           }
         } else {
           val merged = cleanRemote.copy(
@@ -1565,9 +1572,12 @@ class NflRepository(private val context: Context) {
         didChange = true
       }
     }
-    newAlertsToTrigger.forEach { alert ->
-      alertManager.triggerAlertNotification(alert, _currentRole.value, _currentFloor.value)
-    }
+    newAlertsToTrigger
+      .sortedByDescending { it.startTimeMillis }
+      .take(3)
+      .forEach { alert ->
+        alertManager.triggerAlertNotification(alert, _currentRole.value, _currentFloor.value)
+      }
     if (didChange) {
       scheduleSaveIncidents()
       touchDataUpdated()
@@ -5439,7 +5449,7 @@ class NflRepository(private val context: Context) {
     touchDataUpdated()
     addAuditLog("INCIDENT", id, "ESCALATE", _currentUserName.value, reason)
     updatedItem?.let { item ->
-      alertManager.triggerAlertNotification(item, _currentRole.value, _currentFloor.value)
+      alertManager.triggerAlertNotification(item, _currentRole.value, _currentFloor.value, forceShow = true)
       firebaseSync.pushIncident(item)
       repoScope.launch { sheetsStorage.pushIncidentRow(item) }
     }

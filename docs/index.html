@@ -1,12 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <meta name="color-scheme" content="light dark" />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0A2558" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <title>NFL LIVE — Production &amp; Quality</title>
+    <!-- Tailwind CDN for rapid preview and standalone execution -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -34,14 +38,44 @@
         -webkit-tap-highlight-color: transparent;
       }
     </style>
-    <script type="module" crossorigin src="./assets/index-BQeQ-8tU.js"></script>
-  </head>
+  <style>.nfl-scroll{scrollbar-width:thin;scrollbar-color:#2B4A70 #0E1B2D}.nfl-scroll::-webkit-scrollbar{height:9px}.nfl-scroll::-webkit-scrollbar-track{background:#0E1B2D;border-radius:6px}.nfl-scroll::-webkit-scrollbar-thumb{background:#2B4A70;border-radius:6px}</style>
+<script>try{var q=new URLSearchParams(location.search).get("theme");var d=new URLSearchParams(location.search).get("defaultTheme");var t=(q==="light"||q==="dark")?q:(localStorage.getItem("nfl_theme")||d);if(q==="light"||q==="dark"){localStorage.setItem("nfl_theme",q)}document.documentElement.setAttribute("data-theme",t==="light"?"light":"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}</script>
+<style>
+input,select,textarea{background-color:#ffffff !important;color:#0F172A !important;border-color:#94A3B8;max-width:100%;box-sizing:border-box}
+@media (max-width:640px){input,select,textarea{font-size:16px !important;min-height:42px}button{min-height:36px}}
+:root,[data-theme="dark"]{
+  color-scheme: dark;
+  --wb-bg:#0A1522;--wb-panel:#101E30;--wb-line:#1B2E45;--wb-txt:#EAF0F7;--wb-muted:#8FA3B8;
+  --wb-red:#FF6B6B;--wb-amber:#F5B73B;--wb-green:#3DD68C;--wb-blue:#5AA9FF;--wb-orange:#F59E6B;--wb-grey:#7C8B9E;--wb-dim:#2A4560;
+  --wb-deep:#031225;--wb-red-bg:#3B0A0A;--wb-green-bg:#052E22;--wb-amber-bg:#3B2A00;--wb-orange-bg:#3B1A00;--wb-slate-bg:#0F172A;
+  --shell-side:#0B1A2C;--shell-side-txt:#E2E8F0;--shell-line:#1B2E45;--shell-hover:#12263C;--shell-btn:#12263C;
+  --wb-on-selected:#031225;--wb-on-green:#052E22;--wb-on-amber:#3B2A00;--wb-on-red:#3B0A0A;--wb-on-orange:#3B1A00;--wb-on-grey:#0F172A;
+  --shell-top:rgba(11,26,44,.96);--shell-top-txt:#FFFFFF;--shell-top-btn:#12263C;--shell-top-line:#1B2E45;
+}
+[data-theme="light"]{
+  color-scheme: light;
+  --wb-bg:#EAF1FA;--wb-panel:#FFFFFF;--wb-line:#D3DFEE;--wb-txt:#0F2740;--wb-muted:#4F637B;
+  --wb-red:#D63A3F;--wb-amber:#B86E00;--wb-green:#0D8A55;--wb-blue:#1A62D6;--wb-orange:#CC4E0A;--wb-grey:#6E7F96;--wb-dim:#D5E0EE;
+  --wb-deep:#FFFFFF;--wb-red-bg:#FFFFFF;--wb-green-bg:#FFFFFF;--wb-amber-bg:#FFFFFF;--wb-orange-bg:#FFFFFF;--wb-slate-bg:#FFFFFF;
+  --shell-side:#0A2558;--shell-side-txt:#E8F0FF;--shell-line:#1B3F86;--shell-hover:#133A82;--shell-btn:#133A82;
+  --wb-on-selected:#FFFFFF;--wb-on-green:#FFFFFF;--wb-on-amber:#FFFFFF;--wb-on-red:#FFFFFF;--wb-on-orange:#FFFFFF;--wb-on-grey:#FFFFFF;
+  --shell-top:rgba(255,255,255,.97);--shell-top-txt:#0F2740;--shell-top-btn:#E6EEF9;--shell-top-line:#D3DFEE;
+}
+body{background:var(--wb-bg)}
+[data-theme="light"] [style*="var(--wb-panel)"]{box-shadow:0 1px 3px rgba(15,39,64,.10),0 6px 16px rgba(15,39,64,.06)}
+[data-theme="light"] body{background:linear-gradient(180deg,#DDE9F8 0%,#F1F6FC 100%)}
+.nfl-scroll{scrollbar-width:thin;scrollbar-color:var(--wb-dim) transparent}
+</style>
+  <script type="module" crossorigin src="./assets/index-Wavwepal.js"></script>
+</head>
   <body>
     <div id="root"></div>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js').catch(() => {});
+          navigator.serviceWorker.register('./sw.js').then(reg => {
+            reg.update().catch(() => {});
+          }).catch(() => {});
         });
       }
     </script>

@@ -5,6 +5,9 @@ import {
   signInWithPopup,
   signInWithCustomToken,
   signInWithEmailAndPassword,
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut as firebaseSignOut,
   Auth,
   User as FirebaseUser
@@ -14,6 +17,7 @@ import {
   collection,
   doc,
   setDoc,
+  deleteDoc,
   getDocs,
   writeBatch,
   onSnapshot,
@@ -31,7 +35,9 @@ import {
   IncidentRecord,
   UserAccount,
   WeeklyQualityRecord,
-  MonthlyTargetConfig
+  MonthlyTargetConfig,
+  FloorManpowerRecord,
+  AlertComment
 } from '../types';
 import { normalizeHourSlot24h } from '../data/masterData';
 
@@ -104,6 +110,7 @@ export async function bindFirebaseUidToEmployee(uid: string, employeeId: string,
       doc(db, 'auth_bindings', uid),
       {
         uid,
+        firebaseUid: uid,
         employeeId: cleanId,
         email,
         boundAtMillis: now,
@@ -125,6 +132,231 @@ export async function signOutWebCloudSession(): Promise<void> {
     await firebaseSignOut(auth);
   } catch (e) {
     console.warn('signOutWebCloudSession notice:', e);
+  }
+}
+
+/** The hidden Firebase e-mail of an employee. Same rule as the Android app. It is never shown and never receives mail. */
+export function employeeEmail(employeeId: string): string {
+  return `${employeeId.trim().toLowerCase()}@staff.nfl-live.app`;
+}
+
+export type EmployeeAuthOutcome =
+  | { ok: true; user: FirebaseUser }
+  | { ok: false; message: string; alreadyExists?: boolean };
+
+function describeAuthError(err: any, whenCreating: boolean): EmployeeAuthOutcome {
+  const code = String(err?.code || '');
+  if (code === 'auth/network-request-failed') return { ok: false, message: 'No internet connection. This needs internet.' };
+  if (code === 'auth/too-many-requests') return { ok: false, message: 'Too many attempts. Wait a few minutes and try again.' };
+  if (whenCreating && code === 'auth/email-already-in-use') {
+    return { ok: false, alreadyExists: true, message: 'This Employee ID already has an account. Sign in instead. If you forgot the password, ask the Administrator.' };
+  }
+  if (whenCreating && code === 'auth/weak-password') return { ok: false, message: 'The password is too weak. Use at least 6 characters.' };
+  if (whenCreating) return { ok: false, message: 'Could not create the account. Check the internet and try again.' };
+  const wrongCredential = ['auth/invalid-credential', 'auth/wrong-password', 'auth/user-not-found', 'auth/invalid-login-credentials', 'auth/invalid-email'];
+  if (wrongCredential.includes(code)) return { ok: false, message: 'Employee ID or password is not correct.' };
+  if (code === 'auth/user-disabled') return { ok: false, message: 'This account has been disabled. Please contact the Administrator.' };
+  // Anything else is NOT a wrong password: show the real reason so it can be fixed.
+  return { ok: false, message: `Sign-in could not be completed (${code || 'unknown error'}).` };
+}
+
+/** Employee ID + password, checked by Firebase. An e-mail address (owner) is used as typed. */
+export async function signInWebEmployee(idOrEmail: string, password: string): Promise<EmployeeAuthOutcome> {
+  const auth = getFirebaseAuth();
+  if (!auth) return { ok: false, message: 'Cloud sign-in is not available. Check the internet connection.' };
+  const input = idOrEmail.trim();
+  const email = input.includes('@') ? input : employeeEmail(input);
+  try {
+    const cred = await signInWithEmailAndPassword(auth, email, password.trim());
+    return { ok: true, user: cred.user };
+  } catch (err: any) {
+    return describeAuthError(err, false);
+  }
+}
+
+/**
+ * Sends a password-reset link to a real e-mail address (the project owner / Administrator).
+ * Employee accounts have no mailbox: for them the Administrator resets the account.
+ */
+export async function sendOwnerPasswordReset(email: string): Promise<{ ok: boolean; message: string }> {
+  const auth = getFirebaseAuth();
+  if (!auth) return { ok: false, message: 'Cloud is not available. Check the internet connection.' };
+  const clean = email.trim();
+  if (!clean.includes('@')) return { ok: false, message: 'Type your e-mail address in the Employee ID box first.' };
+  try {
+    await sendPasswordResetEmail(auth, clean);
+    return { ok: true, message: 'If this e-mail has an account, a password reset link was sent. Check your inbox and spam folder.' };
+  } catch (err: any) {
+    const code = String(err?.code || '');
+    if (code === 'auth/invalid-email') return { ok: false, message: 'That e-mail address is not valid.' };
+    if (code === 'auth/network-request-failed') return { ok: false, message: 'No internet connection. Try again.' };
+    return { ok: false, message: 'Could not send the reset link. Try again later.' };
+  }
+}
+
+/** Creates the Firebase account of a new employee. It has no access until the Administrator approves it. */
+export async function createWebEmployeeAccount(employeeId: string, password: string): Promise<EmployeeAuthOutcome> {
+  const auth = getFirebaseAuth();
+  if (!auth) return { ok: false, message: 'Cloud sign-in is not available. Check the internet connection.' };
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, employeeEmail(employeeId), password.trim());
+    return { ok: true, user: cred.user };
+  } catch (err: any) {
+    return describeAuthError(err, true);
+  }
+}
+
+/** Resolves with the signed-in Firebase user (the browser remembers the sign-in) or null. Waits up to 12 seconds on a slow phone. */
+export function waitForAuthReady(): Promise<FirebaseUser | null> {
+  const auth = getFirebaseAuth();
+  if (!auth) return Promise.resolve(null);
+  return new Promise(resolve => {
+    let done = false;
+    const finish = (u: FirebaseUser | null) => { if (!done) { done = true; resolve(u); } };
+    const unsubscribe = onAuthStateChanged(auth, u => { unsubscribe(); finish(u); }, () => finish(null));
+    setTimeout(() => finish(null), 12000);
+  });
+}
+
+export type RestoreResult =
+  | { status: 'none' }                                   // nobody was signed in
+  | { status: 'denied'; reason: string }                 // signed in, but not (or no longer) an approved, active employee
+  | { status: 'error'; uid: string }                     // could not check because of the network: do NOT sign the person out
+  | { status: 'ok'; uid: string; rec: Record<string, any> };
+
+/**
+ * Brings back the person who is still signed in from an earlier visit, so nobody has to sign in again and again.
+ * The record is checked again (approved, active, same account). A network problem never counts as "signed out".
+ */
+export async function restoreWebSession(): Promise<RestoreResult> {
+  const user = await waitForAuthReady();
+  if (!user) return { status: 'none' };
+  const db = getDb();
+  if (!db) return { status: 'error', uid: user.uid };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const binding = await getDoc(doc(db, 'auth_bindings', user.uid));
+      const employeeId = binding.exists() ? String((binding.data() as any).employeeId || '') : '';
+      if (!employeeId) return { status: 'denied', reason: 'This sign-in is not linked to an Employee ID yet.' };
+      const rec = await fetchOwnUserRecord(employeeId);
+      if (rec === undefined) throw new Error('record could not be read');
+      if (!rec) return { status: 'denied', reason: `No registration found for Employee ID ${employeeId}.` };
+      // Same rule as the sign-in screen: a record without a stored uid is accepted, a record of a different account is not.
+      if (rec.firebaseUid && rec.firebaseUid !== user.uid) return { status: 'denied', reason: 'This Employee ID belongs to a different account.' };
+      if (String(rec.accountStatus || '') !== 'APPROVED' || rec.isActive === false) {
+        return { status: 'denied', reason: 'This account is not approved or is not active.' };
+      }
+      return { status: 'ok', uid: user.uid, rec };
+    } catch (e) {
+      console.warn('restoreWebSession attempt notice:', e);
+      await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+    }
+  }
+  return { status: 'error', uid: user.uid };
+}
+
+export function currentFirebaseUid(): string {
+  return getFirebaseAuth()?.currentUser?.uid || '';
+}
+
+/** Reads one user record: undefined = could not read, null = no such record. */
+export async function fetchOwnUserRecord(employeeId: string): Promise<Record<string, any> | null | undefined> {
+  const db = getDb();
+  if (!db) return undefined;
+  try {
+    const snap = await getDoc(doc(db, 'users', employeeId.trim().replace(/\//g, '_')));
+    return snap.exists() ? (snap.data() as Record<string, any>) : null;
+  } catch (e) {
+    console.warn('fetchOwnUserRecord notice:', e);
+    return undefined;
+  }
+}
+
+/** Creates the Administrator record 1015198. The cloud rules allow this only for the project owner's Firebase account. */
+export async function bootstrapOwnerAdminRecord(uid: string, email: string): Promise<Record<string, any> | null> {
+  const db = getDb();
+  if (!db || !uid) return null;
+  const now = Date.now();
+  const rec: Record<string, any> = {
+    id: '1015198', employeeId: '1015198', name: 'Administrator', password: '', passwordHash: '', passwordSalt: '',
+    designation: 'Admin', department: 'Administration', requestedDesignation: 'Admin', requestedFloor: 'SEW_1',
+    role: 'ADMIN', floor: 'SEW_1', assignedFloor: 'All Floor', authorizedFloorScope: 'ALL', assignedLine: 'All',
+    isActive: true, accountStatus: 'APPROVED', isAdmin: true, mustChangePassword: false,
+    activeSessionId: '', authorizedDeviceId: '', authorizedDeviceName: '', rejectionReason: '',
+    createdAtMillis: now, updatedAtMillis: now, approvedBy: 'owner', approvedAtMillis: now,
+    firebaseUid: uid, googleEmail: email, fcmToken: '', fcmDeviceId: '', fcmUpdatedAtMillis: 0,
+    canViewDashboard: true, canViewTvDashboard: true, canViewMonthlyEfficiency: true, canViewMonthlyDhu: true,
+    canViewMonthlyOql: true, canViewLineDeepDive: true, canViewAuditLogs: true, canExportReports: true,
+    canProductionWrite: true, canFinishingWrite: true, canQualityWrite: true, canOqlWrite: true,
+    canNptWrite: true, canMorningTargetWrite: true, canMonthlyTargetWrite: true, canTargetRevisionWrite: true,
+    isDeleted: false
+  };
+  try {
+    await setDoc(doc(db, 'users', '1015198'), rec);
+    return rec;
+  } catch (e) {
+    console.warn('bootstrapOwnerAdminRecord notice:', e);
+    return null;
+  }
+}
+
+export interface WebRegistrationInput {
+  employeeId: string;
+  name: string;
+  designationName: string;     // e.g. "Production Supervisor"
+  department: string;
+  role: string;                // role name chosen by the designation policy, e.g. SUPERVISOR
+  physicalFloor: string | 'FINISHING';
+  scopeName: string;           // FloorScope name, e.g. SEW_2 or ALL
+  scopeDisplay: string;        // e.g. "Sew 2" or "All Floor"
+}
+
+/** Writes the pending user record and the approval request. Must be called while signed in as the new account. */
+export async function submitWebRegistration(input: WebRegistrationInput): Promise<{ ok: boolean; message: string }> {
+  const db = getDb();
+  const uid = currentFirebaseUid();
+  if (!db || !uid) return { ok: false, message: 'You are not signed in to the cloud. Please try again.' };
+  const id = input.employeeId.trim();
+  const docId = id.replace(/\//g, '_');
+  const now = Date.now();
+  try {
+    await setDoc(doc(db, 'users', docId), {
+      id, employeeId: id, name: input.name.trim(), password: '', passwordHash: '', passwordSalt: '',
+      designation: input.designationName, department: input.department, requestedDesignation: input.designationName,
+      requestedFloor: input.physicalFloor, role: input.role, floor: input.physicalFloor,
+      assignedFloor: input.scopeDisplay, authorizedFloorScope: input.scopeName, assignedLine: 'K1',
+      isActive: false, accountStatus: 'PENDING_APPROVAL', isAdmin: false, mustChangePassword: false,
+      activeSessionId: '', authorizedDeviceId: '', authorizedDeviceName: '', rejectionReason: '',
+      createdAtMillis: now, updatedAtMillis: now, approvedBy: '', approvedAtMillis: 0,
+      firebaseUid: uid, googleEmail: '', fcmToken: '', fcmDeviceId: '', fcmUpdatedAtMillis: 0,
+      canViewDashboard: true, canViewTvDashboard: true, canViewMonthlyEfficiency: true, canViewMonthlyDhu: true,
+      canViewMonthlyOql: true, canViewLineDeepDive: true, canViewAuditLogs: false, canExportReports: false,
+      canProductionWrite: false, canFinishingWrite: false, canQualityWrite: false, canOqlWrite: false,
+      canNptWrite: false, canMorningTargetWrite: false, canMonthlyTargetWrite: false, canTargetRevisionWrite: false,
+      isDeleted: false
+    });
+    const requestId = `REG_${id}`;
+    await setDoc(doc(db, 'registration_requests', requestId), {
+      requestId, employeeId: id, name: input.name.trim(), requestedRole: input.role,
+      assignedFloor: input.scopeDisplay, department: input.department, status: 'PENDING',
+      requestedByUid: uid, createdAtMillis: now, updatedAtMillis: now
+    }, { merge: true });
+    const notifId = `NOTIF_${requestId}`;
+    await setDoc(doc(db, 'admin_notifications', notifId), {
+      notificationId: notifId, requestId, requestType: 'EMPLOYEE_REGISTRATION', targetUserId: id,
+      title: 'New Employee Registration',
+      summary: `${input.name.trim()} (ID: ${id}) • ${input.designationName} • ${input.scopeDisplay}`,
+      requestedRoleOrDevice: input.designationName, requestedFloor: input.scopeDisplay,
+      status: 'PENDING', createdByUid: uid, createdAtMillis: now
+    }, { merge: true });
+    return { ok: true, message: `Registration submitted for Employee ID ${id}. Waiting for Admin approval.` };
+  } catch (e: any) {
+    console.warn('submitWebRegistration notice:', e);
+    const code = String(e?.code || '');
+    if (code === 'permission-denied') {
+      return { ok: false, message: 'This Employee ID is already registered. Ask the Administrator.' };
+    }
+    return { ok: false, message: 'Could not send the registration. Check the internet and try again.' };
   }
 }
 
@@ -168,6 +400,9 @@ export interface LiveCloudCallbacks {
   onSetupsUpdated?: (records: LineTargetConfig[]) => void;
   onSetupUpdate?: (records: LineTargetConfig[]) => void;
   onWeeklyQualityUpdated?: (records: WeeklyQualityRecord[]) => void;
+  onFloorManpowerUpdated?: (records: FloorManpowerRecord[]) => void;
+  onAlertCommentsUpdated?: (records: AlertComment[]) => void;
+  onDemoModeUpdated?: (enabled: boolean) => void;
   onWeeklyQualityUpdate?: (records: WeeklyQualityRecord[]) => void;
   onMonthlyTargetsUpdated?: (records: MonthlyTargetConfig[]) => void;
   onMonthlyTargetsUpdate?: (records: MonthlyTargetConfig[]) => void;
@@ -194,50 +429,29 @@ export interface CloudLoginUser {
   mustChangePassword: boolean;
 }
 
-const AUTHORIZED_ADMIN_EMAILS = ['shamim.usfba@gmail.com', 'shamim.sustipe15@gmail.com'];
-
 export async function fetchCloudLoginUser(employeeId: string): Promise<CloudLoginUser | null> {
   const db = getDb();
   if (!db) throw new Error('Cloud is not reachable. Check the internet connection.');
   const clean = employeeId.trim().replace(/\//g, '_');
   if (!clean) return null;
-  const lower = clean.toLowerCase();
-  const candidates = Array.from(
-    new Set(
-      AUTHORIZED_ADMIN_EMAILS.includes(lower)
-        ? [clean, lower, '1015198']
-        : [clean, lower]
-    )
-  );
-  for (const candidate of candidates) {
+  for (const candidate of Array.from(new Set([clean, clean.toLowerCase()]))) {
     const snap = await getDoc(doc(db, 'users', candidate));
     if (snap.exists()) {
       const d = snap.data();
       return {
         id: String(d.id || snap.id),
         name: String(d.name || snap.id),
-        role: String(d.role || 'ADMIN'),
+        role: String(d.role || ''),
         floor: String(d.authorizedFloorScope || d.floor || 'ALL'),
         passwordHash: String(d.passwordHash || ''),
         passwordSalt: String(d.passwordSalt || ''),
-        accountStatus: String(d.accountStatus || 'APPROVED'),
+        accountStatus: String(d.accountStatus || ''),
         isActive: d.isActive !== false,
         mustChangePassword: d.mustChangePassword === true
       };
     }
   }
   return null;
-}
-
-export async function verifyFirebaseEmailLogin(email: string, password: string): Promise<boolean> {
-  const auth = getFirebaseAuth();
-  if (!auth) return false;
-  try {
-    const cred = await signInWithEmailAndPassword(auth, email.trim(), password.trim());
-    return Boolean(cred.user);
-  } catch {
-    return false;
-  }
 }
 
 function sha256FallbackHex(ascii: string): string {
@@ -497,10 +711,11 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
               buyer: String(data.buyer || 'NFL Global'),
               styleNumber: String(data.itemName || data.styleNumber || ''),
               smv: Number(data.smv || 0),
-              operatorsCount: Number(data.operatorsCount || 20),
-              machinesCount: Number(data.machinesCount || 20),
-              helpersCount: Number(data.helpersCount || 2),
-              includeHelpersInEfficiency: Boolean(data.includeHelpersInEfficiency),
+              operatorsCount: Number(data.operatorsCount ?? 0),
+              machinesCount: Number(data.machinesCount ?? 0),
+              helpersCount: Number(data.helpersCount ?? 0),
+              finishingStaffCount: Number(data.finishingStaffCount ?? 0),
+              includeHelpersInEfficiency: true,
               workingHoursSoFar: Number(data.workingHoursSoFar || 7),
               totalShiftHours: Number(data.totalShiftHours || 8),
               isDemo: false
@@ -514,6 +729,67 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
     );
 
     // 5. Weekly BS OQL & NFL AQC
+    unsubscribers.push(
+      onSnapshot(
+        doc(db, 'app_settings', 'demo'),
+        snap => callbacks.onDemoModeUpdated?.(snap.exists() && snap.data()?.enabled === true),
+        () => {}
+      )
+    );
+
+    const commentsQ = query(collection(db, 'alert_comments'), orderBy('createdMillis', 'desc'), limit(600));
+    unsubscribers.push(
+      onSnapshot(
+        commentsQ,
+        snap => {
+          const list: AlertComment[] = [];
+          snap.forEach(d => {
+            const data = d.data();
+            if (!data.targetId || !data.text) return;
+            list.push({
+              id: d.id,
+              targetId: String(data.targetId),
+              parentId: data.parentId ? String(data.parentId) : null,
+              authorId: String(data.authorId || ''),
+              authorName: String(data.authorName || ''),
+              authorRole: String(data.authorRole || ''),
+              text: String(data.text),
+              createdMillis: Number(data.createdMillis || 0)
+            });
+          });
+          callbacks.onAlertCommentsUpdated?.(list);
+        },
+        () => {}
+      )
+    );
+
+    const floorMpQ = query(collection(db, 'floor_manpower'), orderBy('date', 'desc'), limit(30));
+    unsubscribers.push(
+      onSnapshot(
+        floorMpQ,
+        snap => {
+          const list: FloorManpowerRecord[] = [];
+          snap.forEach(d => {
+            const data = d.data();
+            if (!data.floor || !data.date) return;
+            list.push({
+              floor: data.floor as any,
+              date: String(data.date),
+              totalMachines: Number(data.totalMachines || 0),
+              machinesRunning: Number(data.machinesRunning || 0),
+              operatorsPresent: Number(data.operatorsPresent || 0),
+              helpersPresent: Number(data.helpersPresent || 0),
+              operatorsOnHandwork: Number(data.operatorsOnHandwork || 0),
+              updatedBy: String(data.updatedBy || ''),
+              updatedMillis: Number(data.updatedMillis || 0)
+            });
+          });
+          callbacks.onFloorManpowerUpdated?.(list);
+        },
+        () => {}
+      )
+    );
+
     const weeklyQ = query(collection(db, 'weekly_quality'), limit(100));
     unsubscribers.push(
       onSnapshot(
@@ -585,7 +861,13 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
                 ? 'Sew 2'
                 : rawFloor.toUpperCase().includes('SEW_3') || rawFloor === 'Sew 3'
                 ? 'Sew 3'
-                : 'All';
+                : /cut/i.test(rawFloor)
+                ? 'Cutting'
+                : /print/i.test(rawFloor)
+                ? 'Print'
+                : /emb/i.test(rawFloor)
+                ? 'Embroidery'
+                : 'Factory';
             list.push({
               id,
               name: String(data.name || id),
@@ -599,6 +881,9 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
               isActive: data.isActive !== false,
               authorizedDeviceId: String(data.authorizedDeviceId || ''),
               authorizedDeviceName: String(data.authorizedDeviceName || ''),
+              permissions: Array.isArray(data.permissions) ? data.permissions.map(String) : null,
+              allowedLines: Array.isArray(data.allowedLines) ? data.allowedLines.map(String) : null,
+              firebaseUid: String(data.firebaseUid || ''),
               rejectionReason: String(data.rejectionReason || ''),
               updatedAtMillis: Number(data.updatedAtMillis || 0)
             });
@@ -814,6 +1099,43 @@ export async function pushIncidentToCloud(inc: IncidentRecord): Promise<boolean>
   }
 }
 
+export async function pushDemoModeToCloud(enabled: boolean, by: string): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    await setDoc(doc(db, 'app_settings', 'demo'), { enabled, updatedBy: by, updatedMillis: Date.now() });
+    return true;
+  } catch (err) {
+    console.warn('pushDemoModeToCloud error:', err);
+    return false;
+  }
+}
+
+export async function pushAlertCommentToCloud(c: AlertComment): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    await setDoc(doc(db, 'alert_comments', c.id), { ...c });
+    return true;
+  } catch (err) {
+    console.warn('pushAlertCommentToCloud error:', err);
+    return false;
+  }
+}
+
+export async function pushFloorManpowerToCloud(e: FloorManpowerRecord): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    const docId = `${e.floor.trim().replace(/ /g, '_')}_${e.date}`;
+    await setDoc(doc(db, 'floor_manpower', docId), { ...e }, { merge: true });
+    return true;
+  } catch (err) {
+    console.warn('pushFloorManpowerToCloud error:', err);
+    return false;
+  }
+}
+
 export async function pushSetupToCloud(setup: LineTargetConfig): Promise<boolean> {
   const db = getDb();
   if (!db) return false;
@@ -835,7 +1157,9 @@ export async function pushSetupToCloud(setup: LineTargetConfig): Promise<boolean
         operatorsCount: setup.operatorsCount,
         machinesCount: setup.machinesCount,
         helpersCount: setup.helpersCount,
-        includeHelpersInEfficiency: setup.includeHelpersInEfficiency,
+        finishingStaffCount: setup.finishingStaffCount ?? 0,
+        workingMinutesPerHour: 60,
+        includeHelpersInEfficiency: true,
         workingHoursSoFar: setup.workingHoursSoFar,
         totalShiftHours: setup.totalShiftHours,
         snapshotTimestamp: Date.now()
@@ -877,6 +1201,73 @@ export async function purgeAllOperationalCloudRecords(): Promise<number> {
     }
   }
   return totalDeleted;
+}
+
+/** Admin: which entry modules and lines a person may use (null = role defaults / all lines). */
+export async function updateCloudUserAccess(
+  userId: string,
+  access: { permissions: string[] | null; allowedLines: string[] | null },
+  by: string
+): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    await setDoc(
+      doc(db, 'users', userId),
+      { permissions: access.permissions, allowedLines: access.allowedLines, accessUpdatedBy: by, updatedAtMillis: Date.now() },
+      { merge: true }
+    );
+    return true;
+  } catch (e) {
+    console.warn('updateCloudUserAccess error:', e);
+    return false;
+  }
+}
+
+/** Admin: correct a person's designation, department, role and floor (e.g. registered under the wrong one). */
+export async function updateCloudUserProfile(userId: string, fields: Record<string, string>, by: string): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    await setDoc(doc(db, 'users', userId), { ...fields, profileUpdatedBy: by, updatedAtMillis: Date.now() }, { merge: true });
+    return true;
+  } catch (e) {
+    console.warn('updateCloudUserProfile error:', e);
+    return false;
+  }
+}
+
+/** Admin: block (no access at all, reversible) or unblock a person. */
+export async function setCloudUserBlocked(userId: string, blocked: boolean, by: string): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    await setDoc(
+      doc(db, 'users', userId),
+      { accountStatus: blocked ? 'SUSPENDED' : 'APPROVED', isActive: !blocked, blockedBy: blocked ? by : '', updatedAtMillis: Date.now() },
+      { merge: true }
+    );
+    return true;
+  } catch (e) {
+    console.warn('setCloudUserBlocked error:', e);
+    return false;
+  }
+}
+
+/** Admin: delete a person. Their record and sign-in link are removed, so they have no access. */
+export async function deleteCloudUser(userId: string, firebaseUid?: string): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    await deleteDoc(doc(db, 'users', userId));
+  } catch (e) {
+    console.warn('deleteCloudUser error:', e);
+    return false;
+  }
+  if (firebaseUid) {
+    try { await deleteDoc(doc(db, 'auth_bindings', firebaseUid)); } catch {}
+  }
+  return true;
 }
 
 export async function approveCloudUserRegistration(

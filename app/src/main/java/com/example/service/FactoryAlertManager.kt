@@ -9,9 +9,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
-import android.media.AudioManager
 import android.media.RingtoneManager
-import android.media.ToneGenerator
 import android.os.Build
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -19,14 +17,12 @@ import androidx.core.app.NotificationManagerCompat
 import com.example.MainActivity
 import com.example.R
 import com.example.model.*
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.TimeZone
+import java.util.concurrent.atomic.AtomicLong
 
 enum class FactorySoundMode(val label: String) {
   SOUND_ON("Sound ON"),
@@ -47,7 +43,9 @@ class FactoryAlertManager(private val context: Context) {
   private val notificationManager =
     context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-  private var activeToneGenerator: ToneGenerator? = null
+  private val alarmLock = Any()
+  private val lastAlarmSoundMillis = AtomicLong(0L)
+  @Volatile
   private var isTonePlaying = false
 
   private val _soundMode = MutableStateFlow(loadSoundMode())
@@ -75,6 +73,8 @@ class FactoryAlertManager(private val context: Context) {
     private const val PREF_SOUND_MODE = "pref_sound_mode"
     private const val PREF_MUTE_UNTIL = "pref_mute_until_millis"
     private const val PREF_NOTIFIED_REQUEST_IDS = "notified_request_ids"
+    private const val PREF_NOTIFIED_INCIDENT_IDS = "notified_incident_ids"
+    private const val ALARM_THROTTLE_MS = 2_500L
   }
 
   init {
@@ -151,24 +151,54 @@ class FactoryAlertManager(private val context: Context) {
 
   fun hasNotifiedRequest(requestId: String): Boolean {
     if (requestId.isBlank()) return false
-    val set = dedupPrefs.getStringSet(PREF_NOTIFIED_REQUEST_IDS, emptySet()) ?: emptySet()
-    return requestId in set
+    synchronized(alarmLock) {
+      val set = dedupPrefs.getStringSet(PREF_NOTIFIED_REQUEST_IDS, emptySet()) ?: emptySet()
+      return requestId in set
+    }
   }
 
   fun markRequestNotified(requestId: String) {
     if (requestId.isBlank()) return
-    val current = dedupPrefs.getStringSet(PREF_NOTIFIED_REQUEST_IDS, emptySet())?.toMutableSet()
-      ?: mutableSetOf()
-    current.add(requestId)
-    dedupPrefs.edit().putStringSet(PREF_NOTIFIED_REQUEST_IDS, current).apply()
+    synchronized(alarmLock) {
+      val current = dedupPrefs.getStringSet(PREF_NOTIFIED_REQUEST_IDS, emptySet())?.toMutableSet()
+        ?: mutableSetOf()
+      current.add(requestId)
+      dedupPrefs.edit().putStringSet(PREF_NOTIFIED_REQUEST_IDS, current).apply()
+    }
   }
 
   fun clearRequestNotified(requestId: String) {
     if (requestId.isBlank()) return
-    val current = dedupPrefs.getStringSet(PREF_NOTIFIED_REQUEST_IDS, emptySet())?.toMutableSet()
-      ?: mutableSetOf()
-    if (current.remove(requestId)) {
-      dedupPrefs.edit().putStringSet(PREF_NOTIFIED_REQUEST_IDS, current).apply()
+    synchronized(alarmLock) {
+      val current = dedupPrefs.getStringSet(PREF_NOTIFIED_REQUEST_IDS, emptySet())?.toMutableSet()
+        ?: mutableSetOf()
+      if (current.remove(requestId)) {
+        dedupPrefs.edit().putStringSet(PREF_NOTIFIED_REQUEST_IDS, current).apply()
+      }
+    }
+  }
+
+  fun hasNotifiedIncident(incidentId: String): Boolean {
+    if (incidentId.isBlank()) return false
+    synchronized(alarmLock) {
+      val set = dedupPrefs.getStringSet(PREF_NOTIFIED_INCIDENT_IDS, emptySet()) ?: emptySet()
+      return incidentId in set
+    }
+  }
+
+  fun markIncidentNotified(incidentId: String) {
+    if (incidentId.isBlank()) return
+    synchronized(alarmLock) {
+      val current = dedupPrefs.getStringSet(PREF_NOTIFIED_INCIDENT_IDS, emptySet())?.toMutableSet()
+        ?: mutableSetOf()
+      if (current.size > 500) {
+        val trimmed = current.toList().takeLast(300).toMutableSet()
+        trimmed.add(incidentId)
+        dedupPrefs.edit().putStringSet(PREF_NOTIFIED_INCIDENT_IDS, trimmed).apply()
+      } else {
+        current.add(incidentId)
+        dedupPrefs.edit().putStringSet(PREF_NOTIFIED_INCIDENT_IDS, current).apply()
+      }
     }
   }
 
@@ -257,13 +287,10 @@ class FactoryAlertManager(private val context: Context) {
   }
 
   fun silenceActiveAlarm() {
-    try {
-      activeToneGenerator?.stopTone()
-      activeToneGenerator?.release()
-      activeToneGenerator = null
-    } catch (_: Exception) {}
-    isTonePlaying = false
-    _activeAlarmSilenced.value = true
+    synchronized(alarmLock) {
+      isTonePlaying = false
+      _activeAlarmSilenced.value = true
+    }
   }
 
   fun isUserEligibleForAlert(role: UserRole, userFloor: FloorScope, incident: IncidentItem): Boolean {
@@ -313,13 +340,18 @@ class FactoryAlertManager(private val context: Context) {
   fun triggerAlertNotification(
     incident: IncidentItem,
     currentRole: UserRole,
-    userFloor: FloorScope
+    userFloor: FloorScope,
+    forceShow: Boolean = false
   ) {
+    if (!forceShow && hasNotifiedIncident(incident.id)) {
+      return
+    }
     if (!isUserEligibleForAlert(currentRole, userFloor, incident)) {
       return
     }
+    markIncidentNotified(incident.id)
 
-    // 1. Play audible tone if not sound muted
+    // 1. Update active alarm state (audible sound is managed by Android NotificationChannel)
     if (!isSoundMuted() && !incident.isSilencedOnDevice) {
       playAudibleAlarm(incident.severity)
     }
@@ -328,29 +360,18 @@ class FactoryAlertManager(private val context: Context) {
     postSystemNotification(incident)
   }
 
-  private fun playAudibleAlarm(severity: AlertSeverity) {
-    CoroutineScope(Dispatchers.Default).launch {
-      try {
-        silenceActiveAlarm()
-        _activeAlarmSilenced.value = false
-        activeToneGenerator = ToneGenerator(AudioManager.STREAM_ALARM, 95)
-        isTonePlaying = true
-
-        when (severity) {
-          AlertSeverity.CRITICAL -> {
-            activeToneGenerator?.startTone(ToneGenerator.TONE_CDMA_EMERGENCY_RINGBACK, 1200)
-          }
-          AlertSeverity.HIGH -> {
-            activeToneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP2, 800)
-          }
-          AlertSeverity.MEDIUM -> {
-            activeToneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 500)
-          }
-          AlertSeverity.LOW_INFO -> {
-            activeToneGenerator?.startTone(ToneGenerator.TONE_PROP_ACK, 300)
-          }
-        }
-      } catch (_: Exception) {}
+  private fun playAudibleAlarm(@Suppress("UNUSED_PARAMETER") severity: AlertSeverity) {
+    val now = System.currentTimeMillis()
+    val prev = lastAlarmSoundMillis.get()
+    if (now - prev < ALARM_THROTTLE_MS) {
+      return
+    }
+    if (!lastAlarmSoundMillis.compareAndSet(prev, now)) {
+      return
+    }
+    synchronized(alarmLock) {
+      _activeAlarmSilenced.value = false
+      isTonePlaying = true
     }
   }
 

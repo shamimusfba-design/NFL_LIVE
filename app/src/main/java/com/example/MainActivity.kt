@@ -97,11 +97,15 @@ class MainActivity : ComponentActivity() {
       window.decorView.isForceDarkAllowed = false
     }
     enableEdgeToEdge()
-    repository = NflRepository.getInstance(applicationContext)
-    extractApprovalDeepLink(intent)
 
     setContent {
       MyApplicationTheme(darkTheme = false) {
+        val useWebAppVersion by remember { mutableStateOf(true) }
+        if (useWebAppVersion) {
+          WebAppHostScreen()
+          return@MyApplicationTheme
+        }
+
         val currentUser by repository.currentUser.collectAsStateWithLifecycle()
         val currentRole by repository.currentRole.collectAsStateWithLifecycle()
         val currentUserName by repository.currentUserName.collectAsStateWithLifecycle()

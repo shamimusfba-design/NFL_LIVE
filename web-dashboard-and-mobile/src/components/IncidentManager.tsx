@@ -1,3 +1,6 @@
+import { AlertComment } from '../types';
+import { CommentThread } from './CommentThread';
+import { lineDisplayName, nptCategoriesFor } from '../data/masterData';
 import React, { useState, useEffect } from 'react';
 import {
   IncidentRecord,
@@ -16,6 +19,12 @@ interface IncidentManagerProps {
   onMuteDeviceAlarm: (incidentId: string) => void;
   onAcknowledgeIncident: (incidentId: string, acknowledgedBy: string) => void;
   onResolveIncident: (incidentId: string, resolvedBy: string, resolutionNote: string) => void;
+  comments?: AlertComment[];
+  onAddComment?: (targetId: string, text: string, parentId: string | null) => void;
+  /** Lines whose OQL today is above 10%. They are notifications too. */
+  highOqlLines?: Array<{ lineId: string; floor: string; oqlPct: number; checked: number; date: string }>;
+  /** A floor-bound person reports only for their own floor */
+  lockedFloor?: string | null;
   onClose: () => void;
 }
 
@@ -28,12 +37,16 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
   onMuteDeviceAlarm,
   onAcknowledgeIncident,
   onResolveIncident,
+  comments = [],
+  onAddComment,
+  highOqlLines = [],
+  lockedFloor = null,
   onClose
 }) => {
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'REPORT' | 'INBOX' | 'HISTORY'>('ACTIVE');
 
   // Form State
-  const [formFloor, setFormFloor] = useState<'Sew 1' | 'Sew 2' | 'Sew 3'>('Sew 2');
+  const [formFloor, setFormFloor] = useState<string>(lockedFloor || 'Sew 2');
   const [formLine, setFormLine] = useState('K1');
   const [formCategory, setFormCategory] = useState<IncidentCategory>('MACHINE_BREAKDOWN');
   const [formMachineRef, setFormMachineRef] = useState('SNLS-04');
@@ -80,6 +93,8 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
         return 'Production Manager / Officer';
       case 'OTHER':
         return 'Floor Supervisor';
+      default:
+        return 'Section Supervisor';
     }
   };
 
@@ -103,7 +118,7 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
     if (!formDescription.trim()) return;
 
     onReportIncident({
-      floor: formFloor,
+      floor: formFloor as any,
       lineId: formLine,
       category: formCategory,
       machineRef: formMachineRef,
@@ -208,6 +223,22 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
           {/* TAB 1: ACTIVE INCIDENTS */}
           {activeTab === 'ACTIVE' && (
             <div className="space-y-3">
+              {highOqlLines.length > 0 && (
+                <div className="space-y-2 rounded-xl border border-red-300 bg-red-50 p-3">
+                  <div className="text-sm font-black text-red-800">High OQL today (above 10%): {highOqlLines.length} line(s)</div>
+                  {highOqlLines.map(h => (
+                    <div key={h.lineId} className="rounded-lg border border-red-200 bg-white p-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="rounded bg-[#0A2558] px-2 py-0.5 text-xs font-black text-white">{lineDisplayName(h.lineId)}</span>
+                        <span className="text-xs text-slate-500">{h.floor}</span>
+                        <span className="ml-auto text-sm font-black text-red-700">OQL {h.oqlPct.toFixed(1)}%</span>
+                        <span className="text-[11px] text-slate-500">{h.checked} pcs checked</span>
+                      </div>
+                      <CommentThread targetId={`oql|${h.lineId}|${h.date}`} comments={comments} onAdd={(t, x, p) => onAddComment?.(t, x, p)} />
+                    </div>
+                  ))}
+                </div>
+              )}
               {openIncidents.length === 0 ? (
                 <div className="text-center py-12 text-slate-500">
                   <span className="text-4xl">✅</span>
@@ -240,7 +271,7 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="font-black text-sm text-slate-900">
-                                Line {inc.lineId} ({inc.floor})
+                                {lineDisplayName(inc.lineId)} ({inc.floor})
                               </span>
                               <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-800">
                                 {inc.category.replace('_', ' ')}
@@ -324,6 +355,7 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                           ⏹ Resolve & Stop Timer
                         </button>
                       </div>
+                      <CommentThread targetId={inc.id} comments={comments} onAdd={(t, x, p) => onAddComment?.(t, x, p)} />
                     </div>
                   );
                 })
@@ -343,12 +375,19 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                   <label className="block text-xs font-bold text-slate-700 mb-1">Floor</label>
                   <select
                     value={formFloor}
-                    onChange={e => setFormFloor(e.target.value as any)}
+                    disabled={!!lockedFloor}
+                    onChange={e => {
+                      const f = e.target.value;
+                      setFormFloor(f);
+                      setFormCategory(nptCategoriesFor(f)[0].id as IncidentCategory);
+                      const first = lines.find(l => l.floor === f && !/^(IRON|PACK)-/.test(l.id));
+                      if (first) setFormLine(first.id);
+                    }}
                     className="w-full text-xs font-bold border border-slate-300 rounded-lg p-2 bg-white"
                   >
-                    <option value="Sew 1">Sew 1</option>
-                    <option value="Sew 2">Sew 2</option>
-                    <option value="Sew 3">Sew 3</option>
+                    {['Sew 1', 'Sew 2', 'Sew 3', 'Cutting', 'Print', 'Embroidery'].map(f => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -363,7 +402,7 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                       .filter(l => l.floor === formFloor)
                       .map(l => (
                         <option key={l.id} value={l.id}>
-                          Line {l.id}
+                          {lineDisplayName(l.id)}
                         </option>
                       ))}
                   </select>
@@ -378,12 +417,9 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                     onChange={e => setFormCategory(e.target.value as any)}
                     className="w-full text-xs font-bold border border-slate-300 rounded-lg p-2 bg-white"
                   >
-                    <option value="MACHINE_BREAKDOWN">🔧 Machine Breakdown (→ Mechanic)</option>
-                    <option value="QUALITY_PROBLEM">🔍 Quality Problem (→ Quality Mgr)</option>
-                    <option value="LINE_BALANCING">⚖️ Line Balancing (→ IE Officer)</option>
-                    <option value="INPUT_MATERIAL">📦 Input / Material (→ Input Team)</option>
-                    <option value="LOW_PRODUCTION">📉 Low Production (→ Prod Mgr)</option>
-                    <option value="OTHER">⚠️ Other Operational</option>
+                    {nptCategoriesFor(formFloor).map(c => (
+                      <option key={c.id} value={c.id}>{c.label}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -490,7 +526,7 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                   <div key={inc.id} className="bg-white border rounded-xl p-3 shadow-sm space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="font-bold text-xs text-slate-900">
-                        Line {inc.lineId} — {inc.category}
+                        {lineDisplayName(inc.lineId)} — {inc.category}
                       </span>
                       <span className="font-mono text-xs font-bold text-red-600">
                         Elapsed: {formatElapsed(inc.startTimeMillis)}
@@ -531,7 +567,7 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                 resolvedIncidents.map(inc => (
                   <div key={inc.id} className="bg-white border border-slate-200 rounded-xl p-3 text-xs space-y-1">
                     <div className="flex justify-between font-bold text-slate-800">
-                      <span>Line {inc.lineId} ({inc.category})</span>
+                      <span>{lineDisplayName(inc.lineId)} ({inc.category})</span>
                       <span className="text-green-700">✓ Total Duration: {formatElapsed(inc.startTimeMillis, inc.endTimeMillis)}</span>
                     </div>
                     <div className="text-slate-600">{inc.description}</div>
