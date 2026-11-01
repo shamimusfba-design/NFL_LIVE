@@ -187,6 +187,104 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       .slice(-8);
   }, [weeklyQuality]);
 
+  const isDateInSelectedPeriod = (date: string) => {
+    if (!date) return false;
+    if (selectedPeriod === 'Today') return date === todayIso;
+    const d = new Date(`${date}T00:00:00Z`);
+    const t = new Date(`${todayIso}T00:00:00Z`);
+    const days = Math.round((t.getTime() - d.getTime()) / 86400000);
+    if (selectedPeriod === 'Yesterday') return days === 1;
+    if (selectedPeriod === 'Week') return days >= 0 && days <= 6;
+    return date.slice(0, 7) === todayIso.slice(0, 7);
+  };
+
+  const auditRecords = useMemo(
+    () => qualities.filter(q =>
+      isBiHourlyAuditSlot(q.hourSlot) &&
+      (selectedFloor === 'All' || q.floor === selectedFloor) &&
+      isDateInSelectedPeriod(q.date)
+    ),
+    [qualities, selectedFloor, selectedPeriod, todayIso]
+  );
+
+  const auditLineStats = useMemo(() => lineSummaries.map(line => {
+    const records = auditRecords.filter(q => q.lineId === line.lineId);
+    const pass = records.filter(q =>
+      q.checkedGarments > 0 &&
+      (q.defectiveGarments / q.checkedGarments) * 100 <= kpis.oqlCommitmentPct
+    ).length;
+    return {
+      lineId: line.lineId,
+      pass,
+      fail: records.length - pass,
+      total: records.length,
+      checked: records.reduce((sum, q) => sum + q.checkedGarments, 0)
+    };
+  }).filter(row => row.total > 0), [lineSummaries, auditRecords, kpis.oqlCommitmentPct]);
+
+  const auditTopDefects = useMemo(() => {
+    const counts: Record<string, number> = {};
+    auditRecords.forEach(q => q.defects.forEach(d => {
+      if (d.count > 0) counts[d.defectType] = (counts[d.defectType] || 0) + d.count;
+    }));
+    return Object.entries(counts)
+      .map(([label, value]) => ({ label, value, text: String(value), color: WB_THEME.RED }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+  }, [auditRecords]);
+
+  const selectedLineAuditRecords = useMemo(() =>
+    deepDiveLine ? auditRecords
+      .filter(q => q.lineId === deepDiveLine.lineId)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.hourSlot.localeCompare(b.hourSlot)) : [],
+    [auditRecords, deepDiveLine]
+  );
+
+  const selectedLineAuditByHour = useMemo(() => {
+    const grouped: Record<string, { slot: string; count: number; pass: number; fail: number; checked: number; defective: number; defects: number }> = {};
+    selectedLineAuditRecords.forEach(q => {
+      const row = grouped[q.hourSlot] || { slot: q.hourSlot, count: 0, pass: 0, fail: 0, checked: 0, defective: 0, defects: 0 };
+      const passed = q.checkedGarments > 0 &&
+        (q.defectiveGarments / q.checkedGarments) * 100 <= kpis.oqlCommitmentPct;
+      row.count += 1;
+      row.pass += passed ? 1 : 0;
+      row.fail += passed ? 0 : 1;
+      row.checked += q.checkedGarments;
+      row.defective += q.defectiveGarments;
+      row.defects += q.totalDefects;
+      grouped[q.hourSlot] = row;
+    });
+    return Object.values(grouped).sort((a, b) => a.slot.localeCompare(b.slot));
+  }, [selectedLineAuditRecords, kpis.oqlCommitmentPct]);
+
+  const selectedLineAuditTopDefects = useMemo(() => {
+    const counts: Record<string, number> = {};
+    selectedLineAuditRecords.forEach(q => q.defects.forEach(d => {
+      if (d.count > 0) counts[d.defectType] = (counts[d.defectType] || 0) + d.count;
+    }));
+    return Object.entries(counts).map(([label, value]) => ({ label, value, text: String(value), color: WB_THEME.RED }))
+      .sort((a, b) => b.value - a.value).slice(0, 5);
+  }, [selectedLineAuditRecords]);
+
+  const selectedLineIncidents = useMemo(() => {
+    if (!deepDiveLine) return [];
+    return allIncidents
+      .filter(i => i.lineId === deepDiveLine.lineId && isDateInSelectedPeriod(
+        new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(new Date(i.startTimeMillis))
+      ))
+      .sort((a, b) => b.startTimeMillis - a.startTimeMillis);
+  }, [allIncidents, deepDiveLine, selectedPeriod, todayIso]);
+
+  const selectedLineProduction = useMemo(() => deepDiveLine
+    ? productions.filter(p => p.lineId === deepDiveLine.lineId && isDateInSelectedPeriod(p.date))
+      .sort((a, b) => b.timestamp - a.timestamp)
+    : [], [productions, deepDiveLine, selectedPeriod, todayIso]);
+
+  const selectedLineHourlyQuality = useMemo(() => deepDiveLine
+    ? qualities.filter(q => q.lineId === deepDiveLine.lineId && !isBiHourlyAuditSlot(q.hourSlot) && isDateInSelectedPeriod(q.date))
+      .sort((a, b) => b.timestamp - a.timestamp)
+    : [], [qualities, deepDiveLine, selectedPeriod, todayIso]);
+
   return (
     <div
       style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.TXT }}
