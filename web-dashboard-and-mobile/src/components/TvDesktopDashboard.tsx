@@ -1376,7 +1376,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 /* ==================== SUB-COMPONENTS MATCHING WbComponents.kt ==================== */
 
 const BiHourlyAuditByLineChart: React.FC<{
-  rows: Array<{ lineId: string; pass: number; fail: number; total: number; checked: number }>;
+  rows: Array<{ lineId: string; pass: number; fail: number; unrated: number; total: number; checked: number }>;
   onSelectLine: (lineId: string) => void;
 }> = ({ rows, onSelectLine }) => {
   if (rows.length === 0) {
@@ -1393,24 +1393,28 @@ const BiHourlyAuditByLineChart: React.FC<{
         const totalHeight = Math.max(8, (row.total / maxTotal) * 100);
         const passHeight = row.total > 0 ? (row.pass / row.total) * totalHeight : 0;
         const failHeight = row.total > 0 ? (row.fail / row.total) * totalHeight : 0;
+        const unratedHeight = row.total > 0 ? (row.unrated / row.total) * totalHeight : 0;
         return (
           <button
             key={row.lineId}
             type="button"
             onClick={() => onSelectLine(row.lineId)}
             className="flex flex-col items-center justify-end min-w-[48px] flex-1 h-full hover:opacity-80"
-            title={`Line ${row.lineId}: ${row.total} audits, ${row.pass} pass, ${row.fail} fail, ${row.checked} pcs checked`}
+            title={`Line ${row.lineId}: ${row.total} audits, ${row.pass} pass, ${row.fail} fail, ${row.unrated} no result, ${row.checked} pcs checked`}
           >
             <span className="text-[10px] font-black mb-1">{row.total}</span>
             <div className="h-[105px] w-7 flex flex-col justify-end rounded-t overflow-hidden border-b" style={{ borderColor: WB_THEME.LINE }}>
               <div style={{ height: `${failHeight}%`, backgroundColor: WB_THEME.RED }} />
               <div style={{ height: `${passHeight}%`, backgroundColor: WB_THEME.GREEN }} />
+              <div style={{ height: `${unratedHeight}%`, backgroundColor: WB_THEME.GREY }} />
             </div>
             <span className="text-[10px] font-black mt-1">{row.lineId}</span>
             <span className="text-[8px] font-bold whitespace-nowrap" style={{ color: WB_THEME.MUTED }}>
               <span style={{ color: WB_THEME.GREEN }}>{row.pass}P</span>
               {' / '}
               <span style={{ color: WB_THEME.RED }}>{row.fail}F</span>
+              {' / '}
+              <span style={{ color: WB_THEME.GREY }}>{row.unrated}N</span>
             </span>
           </button>
         );
