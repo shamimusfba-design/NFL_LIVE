@@ -773,6 +773,7 @@ export default function App() {
         {activeDeviceView === 'MOBILE' ? (
           <div className="max-w-lg mx-auto min-h-screen bg-[#0A1522] shadow-xl relative border-x border-[#1B2E45]">
             <MobileDashboard
+              todayIso={todayIso}
               selectedFloor={selectedFloor}
               onSelectFloor={setSelectedFloor}
               selectedPeriod={selectedPeriod}
@@ -799,6 +800,7 @@ export default function App() {
           </div>
         ) : (
           <TvDesktopDashboard
+            todayIso={todayIso}
             selectedFloor={selectedFloor}
             onSelectFloor={setSelectedFloor}
             selectedPeriod={selectedPeriod}
