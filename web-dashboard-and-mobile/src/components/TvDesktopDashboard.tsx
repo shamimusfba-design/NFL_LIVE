@@ -1101,12 +1101,12 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
         </div>
       )}
 
-      {/* ==================== LINE DEEP DIVE MODAL (12-HOUR AM/PM SLOTS) ==================== */}
+      {/* ==================== LINE DEEP DIVE MODAL ==================== */}
       {deepDiveLine && (
-        <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-2 sm:p-4">
           <div
             style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE, color: WB_THEME.TXT }}
-            className="w-full max-w-4xl max-h-[90vh] rounded-xl border p-5 flex flex-col gap-4 overflow-y-auto shadow-2xl"
+            className="w-full max-w-6xl max-h-[96vh] rounded-xl border p-3 sm:p-5 flex flex-col gap-3 overflow-y-auto shadow-2xl"
           >
             <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: WB_THEME.LINE }}>
               <div>
@@ -1115,6 +1115,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 </h3>
                 <p style={{ color: WB_THEME.MUTED }} className="text-xs">
                   SMV {deepDiveLine.smv.toFixed(1)} · Operators {deepDiveLine.operators} · Helpers {deepDiveLine.helpers} · Daily Target {deepDiveLine.target} pcs ({deepDiveLine.hourlyTarget}/hr)
+                  · Period {selectedPeriod}
                 </p>
               </div>
               <button
@@ -1125,106 +1126,234 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
               <WbTile
-                label="EFFICIENCY"
+                label="TODAY EFFICIENCY"
                 value={deepDiveLine.efficiencyPct !== null ? `${deepDiveLine.efficiencyPct.toFixed(1)}%` : '—'}
                 color={effColor(deepDiveLine.efficiencyPct, deepDiveLine.targetEfficiencyPct)}
                 sub={`Target ${deepDiveLine.targetEfficiencyPct}%`}
+              />
+              <WbTile
+                label="MONTHLY EFFICIENCY"
+                value={deepDiveLine.monthlyEfficiencyPct > 0 ? `${deepDiveLine.monthlyEfficiencyPct.toFixed(1)}%` : '—'}
+                color={effColor(deepDiveLine.monthlyEfficiencyPct, deepDiveLine.targetEfficiencyPct)}
+                sub="Actual month production calculation"
               />
               <WbTile
                 label="OUTPUT vs TARGET"
                 value={`${deepDiveLine.output ?? 0}`}
                 unit={`/ ${deepDiveLine.target}`}
                 color={achColor(deepDiveLine.achievementPct)}
-                sub={`Achieve ${deepDiveLine.achievementPct ?? 0}%`}
+                sub={`Achievement ${deepDiveLine.achievementPct ?? 0}%`}
               />
               <WbTile
-                label="DAY DHU %"
+                label="DAY DHU"
                 value={deepDiveLine.dhu !== null ? `${deepDiveLine.dhu.toFixed(2)}%` : '—'}
                 color={dhuColor(deepDiveLine.dhu)}
-                sub={`${deepDiveLine.totalDefects} defects / ${deepDiveLine.checkedGarments} chk`}
+                sub={`${deepDiveLine.totalDefects} defects / ${deepDiveLine.checkedGarments} checked`}
               />
               <WbTile
-                label="DAY OQL %"
+                label="DAY OQL"
                 value={deepDiveLine.todayOqlPct !== null ? `${deepDiveLine.todayOqlPct.toFixed(2)}%` : '—'}
                 color={oqlColor(deepDiveLine.todayOqlPct)}
                 sub={`${deepDiveLine.defectiveGarments} defective pcs`}
               />
               <WbTile
-                label="ALTER & SPOT PENDING"
+                label="DEFECTS PENDING"
                 value={`${deepDiveLine.sewBal + deepDiveLine.spotBal}`}
                 unit="pcs"
                 color={deepDiveLine.sewBal + deepDiveLine.spotBal > 0 ? WB_THEME.AMBER : WB_THEME.GREEN}
-                sub={`Sew Bal ${deepDiveLine.sewBal} · Spot Bal ${deepDiveLine.spotBal}`}
+                sub={`Sew ${deepDiveLine.sewBal} · Spot ${deepDiveLine.spotBal}`}
               />
             </div>
 
-            <div className="text-xs font-black uppercase tracking-wider" style={{ color: WB_THEME.MUTED }}>
-              Hourly &amp; Bi-Hourly Records (12-Hour AM/PM Format)
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <WbPanel title="Line Quality Performance & Rectification" sub="Actual selected-period records · no sample/fallback values">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div className="rounded p-2" style={{ backgroundColor: WB_THEME.BG }}>
+                    <div style={{ color: WB_THEME.MUTED }}>Sew Defect Sent</div>
+                    <div className="text-xl font-black">{deepDiveLine.sewSent}</div>
+                  </div>
+                  <div className="rounded p-2" style={{ backgroundColor: WB_THEME.BG }}>
+                    <div style={{ color: WB_THEME.MUTED }}>Sew Defect Received</div>
+                    <div className="text-xl font-black" style={{ color: WB_THEME.GREEN }}>{deepDiveLine.sewRecv}</div>
+                  </div>
+                  <div className="rounded p-2" style={{ backgroundColor: WB_THEME.BG }}>
+                    <div style={{ color: WB_THEME.MUTED }}>Spot Sent</div>
+                    <div className="text-xl font-black">{deepDiveLine.spotSent}</div>
+                  </div>
+                  <div className="rounded p-2" style={{ backgroundColor: WB_THEME.BG }}>
+                    <div style={{ color: WB_THEME.MUTED }}>Spot Received</div>
+                    <div className="text-xl font-black" style={{ color: WB_THEME.GREEN }}>{deepDiveLine.spotRecv}</div>
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <div className="text-xs font-black mb-1">Top 5 Hourly QC Defects</div>
+                  <HorizontalRankBars rows={(() => {
+                    const counts: Record<string, number> = {};
+                    selectedLineHourlyQuality.forEach(q => q.defects.forEach(d => {
+                      if (d.count > 0) counts[d.defectType] = (counts[d.defectType] || 0) + d.count;
+                    }));
+                    return Object.entries(counts).map(([label, value]) => ({
+                      label, value, text: String(value), color: WB_THEME.ORANGE
+                    })).sort((a, b) => b.value - a.value).slice(0, 5);
+                  })()} />
+                </div>
+              </WbPanel>
+
+              <WbPanel
+                title="Line NPT Notifications & Stoppages"
+                sub={`${selectedLineIncidents.length} incident(s) recorded for this line and period`}
+              >
+                {selectedLineIncidents.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-xs font-bold" style={{ color: WB_THEME.MUTED }}>
+                    No NPT incidents recorded for this line and period
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2 overflow-y-auto max-h-48">
+                    {selectedLineIncidents.map(inc => {
+                      const elapsed = Math.max(0, Math.round(((inc.endTimeMillis || Date.now()) - inc.startTimeMillis) / 60000));
+                      return (
+                        <div key={inc.id} className="rounded border-l-4 p-2 text-xs" style={{ backgroundColor: WB_THEME.BG, borderColor: inc.status === 'RESOLVED' ? WB_THEME.GREEN : WB_THEME.RED }}>
+                          <div className="flex justify-between gap-2 font-black">
+                            <span>{inc.category.replace(/_/g, ' ')} · {inc.status}</span>
+                            <span>{elapsed} min</span>
+                          </div>
+                          <div style={{ color: WB_THEME.TXT }}>{inc.description}</div>
+                          <div style={{ color: WB_THEME.MUTED }} className="mt-1">
+                            {new Date(inc.startTimeMillis).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })} · {inc.reportedBy}
+                          </div>
+                          {inc.resolutionNote && <div style={{ color: WB_THEME.GREEN }}>Resolution: {inc.resolutionNote}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </WbPanel>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.MUTED }} className="text-left">
-                    <th className="p-2">Time Slot (12h AM/PM)</th>
-                    <th className="p-2">Type</th>
-                    <th className="p-2 text-right">Output Pcs</th>
+
+            <WbPanel
+              title="Bi-hourly Audit — Hour-wise Pass / Fail"
+              sub={`Total ${selectedLineAuditRecords.length} audits · ${selectedLineAuditByHour.reduce((s, r) => s + r.pass, 0)} pass · ${selectedLineAuditByHour.reduce((s, r) => s + r.fail, 0)} fail · Pass standard: OQL ≤ ${kpis.oqlCommitmentPct.toFixed(2)}%`}
+            >
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse min-w-[560px]">
+                  <thead>
+                    <tr style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.MUTED }}>
+                      <th className="p-2 text-left">Audit Slot</th>
+                      <th className="p-2 text-right">Audit Count</th>
+                      <th className="p-2 text-right">Checked Pcs</th>
+                      <th className="p-2 text-right">Defective Pcs</th>
+                      <th className="p-2 text-right">Total Defects</th>
+                      <th className="p-2 text-right">Pass</th>
+                      <th className="p-2 text-right">Fail</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedLineAuditByHour.map(row => (
+                      <tr key={row.slot} className="border-b" style={{ borderColor: WB_THEME.LINE }}>
+                        <td className="p-2 font-black">{formatHourSlot12h(row.slot)}</td>
+                        <td className="p-2 text-right">{row.count}</td>
+                        <td className="p-2 text-right">{row.checked}</td>
+                        <td className="p-2 text-right">{row.defective}</td>
+                        <td className="p-2 text-right">{row.defects}</td>
+                        <td className="p-2 text-right font-black" style={{ color: WB_THEME.GREEN }}>{row.pass}</td>
+                        <td className="p-2 text-right font-black" style={{ color: WB_THEME.RED }}>{row.fail}</td>
+                      </tr>
+                    ))}
+                    {selectedLineAuditByHour.length === 0 && (
+                      <tr><td colSpan={7} className="p-4 text-center" style={{ color: WB_THEME.MUTED }}>No bi-hourly audit records for this line and period</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </WbPanel>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <WbPanel title="Top 5 Bi-hourly Audit Defects" sub="Counts from this line's saved bi-hourly audit records">
+                <HorizontalRankBars rows={selectedLineAuditTopDefects} />
+              </WbPanel>
+              <WbPanel title="Audit Record Detail" sub="Each audit slot, checked quantity, OQL result and pass/fail status">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border-collapse min-w-[500px]">
+                    <thead><tr style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.MUTED }}>
+                      <th className="p-2 text-left">Date / Slot</th>
+                      <th className="p-2 text-right">Checked</th>
+                      <th className="p-2 text-right">Defective</th>
+                      <th className="p-2 text-right">OQL</th>
+                      <th className="p-2 text-right">Result</th>
+                    </tr></thead>
+                    <tbody>
+                      {selectedLineAuditRecords.map(q => {
+                        const auditOql = q.checkedGarments > 0 ? (q.defectiveGarments / q.checkedGarments) * 100 : null;
+                        const passed = auditOql !== null && auditOql <= kpis.oqlCommitmentPct;
+                        return (
+                          <tr key={q.id} className="border-b" style={{ borderColor: WB_THEME.LINE }}>
+                            <td className="p-2 font-bold">{q.date} · {formatHourSlot12h(q.hourSlot)}</td>
+                            <td className="p-2 text-right">{q.checkedGarments}</td>
+                            <td className="p-2 text-right">{q.defectiveGarments}</td>
+                            <td className="p-2 text-right">{auditOql !== null ? `${auditOql.toFixed(2)}%` : '—'}</td>
+                            <td className="p-2 text-right font-black" style={{ color: passed ? WB_THEME.GREEN : WB_THEME.RED }}>{passed ? 'PASS' : 'FAIL'}</td>
+                          </tr>
+                        );
+                      })}
+                      {selectedLineAuditRecords.length === 0 && (
+                        <tr><td colSpan={5} className="p-4 text-center" style={{ color: WB_THEME.MUTED }}>No audit records</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </WbPanel>
+            </div>
+
+            <WbPanel title="Hourly Production & Quality Records" sub="Latest records for the selected line and period">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse min-w-[650px]">
+                  <thead><tr style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.MUTED }}>
+                    <th className="p-2 text-left">Date / Time</th>
+                    <th className="p-2 text-left">Type</th>
+                    <th className="p-2 text-right">Output</th>
                     <th className="p-2 text-right">Checked</th>
                     <th className="p-2 text-right">Defective</th>
                     <th className="p-2 text-right">Defects</th>
-                    <th className="p-2 text-right">Sew Sent/Recv</th>
-                    <th className="p-2 text-right">Spot Sent/Recv</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y" style={{ borderColor: WB_THEME.LINE }}>
-                  {productions
-                    .filter(p => p.lineId === deepDiveLine.lineId)
-                    .slice(0, 12)
-                    .map(p => {
-                      const matchQa = qualities.find(
-                        q => q.lineId === p.lineId && q.date === p.date && q.hourSlot === p.hourSlot
-                      );
+                    <th className="p-2 text-right">Sew Sent / Recv</th>
+                    <th className="p-2 text-right">Spot Sent / Recv</th>
+                  </tr></thead>
+                  <tbody>
+                    {selectedLineProduction.map(p => {
+                      const qa = selectedLineHourlyQuality.find(q => q.date === p.date && q.hourSlot === p.hourSlot);
                       return (
-                        <tr key={p.id}>
-                          <td className="p-2 font-black">{formatHourSlot12h(p.hourSlot)}</td>
-                          <td className="p-2">1-Hr Production &amp; QC</td>
-                          <td className="p-2 text-right font-bold" style={{ color: WB_THEME.GREEN }}>
-                            {p.outputQty}
-                          </td>
-                          <td className="p-2 text-right">{matchQa?.checkedGarments ?? '—'}</td>
-                          <td className="p-2 text-right">{matchQa?.defectiveGarments ?? '—'}</td>
-                          <td className="p-2 text-right">{matchQa?.totalDefects ?? '—'}</td>
-                          <td className="p-2 text-right">
-                            {matchQa ? `${matchQa.defectSent || 0} / ${matchQa.defectReceived || 0}` : '—'}
-                          </td>
-                          <td className="p-2 text-right">
-                            {matchQa ? `${matchQa.spotSent || 0} / ${matchQa.spotReceived || 0}` : '—'}
-                          </td>
+                        <tr key={p.id} className="border-b" style={{ borderColor: WB_THEME.LINE }}>
+                          <td className="p-2 font-black">{p.date} · {formatHourSlot12h(p.hourSlot)}</td>
+                          <td className="p-2">Production / hourly QC</td>
+                          <td className="p-2 text-right font-black" style={{ color: WB_THEME.GREEN }}>{p.outputQty}</td>
+                          <td className="p-2 text-right">{qa?.checkedGarments ?? '—'}</td>
+                          <td className="p-2 text-right">{qa?.defectiveGarments ?? '—'}</td>
+                          <td className="p-2 text-right">{qa?.totalDefects ?? '—'}</td>
+                          <td className="p-2 text-right">{qa ? `${qa.defectSent || 0} / ${qa.defectReceived || 0}` : '—'}</td>
+                          <td className="p-2 text-right">{qa ? `${qa.spotSent || 0} / ${qa.spotReceived || 0}` : '—'}</td>
                         </tr>
                       );
                     })}
-                  {qualities
-                    .filter(q => q.lineId === deepDiveLine.lineId && isBiHourlyAuditSlot(q.hourSlot))
-                    .map(q => (
-                      <tr key={q.id}>
-                        <td className="p-2 font-black" style={{ color: WB_THEME.BLUE }}>
-                          {formatHourSlot12h(q.hourSlot)}
-                        </td>
-                        <td className="p-2 font-bold" style={{ color: WB_THEME.BLUE }}>
-                          2-Hr Bi-Hourly Audit (OQL)
-                        </td>
+                    {selectedLineProduction.length === 0 && selectedLineHourlyQuality.map(q => (
+                      <tr key={q.id} className="border-b" style={{ borderColor: WB_THEME.LINE }}>
+                        <td className="p-2 font-black">{q.date} · {formatHourSlot12h(q.hourSlot)}</td>
+                        <td className="p-2">Hourly QC</td>
                         <td className="p-2 text-right">—</td>
-                        <td className="p-2 text-right font-bold">{q.checkedGarments}</td>
-                        <td className="p-2 text-right font-bold">{q.defectiveGarments}</td>
-                        <td className="p-2 text-right font-bold">{q.totalDefects}</td>
-                        <td className="p-2 text-right">—</td>
-                        <td className="p-2 text-right">—</td>
+                        <td className="p-2 text-right">{q.checkedGarments}</td>
+                        <td className="p-2 text-right">{q.defectiveGarments}</td>
+                        <td className="p-2 text-right">{q.totalDefects}</td>
+                        <td className="p-2 text-right">{q.defectSent || 0} / {q.defectReceived || 0}</td>
+                        <td className="p-2 text-right">{q.spotSent || 0} / {q.spotReceived || 0}</td>
                       </tr>
                     ))}
-                </tbody>
-              </table>
-            </div>
+                    {selectedLineProduction.length === 0 && selectedLineHourlyQuality.length === 0 && (
+                      <tr><td colSpan={8} className="p-4 text-center" style={{ color: WB_THEME.MUTED }}>No hourly production or quality records for this line and period</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </WbPanel>
           </div>
         </div>
       )}
