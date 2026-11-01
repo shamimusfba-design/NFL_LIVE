@@ -1163,16 +1163,18 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
       {/* ==================== PAGE 4: TABLE (15-COLUMN LIVE LINE PERFORMANCE TABLE) ==================== */}
       {!isDept && page === 'TABLE' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-1.5 mb-1.5">
-          <div style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }} className="rounded-lg border p-2 lg:col-span-7">
-            <div className="text-[11px] font-black">Audit: Pass / Fail by Line</div>
-            <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold mb-1">Bi-hourly OQL audits · PASS when OQL is at or below {AUDIT_PASS_OQL_PCT}%</div>
-            <div className="h-20"><AuditPassFailChart rows={auditByLine} /></div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 mb-2">
+          <div style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }} className="rounded-lg border p-2.5 lg:col-span-7 overflow-hidden flex flex-col justify-between">
+            <div>
+              <div className="text-xs font-black">Audit: Pass / Fail by Line</div>
+              <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold mb-1">Bi-hourly OQL audits · PASS when OQL is at or below {AUDIT_PASS_OQL_PCT}%</div>
+            </div>
+            <div className="w-full overflow-hidden"><AuditPassFailChart rows={auditByLine} /></div>
           </div>
-          <div style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }} className="rounded-lg border p-2 lg:col-span-5">
-            <div className="text-[11px] font-black">Audit results by Line</div>
+          <div style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }} className="rounded-lg border p-2.5 lg:col-span-5 overflow-hidden flex flex-col">
+            <div className="text-xs font-black">Audit results by Line</div>
             <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold mb-1">Passed and failed audits in this period</div>
-            <div className="max-h-[92px] overflow-auto">
+            <div className="max-h-[115px] overflow-auto">
               <table className="w-full text-xs border-collapse">
                 <thead className="sticky top-0" style={{ backgroundColor: WB_THEME.BG }}>
                   <tr className="text-left" style={{ color: WB_THEME.MUTED }}>
@@ -1510,7 +1512,7 @@ const WbPanel: React.FC<{
 }> = ({ title, sub, right, className = '', children }) => (
   <div
     style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-    className={`rounded-lg border p-2.5 flex flex-col justify-between ${className}`}
+    className={`rounded-lg border p-2.5 flex flex-col justify-between overflow-hidden ${className}`}
   >
     <div className="flex items-start justify-between gap-2 mb-1.5">
       <div>
@@ -1606,9 +1608,9 @@ const ChartRow: React.FC<{ children: React.ReactNode; refPct?: number | null; re
   </div>
 );
 
-const Group: React.FC<{ children: React.ReactNode; name: React.ReactNode; sub?: React.ReactNode; subColor?: string; onClick?: () => void; minW?: string }> = ({ children, name, sub, subColor, onClick, minW = 'min-w-[44px] md:min-w-[54px]' }) => (
+const Group: React.FC<{ children: React.ReactNode; name: React.ReactNode; sub?: React.ReactNode; subColor?: string; onClick?: () => void; minW?: string; plotH?: string }> = ({ children, name, sub, subColor, onClick, minW = 'min-w-[44px] md:min-w-[54px]', plotH = PLOT_H }) => (
   <div onClick={onClick} className={`flex flex-col items-center flex-1 ${minW} ${onClick ? 'cursor-pointer' : ''}`}>
-    <div className={`w-full ${PLOT_H} flex items-end justify-center gap-2 md:gap-3 border-b`} style={{ borderColor: WB_THEME.LINE }}>{children}</div>
+    <div className={`w-full ${plotH} flex items-end justify-center gap-2 md:gap-3 border-b`} style={{ borderColor: WB_THEME.LINE }}>{children}</div>
     <div className="text-[11px] md:text-xs font-black mt-1 whitespace-nowrap">{name}</div>
     {sub !== undefined && <div style={{ color: subColor }} className="text-[10px] md:text-[11px] font-bold leading-tight">{sub}</div>}
   </div>
@@ -1700,13 +1702,13 @@ const HourlyOutputWallboardChart: React.FC<{ buckets: HourlyWallboardBucket[] }>
 /** Pass and fail counts of the bi-hourly audits, one pair of columns per line. */
 const AuditPassFailChart: React.FC<{ rows: Array<{ lineId: string; pass: number; fail: number }> }> = ({ rows }) => {
   if (rows.length === 0) {
-    return <div style={{ color: WB_THEME.MUTED }} className="flex items-center justify-center h-full text-xs font-bold">No audits recorded in this period</div>;
+    return <div style={{ color: WB_THEME.MUTED }} className="flex items-center justify-center h-20 text-xs font-bold">No audits recorded in this period</div>;
   }
   const max = niceMax(rows.flatMap(r => [r.pass, r.fail]));
   return (
     <ChartRow>
       {rows.map(r => (
-        <Group key={r.lineId} name={lineDisplayName(r.lineId)}>
+        <Group key={r.lineId} name={lineDisplayName(r.lineId)} plotH="h-16" minW="min-w-[38px] md:min-w-[46px]">
           <Col v={r.pass} max={max} color={WB_THEME.GREEN} label={r.pass} title={`Pass: ${r.pass}`} />
           <Col v={r.fail} max={max} color={WB_THEME.RED} label={r.fail} title={`Fail: ${r.fail}`} />
         </Group>
