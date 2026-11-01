@@ -209,14 +209,16 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
   const auditLineStats = useMemo(() => lineSummaries.map(line => {
     const records = auditRecords.filter(q => q.lineId === line.lineId);
-    const pass = records.filter(q =>
-      q.checkedGarments > 0 &&
+    const validRecords = records.filter(q => q.checkedGarments > 0);
+    const pass = validRecords.filter(q =>
       (q.defectiveGarments / q.checkedGarments) * 100 <= kpis.oqlCommitmentPct
     ).length;
+    const fail = validRecords.length - pass;
     return {
       lineId: line.lineId,
       pass,
-      fail: records.length - pass,
+      fail,
+      unrated: records.length - validRecords.length,
       total: records.length,
       checked: records.reduce((sum, q) => sum + q.checkedGarments, 0)
     };
@@ -241,14 +243,16 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   );
 
   const selectedLineAuditByHour = useMemo(() => {
-    const grouped: Record<string, { slot: string; count: number; pass: number; fail: number; checked: number; defective: number; defects: number }> = {};
+    const grouped: Record<string, { slot: string; count: number; pass: number; fail: number; unrated: number; checked: number; defective: number; defects: number }> = {};
     selectedLineAuditRecords.forEach(q => {
-      const row = grouped[q.hourSlot] || { slot: q.hourSlot, count: 0, pass: 0, fail: 0, checked: 0, defective: 0, defects: 0 };
-      const passed = q.checkedGarments > 0 &&
+      const row = grouped[q.hourSlot] || { slot: q.hourSlot, count: 0, pass: 0, fail: 0, unrated: 0, checked: 0, defective: 0, defects: 0 };
+      const hasValidCheck = q.checkedGarments > 0;
+      const passed = hasValidCheck &&
         (q.defectiveGarments / q.checkedGarments) * 100 <= kpis.oqlCommitmentPct;
       row.count += 1;
       row.pass += passed ? 1 : 0;
-      row.fail += passed ? 0 : 1;
+      row.fail += hasValidCheck && !passed ? 1 : 0;
+      row.unrated += hasValidCheck ? 0 : 1;
       row.checked += q.checkedGarments;
       row.defective += q.defectiveGarments;
       row.defects += q.totalDefects;
@@ -754,7 +758,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 min-h-[220px]">
             <WbPanel
               title="Bi-hourly Audit by Line · Pass / Fail"
-              sub={`Audits ${auditRecords.length} · Pass/Fail derived from audit OQL ≤ ${kpis.oqlCommitmentPct.toFixed(2)}% · Select a line to open its full audit details`}
+              sub={`Audits ${auditRecords.length} · Pass/Fail derived from valid audit OQL ≤ ${kpis.oqlCommitmentPct.toFixed(2)}% · Unchecked records are not counted as Fail`}
               className="lg:col-span-7"
             >
               <BiHourlyAuditByLineChart rows={auditLineStats} onSelectLine={lineId => {
@@ -1253,6 +1257,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                       <th className="p-2 text-right">Total Defects</th>
                       <th className="p-2 text-right">Pass</th>
                       <th className="p-2 text-right">Fail</th>
+                      <th className="p-2 text-right">No Result</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1265,10 +1270,11 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                         <td className="p-2 text-right">{row.defects}</td>
                         <td className="p-2 text-right font-black" style={{ color: WB_THEME.GREEN }}>{row.pass}</td>
                         <td className="p-2 text-right font-black" style={{ color: WB_THEME.RED }}>{row.fail}</td>
+                        <td className="p-2 text-right" style={{ color: WB_THEME.MUTED }}>{row.unrated}</td>
                       </tr>
                     ))}
                     {selectedLineAuditByHour.length === 0 && (
-                      <tr><td colSpan={7} className="p-4 text-center" style={{ color: WB_THEME.MUTED }}>No bi-hourly audit records for this line and period</td></tr>
+                      <tr><td colSpan={8} className="p-4 text-center" style={{ color: WB_THEME.MUTED }}>No bi-hourly audit records for this line and period</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -1299,7 +1305,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                             <td className="p-2 text-right">{q.checkedGarments}</td>
                             <td className="p-2 text-right">{q.defectiveGarments}</td>
                             <td className="p-2 text-right">{auditOql !== null ? `${auditOql.toFixed(2)}%` : '—'}</td>
-                            <td className="p-2 text-right font-black" style={{ color: passed ? WB_THEME.GREEN : WB_THEME.RED }}>{passed ? 'PASS' : 'FAIL'}</td>
+                            <td className="p-2 text-right font-black" style={{ color: auditOql === null ? WB_THEME.MUTED : passed ? WB_THEME.GREEN : WB_THEME.RED }}>{auditOql === null ? 'NO RESULT' : passed ? 'PASS' : 'FAIL'}</td>
                           </tr>
                         );
                       })}
