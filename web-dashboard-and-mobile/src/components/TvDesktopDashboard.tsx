@@ -32,6 +32,7 @@ const WB_THEME = {
 };
 
 interface TvDesktopDashboardProps {
+  todayIso: string;
   selectedFloor: FloorId;
   onSelectFloor: (floor: FloorId) => void;
   selectedPeriod: PeriodId;
@@ -82,6 +83,7 @@ function oqlColor(oql: number | null, target = 4.5): string {
 }
 
 export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
+  todayIso,
   selectedFloor,
   onSelectFloor,
   selectedPeriod,
