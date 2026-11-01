@@ -743,6 +743,27 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               />
             </WbPanel>
           </div>
+
+          {/* Row 3: Bi-hourly audit analytics */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 min-h-[220px]">
+            <WbPanel
+              title="Bi-hourly Audit by Line · Pass / Fail"
+              sub={`Audits ${auditRecords.length} · Pass/Fail derived from audit OQL ≤ ${kpis.oqlCommitmentPct.toFixed(2)}% · Select a line to open its full audit details`}
+              className="lg:col-span-7"
+            >
+              <BiHourlyAuditByLineChart rows={auditLineStats} onSelectLine={lineId => {
+                const line = lineSummaries.find(item => item.lineId === lineId);
+                if (line) setDeepDiveLine(line);
+              }} />
+            </WbPanel>
+            <WbPanel
+              title="Top 5 Bi-hourly Audit Defects"
+              sub="Defect quantity from saved audit records only"
+              className="lg:col-span-5"
+            >
+              <HorizontalRankBars rows={auditTopDefects} />
+            </WbPanel>
+          </div>
         </div>
       )}
 
