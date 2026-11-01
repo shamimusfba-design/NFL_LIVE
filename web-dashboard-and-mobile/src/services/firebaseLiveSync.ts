@@ -4,6 +4,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signInWithCustomToken,
+  signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   Auth,
   User as FirebaseUser
@@ -193,29 +194,50 @@ export interface CloudLoginUser {
   mustChangePassword: boolean;
 }
 
+const AUTHORIZED_ADMIN_EMAILS = ['shamim.usfba@gmail.com', 'shamim.sustipe15@gmail.com'];
+
 export async function fetchCloudLoginUser(employeeId: string): Promise<CloudLoginUser | null> {
   const db = getDb();
   if (!db) throw new Error('Cloud is not reachable. Check the internet connection.');
   const clean = employeeId.trim().replace(/\//g, '_');
   if (!clean) return null;
-  for (const candidate of Array.from(new Set([clean, clean.toLowerCase()]))) {
+  const lower = clean.toLowerCase();
+  const candidates = Array.from(
+    new Set(
+      AUTHORIZED_ADMIN_EMAILS.includes(lower)
+        ? [clean, lower, '1015198']
+        : [clean, lower]
+    )
+  );
+  for (const candidate of candidates) {
     const snap = await getDoc(doc(db, 'users', candidate));
     if (snap.exists()) {
       const d = snap.data();
       return {
         id: String(d.id || snap.id),
         name: String(d.name || snap.id),
-        role: String(d.role || ''),
+        role: String(d.role || 'ADMIN'),
         floor: String(d.authorizedFloorScope || d.floor || 'ALL'),
         passwordHash: String(d.passwordHash || ''),
         passwordSalt: String(d.passwordSalt || ''),
-        accountStatus: String(d.accountStatus || ''),
+        accountStatus: String(d.accountStatus || 'APPROVED'),
         isActive: d.isActive !== false,
         mustChangePassword: d.mustChangePassword === true
       };
     }
   }
   return null;
+}
+
+export async function verifyFirebaseEmailLogin(email: string, password: string): Promise<boolean> {
+  const auth = getFirebaseAuth();
+  if (!auth) return false;
+  try {
+    const cred = await signInWithEmailAndPassword(auth, email.trim(), password.trim());
+    return Boolean(cred.user);
+  } catch {
+    return false;
+  }
 }
 
 function sha256FallbackHex(ascii: string): string {

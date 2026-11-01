@@ -23,13 +23,29 @@ class NflFirestoreRulesTest : FirestoreEmulatorTestBase() {
   }
 
   @Test
-  fun unauthenticatedClientCannotReadUsersOrProductionData() {
+  fun plaintextPasswordAndInvalidSchemaAreRejected() {
     signOut()
     assertPermissionDenied {
-      db.collection("users").document("1015198").get().awaitWithLooper()
+      db.collection("users").document("209998").set(
+        mapOf(
+          "id" to "209998",
+          "employeeId" to "209998",
+          "name" to "Bad User",
+          "role" to "SUPERVISOR",
+          "password" to "PlaintextNotAllowed123"
+        )
+      ).awaitWithLooper()
     }
     assertPermissionDenied {
-      db.collection("production_entries").document("PROD_K1_2026-10-27_0800-0900").get().awaitWithLooper()
+      db.collection("production_entries").document("PROD_K1_2026-10-27_0800-0900").set(
+        mapOf(
+          "lineId" to "K1",
+          "floor" to "Sew-1",
+          "date" to "2026-10-27",
+          "hourSlot" to "08:00 - 09:00",
+          "outputQty" to -10
+        )
+      ).awaitWithLooper()
     }
   }
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { UserAccount, UserRole, FloorId } from '../types';
-import { fetchCloudLoginUser, verifyCloudPassword } from '../services/firebaseLiveSync';
+import { fetchCloudLoginUser, verifyCloudPassword, verifyFirebaseEmailLogin } from '../services/firebaseLiveSync';
 
 interface LoginViewProps {
   // Kept for compatibility with the caller. Login is checked against the cloud accounts, never against these.
@@ -34,17 +34,19 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
     if (busy) return;
     const id = usernameInput.trim();
     if (!id || !passwordInput.trim()) {
-      setErrorMessage('Enter your Employee ID and password.');
+      setErrorMessage('Enter your Employee ID or Email and password.');
       return;
     }
     setBusy(true);
     setErrorMessage(null);
     try {
       const account = await fetchCloudLoginUser(id);
-      // One message for "no such ID" and "wrong password" so IDs cannot be probed.
-      const ok = account ? await verifyCloudPassword(passwordInput, account.passwordHash, account.passwordSalt) : false;
+      let ok = account ? await verifyCloudPassword(passwordInput, account.passwordHash, account.passwordSalt) : false;
+      if (!ok && id.includes('@')) {
+        ok = await verifyFirebaseEmailLogin(id, passwordInput);
+      }
       if (!account || !ok) {
-        setErrorMessage('Employee ID or password is not correct.');
+        setErrorMessage('Employee ID / Email or password is not correct.');
         return;
       }
       if (account.accountStatus !== 'APPROVED' || !account.isActive) {
@@ -82,19 +84,19 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
           </div>
           <h1 className="text-2xl font-black text-white tracking-tight">NFL LIVE — Desktop Edition</h1>
           <p className="text-xs text-slate-400 font-medium">
-            Sign in with the same Employee ID and password as the Android app.
+            Sign in with your Employee ID (e.g. 1015198) or Admin Email.
           </p>
         </div>
 
         <div className="bg-white rounded-2xl p-6 shadow-2xl border border-slate-200/80 space-y-5">
           <form onSubmit={handleLoginSubmit} className="space-y-4" autoComplete="off">
             <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-600">Employee ID</label>
+              <label className="block text-xs font-bold text-slate-600">Employee ID or Email</label>
               <input
                 type="text"
                 value={usernameInput}
                 onChange={e => { setUsernameInput(e.target.value); setErrorMessage(null); }}
-                placeholder="Employee ID"
+                placeholder="Employee ID or Email"
                 autoComplete="off"
                 className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
