@@ -93,6 +93,10 @@ export class CalculationEngine {
       const lineQas = qualities.filter(
         q => q.lineId === config.lineId && (!refDate || this.isDateInPeriod(q.date, refDate, period))
       );
+      const monthKey = refDate.slice(0, 7);
+      const monthlyProds = productions.filter(
+        p => p.lineId === config.lineId && p.date.slice(0, 7) === monthKey
+      );
 
       const hasReportedProd = lineProds.length > 0;
       const totalOutput = hasReportedProd
@@ -150,7 +154,15 @@ export class CalculationEngine {
         i => i.lineId === config.lineId && i.status !== 'RESOLVED'
       ).length;
 
-      const monthlyEfficiencyPct = efficiencyPct !== null ? Math.max(0, Number((efficiencyPct - 1.5).toFixed(1))) : 0;
+      const monthlyActiveDays = new Set(monthlyProds.map(p => p.date)).size;
+      const monthlyOutput = monthlyProds.reduce((sum, p) => sum + p.outputQty, 0);
+      const monthlyAvailableMinutes =
+        (config.operatorsCount + (config.includeHelpersInEfficiency ? config.helpersCount : 0)) *
+        (config.totalShiftHours || 8) * 60 * monthlyActiveDays;
+      const monthlyEfficiencyPct =
+        monthlyActiveDays > 0 && monthlyAvailableMinutes > 0 && config.smv > 0
+          ? Number(((monthlyOutput * config.smv / monthlyAvailableMinutes) * 100).toFixed(1))
+          : 0;
       const monthlyOqlPct = todayOqlPct !== null ? todayOqlPct : 0;
 
       let reportingStatus: 'Complete' | 'Not reported' | 'In Progress' = 'Not reported';
@@ -238,8 +250,17 @@ export class CalculationEngine {
     const bsQaOqlPct = floorMonthly?.bsQaOqlPct ?? 2.4;
     const friPassRatePct = floorMonthly?.friPassRatePct ?? (reportedCount > 0 ? 98.5 : 0);
 
-    const monthlyEfficiencyPct = todayEfficiencyPct > 0 ? Number(Math.max(0, todayEfficiencyPct - 1.2).toFixed(1)) : 0;
-    const monthlyEfficiencyDelta = todayEfficiencyPct > 0 ? Number((todayEfficiencyPct - monthlyEfficiencyPct).toFixed(1)) : 0;
+    const monthlyActiveLines = summaries.filter(s => s.monthlyEfficiencyPct > 0);
+    const monthlyEffWeighted = monthlyActiveLines.reduce(
+      (sum, s) => sum + s.monthlyEfficiencyPct * Math.max(1, s.operators), 0
+    );
+    const monthlyEffOperators = monthlyActiveLines.reduce(
+      (sum, s) => sum + Math.max(1, s.operators), 0
+    );
+    const monthlyEfficiencyPct =
+      monthlyEffOperators > 0 ? Number((monthlyEffWeighted / monthlyEffOperators).toFixed(1)) : 0;
+    const monthlyEfficiencyDelta =
+      monthlyActiveLines.length > 0 ? Number((todayEfficiencyPct - monthlyEfficiencyPct).toFixed(1)) : 0;
 
     const checkedGarments = summaries.reduce((s, i) => s + i.checkedGarments, 0);
     const defectiveGarments = summaries.reduce((s, i) => s + i.defectiveGarments, 0);
