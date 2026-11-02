@@ -5,10 +5,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0A2558" />
-    <link rel="manifest" href="./manifest.webmanifest?v=37" />
-    <link rel="icon" type="image/svg+xml" href="./icon.svg?v=37" />
-    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=37" />
-    <link rel="apple-touch-icon" href="./apple-touch-icon.png?v=37" />
+    <link rel="manifest" href="./manifest.webmanifest?v=39" />
+    <link rel="icon" type="image/svg+xml" href="./icon.svg?v=39" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=39" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png?v=39" />
     <title>NFL LIVE — Production &amp; Quality</title>
     <!-- Tailwind CDN for rapid preview and standalone execution -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -72,8 +72,15 @@ body{background:var(--wb-bg)}
     <div id="root"></div>
     <script>
       if ('serviceWorker' in navigator) {
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!refreshing) {
+            refreshing = true;
+            window.location.reload();
+          }
+        });
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js').then(reg => {
+          navigator.serviceWorker.register('./sw.js?v=39', { updateViaCache: 'none' }).then(reg => {
             reg.update().catch(() => {});
           }).catch(() => {});
         });
