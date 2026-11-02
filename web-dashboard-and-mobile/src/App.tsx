@@ -60,6 +60,14 @@ import { formatCommentAgo } from './components/CommentThread';
 import { designationFields, formatUserDesignation, resolveCommentDesignation } from './data/designations';
 import { ENTRY_MODULES, canUseEntryModule, EntryModuleId } from './data/entryModules';
 import { accountFromRecord, saveSessionCache, readSessionCache, clearSessionCache } from './services/sessionUser';
+import {
+  CLIENT_DEMO_ID,
+  CLIENT_DEMO_PASS,
+  isClientDemoUser,
+  generateRichClientDemoBundle,
+  getUpworkUrl,
+  setCustomUpworkUrl
+} from './data/clientDemo';
 
 const STORAGE_KEYS = {
   SAMPLE_CLEARED: 'nfl_desktop_sample_data_cleared',
@@ -139,6 +147,17 @@ export default function App() {
   const [isAuthenticatedAdmin, setIsAuthenticatedAdmin] = useState(false);
   const [showInstallDesktopModal, setShowInstallDesktopModal] = useState(false);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
+  const [clientDemoToast, setClientDemoToast] = useState<string | null>(null);
+  const [showShareDemoModal, setShowShareDemoModal] = useState(false);
+  const [upworkUrl, setUpworkUrl] = useState<string>(() => getUpworkUrl());
+  const [upworkInput, setUpworkInput] = useState<string>(() => getUpworkUrl());
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
+  const isClientDemo = isClientDemoUser(currentUser);
+  const showReadOnlyNotice = (actionLabel: string) => {
+    setClientDemoToast(`🔒 Client Demo Mode (Read-Only): "${actionLabel}" is preview-only. Saving or modifying live database records is disabled.`);
+    setTimeout(() => setClientDemoToast(null), 4000);
+  };
 
   const audioCtxRef = useRef<AudioContext | null>(null);
 
@@ -203,39 +222,69 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEYS.TARGETS, JSON.stringify(targets));
+      document.title = isClientDemo
+        ? 'DEMO LIVE — Production & Quality'
+        : 'NFL LIVE — Production & Quality';
     } catch {}
-  }, [targets]);
+  }, [isClientDemo]);
 
   useEffect(() => {
+    if (isClientDemo) return;
+    try {
+      localStorage.setItem(STORAGE_KEYS.TARGETS, JSON.stringify(targets));
+    } catch {}
+  }, [targets, isClientDemo]);
+
+  useEffect(() => {
+    if (isClientDemo) return;
     try {
       localStorage.setItem(STORAGE_KEYS.PRODUCTIONS, JSON.stringify(productions));
     } catch {}
-  }, [productions]);
+  }, [productions, isClientDemo]);
 
   useEffect(() => {
+    if (isClientDemo) return;
     try {
       localStorage.setItem(STORAGE_KEYS.QUALITIES, JSON.stringify(qualities));
     } catch {}
-  }, [qualities]);
+  }, [qualities, isClientDemo]);
 
   useEffect(() => {
+    if (isClientDemo) return;
     try {
       localStorage.setItem(STORAGE_KEYS.INCIDENTS, JSON.stringify(incidents));
     } catch {}
-  }, [incidents]);
+  }, [incidents, isClientDemo]);
 
   useEffect(() => {
+    if (isClientDemo) return;
     try {
       localStorage.setItem(STORAGE_KEYS.WEEKLY_QUALITY, JSON.stringify(weeklyQuality));
     } catch {}
-  }, [weeklyQuality]);
+  }, [weeklyQuality, isClientDemo]);
 
   useEffect(() => {
+    if (isClientDemo) return;
     try {
       localStorage.setItem(STORAGE_KEYS.MONTHLY_TARGETS, JSON.stringify(monthlyTargets));
     } catch {}
-  }, [monthlyTargets]);
+  }, [monthlyTargets, isClientDemo]);
+
+  // Populate rich showcase dataset whenever Client Demo Viewer signs in
+  useEffect(() => {
+    if (!isClientDemo) return;
+    const bundle = generateRichClientDemoBundle(todayIso);
+    setTargets(bundle.targets);
+    setProductions(bundle.productions);
+    setQualities(bundle.qualities);
+    setIncidents(bundle.incidents);
+    setWeeklyQuality(bundle.weeklyQuality);
+    setMonthlyTargets(bundle.monthlyTargets);
+    setFloorTotals(bundle.floorTotals);
+    setAlertComments(bundle.comments);
+    setIsDemoMode(true);
+    setCloudConnected(true);
+  }, [isClientDemo, todayIso]);
 
   // The browser remembers the sign-in: bring the person back instead of asking again and again.
   useEffect(() => {
@@ -271,8 +320,8 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) return;
     const unsubscribe = startLiveFirestoreListeners({
-      onStatusChanged: status => setCloudConnected(status.startsWith('Live')),
-      onConnectionChange: connected => setCloudConnected(connected),
+      onStatusChanged: status => setCloudConnected(isClientDemo || status.startsWith('Live')),
+      onConnectionChange: connected => setCloudConnected(isClientDemo || connected),
       onProductionUpdated: remoteProds => {
         const validRemote = remoteProds.filter(r => r.timestamp > lastResetMs);
         setProductions(prev => {
@@ -574,6 +623,10 @@ export default function App() {
   }, [incidents, selectedFloor]);
 
   const handleReportIncident = (newInc: Omit<IncidentRecord, 'id' | 'startTimeMillis' | 'status'>) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Report NPT Incident');
+      return;
+    }
     const inc: IncidentRecord = {
       ...newInc,
       id: `inc-${Date.now()}`,
@@ -592,6 +645,10 @@ export default function App() {
   };
 
   const handleAcknowledgeIncident = (id: string, ackBy: string) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Acknowledge NPT Incident');
+      return;
+    }
     setIncidents(prev =>
       prev.map(i => {
         if (i.id !== id) return i;
@@ -608,6 +665,10 @@ export default function App() {
   };
 
   const handleResolveIncident = (id: string, resBy: string, note: string) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Resolve NPT Incident');
+      return;
+    }
     setIncidents(prev =>
       prev.map(i => {
         if (i.id !== id) return i;
@@ -649,21 +710,34 @@ export default function App() {
   // The Admin's switch: it changes the shared setting, so every signed-in person gets the same demo (or loses it).
   // Demo data is for the Admin only: everyone else always sees the real data.
   demoSwitchRef.current = (on: boolean) => {
+    if (isClientDemo) return;
     if (currentUser?.role !== 'ADMIN') { if (isDemoMode) applyDemo(false); return; }
     if (on !== isDemoMode) applyDemo(on);
   };
 
   const handleLoadDemoData = () => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Demo Data Switch');
+      return;
+    }
     applyDemo(true);
     void pushDemoModeToCloud(true, currentUser?.name || '');
   };
 
   const handleRemoveAllDemoData = () => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Remove Demo Data');
+      return;
+    }
     applyDemo(false);
     void pushDemoModeToCloud(false, currentUser?.name || '');
   };
 
   const handleFactoryResetAll = async (): Promise<number> => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Factory Reset');
+      return -1;
+    }
     // Destructive: Admin only, and the person must type RESET. Deletes production data for every device.
     if (currentUser?.role !== 'ADMIN') return -1;
     if ((window.prompt('This deletes ALL production, quality, incident and setup records from the cloud for every phone and TV.\nType RESET to continue.') || '').trim() !== 'RESET') return -1;
@@ -690,6 +764,10 @@ export default function App() {
   const handleSaveProduction = (
     entry: Omit<ProductionEntryRecord, 'id' | 'submissionId' | 'timestamp' | 'revision'>
   ) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Save Production Entry');
+      return;
+    }
     const newRecord: ProductionEntryRecord = {
       ...entry,
       id: `p-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -709,6 +787,10 @@ export default function App() {
   const handleSaveQuality = (
     entry: Omit<QualityEntryRecord, 'id' | 'submissionId' | 'timestamp' | 'revision'>
   ) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Save Quality Entry');
+      return;
+    }
     const newRecord: QualityEntryRecord = {
       ...entry,
       id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -726,6 +808,10 @@ export default function App() {
   };
 
   const handleSaveWeeklyQuality = (record: WeeklyQualityRecord) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Save Weekly Quality');
+      return;
+    }
     setWeeklyQuality(prev => {
       const filtered = prev.filter(w => w.weekKey !== record.weekKey);
       return [...filtered, record].sort((a, b) => a.weekKey.localeCompare(b.weekKey));
@@ -734,6 +820,10 @@ export default function App() {
   };
 
   const handleSaveMonthlyTarget = (target: MonthlyTargetConfig) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Save Monthly Target');
+      return;
+    }
     setMonthlyTargets(prev => {
       const filtered = prev.filter(m => m.id !== target.id);
       return [...filtered, target];
@@ -742,6 +832,10 @@ export default function App() {
   };
 
   const handleDeleteProduction = (id: string, reason: string) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Delete Production Record');
+      return;
+    }
     const rec = productions.find(p => p.id === id);
     setProductions(prev => prev.filter(p => p.id !== id));
     if (rec && currentUser) {
@@ -755,6 +849,10 @@ export default function App() {
   };
 
   const handleDeleteQuality = (id: string, reason: string) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Delete Quality Record');
+      return;
+    }
     const rec = qualities.find(q => q.id === id);
     setQualities(prev => prev.filter(q => q.id !== id));
     if (rec && currentUser) {
@@ -763,22 +861,38 @@ export default function App() {
   };
 
   const handleSaveAccess = async (u: UserAccount, permissions: string[] | null, allowedLines: string[] | null) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Update User Access');
+      return false;
+    }
     const ok = await updateCloudUserAccess(u.id, { permissions, allowedLines }, currentUser?.name || '');
     if (ok) setUsers(prev => prev.map(x => (x.id === u.id ? { ...x, permissions, allowedLines } : x)));
     return ok;
   };
   const handleBlockUser = async (u: UserAccount, blocked: boolean) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Block/Unblock User');
+      return false;
+    }
     const ok = await setCloudUserBlocked(u.id, blocked, currentUser?.name || '');
     if (ok) setUsers(prev => prev.map(x => (x.id === u.id ? { ...x, accountStatus: blocked ? 'SUSPENDED' : 'APPROVED', isActive: !blocked } : x)));
     return ok;
   };
   const handleSaveProfile = async (u: UserAccount, designation: string, floorKey: string) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Update User Profile');
+      return false;
+    }
     const f = designationFields(designation, floorKey);
     const ok = await updateCloudUserProfile(u.id, f, currentUser?.name || '');
     if (ok) setUsers(prev => prev.map(x => (x.id === u.id ? { ...x, designation: f.designation, department: f.department, role: f.role, floor: accountFromRecord(f, u.id).floor } : x)));
     return ok;
   };
   const handleDeleteUser = async (u: UserAccount) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Delete User');
+      return false;
+    }
     const ok = await deleteCloudUser(u.id, u.firebaseUid);
     if (ok) setUsers(prev => prev.filter(x => x.id !== u.id));
     return ok;
@@ -786,6 +900,10 @@ export default function App() {
 
   const handleAddComment = (targetId: string, text: string, parentId: string | null) => {
     if (!currentUser) return;
+    if (isClientDemo) {
+      showReadOnlyNotice('Post Notification Comment');
+      return;
+    }
     const desig = formatUserDesignation(currentUser);
     const c: AlertComment = {
       id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -803,11 +921,19 @@ export default function App() {
   };
 
   const handleSaveFloorManpower = (record: FloorManpowerRecord) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Save Floor Manpower');
+      return;
+    }
     setFloorTotals(prev => [record, ...prev.filter(r => !(r.floor === record.floor && r.date === record.date))]);
     void pushFloorManpowerToCloud(record);
   };
 
   const handleSaveSetup = (setup: LineTargetConfig) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Save Line Target Setup');
+      return;
+    }
     setTargets(prev => {
       const filtered = prev.filter(t => !(t.lineId === setup.lineId && t.date === setup.date));
       return [setup, ...filtered];
@@ -816,6 +942,10 @@ export default function App() {
   };
 
   const handleToggleLineActive = (lineId: string) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Toggle Line Master Status');
+      return;
+    }
     setLines(prev =>
       prev.map(l => (l.id === lineId ? { ...l, isActive: !l.isActive } : l))
     );
@@ -915,10 +1045,10 @@ export default function App() {
       >
         <div className="flex items-center gap-3 px-4 py-4">
           <div className="grid h-10 w-10 place-items-center overflow-hidden rounded-[10px] bg-white shadow">
-            <NflLogo size={34} />
+            <NflLogo size={34} demoMode={isClientDemo} />
           </div>
           <div className="leading-tight">
-            <div className="text-[15px] font-extrabold">NFL LIVE</div>
+            <div className="text-[15px] font-extrabold">{isClientDemo ? 'DEMO LIVE' : 'NFL LIVE'}</div>
             <div className="text-[11px] text-slate-400">Production &amp; Quality</div>
           </div>
         </div>
@@ -968,7 +1098,7 @@ export default function App() {
               className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-[var(--shell-side-txt)] hover:bg-[var(--shell-hover)] hover:text-white"
             >
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d={m.icon} /></svg>
-              <span className="flex-1">{m.label}</span>
+              <span className="flex-1">{isClientDemo ? m.label.replace(/NFL/g, 'DEMO') : m.label}</span>
             </button>
           ))}
           <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Work</div>
@@ -1013,6 +1143,13 @@ export default function App() {
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg>
             <span className="flex-1">Data clean & reset</span>
           </button>
+          <button
+            onClick={() => { closeMenu(); setShowShareDemoModal(true); }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-emerald-300 hover:bg-[var(--shell-hover)] hover:text-emerald-200"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+            <span className="flex-1">Client Demo &amp; Upwork Link</span>
+          </button>
         </>
       )}
           <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">More</div>
@@ -1028,8 +1165,8 @@ export default function App() {
 
         <div className="border-t border-[var(--shell-line)] p-3">
           <button
-            onClick={() => { if (isAuthenticatedAdmin) { setShowRoleSelector(true); setMenuOpen(false); } }}
-            title={isAuthenticatedAdmin ? 'Admin role preview' : `Signed in as ${currentUser.name}`}
+            onClick={() => { if (isAuthenticatedAdmin && !isClientDemo) { setShowRoleSelector(true); setMenuOpen(false); } }}
+            title={isAuthenticatedAdmin && !isClientDemo ? 'Admin role preview' : `Signed in as ${currentUser.name}`}
             className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-[var(--shell-hover)]"
           >
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#1d3b5f] text-[13px] font-extrabold">
@@ -1070,10 +1207,10 @@ export default function App() {
           </button>
           <div className="flex min-w-0 flex-1 items-center gap-2 whitespace-nowrap text-[15px] font-extrabold md:text-[16px]">
             <span className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-md bg-white shadow-sm">
-              <NflLogo size={22} />
+              <NflLogo size={22} demoMode={isClientDemo} />
             </span>
-            <span className="md:hidden">NFL LIVE</span>
-            <span className="hidden md:inline">NFL LIVE Production &amp; Quality</span>
+            <span className="md:hidden">{isClientDemo ? 'DEMO LIVE' : 'NFL LIVE'}</span>
+            <span className="hidden md:inline">{isClientDemo ? 'DEMO LIVE' : 'NFL LIVE'} Production &amp; Quality</span>
           </div>
           {/* Two clear choices; the one in use is filled. */}
           <div
@@ -1120,6 +1257,81 @@ export default function App() {
             <span className="hidden sm:inline">{cloudConnected ? 'Cloud Live' : 'Local'}</span>
           </span>
         </header>
+
+        {/* ---------- Client Demo / Buyer Showcase Banner + Upwork CTA ---------- */}
+        {isClientDemo && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-500/40 bg-gradient-to-r from-[#06281E] via-[#0A2558] to-[#0F172A] px-3 py-2 text-xs text-white shadow-lg">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-amber-400 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-slate-950 shadow">
+                ✨ Live Client Demo (Read-Only Entry)
+              </span>
+              <span className="font-bold text-emerald-200 hidden xl:inline">
+                Full Garment ERP, TV Wallboard, Quality (DHU/OQL) &amp; NPT System · Firebase Connected
+              </span>
+              <div className="flex flex-wrap items-center gap-1 ml-1">
+                <button
+                  type="button"
+                  onClick={() => { setActiveDeviceView('TV'); setPageRequest({ page: 'ALL', n: Date.now() }); }}
+                  className="rounded bg-white/15 hover:bg-white/25 px-2 py-1 text-[11px] font-extrabold text-white transition"
+                >
+                  📺 TV Wallboard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveDeviceView('MOBILE')}
+                  className="rounded bg-white/15 hover:bg-white/25 px-2 py-1 text-[11px] font-extrabold text-white transition"
+                >
+                  📱 Mobile View
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setEntryModule(undefined); setShowEntryModal(true); }}
+                  className="rounded bg-amber-500/90 hover:bg-amber-400 px-2.5 py-1 text-[11px] font-black text-slate-950 transition shadow"
+                >
+                  📝 View All 7 Entry Forms (Read-Only)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowIncidentModal(true)}
+                  className="rounded bg-white/15 hover:bg-white/25 px-2 py-1 text-[11px] font-extrabold text-white transition"
+                >
+                  🚨 NPT &amp; Comments
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowReportsModal(true)}
+                  className="rounded bg-white/15 hover:bg-white/25 px-2 py-1 text-[11px] font-extrabold text-white transition"
+                >
+                  📊 Excel Reports
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowShareDemoModal(true)}
+                className="rounded-lg border border-blue-400/50 bg-blue-900/70 hover:bg-blue-800 px-2.5 py-1 text-[11px] font-extrabold text-blue-100 transition"
+              >
+                🔗 Demo &amp; Upwork Link
+              </button>
+              <a
+                href={upworkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#14A800] hover:bg-[#108A00] px-3 py-1 text-[11px] font-black text-white shadow-md transition"
+              >
+                <span>💼 Hire / Order on Upwork</span>
+              </a>
+            </div>
+          </div>
+        )}
+
+        {clientDemoToast && (
+          <div className="flex items-center justify-between gap-2 bg-amber-400 px-4 py-2 text-xs font-black text-slate-950 shadow">
+            <span>{clientDemoToast}</span>
+            <button type="button" onClick={() => setClientDemoToast(null)} className="font-black px-2">✕</button>
+          </div>
+        )}
 
         {/* ---------- Top Notification Comment Strip (shows Name, Designation, and What They Said) ---------- */}
         {latestBannerComment && latestBannerComment.id !== dismissedCommentId && (
@@ -1235,7 +1447,7 @@ export default function App() {
               </button>
             </div>
             <p className="text-xs text-slate-600">
-              Permissions (including Admin &amp; Auditor access for Bi-Hourly Audit and Weekly BS OQL / NFL AQC) are enforced based on your active role:
+              Permissions (including Admin &amp; Auditor access for Bi-Hourly Audit and Weekly BS OQL / {isClientDemo ? 'DEMO' : 'NFL'} AQC) are enforced based on your active role:
             </p>
             <div className="max-h-80 overflow-y-auto space-y-1.5">
               {users.map(u => (
@@ -1306,6 +1518,7 @@ export default function App() {
           lockedFloor={lockedFloor}
           floorTotals={floorTotals}
           onSaveFloorManpower={handleSaveFloorManpower}
+          readOnlyDemo={isClientDemo}
           onClose={() => { setShowEntryModal(false); setEntryModule(undefined); }}
         />
       )}
@@ -1345,16 +1558,171 @@ export default function App() {
           onFactoryResetAll={handleFactoryResetAll}
           onToggleLineActive={handleToggleLineActive}
           onApproveRegistration={async userId => {
+            if (isClientDemo) { showReadOnlyNotice('Approve Registration'); return; }
             await approveCloudUserRegistration(userId, currentUser.name);
           }}
           onRejectRegistration={async userId => {
+            if (isClientDemo) { showReadOnlyNotice('Reject Registration'); return; }
             await rejectCloudUserRegistration(userId, 'Rejected by Administrator');
           }}
           onApproveDeviceOrTv={async (userId, deviceId, deviceName) => {
+            if (isClientDemo) { showReadOnlyNotice('Approve Device / TV'); return; }
             await approveCloudDeviceOrTvRequest(userId, deviceId, deviceName, currentUser.name);
           }}
           onClose={() => { setShowAdminModal(false); setAdminStart(undefined); }}
         />
+      )}
+
+      {/* MODAL 7: CLIENT DEMO LINK & UPWORK URL MANAGER */}
+      {showShareDemoModal && (
+        <div className="fixed inset-0 bg-slate-950/75 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl border border-slate-200 text-slate-900">
+            <div className="flex justify-between items-center border-b pb-2.5">
+              <div>
+                <h3 className="text-base font-black text-[#0A2558]">
+                  🚀 Client Demo Link &amp; Upwork Showcase Settings
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Share this read-only interactive demo with buyers on Upwork or social media
+                </p>
+              </div>
+              <button
+                onClick={() => setShowShareDemoModal(false)}
+                className="text-slate-400 hover:text-slate-700 font-bold text-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3.5 rounded-xl bg-slate-900 text-white space-y-2 border border-slate-700">
+                <div className="text-[11px] font-black uppercase tracking-wider text-amber-400">
+                  🔑 Pre-Built Client Demo Login Credentials
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-white/10 rounded-lg p-2">
+                    <span className="text-slate-300 block text-[10px]">Employee / Demo ID</span>
+                    <b className="font-mono text-sm text-amber-300">{CLIENT_DEMO_ID}</b>
+                  </div>
+                  <div className="bg-white/10 rounded-lg p-2">
+                    <span className="text-slate-300 block text-[10px]">Password</span>
+                    <b className="font-mono text-sm text-amber-300">{CLIENT_DEMO_PASS}</b>
+                  </div>
+                </div>
+                <div className="text-[11px] text-emerald-300 font-semibold">
+                  ✓ Clients can view all Dashboards, Floors, Reports &amp; all 7 Data Entry Forms, but cannot modify or delete live data.
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-800 mb-1">
+                  💼 Your Upwork Profile / Project URL
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={upworkInput}
+                    onChange={e => setUpworkInput(e.target.value)}
+                    placeholder="https://www.upwork.com/freelancers/..."
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const clean = upworkInput.trim() || 'https://www.upwork.com/';
+                      setCustomUpworkUrl(clean);
+                      setUpworkUrl(clean);
+                      setCopyFeedback('✓ Upwork URL saved!');
+                      setTimeout(() => setCopyFeedback(null), 2500);
+                    }}
+                    className="rounded-lg bg-[#14A800] hover:bg-[#108A00] px-3.5 py-2 text-xs font-black text-white"
+                  >
+                    Save URL
+                  </button>
+                </div>
+              </div>
+
+              {(() => {
+                const baseOrigin = typeof window !== 'undefined'
+                  ? `${window.location.origin}${window.location.pathname.replace(/\/demo\/?.*$/, '').replace(/\/$/, '')}`
+                  : 'https://shamimusfba-design.github.io/NFL_LIVE';
+                const customParam = upworkUrl && upworkUrl !== 'https://www.upwork.com/'
+                  ? `?upwork=${encodeURIComponent(upworkUrl)}`
+                  : '';
+                const demoFolderLink = `${baseOrigin}/demo/${customParam}`;
+                const demoQueryLink = `${baseOrigin}/?demo=client${customParam ? `&upwork=${encodeURIComponent(upworkUrl)}` : ''}`;
+                return (
+                  <div className="space-y-2 pt-1">
+                    <div>
+                      <label className="block text-[11px] font-black text-slate-700 mb-1">
+                        🌐 Dedicated Client Demo Link 1 (Clean Folder Link):
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={demoFolderLink}
+                          className="flex-1 rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1.5 font-mono text-[11px] font-bold text-slate-800"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(demoFolderLink);
+                            setCopyFeedback('✓ Copied Demo Folder Link!');
+                            setTimeout(() => setCopyFeedback(null), 2500);
+                          }}
+                          className="rounded-lg bg-[#0A2558] hover:bg-blue-900 px-3 py-1.5 text-xs font-black text-white"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-black text-slate-700 mb-1">
+                        🌐 Dedicated Client Demo Link 2 (Direct Query Link):
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={demoQueryLink}
+                          className="flex-1 rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1.5 font-mono text-[11px] font-bold text-slate-800"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(demoQueryLink);
+                            setCopyFeedback('✓ Copied Direct Demo Link!');
+                            setTimeout(() => setCopyFeedback(null), 2500);
+                          }}
+                          className="rounded-lg bg-[#0A2558] hover:bg-blue-900 px-3 py-1.5 text-xs font-black text-white"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {copyFeedback && (
+                <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs font-black text-emerald-800 text-center">
+                  {copyFeedback}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                onClick={() => setShowShareDemoModal(false)}
+                className="bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-4 py-2 rounded-lg"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* MODAL 6: FREE DESKTOP PWA INSTALLATION GUIDE */}
@@ -1363,7 +1731,7 @@ export default function App() {
           <div className="bg-white rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl border border-slate-200">
             <div className="flex justify-between items-center border-b pb-2">
               <h3 className="text-base font-black text-slate-900">
-                🖥️ Install Free NFL LIVE Desktop App (Windows / Mac)
+                🖥️ Install Free {isClientDemo ? 'DEMO' : 'NFL'} LIVE Desktop App (Windows / Mac)
               </h3>
               <button
                 onClick={() => setShowInstallDesktopModal(false)}
@@ -1380,7 +1748,7 @@ export default function App() {
                     <b>Option A (Standalone PWA Folder):</b> Open <code className="font-mono">desktop-pwa/index.html</code> or deploy <code className="font-mono">web-dashboard-and-mobile/</code>.
                   </li>
                   <li>
-                    <b>Option B (Install as Native Desktop App Icon):</b> In Chrome or Edge, click the <b>Install App icon (⊕)</b> on the right side of the address bar to pin <b>NFL LIVE Desktop</b> to your Windows Taskbar and Desktop.
+                    <b>Option B (Install as Native Desktop App Icon):</b> In Chrome or Edge, click the <b>Install App icon (⊕)</b> on the right side of the address bar to pin <b>{isClientDemo ? 'DEMO' : 'NFL'} LIVE Desktop</b> to your Windows Taskbar and Desktop.
                   </li>
                 </ul>
               </div>

@@ -31,6 +31,7 @@ import {
   isoWeeksOfYear,
   isoWeekKeyOf
 } from '../data/masterData';
+import { isClientDemoSession } from '../data/clientDemo';
 
 interface EntryFormsProps {
   lines: LineMasterItem[];
@@ -55,6 +56,7 @@ interface EntryFormsProps {
   lockedFloor?: PhysicalFloor | null;
   floorTotals?: FloorManpowerRecord[];
   onSaveFloorManpower?: (record: FloorManpowerRecord) => void;
+  readOnlyDemo?: boolean;
   onClose: () => void;
 }
 
@@ -74,8 +76,14 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   lockedFloor = null,
   floorTotals = [],
   onSaveFloorManpower,
+  readOnlyDemo = false,
   onClose
 }) => {
+  const [demoNotice, setDemoNotice] = useState<string | null>(null);
+  const triggerDemoReadOnlyNotice = (featureLabel: string) => {
+    setDemoNotice(`🔒 Client Demo Mode (Read-Only): "${featureLabel}" form previewed! Saving or modifying live Firebase database records is disabled in Client Demo View.`);
+    setTimeout(() => setDemoNotice(null), 4500);
+  };
   const [activeTab, setActiveTab] = useState<
     'PRODUCTION' | 'QUALITY' | 'WEEKLY_OQL' | 'SETUP' | 'MONTHLY' | 'FINISHING'
   >(
@@ -95,7 +103,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const [formHourNo, setFormHourNo] = useState(1);
   // The item / style of a line comes from today's Target Setting. Nothing is chosen from a made-up list.
   const styleOf = (lineId: string): string =>
-    targets.find(t => t.lineId === lineId && t.date === formDate && !t.isDemo)?.styleNumber || '';
+    targets.find(t => t.lineId === lineId && t.date === formDate && (readOnlyDemo || !t.isDemo))?.styleNumber || '';
 
   // Production State (Single + Batch All-Lines Matrix)
   const [prodEntryMode, setProdEntryMode] = useState<'SINGLE' | 'BATCH'>('SINGLE');
@@ -188,6 +196,10 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
   const handleProductionSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnlyDemo) {
+      triggerDemoReadOnlyNotice('Hourly Production Entry');
+      return;
+    }
     if (prodEntryMode === 'BATCH') {
       let savedCount = 0;
       let skipped = 0;
@@ -243,6 +255,10 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const handleQualitySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setQaError(null);
+    if (readOnlyDemo) {
+      triggerDemoReadOnlyNotice(qaMode === 'BI_HOURLY_AUDIT' ? 'Bi-Hourly OQL Audit' : 'Hourly Quality DHU');
+      return;
+    }
 
     if (qaMode === 'BI_HOURLY_AUDIT' && !canWriteAuditOrWeekly) {
       setQaError(
@@ -328,18 +344,24 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
     setTimeout(() => setQaSuccess(null), 2500);
   };
 
+  const aqcBrand = readOnlyDemo || isClientDemoSession() ? 'DEMO' : 'NFL';
+
   const handleWeeklySubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnlyDemo) {
+      triggerDemoReadOnlyNotice(`Weekly BS OQL / ${aqcBrand} AQC`);
+      return;
+    }
     if (!canWriteAuditOrWeekly) {
       setWeeklyMsg(
-        '⚠️ Access Denied: Only Admin, Auditor, and IE roles can save Weekly BS OQL / NFL AQC.'
+        `⚠️ Access Denied: Only Admin, Auditor, and IE roles can save Weekly BS OQL / ${aqcBrand} AQC.`
       );
       return;
     }
     const bs = bsOqlInput.trim() !== '' ? Number(bsOqlInput) : null;
     const aqc = nflAqcInput.trim() !== '' ? Number(nflAqcInput) : null;
     if (!selectedWeekKey || (bs === null && aqc === null)) {
-      setWeeklyMsg('⚠️ Please enter BS OQL (%) or NFL AQC (%) for the selected week.');
+      setWeeklyMsg(`⚠️ Please enter BS OQL (%) or ${aqcBrand} AQC (%) for the selected week.`);
       return;
     }
     onSaveWeeklyQuality?.({
@@ -351,12 +373,16 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
       lastUpdatedMillis: Date.now(),
       isDemo: false
     });
-    setWeeklyMsg(`✓ Saved Weekly BS OQL / NFL AQC for ${selectedWeekKey}!`);
+    setWeeklyMsg(`✓ Saved Weekly BS OQL / ${aqcBrand} AQC for ${selectedWeekKey}!`);
     setTimeout(() => setWeeklyMsg(null), 3000);
   };
 
   const handleSetupSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnlyDemo) {
+      triggerDemoReadOnlyNotice('Target Setting');
+      return;
+    }
     const daily = Number(setupDailyTarget);
     const hrs = Math.max(1, Number(setupShiftHours) || 8);
     onSaveSetup({
@@ -366,7 +392,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
       dailyTargetPcs: daily,
       hourlyTargetPcs: Math.round(daily / hrs),
       targetEfficiencyPct: Number(setupTargetEff) || 75,
-      buyer: 'Nike / NFL',
+      buyer: `Nike / ${aqcBrand}`,
       styleNumber: styleOf(formLine),
       smv: Number(setupSmv),
       operatorsCount: Number(setupOps),
@@ -384,6 +410,10 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
   const handleMonthlySubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnlyDemo) {
+      triggerDemoReadOnlyNotice('Monthly Floor Targets');
+      return;
+    }
     onSaveMonthlyTarget?.({
       id: `${formFloor}__${monthYear}`,
       floor: formFloor,
@@ -417,7 +447,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
         <div className="bg-[#002D62] text-white px-5 py-3.5 flex items-center justify-between">
           <div>
             <h2 className="text-base font-black tracking-wide">
-              {module ? ENTRY_MODULES.find(m => m.id === module)?.label : 'Factory Floor Data Entry (12-Hour AM/PM Format)'}
+              {module ? ENTRY_MODULES.find(m => m.id === module)?.label.replace(/NFL/g, aqcBrand) : 'Factory Floor Data Entry (12-Hour AM/PM Format)'}
             </h2>
             <div className="text-xs text-blue-200">
               Logged in as: <span className="font-bold text-white">{currentUserName}</span> ({currentUserRole})
@@ -431,8 +461,26 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
           </button>
         </div>
 
-        {/* Module Tab Switcher (hidden when one module was chosen from the menu) */}
-        {!module && (
+        {readOnlyDemo && (
+          <div className="bg-amber-50 border-b border-amber-300 px-5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-950">
+            <div className="font-bold">
+              👁️ <span className="font-black">CLIENT DEMO VIEW (READ-ONLY ENTRY PREVIEW):</span> You can explore all 7 entry forms, switch floors/lines, and test live calculators — saving to the database is disabled.
+            </div>
+            <span className="rounded-full bg-amber-300/80 px-2.5 py-0.5 text-[10px] font-black uppercase text-amber-950">
+              Read-Only Mode
+            </span>
+          </div>
+        )}
+
+        {demoNotice && (
+          <div className="bg-blue-900 text-amber-200 px-5 py-2.5 text-xs font-black border-b border-blue-700 flex items-center justify-between">
+            <span>{demoNotice}</span>
+            <button type="button" onClick={() => setDemoNotice(null)} className="text-white ml-2">✕</button>
+          </div>
+        )}
+
+        {/* Module Tab Switcher (shown when no single module was forced, or in Client Demo so buyers can switch freely) */}
+        {(!module || readOnlyDemo) && (
         <div className="flex flex-wrap border-b border-slate-200 bg-slate-50 px-4 pt-2 gap-1.5 text-xs font-bold">
           <button
             onClick={() => setActiveTab('PRODUCTION')}
@@ -443,6 +491,26 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
             }`}
           >
             🧵 Production (12h AM/PM)
+          </button>
+          <button
+            onClick={() => setActiveTab('SETUP')}
+            className={`pb-2.5 px-3 border-b-2 transition ${
+              activeTab === 'SETUP'
+                ? 'border-[#002D62] text-[#002D62] font-black'
+                : 'border-transparent text-slate-500'
+            }`}
+          >
+            ⚙️ Target Setting
+          </button>
+          <button
+            onClick={() => setActiveTab('FINISHING')}
+            className={`pb-2.5 px-3 border-b-2 transition ${
+              activeTab === 'FINISHING'
+                ? 'border-[#002D62] text-[#002D62] font-black'
+                : 'border-transparent text-slate-500'
+            }`}
+          >
+            📦 Iron &amp; Packing
           </button>
           <button
             onClick={() => setActiveTab('QUALITY')}
@@ -462,17 +530,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 : 'border-transparent text-slate-500'
             }`}
           >
-            📈 Weekly BS OQL / NFL AQC
-          </button>
-          <button
-            onClick={() => setActiveTab('SETUP')}
-            className={`pb-2.5 px-3 border-b-2 transition ${
-              activeTab === 'SETUP'
-                ? 'border-[#002D62] text-[#002D62] font-black'
-                : 'border-transparent text-slate-500'
-            }`}
-          >
-            ⚙️ Morning Line Setup
+            📈 Weekly BS OQL / {aqcBrand} AQC
           </button>
           <button
             onClick={() => setActiveTab('MONTHLY')}
@@ -952,7 +1010,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
             >
               <div>
                 <h3 className="text-sm font-black text-[#002D62]">
-                  Weekly BS OQL &amp; NFL AQC Entry (Admin &amp; Auditor Only)
+                  Weekly BS OQL &amp; {aqcBrand} AQC Entry (Admin &amp; Auditor Only)
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Commitment ≤ 4.5% • Level 1 below 7.0% • Critical Red above 10.0%. Only Admin and Auditor can enter or update weekly figures.
@@ -961,7 +1019,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
               {!canWriteAuditOrWeekly && (
                 <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs font-bold">
-                  🔒 Access Denied: Only Admin and Auditor roles can save Weekly BS OQL / NFL AQC data (Quality Manager and IE have view-only access).
+                  🔒 Access Denied: Only Admin and Auditor roles can save Weekly BS OQL / {aqcBrand} AQC data (Quality Manager and IE have view-only access).
                 </div>
               )}
 
@@ -1028,7 +1086,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    NFL AQC (%)
+                    {aqcBrand} AQC (%)
                   </label>
                   <input
                     type="number"
@@ -1055,14 +1113,14 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                   disabled={!canWriteAuditOrWeekly}
                   className="bg-[#002D62] disabled:bg-slate-400 hover:bg-blue-900 text-white font-black text-xs px-6 py-2.5 rounded-xl shadow transition"
                 >
-                  Save Weekly BS OQL / NFL AQC
+                  Save Weekly BS OQL / {aqcBrand} AQC
                 </button>
               </div>
 
               {/* Saved Weekly History Table */}
               <div className="border-t pt-3">
                 <div className="text-xs font-black text-slate-700 mb-2">
-                  Saved Weekly BS OQL &amp; NFL AQC History
+                  Saved Weekly BS OQL &amp; {aqcBrand} AQC History
                 </div>
                 <div className="overflow-x-auto max-h-44">
                   <table className="w-full text-xs border-collapse">
@@ -1071,7 +1129,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                         <th className="p-2">Week</th>
                         <th className="p-2">Week Start</th>
                         <th className="p-2 text-right">BS OQL %</th>
-                        <th className="p-2 text-right">NFL AQC %</th>
+                        <th className="p-2 text-right">{aqcBrand} AQC %</th>
                         <th className="p-2">Updated By</th>
                       </tr>
                     </thead>
@@ -1098,11 +1156,44 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
           {/* ==================== TAB 4: MORNING LINE SETUP ==================== */}
           {activeTab === 'FINISHING' && (
-            <FinishingEntry onlyFloor={lockedFloor} date={formDate} userName={currentUserName} targets={targets} onSaveProduction={onSaveProduction} />
+            <FinishingEntry
+              onlyFloor={lockedFloor}
+              date={formDate}
+              userName={currentUserName}
+              targets={targets}
+              onSaveProduction={entry => {
+                if (readOnlyDemo) {
+                  triggerDemoReadOnlyNotice('Iron & Packing Output');
+                  return;
+                }
+                onSaveProduction(entry);
+              }}
+            />
           )}
 
           {activeTab === 'SETUP' && (
-            <BulkTargetSetup onlyFloor={lockedFloor} lines={lines} targets={targets} floorTotals={floorTotals} date={formDate} userName={currentUserName} onSaveSetup={onSaveSetup} onSaveFloorManpower={r => onSaveFloorManpower?.(r)} />
+            <BulkTargetSetup
+              onlyFloor={lockedFloor}
+              lines={lines}
+              targets={targets}
+              floorTotals={floorTotals}
+              date={formDate}
+              userName={currentUserName}
+              onSaveSetup={setup => {
+                if (readOnlyDemo) {
+                  triggerDemoReadOnlyNotice('Target Setting');
+                  return;
+                }
+                onSaveSetup(setup);
+              }}
+              onSaveFloorManpower={r => {
+                if (readOnlyDemo) {
+                  triggerDemoReadOnlyNotice('Floor Manpower Setup');
+                  return;
+                }
+                onSaveFloorManpower?.(r);
+              }}
+            />
           )}
 
           {activeTab === 'MONTHLY' && (

@@ -23,6 +23,7 @@ import { formatHourSlot12h,
   AUDIT_PASS_OQL_PCT, auditResultOf, getBangladeshTodayIso } from '../data/masterData';
 import { CalculationEngine as CalcForPeriod } from '../services/calculationEngine';
 import { NflLogo } from './NflLogo';
+import { isClientDemoSession } from '../data/clientDemo';
 
 export type WbPageId = 'PRODUCTION' | 'QUALITY' | 'FINISHING' | 'ALL' | 'TABLE';
 
@@ -245,6 +246,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       .filter(w => w.bsOqlPct !== null || w.nflAqcPct !== null)
       .sort((a, b) => a.weekKey.localeCompare(b.weekKey));
   }, [weeklyQuality]);
+  const brand = isClientDemoSession() ? 'DEMO' : 'NFL';
 
   return (
     <div
@@ -258,7 +260,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             <span className="inline-flex h-5 w-5 items-center justify-center overflow-hidden rounded-sm">
               <NflLogo size={20} />
             </span>
-            <span>NFL LIVE</span>
+            <span>{brand} LIVE</span>
           </div>
           <span className="hidden sm:inline text-xs font-bold" style={{ color: WB_THEME.MUTED }}>
             TV Wallboard &amp; Command Center
@@ -469,7 +471,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             <WbTile label="Factory DHU" value={dhu !== null ? `${dhu.toFixed(2)}%` : '—'} color={pc(dhu, 4, 5.5, true)} sub={`${defects.toLocaleString()} defects`} />
             <WbTile label="Factory OQL" value={oql !== null ? `${oql.toFixed(2)}%` : '—'} color={pc(oql, AUDIT_PASS_OQL_PCT, 7, true)} sub={`limit ${AUDIT_PASS_OQL_PCT}%`} />
             <WbTile label="BS OQL (weekly)" value={latestW && latestW.bsOqlPct !== null ? `${latestW.bsOqlPct.toFixed(2)}%` : '—'} color={pc(latestW?.bsOqlPct ?? null, 4.5, 7, true)} sub={latestW ? `Week ${latestW.weekKey.replace(/^\d{4}-/, '')}` : 'No weekly record yet'} />
-            <WbTile label="NFL AQC (weekly)" value={latestW && latestW.nflAqcPct !== null ? `${latestW.nflAqcPct.toFixed(2)}%` : '—'} color={pc(latestW?.nflAqcPct ?? null, 4.5, 7, true)} sub={latestW ? `Week ${latestW.weekKey.replace(/^\d{4}-/, '')}` : 'No weekly record yet'} />
+            <WbTile label={`${brand} AQC (weekly)`} value={latestW && latestW.nflAqcPct !== null ? `${latestW.nflAqcPct.toFixed(2)}%` : '—'} color={pc(latestW?.nflAqcPct ?? null, 4.5, 7, true)} sub={latestW ? `Week ${latestW.weekKey.replace(/^\d{4}-/, '')}` : 'No weekly record yet'} />
           </div>
         );
       })()}
@@ -529,7 +531,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       })()}
 
       {isDept && (
-        <WbPanel title="Weekly BS OQL vs NFL AQC (from week 32)" sub="Blue: BS OQL · Orange: NFL AQC · Red dashed: 4.5% commitment">
+        <WbPanel title={`Weekly BS OQL vs ${brand} AQC (from week 32)`} sub={`Blue: BS OQL · Orange: ${brand} AQC · Red dashed: 4.5% commitment`}>
           <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} />
         </WbPanel>
       )}
@@ -920,7 +922,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
       {/* ==================== PAGE 3: ALL (EXECUTIVE COMBINED WALLBOARD) ==================== */}
       {!isDept && page === 'QUALITY' && (
-        <WbPanel title="Weekly BS OQL vs NFL AQC (from week 32)" sub="Blue: BS OQL · Orange: NFL AQC · Red dashed: 4.5% commitment">
+        <WbPanel title={`Weekly BS OQL vs ${brand} AQC (from week 32)`} sub={`Blue: BS OQL · Orange: ${brand} AQC · Red dashed: 4.5% commitment`}>
           <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} />
         </WbPanel>
       )}
@@ -1132,12 +1134,12 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             </WbPanel>
 
             <WbPanel
-              title="Weekly BS OQL and NFL AQC"
+              title={`Weekly BS OQL and ${brand} AQC`}
               sub="Weekly trend (%) · Dashed: 4.5% commitment · Level 1 <7% · Red >10%"
               right={
                 <div className="flex gap-1">
                   <WbBadge text="BS OQL" bg={WB_THEME.BLUE} fg="var(--wb-on-selected)" />
-                  <WbBadge text="NFL AQC" bg={WB_THEME.ORANGE} fg="var(--wb-on-orange)" />
+                  <WbBadge text={`${brand} AQC`} bg={WB_THEME.ORANGE} fg="var(--wb-on-orange)" />
                 </div>
               }
               className="lg:col-span-4"
@@ -2001,7 +2003,7 @@ const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: n
       </svg>
       <div className="flex justify-center gap-4 text-xs font-bold" style={{ color: WB_THEME.MUTED }}>
         <span><span className="inline-block w-3 h-1 align-middle mr-1" style={{ backgroundColor: WB_THEME.BLUE }} />BS OQL (empty space below/above line)</span>
-        <span><span className="inline-block w-3 h-1 align-middle mr-1" style={{ backgroundColor: WB_THEME.ORANGE }} />NFL AQC (from Week 32)</span>
+        <span><span className="inline-block w-3 h-1 align-middle mr-1" style={{ backgroundColor: WB_THEME.ORANGE }} />{isClientDemoSession() ? 'DEMO' : 'NFL'} AQC (from Week 32)</span>
       </div>
     </div>
   );

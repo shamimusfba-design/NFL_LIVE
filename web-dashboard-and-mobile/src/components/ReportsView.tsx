@@ -11,6 +11,7 @@ import {
 } from '../types';
 import { formatHourSlot12h,
   hourLabelOfSlot, isBiHourlyAuditSlot, lineDisplayName } from '../data/masterData';
+import { isClientDemoSession } from '../data/clientDemo';
 
 interface ReportsViewProps {
   selectedFloor: FloorId;
@@ -159,7 +160,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         ])
       ];
     } else if (reportSection === 'WEEKLY_OQL') {
-      headers = ['ISO Week', 'Week Start Date', 'BS OQL (%)', 'NFL AQC (%)', 'Updated By'];
+      const brand = isClientDemoSession() ? 'DEMO' : 'NFL';
+      headers = ['ISO Week', 'Week Start Date', 'BS OQL (%)', `${brand} AQC (%)`, 'Updated By'];
       rows = weeklyQuality.map(w => [
         w.weekKey,
         w.weekStartIso,
@@ -211,9 +213,10 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
+    const brand = isClientDemoSession() ? 'DEMO' : 'NFL';
     link.setAttribute(
       'download',
-      `NFL_${reportSection}_${selectedFloor}_${periodType}_12h.csv`
+      `${brand}_${reportSection}_${selectedFloor}_${periodType}_12h.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -363,7 +366,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                       <th className="py-2.5 px-3">ISO Week</th>
                       <th className="py-2.5 px-3">Week Start</th>
                       <th className="py-2.5 px-3 text-right">BS OQL (%)</th>
-                      <th className="py-2.5 px-3 text-right">NFL AQC (%)</th>
+                      <th className="py-2.5 px-3 text-right">{isClientDemoSession() ? 'DEMO' : 'NFL'} AQC (%)</th>
                       <th className="py-2.5 px-3">Updated By</th>
                     </tr>
                   )}

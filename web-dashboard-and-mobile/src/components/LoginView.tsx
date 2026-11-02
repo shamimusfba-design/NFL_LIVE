@@ -12,6 +12,14 @@ import {
 } from '../services/firebaseLiveSync';
 import { accountFromRecord, saveSessionCache } from '../services/sessionUser';
 import { DESIGNATIONS, FLOOR_CHOICES } from '../data/designations';
+import {
+  CLIENT_DEMO_ID,
+  CLIENT_DEMO_PASS,
+  isClientDemoUrl,
+  matchesClientDemoCredentials,
+  createClientDemoAccount,
+  getUpworkUrl
+} from '../data/clientDemo';
 
 interface LoginViewProps {
   // Kept for compatibility with the caller. Sign-in is checked by Firebase, never against these.
@@ -29,12 +37,7 @@ interface LoginViewProps {
 
 const OWNER_EMPLOYEE_ID = '1015198';
 
-
-const NflLogo: React.FC<{ size?: number }> = ({ size = 72 }) => (
-  <svg viewBox="0 0 108 108" width={size} height={size} xmlns="http://www.w3.org/2000/svg" aria-label="NFL logo">
-    <path fill="#FFFFFF" d="M0,0h108v108h-108z" /><path fill="#7D909D" d="M10,70 C20,53 35,35 56,29 C64,27 68,28 69,30 C66,32 60,33 54,35 C35,40 22,57 14,70 Z" /><path fill="#92A3AF" d="M16,70 C26,53 39,38 58,34 C65,33 69,33 70,35 C67,37 62,38 56,40 C39,45 27,59 20,70 Z" /><path fill="#A8B7C1" d="M22,70 C31,54 44,42 61,38 C67,37 71,38 72,40 C69,41 64,43 58,44 C43,49 32,61 26,70 Z" /><path fill="#0F172A" d="M54,36 C64,36 72,38 75,41 C77,44 76,53 69,56 L54,56 C62,50 63,45 61,42 C59,39 55,39 51,39 Z" /><path fill="#0F172A" d="M35,49 L55,49 C46,55 45,61 47,65 C49,68 54,68 58,68 C47,70 39,68 36,65 C33,61 34,54 35,49 Z" /><path fill="#44F518" d="M43,73 C54,72 67,68 79,54 C85,47 89,42 91,40 L88,40 C82,46 74,56 65,64 C56,70 48,73 43,73 Z" /><path fill="#34E00A" d="M49,76 C60,75 73,69 85,55 C90,48 94,42 96,40 L93,40 C87,47 78,58 70,66 C61,73 54,75 49,76 Z" /><path fill="#24CC00" d="M56,78 C67,77 79,71 90,57 C95,49 99,43 101,40 L98,40 C92,48 83,60 75,68 C67,75 61,77 56,78 Z" />
-  </svg>
-);
+import { NflLogo } from './NflLogo';
 
 const Icon: React.FC<{ d: string; size?: number }> = ({ d, size = 22 }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
@@ -130,10 +133,11 @@ const Message: React.FC<{ kind: 'error' | 'info'; text: string }> = ({ kind, tex
 );
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLogin, notice }) => {
+  const isDemoLink = isClientDemoUrl();
   const [mode, setMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
-  // Nothing is pre-filled: no default ID and no default password.
-  const [usernameInput, setUsernameInput] = useState('');
-  const [passwordInput, setPasswordInput] = useState('');
+  // Pre-filled with DEMO / demo1234 when opened via the Client Demo link (/demo/ or ?demo=client).
+  const [usernameInput, setUsernameInput] = useState(() => (isDemoLink ? CLIENT_DEMO_ID : ''));
+  const [passwordInput, setPasswordInput] = useState(() => (isDemoLink ? CLIENT_DEMO_PASS : ''));
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(notice ?? null);
   const [busy, setBusy] = useState(false);
@@ -145,12 +149,33 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, notice }) => {
   const [regPassword, setRegPassword] = useState('');
   const [regConfirm, setRegConfirm] = useState('');
 
+  const handleEnterClientDemo = async () => {
+    if (busy) return;
+    setBusy(true);
+    setErrorMessage(null);
+    setInfoMessage(null);
+    try {
+      // Connect Firebase Auth session in the background if available
+      const res = await signInWebEmployee(CLIENT_DEMO_ID, CLIENT_DEMO_PASS);
+      if (!res.ok) {
+        await createWebEmployeeAccount(CLIENT_DEMO_ID, CLIENT_DEMO_PASS).catch(() => {});
+      }
+    } catch {}
+    const demoAccount = createClientDemoAccount();
+    setBusy(false);
+    onLogin(demoAccount);
+  };
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
     const input = usernameInput.trim();
     if (!input || !passwordInput.trim()) {
       setErrorMessage('Enter your Employee ID and password.');
+      return;
+    }
+    if (matchesClientDemoCredentials(input, passwordInput)) {
+      await handleEnterClientDemo();
       return;
     }
     setBusy(true);
@@ -275,6 +300,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, notice }) => {
   const d = DESIGNATIONS.find(x => x.name === regDesignation);
   const bg = `${import.meta.env.BASE_URL}login-bg.jpg`;
   const selectStyle: React.CSSProperties = { ...fieldStyle, width: '100%', color: '#0F172A', fontSize: 15.5, outline: 'none', appearance: 'auto' };
+  const [demoModeForced, setDemoModeForced] = useState(() => {
+    try {
+      return isDemoLink || sessionStorage.getItem('nfl_client_demo_active') === '1';
+    } catch {
+      return isDemoLink;
+    }
+  });
+  const showDemoBrand = demoModeForced || isDemoLink || usernameInput.trim().toUpperCase() === 'DEMO';
 
   return (
     <div style={{ minHeight: '100vh', background: '#061B43', position: 'relative', overflow: 'hidden' }}>
@@ -284,18 +317,101 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, notice }) => {
       }} />
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '34px 20px 26px', minHeight: '100vh' }}>
         <div style={{ width: 86, height: 86, borderRadius: '50%', background: '#fff', boxShadow: '0 8px 22px rgba(0,0,0,.45)', display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
-          <NflLogo size={72} />
+          <NflLogo size={72} demoMode={showDemoBrand} />
         </div>
         <div style={{ fontSize: 34, fontWeight: 900, letterSpacing: 1.2, color: '#fff', margin: '14px 0 20px', lineHeight: 1 }}>
-          NFL <span style={{ color: '#1677FF' }}>LIVE</span>
+          {showDemoBrand ? 'DEMO' : 'NFL'} <span style={{ color: '#1677FF' }}>LIVE</span>
         </div>
 
         <div style={{ width: '100%', maxWidth: 440, background: '#fff', borderRadius: 26, padding: '24px 22px', boxShadow: '0 18px 50px rgba(0,0,0,.6)', color: '#0F172A' }}>
           {mode === 'LOGIN' ? (
             <form onSubmit={handleLoginSubmit} style={{ display: 'grid', gap: 14 }} autoComplete="off">
+              {showDemoBrand && (
+                <div style={{
+                  background: 'linear-gradient(135deg, #0A2558 0%, #1D4ED8 100%)',
+                  color: '#fff',
+                  borderRadius: 16,
+                  padding: '14px 16px',
+                  boxShadow: '0 8px 20px rgba(29,78,216,.28)',
+                  border: '1px solid rgba(96,165,250,.45)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: 0.8, textTransform: 'uppercase', background: '#F59E0B', color: '#0F172A', padding: '2px 8px', borderRadius: 999 }}>
+                      ✨ Client Demo Edition
+                    </span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#93C5FD' }}>
+                      🔥 Firebase Connected
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13.5, fontWeight: 800, marginBottom: 4 }}>
+                    Pre-Built Client Credentials (Read-Only Entry Preview)
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, fontSize: 12.5, background: 'rgba(255,255,255,.12)', padding: '7px 10px', borderRadius: 10, marginBottom: 10 }}>
+                    <span>ID: <b style={{ color: '#FDE047', fontFamily: 'monospace', fontSize: 13.5 }}>{CLIENT_DEMO_ID}</b></span>
+                    <span>•</span>
+                    <span>Password: <b style={{ color: '#FDE047', fontFamily: 'monospace', fontSize: 13.5 }}>{CLIENT_DEMO_PASS}</b></span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={handleEnterClientDemo}
+                      style={{
+                        flex: 1,
+                        background: '#10B981',
+                        color: '#052E22',
+                        border: 0,
+                        borderRadius: 10,
+                        padding: '8px 10px',
+                        fontSize: 12.5,
+                        fontWeight: 900,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🚀 1-Click Enter Live Demo
+                    </button>
+                    <a
+                      href={getUpworkUrl()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        background: '#14A800',
+                        color: '#fff',
+                        textDecoration: 'none',
+                        borderRadius: 10,
+                        padding: '8px 12px',
+                        fontSize: 12,
+                        fontWeight: 900,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }}
+                    >
+                      💼 Hire on Upwork
+                    </a>
+                  </div>
+                </div>
+              )}
               <Field icon={ICON.id} value={usernameInput} placeholder="Employee ID" onChange={v => { setUsernameInput(v); setErrorMessage(null); }} />
               <Field icon={ICON.lock} type="password" autoComplete="new-password" value={passwordInput} placeholder="Password" onChange={v => { setPasswordInput(v); setErrorMessage(null); }} />
-              <button type="button" onClick={handleForgotPassword} style={{ background: 'none', border: 0, color: '#1D4ED8', fontWeight: 700, fontSize: 13, textAlign: 'right', cursor: 'pointer', padding: 0 }}>Forgot password?</button>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      sessionStorage.setItem('nfl_client_demo_active', '1');
+                      document.title = 'DEMO LIVE — Production & Quality';
+                    } catch {}
+                    setDemoModeForced(true);
+                    setUsernameInput(CLIENT_DEMO_ID);
+                    setPasswordInput(CLIENT_DEMO_PASS);
+                    setErrorMessage(null);
+                  }}
+                  style={{ background: 'none', border: 0, color: '#0D8A55', fontWeight: 800, fontSize: 12, textAlign: 'left', cursor: 'pointer', padding: 0 }}
+                >
+                  👁️ Fill Client Demo (ID: DEMO / Pass: demo1234)
+                </button>
+                <button type="button" onClick={handleForgotPassword} style={{ background: 'none', border: 0, color: '#1D4ED8', fontWeight: 700, fontSize: 13, textAlign: 'right', cursor: 'pointer', padding: 0 }}>Forgot password?</button>
+              </div>
               {infoMessage && <Message kind="info" text={infoMessage} />}
               {errorMessage && <Message kind="error" text={errorMessage} />}
               <button type="submit" disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.65 : 1 }}>
@@ -355,7 +471,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, notice }) => {
           <Tile color="#8B5CF6" icon={ICON.sync} label="Real-time Data" />
         </div>
 
-        <div style={{ marginTop: 22, fontSize: 11, letterSpacing: 2, color: '#94A3B8' }}>NORTHERN FASHIONS LIMITED</div>
+        <div style={{ marginTop: 22, fontSize: 11, letterSpacing: 2, color: '#94A3B8' }}>{showDemoBrand ? 'DEMO GARMENTS LIMITED' : 'NORTHERN FASHIONS LIMITED'}</div>
         <div style={{ width: 100, height: 3, borderRadius: 2, background: '#1677FF', marginTop: 8 }} />
       </div>
     </div>
