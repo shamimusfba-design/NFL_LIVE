@@ -1144,13 +1144,6 @@ export default function App() {
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg>
             <span className="flex-1">Data clean & reset</span>
           </button>
-          <button
-            onClick={() => { closeMenu(); setShowShareDemoModal(true); }}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-semibold text-emerald-300 hover:bg-[var(--shell-hover)] hover:text-emerald-200"
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
-            <span className="flex-1">Client Demo &amp; Upwork Link</span>
-          </button>
         </>
       )}
           <div className="px-3 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">More</div>
@@ -1574,8 +1567,8 @@ export default function App() {
         />
       )}
 
-      {/* MODAL 7: CLIENT DEMO LINK & UPWORK URL MANAGER */}
-      {showShareDemoModal && (
+      {/* MODAL 7: CLIENT DEMO LINK & UPWORK URL MANAGER (ONLY IN CLIENT DEMO SESSION) */}
+      {isClientDemo && showShareDemoModal && (
         <div className="fixed inset-0 bg-slate-950/75 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl border border-slate-200 text-slate-900">
             <div className="flex justify-between items-center border-b pb-2.5">

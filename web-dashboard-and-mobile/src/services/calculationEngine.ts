@@ -115,23 +115,41 @@ export class CalculationEngine {
 
       const isConfirmedZero = lineProds.some(p => p.isConfirmedZero || p.outputQty === 0);
 
-      const targetDue =
-        config.totalShiftHours > 0
-          ? Math.round((config.dailyTargetPcs / config.totalShiftHours) * config.workingHoursSoFar)
-          : config.dailyTargetPcs;
+      // Distinct hours of production entered so far for this line
+      const reportedHoursCount = new Set(lineProds.map(p => p.hourSlot)).size;
 
-      const gap = totalOutput !== null ? totalOutput - targetDue : -targetDue;
+      const hourlyTarget =
+        config.hourlyTargetPcs > 0
+          ? config.hourlyTargetPcs
+          : config.totalShiftHours > 0
+          ? Math.round(config.dailyTargetPcs / config.totalShiftHours)
+          : config.dailyTargetPcs > 0
+          ? Math.round(config.dailyTargetPcs / 8)
+          : 0;
+
+      // Target is dynamic: evaluated strictly for the number of hours of production entered so far
+      const currentTarget =
+        hasReportedProd && reportedHoursCount > 0
+          ? Math.min(
+              config.dailyTargetPcs > 0 ? config.dailyTargetPcs : Infinity,
+              hourlyTarget * reportedHoursCount
+            )
+          : (hasReportedProd ? hourlyTarget : 0);
+
+      const targetDue = currentTarget;
+
+      const gap = totalOutput !== null ? totalOutput - currentTarget : 0;
 
       const achievementPct =
-        totalOutput !== null && config.dailyTargetPcs > 0
-          ? Number(((totalOutput / config.dailyTargetPcs) * 100).toFixed(1))
-          : null;
+        totalOutput !== null && currentTarget > 0
+          ? Number(((totalOutput / currentTarget) * 100).toFixed(1))
+          : (totalOutput !== null && currentTarget === 0 ? 100 : null);
 
       const earnedMinutes = totalOutput !== null ? totalOutput * (config.smv || 0) : 0;
-      const availableMinutes =
-        (config.operatorsCount + config.helpersCount + (config.finishingStaffCount ?? 0)) *
-        (config.workingHoursSoFar || 8) *
-        60;
+      const effectiveHours = reportedHoursCount > 0 ? reportedHoursCount : 1;
+      const totalManpower =
+        config.operatorsCount + config.helpersCount + (config.finishingStaffCount ?? 0);
+      const availableMinutes = totalManpower * effectiveHours * 60;
 
       const efficiencyPct =
         totalOutput !== null && availableMinutes > 0 && config.smv > 0
@@ -170,7 +188,7 @@ export class CalculationEngine {
       let reportingStatus: 'Complete' | 'Not reported' | 'In Progress' = 'Not reported';
       if (hasReportedProd) {
         reportingStatus =
-          totalOutput !== null && totalOutput >= targetDue * 0.8 ? 'Complete' : 'In Progress';
+          totalOutput !== null && currentTarget > 0 && totalOutput >= currentTarget * 0.8 ? 'Complete' : 'In Progress';
       }
 
       return {
@@ -178,8 +196,10 @@ export class CalculationEngine {
         floor: config.floor,
         styleNumber: config.styleNumber,
         smv: config.smv,
-        hourlyTarget: config.hourlyTargetPcs,
-        target: config.dailyTargetPcs,
+        hourlyTarget,
+        target: currentTarget,
+        dailyTarget: config.dailyTargetPcs,
+        hoursReported: reportedHoursCount,
         targetDue,
         output: totalOutput,
         isConfirmedZero,
@@ -346,7 +366,8 @@ export class CalculationEngine {
       ...floorProds.map(p => hourNoOf(p.lineId, p.hourSlot) ?? 0),
       ...floorQas.map(q => hourNoOf(q.lineId, q.hourSlot) ?? 0)
     );
-    const lastHour = Math.min(15, Math.max(8, maxHourWithData));
+    // Only display up to the hours that have actually been entered/reported so far
+    const lastHour = Math.min(15, Math.max(1, maxHourWithData));
 
     const result = [];
     for (let k = 1; k <= lastHour; k++) {
@@ -401,10 +422,11 @@ export class CalculationEngine {
         .filter(t => t.lineId === unitId && ok(t.isDemo) && inPeriod(t.date) && (t.hourlyTargetPcs > 0 || t.dailyTargetPcs > 0))
         .sort((a, b) => (a.date < b.date ? 1 : -1));
       const hourlyTarget = tg.length ? tg[0].hourlyTargetPcs : 0;
-      const target = tg.reduce((a, t) => a + (t.dailyTargetPcs || t.hourlyTargetPcs * 8), 0);
       const prods = productions.filter(p => p.lineId === unitId && ok(p.isDemo) && inPeriod(p.date));
       const output = prods.reduce((a, p) => a + (p.outputQty || 0), 0);
-      const maxHour = Math.max(8, ...prods.map(p => hourNoOfSlot(unitId, p.hourSlot) ?? 0));
+      const reportedHours = new Set(prods.map(p => p.hourSlot)).size;
+      const target = reportedHours > 0 ? hourlyTarget * reportedHours : (hourlyTarget > 0 ? hourlyTarget : 0);
+      const maxHour = Math.max(1, ...prods.map(p => hourNoOfSlot(unitId, p.hourSlot) ?? 0));
       const buckets: HourlyWallboardBucket[] = [];
       for (let k = 1; k <= Math.min(15, maxHour); k++) {
         const out = prods.filter(p => hourNoOfSlot(unitId, p.hourSlot) === k).reduce((a, p) => a + (p.outputQty || 0), 0);
@@ -417,7 +439,7 @@ export class CalculationEngine {
       const n = floor.replace(/\D/g, '');
       const floorLineIds = new Set(lines.filter(l => l.floor === floor && !isFinishingUnit(l.id)).map(l => l.id));
       const qs = qualities.filter(q => floorLineIds.has(q.lineId) && ok(q.isDemo) && inPeriod(q.date));
-      const maxHour = Math.max(8, ...qs.map(q => hourNoOfSlot(q.lineId, q.hourSlot) ?? 0));
+      const maxHour = Math.max(1, ...qs.map(q => hourNoOfSlot(q.lineId, q.hourSlot) ?? 0));
       const qBuckets: HourlyWallboardBucket[] = [];
       for (let k = 1; k <= Math.min(15, maxHour); k++) {
         const hq = qs.filter(q => hourNoOfSlot(q.lineId, q.hourSlot) === k);

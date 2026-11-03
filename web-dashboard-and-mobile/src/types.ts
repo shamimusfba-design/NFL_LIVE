@@ -183,6 +183,8 @@ export interface LinePerformanceSummary {
   smv: number;
   hourlyTarget: number;
   target: number;
+  dailyTarget?: number;
+  hoursReported?: number;
   targetDue: number;
   output: number | null;
   isConfirmedZero: boolean;

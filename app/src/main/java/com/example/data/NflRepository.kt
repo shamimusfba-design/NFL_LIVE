@@ -5814,14 +5814,28 @@ class NflRepository(private val context: Context) {
       val outputQty = if (hasReported) prods.sumOf { it.outputQty } else 0
       val isConfirmedZero = prods.any { it.isConfirmedZero }
 
-      val targetDue = Math.round((setup.targetDailyPcs.toDouble() / setup.totalShiftHours) * setup.workingHoursSoFar).toInt()
+      val reportedHoursCount = prods.map { it.hourSlot }.distinct().size
+      val hourlyTarget = if (setup.targetHourlyPcs > 0) setup.targetHourlyPcs
+        else if (setup.totalShiftHours > 0) Math.round(setup.targetDailyPcs.toDouble() / setup.totalShiftHours).toInt()
+        else if (setup.targetDailyPcs > 0) Math.round(setup.targetDailyPcs.toDouble() / 8).toInt()
+        else 0
 
-      val achPct = if (setup.targetDailyPcs > 0 && hasReported) {
-        ((outputQty.toDouble() / setup.targetDailyPcs) * 100).let { Math.round(it * 10.0) / 10.0 }
+      val currentTarget = if (hasReported && reportedHoursCount > 0) {
+        val calculated = hourlyTarget * reportedHoursCount
+        if (setup.targetDailyPcs > 0) calculated.coerceAtMost(setup.targetDailyPcs) else calculated
+      } else {
+        0
+      }
+
+      val targetDue = currentTarget
+
+      val achPct = if (currentTarget > 0 && hasReported) {
+        ((outputQty.toDouble() / currentTarget) * 100).let { Math.round(it * 10.0) / 10.0 }
       } else 0.0
 
       val earnedMins = outputQty * setup.smv
-      val availMins = setup.includedManpower * setup.workingHoursSoFar * 60
+      val effectiveHours = if (reportedHoursCount > 0) reportedHoursCount else 1
+      val availMins = setup.includedManpower * effectiveHours * 60
       val effPct = if (availMins > 0 && hasReported) {
         ((earnedMins / availMins) * 100).let { Math.round(it * 10.0) / 10.0 }
       } else 0.0
@@ -5871,8 +5885,8 @@ class NflRepository(private val context: Context) {
         styleNumber = setup.styleNumber,
         itemName = setup.itemName,
         smv = setup.smv,
-        targetPcs = setup.targetDailyPcs,
-        targetDuePcs = targetDue,
+        targetPcs = if (hasReported) currentTarget else 0,
+        targetDuePcs = currentTarget,
         hourlyTargetPcs = setup.targetHourlyPcs,
         targetEfficiencyPct = setup.targetEfficiencyPct,
         achievementPcs = if (hasReported) outputQty else null,
