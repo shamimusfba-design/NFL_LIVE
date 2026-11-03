@@ -746,6 +746,23 @@ fun TvDashboardScreen(
             }
           }
           Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Day / Night Mode Toggle on TV
+            Surface(
+              onClick = { WbTheme.isDark = !WbTheme.isDark },
+              color = WbTheme.PANEL,
+              shape = RoundedCornerShape(6.dp),
+              modifier = Modifier
+                .border(1.dp, WbTheme.LINE, RoundedCornerShape(6.dp))
+                .focusable()
+            ) {
+              Row(
+                Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+              ) {
+                WbText(if (WbTheme.isDark) "☾ Night" else "☼ Day", 13, if (WbTheme.isDark) WbTheme.BLUE else WbTheme.AMBER, FontWeight.Bold)
+              }
+            }
             var slideFocused by remember { mutableStateOf(false) }
             Surface(
               onClick = {

@@ -70,6 +70,8 @@ interface TvDesktopDashboardProps {
   departmentSummaries?: Array<{ floor: string; units: number; target: number; output: number; achievementPct: number | null; checked: number; passed: number }>;
   /** The side menu can ask for a page. n changes on every request so the same page can be asked twice. */
   pageRequest?: { page: WbPageId; n: number };
+  theme?: 'light' | 'dark';
+  onToggleTheme?: () => void;
 }
 
 function effColor(val: number | null, target = 75): string {
@@ -122,7 +124,9 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   allIncidents = [],
   onOpenIncidentPanel,
   departmentSummaries = [],
-  finishing = []
+  finishing = [],
+  theme = 'light',
+  onToggleTheme
 }) => {
   const [page, setPage] = useState<WbPageId>('ALL');
   // A page chosen in the side menu is shown at once.
@@ -251,7 +255,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   return (
     <div
       style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.TXT, ...(fitScale !== 1 ? { zoom: fitScale } : {}) }}
-      className="min-h-[calc(100vh-42px)] flex flex-col p-2.5 gap-2 select-none font-sans tabular-nums"
+      className="tv-dashboard-root min-h-[calc(100vh-42px)] flex flex-col p-2.5 gap-2 select-none font-sans tabular-nums"
     >
       {/* ==================== HEADER BAR (Matches TvDashboardScreen.kt) ==================== */}
       <div className="flex flex-wrap items-center justify-between gap-2 min-h-[40px]">
@@ -421,6 +425,31 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               ))}
             </div>
           </button>
+
+          {onToggleTheme && (
+            <button
+              onClick={onToggleTheme}
+              title={`Switch to ${theme === 'light' ? 'Night' : 'Day'} mode`}
+              className="px-2.5 py-1 rounded border flex items-center gap-1.5 text-xs font-black transition shadow-xs"
+              style={{
+                backgroundColor: WB_THEME.PANEL,
+                borderColor: WB_THEME.LINE,
+                color: WB_THEME.TXT
+              }}
+            >
+              {theme === 'light' ? (
+                <>
+                  <span className="text-amber-500 font-bold">☼</span>
+                  <span>Day</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-blue-400 font-bold">☾</span>
+                  <span>Night</span>
+                </>
+              )}
+            </button>
+          )}
 
           {canFit && (
             <button

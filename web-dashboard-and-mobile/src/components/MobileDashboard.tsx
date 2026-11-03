@@ -33,6 +33,8 @@ interface MobileDashboardProps {
   onOpenIncidentPanel: () => void;
   onNavigateToReports: () => void;
   pageRequest?: { page: 'PRODUCTION' | 'QUALITY' | 'ALL' | 'TABLE'; n: number };
+  theme?: 'light' | 'dark';
+  onToggleTheme?: () => void;
   finishing?: import('../services/calculationEngine').FinishingFloorSummary[];
   departmentSummaries?: Array<{ floor: string; units: number; target: number; output: number; achievementPct: number | null; checked: number; passed: number }>;
 }

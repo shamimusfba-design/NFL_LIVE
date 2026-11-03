@@ -94,12 +94,16 @@ export default function App() {
       const q = new URLSearchParams(window.location.search).get('theme');
       if (q === 'light' || q === 'dark') return q;
       const saved = localStorage.getItem('nfl_theme') || new URLSearchParams(window.location.search).get('defaultTheme');
-      return saved === 'light' ? 'light' : 'dark';
-    } catch { return 'dark'; }
+      return saved === 'dark' ? 'dark' : 'light';
+    } catch { return 'light'; }
   });
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     try { localStorage.setItem('nfl_theme', theme); } catch {}
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.setAttribute('content', theme === 'light' ? '#FFFFFF' : '#0A2558');
+    }
   }, [theme]);
 
   const [activeDeviceView, setActiveDeviceView] = useState<'MOBILE' | 'TV'>(() =>
@@ -1445,6 +1449,8 @@ export default function App() {
           </div>
         ) : (
           <TvDesktopDashboard
+            theme={theme}
+            onToggleTheme={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
             pageRequest={pageRequest}
             selectedFloor={selectedFloor}
             onSelectFloor={setSelectedFloor}

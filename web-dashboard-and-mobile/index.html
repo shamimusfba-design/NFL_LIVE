@@ -58,7 +58,7 @@
       }
     </style>
   <style>.nfl-scroll{scrollbar-width:thin;scrollbar-color:#2B4A70 #0E1B2D}.nfl-scroll::-webkit-scrollbar{height:9px}.nfl-scroll::-webkit-scrollbar-track{background:#0E1B2D;border-radius:6px}.nfl-scroll::-webkit-scrollbar-thumb{background:#2B4A70;border-radius:6px}</style>
-<script>try{var q=new URLSearchParams(location.search).get("theme");var d=new URLSearchParams(location.search).get("defaultTheme");var t=(q==="light"||q==="dark")?q:(localStorage.getItem("nfl_theme")||d);if(q==="light"||q==="dark"){localStorage.setItem("nfl_theme",q)}document.documentElement.setAttribute("data-theme",t==="light"?"light":"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}</script>
+<script>try{var q=new URLSearchParams(location.search).get("theme");var d=new URLSearchParams(location.search).get("defaultTheme");var t=(q==="light"||q==="dark")?q:(localStorage.getItem("nfl_theme")||d);if(q==="light"||q==="dark"){localStorage.setItem("nfl_theme",q)}document.documentElement.setAttribute("data-theme",t==="dark"?"dark":"light")}catch(e){document.documentElement.setAttribute("data-theme","light")}</script>
 <style>
 input,select,textarea{background-color:#ffffff !important;color:#0F172A !important;border-color:#94A3B8;max-width:100%;box-sizing:border-box}
 @media (max-width:640px){input,select,textarea{font-size:16px !important;min-height:42px}button{min-height:36px}}
@@ -76,13 +76,14 @@ input,select,textarea{background-color:#ffffff !important;color:#0F172A !importa
   --wb-bg:#EAF1FA;--wb-panel:#FFFFFF;--wb-line:#D3DFEE;--wb-txt:#0F2740;--wb-muted:#4F637B;
   --wb-red:#EF4444;--wb-amber:#F59E0B;--wb-green:#10B981;--wb-blue:#2563EB;--wb-orange:#F97316;--wb-grey:#64748B;--wb-dim:#94A3B8;
   --wb-deep:#FFFFFF;--wb-red-bg:#FFFFFF;--wb-green-bg:#FFFFFF;--wb-amber-bg:#FFFFFF;--wb-orange-bg:#FFFFFF;--wb-slate-bg:#FFFFFF;
-  --shell-side:#0A2558;--shell-side-txt:#E8F0FF;--shell-line:#1B3F86;--shell-hover:#133A82;--shell-btn:#133A82;
+  --shell-side:#FFFFFF;--shell-side-txt:#0F2740;--shell-line:#E2E8F0;--shell-hover:#EBF3FD;--shell-btn:#F1F5F9;
   --wb-on-selected:#FFFFFF;--wb-on-green:#FFFFFF;--wb-on-amber:#FFFFFF;--wb-on-red:#FFFFFF;--wb-on-orange:#FFFFFF;--wb-on-grey:#FFFFFF;
   --shell-top:rgba(255,255,255,.97);--shell-top-txt:#0F2740;--shell-top-btn:#E6EEF9;--shell-top-line:#D3DFEE;
 }
 body{background:var(--wb-bg)}
 [data-theme="light"] [style*="var(--wb-panel)"]{box-shadow:0 1px 3px rgba(15,39,64,.10),0 6px 16px rgba(15,39,64,.06)}
 [data-theme="light"] body{background:linear-gradient(180deg,#DDE9F8 0%,#F1F6FC 100%)}
+[data-theme="light"] .tv-dashboard-root{background:linear-gradient(180deg,#DDE9F8 0%,#F1F6FC 100%) !important}
 .nfl-scroll{scrollbar-width:thin;scrollbar-color:var(--wb-dim) transparent}
 </style>
 </head>
@@ -99,7 +100,7 @@ body{background:var(--wb-bg)}
           }
         });
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=46', { updateViaCache: 'none' }).then(reg => {
+          navigator.serviceWorker.register('./sw.js?v=48', { updateViaCache: 'none' }).then(reg => {
             reg.update().catch(() => {});
           }).catch(() => {});
         });

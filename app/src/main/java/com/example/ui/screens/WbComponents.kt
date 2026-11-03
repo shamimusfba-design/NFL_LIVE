@@ -31,20 +31,22 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
-/** TV-only theme. Phone screens never use these. */
+/** TV Theme supporting Day and Night modes. */
 object WbTheme {
-  val BG = Color(0xFF0A1522)
-  val PANEL = Color(0xFF101E30)
-  val LINE = Color(0xFF1B2E45)
-  val TXT = Color(0xFFEAF0F7)
-  val MUTED = Color(0xFF8FA3B8)
-  val RED = Color(0xFFFF6B6B)
-  val AMBER = Color(0xFFF5B73B)
-  val GREEN = Color(0xFF3DD68C)
-  val BLUE = Color(0xFF5AA9FF)
-  val ORANGE = Color(0xFFF59E6B)
-  val DIM = Color(0xFF2A4560)
-  val GREY = Color(0xFF94A3B8)
+  var isDark by mutableStateOf(false)
+
+  val BG get() = if (isDark) Color(0xFF0A1522) else Color(0xFFEAF1FA)
+  val PANEL get() = if (isDark) Color(0xFF101E30) else Color(0xFFFFFFFF)
+  val LINE get() = if (isDark) Color(0xFF1B2E45) else Color(0xFFD3DFEE)
+  val TXT get() = if (isDark) Color(0xFFEAF0F7) else Color(0xFF0F2740)
+  val MUTED get() = if (isDark) Color(0xFF8FA3B8) else Color(0xFF4F637B)
+  val RED = Color(0xFFEF4444)
+  val AMBER = Color(0xFFF59E0B)
+  val GREEN = Color(0xFF10B981)
+  val BLUE get() = if (isDark) Color(0xFF5AA9FF) else Color(0xFF2563EB)
+  val ORANGE = Color(0xFFF97316)
+  val DIM get() = if (isDark) Color(0xFF2A4560) else Color(0xFF94A3B8)
+  val GREY get() = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
 }
 
 /** One place for every colour threshold on the TV (edit here, not in the screens). */
@@ -204,7 +206,7 @@ fun <T> WbSegment(
       ) {
         WbText(
           label(item), fontSp,
-          if (sel) WbTheme.BG else WbTheme.MUTED, FontWeight.Bold,
+          if (sel) (if (WbTheme.isDark) WbTheme.BG else Color.White) else WbTheme.MUTED, FontWeight.Bold,
           Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
         )
       }

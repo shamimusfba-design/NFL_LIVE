@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nfl-live-desktop-v47';
+const CACHE_NAME = 'nfl-live-desktop-v48';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', event => {
