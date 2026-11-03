@@ -840,7 +840,12 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
               targetDhuPct: Number(data.targetDhuPct || 2.0),
               targetOqlPct: Number(data.targetOqlPct || 4.5),
               bsQaOqlPct: Number(data.bsQaOqlPct || 2.4),
-              friPassRatePct: Number(data.friPassRatePct || 98.5)
+              friPassRatePct: Number(data.friPassRatePct || 98.5),
+              targetAchievePct: data.targetAchievePct !== undefined ? Number(data.targetAchievePct) : undefined,
+              actualEfficiencyPct: data.actualEfficiencyPct !== undefined ? Number(data.actualEfficiencyPct) : undefined,
+              actualAchievePct: data.actualAchievePct !== undefined ? Number(data.actualAchievePct) : undefined,
+              actualOqlPct: data.actualOqlPct !== undefined ? Number(data.actualOqlPct) : undefined,
+              actualDhuPct: data.actualDhuPct !== undefined ? Number(data.actualDhuPct) : undefined
             });
           });
           callbacks.onMonthlyTargetsUpdate?.(list);
@@ -1038,6 +1043,11 @@ export async function pushMonthlyTargetToCloud(target: MonthlyTargetConfig): Pro
         targetOqlPct: target.targetOqlPct,
         bsQaOqlPct: target.bsQaOqlPct,
         friPassRatePct: target.friPassRatePct,
+        targetAchievePct: target.targetAchievePct ?? null,
+        actualEfficiencyPct: target.actualEfficiencyPct ?? null,
+        actualAchievePct: target.actualAchievePct ?? null,
+        actualOqlPct: target.actualOqlPct ?? null,
+        actualDhuPct: target.actualDhuPct ?? null,
         updatedAt: Date.now()
       },
       { merge: true }

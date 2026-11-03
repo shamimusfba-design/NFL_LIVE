@@ -17,3 +17,10 @@ local.properties
 .env
 debug.keystore
 *-debug.log
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.vite/
+**/package-lock.json.bak
+

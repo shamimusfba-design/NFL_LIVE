@@ -71,13 +71,18 @@ export interface LineTargetConfig {
 export interface MonthlyTargetConfig {
   id: string;
   floor: FloorId;
-  lineId: string; // blank for floor-level target
-  monthYear: string; // e.g. "2026-10"
+  lineId: string; // blank for floor-level target, or lineId for specific line
+  monthYear: string; // e.g. "2026-11"
   targetEfficiencyPct: number;
+  targetAchievePct?: number;
   targetDhuPct: number;
   targetOqlPct: number;
   bsQaOqlPct: number;
   friPassRatePct: number;
+  actualEfficiencyPct?: number;
+  actualAchievePct?: number;
+  actualOqlPct?: number;
+  actualDhuPct?: number;
 }
 
 export interface WeeklyQualityRecord {
@@ -134,6 +139,7 @@ export interface QualityEntryRecord {
   timestamp: number;
   revision: number;
   isDemo?: boolean;
+  auditResult?: 'PASS' | 'FAIL';
 }
 
 export type IncidentCategory =
@@ -195,6 +201,10 @@ export interface LinePerformanceSummary {
   todayOqlPct: number | null;
   monthlyOqlPct: number;
   monthlyEfficiencyPct: number;
+  monthlyAchievePct?: number;
+  monthlyDhuPct?: number;
+  auditPassCount?: number;
+  auditFailCount?: number;
   dhu: number | null;
   checkedGarments: number;
   defectiveGarments: number;
@@ -218,6 +228,9 @@ export interface FloorKpis {
   targetEfficiencyPct: number;
   monthlyEfficiencyPct: number;
   monthlyEfficiencyDelta: number;
+  monthlyAchievePct?: number;
+  monthlyDhuPct?: number;
+  monthlyOqlPct?: number;
   todayOutputPcs: number;
   todayTargetPcs: number;
   todayTargetDuePcs: number;

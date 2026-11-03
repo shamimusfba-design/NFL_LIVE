@@ -672,6 +672,47 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             />
           </div>
 
+          {/* Monthly Performance Benchmarks Row (Efficiency, Achieve %, OQL, DHU) */}
+          <div className="rounded-xl border p-2.5 shadow-xs" style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}>
+            <div className="flex items-center justify-between mb-2 px-1">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: WB_THEME.BLUE }}></span>
+                <span className="text-xs font-black uppercase tracking-wider" style={{ color: WB_THEME.TXT }}>
+                  Monthly Performance &amp; Targets ({selectedPeriod === 'Month' ? 'Month View' : 'Month-to-Date (MTD)'})
+                </span>
+              </div>
+              <span className="text-[11px] font-bold" style={{ color: WB_THEME.MUTED }}>
+                Floor: {FLOOR_LABEL[selectedFloor]}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <WbTile
+                label={`MONTHLY EFFICIENCY · target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
+                value={kpis.monthlyEfficiencyPct > 0 ? `${kpis.monthlyEfficiencyPct.toFixed(1)}%` : '—'}
+                color={effColor(kpis.monthlyEfficiencyPct > 0 ? kpis.monthlyEfficiencyPct : null, kpis.targetEfficiencyPct)}
+                sub={`Target ${kpis.targetEfficiencyPct.toFixed(0)}% · Δ ${kpis.monthlyEfficiencyDelta >= 0 ? '+' : ''}${kpis.monthlyEfficiencyDelta.toFixed(1)} pp`}
+              />
+              <WbTile
+                label="MONTHLY ACHIEVE %"
+                value={kpis.monthlyAchievePct !== undefined && kpis.monthlyAchievePct !== null ? `${kpis.monthlyAchievePct.toFixed(1)}%` : `${kpis.achievementPct.toFixed(1)}%`}
+                color={achColor(kpis.monthlyAchievePct ?? kpis.achievementPct)}
+                sub="Target output fulfillment"
+              />
+              <WbTile
+                label={`MONTHLY OQL · limit ${kpis.oqlCommitmentPct.toFixed(1)}%`}
+                value={kpis.monthlyOqlPct !== undefined && kpis.monthlyOqlPct !== null ? `${kpis.monthlyOqlPct.toFixed(2)}%` : (kpis.todayOqlPct > 0 ? `${kpis.todayOqlPct.toFixed(2)}%` : '—')}
+                color={oqlColor(kpis.monthlyOqlPct ?? kpis.todayOqlPct, kpis.oqlCommitmentPct)}
+                sub={`Commitment limit: ${kpis.oqlCommitmentPct.toFixed(1)}%`}
+              />
+              <WbTile
+                label={`MONTHLY DHU · limit ${kpis.dhuLimitPct.toFixed(1)}%`}
+                value={kpis.monthlyDhuPct !== undefined && kpis.monthlyDhuPct !== null ? `${kpis.monthlyDhuPct.toFixed(2)}%` : (kpis.todayDhuPct > 0 ? `${kpis.todayDhuPct.toFixed(2)}%` : '—')}
+                color={dhuColor(kpis.monthlyDhuPct ?? kpis.todayDhuPct, kpis.dhuLimitPct)}
+                sub={`Floor DHU limit: ${kpis.dhuLimitPct.toFixed(1)}%`}
+              />
+            </div>
+          </div>
+
           {/* Row 1 Panels */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[220px]">
             <WbPanel
@@ -1594,7 +1635,7 @@ const Col: React.FC<{ v: number; max: number; color: string; label?: React.React
           {label}
         </div>
       )}
-      <div style={{ height: `${h}%`, backgroundColor: color }} className="w-full rounded-t-sm" title={title} />
+      <div style={{ height: `${h}%`, backgroundColor: color, boxShadow: '0 2px 4px rgba(0,0,0,0.12)' }} className="w-full rounded-t-md transition-all duration-300" title={title} />
     </div>
   );
 };
@@ -1631,7 +1672,7 @@ const LiveTargetVsAchievementChart: React.FC<{
         const col = achColor(l.achievementPct);
         return (
           <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)} sub={l.achievementPct !== null ? `${l.achievementPct.toFixed(0)}%` : '—'} subColor={col}>
-            <Col v={l.target} max={max} color={WB_THEME.DIM} labelColor={WB_THEME.MUTED} label={l.target} w="w-2.5 md:w-3.5" title={`Target: ${l.target}`} />
+            <Col v={l.target} max={max} color={WB_THEME.BLUE} labelColor={WB_THEME.BLUE} label={l.target} w="w-2.5 md:w-3.5" title={`Target: ${l.target}`} />
             <Col v={l.output ?? 0} max={max} color={col} label={l.output ?? '—'} w="w-3 md:w-4" title={`Output: ${l.output ?? 0}`} />
           </Group>
         );
@@ -1652,7 +1693,7 @@ const EfficiencyByLineChart: React.FC<{
         const col = effColor(l.efficiencyPct, l.targetEfficiencyPct);
         return (
           <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)}>
-            <Col v={l.monthlyEfficiencyPct ?? 0} max={max} color={WB_THEME.DIM} w="w-2.5 md:w-3.5" title={`Month: ${l.monthlyEfficiencyPct ?? 0}%`} />
+            <Col v={l.monthlyEfficiencyPct ?? 0} max={max} color={WB_THEME.BLUE} labelColor={WB_THEME.MUTED} w="w-2.5 md:w-3.5" title={`Month Target/Avg: ${l.monthlyEfficiencyPct ?? 0}%`} />
             <Col v={l.efficiencyPct ?? 0} max={max} color={col} label={l.efficiencyPct !== null ? `${(l.efficiencyPct ?? 0).toFixed(0)}%` : '—'} title={`Today: ${l.efficiencyPct ?? 0}%`} />
           </Group>
         );
@@ -1694,7 +1735,7 @@ const HourlyOutputWallboardChart: React.FC<{ buckets: HourlyWallboardBucket[] }>
         const col = b.output === 0 ? WB_THEME.DIM : achColor(pct);
         return (
           <Group key={b.slot24} name={b.label12h} sub={b.output > 0 && b.target > 0 ? `${pct}%` : ''} subColor={col} minW="min-w-[52px] md:min-w-[64px]">
-            <Col v={b.target} max={max} color={WB_THEME.DIM} labelColor={WB_THEME.MUTED} label={b.target > 0 ? b.target : ""} w="w-3 md:w-5" title={`Target: ${b.target}`} />
+            <Col v={b.target} max={max} color={WB_THEME.BLUE} labelColor={WB_THEME.BLUE} label={b.target > 0 ? b.target : ""} w="w-3 md:w-5" title={`Target: ${b.target}`} />
             <Col v={b.output} max={max} color={col} label={b.output > 0 ? b.output : '—'} w="w-4 md:w-6" title={`Output: ${b.output}`} />
           </Group>
         );

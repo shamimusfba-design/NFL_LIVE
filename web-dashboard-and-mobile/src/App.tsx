@@ -623,7 +623,7 @@ export default function App() {
       const cfgs = CalculationEngine.getTargetedLines(lines, targets, dep, todayIso, !isDemoMode).filter(
         c => isDemoMode || targets.some(t => !t.isDemo && t.lineId === c.lineId && (t.hourlyTargetPcs > 0 || t.dailyTargetPcs > 0) && CalculationEngine.isDateInPeriod(t.date, todayIso, selectedPeriod))
       );
-      const sums = CalculationEngine.computeLineSummaries(cfgs, productions, qualities, incidents, todayIso, selectedPeriod);
+      const sums = CalculationEngine.computeLineSummaries(cfgs, productions, qualities, incidents, todayIso, selectedPeriod, monthlyTargets);
       const target = sums.reduce((a, x) => a + (x.target || 0), 0);
       const output = sums.reduce((a, x) => a + (x.output || 0), 0);
       const checked = sums.reduce((a, x) => a + (x.checkedGarments || 0), 0);

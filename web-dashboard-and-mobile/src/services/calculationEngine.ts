@@ -18,7 +18,9 @@ import {
   hourOptionsForLine,
   ordinalHr,
   formatSlotShortLabel12h,
-  normalizeHourSlot24h
+  normalizeHourSlot24h,
+  isBiHourlyAuditSlot,
+  auditResultOf
 } from '../data/masterData';
 
 /** One sewing floor's Iron, Packing and Quality totals (hourly and for the period). */
@@ -97,7 +99,8 @@ export class CalculationEngine {
     qualities: QualityEntryRecord[],
     incidents: IncidentRecord[],
     todayIso?: string,
-    period: PeriodId = 'Today'
+    period: PeriodId = 'Today',
+    monthlyTargets: MonthlyTargetConfig[] = []
   ): LinePerformanceSummary[] {
     return targetedConfigs.map(config => {
       const refDate = todayIso || config.date;
@@ -182,8 +185,25 @@ export class CalculationEngine {
         i => i.lineId === config.lineId && i.status !== 'RESOLVED'
       ).length;
 
-      const monthlyEfficiencyPct = efficiencyPct !== null ? Math.max(0, Number((efficiencyPct - 1.5).toFixed(1))) : 0;
-      const monthlyOqlPct = todayOqlPct !== null ? todayOqlPct : 0;
+      const cleanLineId = config.lineId.replace(/^Line\s*/i, '').trim();
+      const lineMonthly = monthlyTargets.find(
+        m => (m.lineId === config.lineId || m.lineId === cleanLineId || m.lineId === 'Line ' + cleanLineId) && floorMatches(m.floor, config.floor)
+      );
+
+      const monthlyEfficiencyPct = lineMonthly?.actualEfficiencyPct ??
+        (lineMonthly?.targetEfficiencyPct ?? (efficiencyPct !== null ? Math.max(0, Number((efficiencyPct - 1.5).toFixed(1))) : 0));
+
+      const monthlyAchievePct = lineMonthly?.actualAchievePct ??
+        (lineMonthly?.targetAchievePct ?? (achievementPct !== null ? achievementPct : null));
+
+      const monthlyOqlPct = lineMonthly?.actualOqlPct ??
+        (lineMonthly?.targetOqlPct ?? (todayOqlPct !== null ? todayOqlPct : 0));
+
+      const monthlyDhuPct = lineMonthly?.actualDhuPct ??
+        (lineMonthly?.targetDhuPct ?? (dhu !== null ? dhu : 0));
+
+      const auditPassCount = lineQas.filter(q => isBiHourlyAuditSlot(q.hourSlot) && auditResultOf(q.checkedGarments, q.defectiveGarments, q.auditResult) === 'PASS').length;
+      const auditFailCount = lineQas.filter(q => isBiHourlyAuditSlot(q.hourSlot) && auditResultOf(q.checkedGarments, q.defectiveGarments, q.auditResult) === 'FAIL').length;
 
       let reportingStatus: 'Complete' | 'Not reported' | 'In Progress' = 'Not reported';
       if (hasReportedProd) {
@@ -210,6 +230,10 @@ export class CalculationEngine {
         todayOqlPct,
         monthlyOqlPct,
         monthlyEfficiencyPct,
+        monthlyAchievePct: monthlyAchievePct ?? undefined,
+        monthlyDhuPct: monthlyDhuPct ?? undefined,
+        auditPassCount,
+        auditFailCount,
         dhu,
         checkedGarments,
         defectiveGarments,
@@ -273,7 +297,8 @@ export class CalculationEngine {
     const bsQaOqlPct = floorMonthly?.bsQaOqlPct ?? 2.4;
     const friPassRatePct = floorMonthly?.friPassRatePct ?? (reportedCount > 0 ? 98.5 : 0);
 
-    const monthlyEfficiencyPct = todayEfficiencyPct > 0 ? Number(Math.max(0, todayEfficiencyPct - 1.2).toFixed(1)) : 0;
+    const monthlyEfficiencyPct = floorMonthly?.actualEfficiencyPct ??
+      (floorMonthly?.targetEfficiencyPct ?? (todayEfficiencyPct > 0 ? Number(Math.max(0, todayEfficiencyPct - 1.2).toFixed(1)) : targetEfficiencyPct));
     const monthlyEfficiencyDelta = todayEfficiencyPct > 0 ? Number((todayEfficiencyPct - monthlyEfficiencyPct).toFixed(1)) : 0;
 
     const checkedGarments = summaries.reduce((s, i) => s + i.checkedGarments, 0);
@@ -284,6 +309,12 @@ export class CalculationEngine {
       checkedGarments > 0 ? Number(((defectiveGarments / checkedGarments) * 100).toFixed(2)) : 0;
     const todayDhuPct =
       checkedGarments > 0 ? Number(((totalDefects / checkedGarments) * 100).toFixed(2)) : 0;
+    const monthlyAchievePct = floorMonthly?.actualAchievePct ??
+      floorMonthly?.targetAchievePct ?? (achievementPct > 0 ? achievementPct : 95.0);
+    const monthlyDhuPct = floorMonthly?.actualDhuPct ??
+      floorMonthly?.targetDhuPct ?? (todayDhuPct > 0 ? todayDhuPct : dhuLimitPct);
+    const monthlyOqlPct = floorMonthly?.actualOqlPct ??
+      floorMonthly?.targetOqlPct ?? (todayOqlPct > 0 ? todayOqlPct : oqlCommitmentPct);
 
     const sewSent = summaries.reduce((s, i) => s + i.sewSent, 0);
     const sewRecv = summaries.reduce((s, i) => s + i.sewRecv, 0);
@@ -309,6 +340,9 @@ export class CalculationEngine {
       targetEfficiencyPct,
       monthlyEfficiencyPct,
       monthlyEfficiencyDelta,
+      monthlyAchievePct,
+      monthlyDhuPct,
+      monthlyOqlPct,
       todayOutputPcs,
       todayTargetPcs,
       todayTargetDuePcs,

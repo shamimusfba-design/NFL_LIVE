@@ -625,7 +625,8 @@ export function nptCategoriesFor(floor: string): Array<{ id: string; label: stri
 /** Audit rule: a bi-hourly OQL audit PASSES when its OQL is at or below this limit (the weekly commitment, 4.5%). */
 export const AUDIT_PASS_OQL_PCT = 4.5;
 
-export function auditResultOf(checked: number, defective: number): 'PASS' | 'FAIL' | null {
+export function auditResultOf(checked: number, defective: number, storedResult?: 'PASS' | 'FAIL' | string | null): 'PASS' | 'FAIL' | null {
+  if (storedResult === 'PASS' || storedResult === 'FAIL') return storedResult;
   if (!(checked > 0)) return null;
   return (defective / checked) * 100 <= AUDIT_PASS_OQL_PCT ? 'PASS' : 'FAIL';
 }

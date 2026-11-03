@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   LineMasterItem,
   ProductionEntryRecord,
@@ -25,6 +25,7 @@ import {
   isDepartmentFloor,
   isFinishingUnit,
   AUDIT_PASS_OQL_PCT,
+  floorMatches,
   biHourlyOptionsForLine,
   ordinalHr,
   canWriteWeeklyQualityOrBiHourlyAudit,
@@ -47,6 +48,7 @@ interface EntryFormsProps {
   onSaveSetup: (setup: LineTargetConfig) => void;
   onSaveWeeklyQuality?: (record: WeeklyQualityRecord) => void;
   onSaveMonthlyTarget?: (target: MonthlyTargetConfig) => void;
+  monthlyTargets?: MonthlyTargetConfig[];
   /** One module per kind of person. When set, only that module is shown. */
   module?: EntryModuleId;
   targets?: LineTargetConfig[];
@@ -70,6 +72,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   onSaveSetup,
   onSaveWeeklyQuality,
   onSaveMonthlyTarget,
+  monthlyTargets = [],
   module,
   targets = [],
   allowedLines = null,
@@ -118,6 +121,8 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const [biPairNo, setBiPairNo] = useState(1);
   const [checkedGarments, setCheckedGarments] = useState('');
   const [defectiveGarments, setDefectiveGarments] = useState('');
+  const [auditStatus, setAuditStatus] = useState<'PASS' | 'FAIL'>('PASS');
+  const [auditManualOverride, setAuditManualOverride] = useState(false);
   const [qcPass, setQcPass] = useState('');
   const [defectCounts, setDefectCounts] = useState<Record<string, number>>({});
   const [sewSent, setSewSent] = useState('');
@@ -153,12 +158,44 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
   // Monthly Target State
   const [monthYear, setMonthYear] = useState(getBangladeshTodayIso().slice(0, 7));
+  const [moScope, setMoScope] = useState<'FLOOR' | 'LINE'>('FLOOR');
   const [moEffTarget, setMoEffTarget] = useState('75');
+  const [moAchieveTarget, setMoAchieveTarget] = useState('95');
   const [moDhuLimit, setMoDhuLimit] = useState('2.0');
   const [moOqlCommitment, setMoOqlCommitment] = useState('4.5');
   const [moBsQaOql, setMoBsQaOql] = useState('2.4');
   const [moFriPass, setMoFriPass] = useState('98.5');
+  const [moActualEff, setMoActualEff] = useState('');
+  const [moActualAchieve, setMoActualAchieve] = useState('');
+  const [moActualOql, setMoActualOql] = useState('');
+  const [moActualDhu, setMoActualDhu] = useState('');
   const [moSuccess, setMoSuccess] = useState(false);
+
+
+  // Auto-populate monthly target inputs when scope, floor, line, or month changes
+  useEffect(() => {
+    if (activeTab !== 'MONTHLY') return;
+    const isLine = moScope === 'LINE';
+    const cleanLine = formLine.replace(/^Line\s*/i, '').trim();
+    const existing = monthlyTargets.find(m =>
+      floorMatches(m.floor, formFloor) &&
+      (isLine
+        ? (m.lineId === formLine || m.lineId === cleanLine || m.lineId === 'Line ' + cleanLine)
+        : (!m.lineId || m.lineId === ''))
+    );
+    if (existing) {
+      setMoEffTarget(String(existing.targetEfficiencyPct || 75));
+      setMoAchieveTarget(String(existing.targetAchievePct || 95));
+      setMoDhuLimit(String(existing.targetDhuPct || 2.0));
+      setMoOqlCommitment(String(existing.targetOqlPct || 4.5));
+      setMoBsQaOql(String(existing.bsQaOqlPct || 2.4));
+      setMoFriPass(String(existing.friPassRatePct || 98.5));
+      setMoActualEff(existing.actualEfficiencyPct !== undefined ? String(existing.actualEfficiencyPct) : '');
+      setMoActualAchieve(existing.actualAchievePct !== undefined ? String(existing.actualAchievePct) : '');
+      setMoActualOql(existing.actualOqlPct !== undefined ? String(existing.actualOqlPct) : '');
+      setMoActualDhu(existing.actualDhuPct !== undefined ? String(existing.actualDhuPct) : '');
+    }
+  }, [activeTab, moScope, formFloor, formLine, monthYear, monthlyTargets]);
 
   const canWriteAuditOrWeekly = canWriteWeeklyQualityOrBiHourlyAudit(currentUserRole);
   const floorLines = lines.filter(l => l.floor === formFloor && l.isActive && !isFinishingUnit(l.id));
@@ -408,22 +445,30 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
     setTimeout(() => setSetupSuccess(false), 2000);
   };
 
-  const handleMonthlySubmit = (e: React.FormEvent) => {
+    const handleMonthlySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (readOnlyDemo) {
-      triggerDemoReadOnlyNotice('Monthly Floor Targets');
+      triggerDemoReadOnlyNotice(moScope === 'LINE' ? `Monthly Target (Line ${formLine})` : 'Monthly Floor Targets');
       return;
     }
+    const targetLineId = moScope === 'LINE' ? formLine : '';
+    const cleanLine = targetLineId.replace(/^Line\s*/i, '').trim();
+    const docId = targetLineId ? `${formFloor}__${cleanLine}__${monthYear}` : `${formFloor}__${monthYear}`;
     onSaveMonthlyTarget?.({
-      id: `${formFloor}__${monthYear}`,
+      id: docId,
       floor: formFloor,
-      lineId: '',
+      lineId: targetLineId,
       monthYear,
       targetEfficiencyPct: Number(moEffTarget) || 75,
+      targetAchievePct: Number(moAchieveTarget) || 95,
       targetDhuPct: Number(moDhuLimit) || 2.0,
       targetOqlPct: Number(moOqlCommitment) || 4.5,
       bsQaOqlPct: Number(moBsQaOql) || 2.4,
-      friPassRatePct: Number(moFriPass) || 98.5
+      friPassRatePct: Number(moFriPass) || 98.5,
+      actualEfficiencyPct: moActualEff.trim() !== '' ? Number(moActualEff) : undefined,
+      actualAchievePct: moActualAchieve.trim() !== '' ? Number(moActualAchieve) : undefined,
+      actualOqlPct: moActualOql.trim() !== '' ? Number(moActualOql) : undefined,
+      actualDhuPct: moActualDhu.trim() !== '' ? Number(moActualDhu) : undefined
     });
     setMoSuccess(true);
     setTimeout(() => setMoSuccess(false), 2500);
@@ -852,15 +897,69 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 </div>
               </div>
 
-              {qaMode === 'BI_HOURLY_AUDIT' && numChecked > 0 && (() => {
-                const oql = (numDefective / numChecked) * 100;
-                const pass = oql <= AUDIT_PASS_OQL_PCT;
-                return (
-                  <div className={`rounded-lg px-3 py-2 text-center text-sm font-black ${pass ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
-                    Audit result: {pass ? 'PASS' : 'FAIL'} (OQL {oql.toFixed(2)}% · limit {AUDIT_PASS_OQL_PCT}%)
+                            {/* Bi-Hourly Audit Result Selector & Pass/Fail Option */}
+              {qaMode === 'BI_HOURLY_AUDIT' && (
+                <div className="bg-slate-50 border-2 border-slate-200 rounded-xl p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-wide">
+                      Audit Result Option (Pass / Fail)
+                    </span>
+                    <span
+                      className={`text-xs font-black px-2.5 py-0.5 rounded-full ${
+                        auditStatus === 'PASS'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'bg-red-100 text-red-800 border border-red-300'
+                      }`}
+                    >
+                      Status: {auditStatus}
+                    </span>
                   </div>
-                );
-              })()}
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuditStatus('PASS');
+                        setAuditManualOverride(true);
+                        if (numChecked > 0 && (numDefective / numChecked) * 100 > AUDIT_PASS_OQL_PCT) {
+                          setDefectiveGarments('0');
+                        }
+                      }}
+                      className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm font-black border-2 transition-all shadow-sm ${
+                        auditStatus === 'PASS'
+                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-emerald-200 ring-2 ring-emerald-400'
+                          : 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50'
+                      }`}
+                    >
+                      <span className="text-lg leading-none font-black">✓</span>
+                      <span>AUDIT PASS</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuditStatus('FAIL');
+                        setAuditManualOverride(true);
+                        if (numDefective === 0) {
+                          setDefectiveGarments('1');
+                        }
+                      }}
+                      className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm font-black border-2 transition-all shadow-sm ${
+                        auditStatus === 'FAIL'
+                          ? 'bg-red-600 text-white border-red-700 shadow-red-200 ring-2 ring-red-400'
+                          : 'bg-white text-red-700 border-red-200 hover:bg-red-50'
+                      }`}
+                    >
+                      <span className="text-lg leading-none font-black">✕</span>
+                      <span>AUDIT FAIL</span>
+                    </button>
+                  </div>
+
+                  <div className="text-[11px] font-bold text-center text-slate-600">
+                    Standard Rule: PASS when OQL is ≤ {AUDIT_PASS_OQL_PCT}% · Select PASS or FAIL above to record decision.
+                  </div>
+                </div>
+              )}
 
               {/* Live Metric Banner (sewing) */}
               {!deptFloor && (
@@ -1197,106 +1296,318 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
           )}
 
           {activeTab === 'MONTHLY' && (
-            <form
-              onSubmit={handleMonthlySubmit}
-              className="space-y-4 bg-white p-5 rounded-xl border border-slate-200"
-            >
-              <div>
-                <h3 className="text-sm font-black text-[#002D62]">
-                  Monthly Floor Target, BS QA OQL &amp; FRI Pass Setup ({formFloor})
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Configures the TV Wallboard benchmarks for {formFloor}
-                </p>
-              </div>
+            <div className="space-y-4">
+              <form
+                onSubmit={handleMonthlySubmit}
+                className="space-y-4 bg-white p-5 rounded-xl border border-slate-200 shadow-sm"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="text-sm font-black text-[#002D62] flex items-center gap-2">
+                      <span>Monthly Data &amp; Target Setup</span>
+                      <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold">
+                        {moScope === 'FLOOR' ? `Floor: ${formFloor}` : `Line: ${lineDisplayName(formLine)}`}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Configure Efficiency, Achieve %, OQL, and DHU targets for the floor or specific line
+                    </p>
+                  </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Month (YYYY-MM)</label>
-                  <input
-                    type="month"
-                    value={monthYear}
-                    onChange={e => setMonthYear(e.target.value)}
-                    className="w-full text-xs font-black border border-slate-300 rounded-lg p-2"
-                  />
+                  {/* Scope Selector: Entire Floor vs Line-Wise */}
+                  <div className="inline-flex rounded-lg border border-slate-300 p-0.5 bg-slate-100 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setMoScope('FLOOR')}
+                      className={`px-3 py-1.5 rounded-md text-xs font-black transition ${
+                        moScope === 'FLOOR' ? 'bg-[#002D62] text-white shadow' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      🏢 Entire Floor ({formFloor})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMoScope('LINE')}
+                      className={`px-3 py-1.5 rounded-md text-xs font-black transition ${
+                        moScope === 'LINE' ? 'bg-[#002D62] text-white shadow' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      🧵 Line-Wise ({lineDisplayName(formLine)})
+                    </button>
+                  </div>
                 </div>
+
+                {moScope === 'LINE' && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
+                    <div className="text-xs font-bold text-blue-900">
+                      Currently editing Monthly Target for: <span className="font-black text-[#002D62] underline">{lineDisplayName(formLine)}</span> ({formFloor})
+                    </div>
+                    <div className="text-[11px] text-blue-700 font-semibold">
+                      Use Line dropdown at the top of modal to switch lines
+                    </div>
+                  </div>
+                )}
+
+                {/* Main 4 Monthly Target & Benchmark Inputs */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Target Efficiency (%)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={moEffTarget}
-                    onChange={e => setMoEffTarget(e.target.value)}
-                    className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
-                  />
+                  <div className="text-xs font-black uppercase tracking-wider text-slate-700 mb-2">
+                    1. Primary Targets &amp; Benchmarks (Efficiency, Achieve %, OQL, DHU)
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Month (YYYY-MM)
+                      </label>
+                      <input
+                        type="month"
+                        value={monthYear}
+                        onChange={e => setMonthYear(e.target.value)}
+                        className="w-full text-xs font-black border border-slate-300 rounded-lg p-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1 text-emerald-800">
+                        Target Efficiency (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={moEffTarget}
+                        onChange={e => setMoEffTarget(e.target.value)}
+                        className="w-full text-sm font-black border border-emerald-300 bg-emerald-50/40 rounded-lg p-2 text-emerald-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1 text-blue-800">
+                        Target Achieve % (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={moAchieveTarget}
+                        onChange={e => setMoAchieveTarget(e.target.value)}
+                        className="w-full text-sm font-black border border-blue-300 bg-blue-50/40 rounded-lg p-2 text-blue-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1 text-amber-800">
+                        DHU Limit (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={moDhuLimit}
+                        onChange={e => setMoDhuLimit(e.target.value)}
+                        className="w-full text-sm font-black border border-amber-300 bg-amber-50/40 rounded-lg p-2 text-amber-900"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    DHU Limit (%)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={moDhuLimit}
-                    onChange={e => setMoDhuLimit(e.target.value)}
-                    className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
-                  />
+
+                {/* Quality Commitments & Actuals */}
+                <div className="pt-2">
+                  <div className="text-xs font-black uppercase tracking-wider text-slate-700 mb-2">
+                    2. Quality Commitments &amp; Audit Benchmarks
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        OQL Commitment (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={moOqlCommitment}
+                        onChange={e => setMoOqlCommitment(e.target.value)}
+                        className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        BS QA OQL (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={moBsQaOql}
+                        onChange={e => setMoBsQaOql(e.target.value)}
+                        className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        BS QA FRI Pass Rate (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={moFriPass}
+                        onChange={e => setMoFriPass(e.target.value)}
+                        className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    OQL Commitment (%)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={moOqlCommitment}
-                    onChange={e => setMoOqlCommitment(e.target.value)}
-                    className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
-                  />
+
+                {/* Optional MTD Actual Overrides */}
+                <div className="pt-2">
+                  <div className="text-xs font-black uppercase tracking-wider text-slate-700 mb-2">
+                    3. Optional Month-To-Date (MTD) Actual Overrides
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        MTD Actual Eff (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        placeholder="Auto / Calculated"
+                        value={moActualEff}
+                        onChange={e => setMoActualEff(e.target.value)}
+                        className="w-full text-xs font-bold border border-slate-300 rounded-lg p-1.5"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        MTD Actual Achieve %
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        placeholder="Auto / Calculated"
+                        value={moActualAchieve}
+                        onChange={e => setMoActualAchieve(e.target.value)}
+                        className="w-full text-xs font-bold border border-slate-300 rounded-lg p-1.5"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        MTD Actual OQL (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="Auto / Calculated"
+                        value={moActualOql}
+                        onChange={e => setMoActualOql(e.target.value)}
+                        className="w-full text-xs font-bold border border-slate-300 rounded-lg p-1.5"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        MTD Actual DHU (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="Auto / Calculated"
+                        value={moActualDhu}
+                        onChange={e => setMoActualDhu(e.target.value)}
+                        className="w-full text-xs font-bold border border-slate-300 rounded-lg p-1.5"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    BS QA OQL (%)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={moBsQaOql}
-                    onChange={e => setMoBsQaOql(e.target.value)}
-                    className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
-                  />
+
+                {moSuccess && (
+                  <div className="p-3 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200 flex items-center gap-2">
+                    <span className="text-base font-black">✓</span>
+                    <span>
+                      Saved Monthly Data for {moScope === 'LINE' ? `Line ${formLine}` : `Entire Floor ${formFloor}`}!
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between pt-2">
+                  <div className="text-xs text-slate-500 font-semibold">
+                    {moScope === 'LINE'
+                      ? `Saving specifically for Line ${formLine}`
+                      : `Saving floor-level benchmark for ${formFloor}`}
+                  </div>
+                  <button
+                    type="submit"
+                    className="bg-[#002D62] hover:bg-blue-900 text-white font-black text-xs px-6 py-2.5 rounded-xl shadow transition"
+                  >
+                    Save {moScope === 'LINE' ? `Line ${formLine} Monthly Target` : 'Floor Monthly Target'}
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    BS QA FRI Pass Rate (%)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={moFriPass}
-                    onChange={e => setMoFriPass(e.target.value)}
-                    className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
-                  />
+              </form>
+
+              {/* Line-Wise Monthly Setup & Quick Edit Table */}
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide">
+                      Line-Wise Monthly Target Summary ({formFloor})
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      Quick overview of all lines on {formFloor}. Click "Edit Line" to load into the form above.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black text-slate-600 uppercase">
+                        <th className="p-2">Line</th>
+                        <th className="p-2 text-right">Target Eff %</th>
+                        <th className="p-2 text-right">Target Achieve %</th>
+                        <th className="p-2 text-right">DHU Limit %</th>
+                        <th className="p-2 text-right">OQL Commit %</th>
+                        <th className="p-2 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {floorLines.map(line => {
+                        const clean = line.id.replace(/^Line\s*/i, '').trim();
+                        const lineTarget = monthlyTargets.find(m =>
+                          floorMatches(m.floor, formFloor) &&
+                          (m.lineId === line.id || m.lineId === clean || m.lineId === 'Line ' + clean)
+                        );
+                        const isCurrent = moScope === 'LINE' && (formLine === line.id || formLine === clean);
+
+                        return (
+                          <tr
+                            key={line.id}
+                            className={`hover:bg-blue-50/50 transition ${isCurrent ? 'bg-blue-50 font-black' : ''}`}
+                          >
+                            <td className="p-2 font-black text-[#002D62]">
+                              {lineDisplayName(line.id)}
+                            </td>
+                            <td className="p-2 text-right font-bold text-emerald-800">
+                              {lineTarget?.targetEfficiencyPct ?? moEffTarget}%
+                            </td>
+                            <td className="p-2 text-right font-bold text-blue-800">
+                              {lineTarget?.targetAchievePct ?? moAchieveTarget}%
+                            </td>
+                            <td className="p-2 text-right font-bold text-amber-800">
+                              {lineTarget?.targetDhuPct ?? moDhuLimit}%
+                            </td>
+                            <td className="p-2 text-right font-bold text-slate-700">
+                              {lineTarget?.targetOqlPct ?? moOqlCommitment}%
+                            </td>
+                            <td className="p-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFormLine(clean);
+                                  setMoScope('LINE');
+                                }}
+                                className="px-2.5 py-1 text-[11px] font-black bg-blue-600 hover:bg-blue-700 text-white rounded-md transition shadow-xs"
+                              >
+                                {isCurrent ? 'Editing' : 'Edit Line'}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-
-              {moSuccess && (
-                <div className="p-2.5 bg-green-50 text-green-800 text-xs font-bold rounded-lg border border-green-200">
-                  ✓ Monthly Floor Targets &amp; BS QA FRI Pass Rate saved!
-                </div>
-              )}
-
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  className="bg-[#002D62] hover:bg-blue-900 text-white font-black text-xs px-6 py-2.5 rounded-xl shadow transition"
-                >
-                  Save Monthly Targets
-                </button>
-              </div>
-            </form>
+            </div>
           )}
         </div>
       </div>
