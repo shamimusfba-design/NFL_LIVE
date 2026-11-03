@@ -8,7 +8,7 @@ import { generateSyntheticDemoDataset, getBangladeshTodayIso } from './masterDat
 
 export const CLIENT_DEMO_ID = 'DEMO';
 export const CLIENT_DEMO_PASS = 'demo1234';
-export const DEFAULT_UPWORK_URL = 'https://www.upwork.com/';
+export const DEFAULT_UPWORK_URL = 'https://www.upwork.com/freelancers/~01c7eee8debd77ea7f';
 
 export function isClientDemoUrl(): boolean {
   if (typeof window === 'undefined') return false;
@@ -81,7 +81,12 @@ export function getUpworkUrl(): string {
       return fromParam.trim();
     }
     const saved = localStorage.getItem('nfl_demo_upwork_url');
-    if (saved && /^https?:\/\//i.test(saved.trim())) {
+    if (
+      saved &&
+      /^https?:\/\//i.test(saved.trim()) &&
+      saved.trim() !== 'https://www.upwork.com/' &&
+      saved.trim() !== 'https://www.upwork.com'
+    ) {
       return saved.trim();
     }
   } catch {}

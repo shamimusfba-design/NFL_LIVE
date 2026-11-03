@@ -5,14 +5,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0A2558" />
-    <link id="app-manifest" rel="manifest" href="./manifest.webmanifest?v=43" />
-    <link id="app-favicon-svg" rel="icon" type="image/svg+xml" href="./icon.svg?v=43" />
-    <link id="app-favicon-png" rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=43" />
-    <link id="app-apple-icon" rel="apple-touch-icon" href="./apple-touch-icon.png?v=43" />
+    <link id="app-manifest" rel="manifest" href="./manifest.webmanifest?v=44" />
+    <link id="app-favicon-svg" rel="icon" type="image/svg+xml" href="./icon.svg?v=44" />
+    <link id="app-favicon-png" rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=44" />
+    <link id="app-apple-icon" rel="apple-touch-icon" href="./apple-touch-icon.png?v=44" />
     <title>NFL LIVE — Production &amp; Quality</title>
     <script>
       try {
-        var isDemoUrl = location.search.indexOf("demo") !== -1 || location.pathname.toLowerCase().indexOf("/demo") !== -1 || sessionStorage.getItem("nfl_client_demo_active") === "1";
+        var isDemoUrl = location.search.indexOf("demo") !== -1 || location.pathname.toLowerCase().indexOf("/demo") !== -1;
         if (isDemoUrl) {
           document.title = "DEMO LIVE — Production & Quality";
           var demoSvg = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><circle cx="60" cy="60" r="56" fill="#0A2558"/><rect x="18" y="42" width="84" height="36" rx="18" fill="#1D4ED8" stroke="#38BDF8" stroke-width="3"/><text x="60" y="66" text-anchor="middle" fill="#FFFFFF" font-family="Arial,sans-serif" font-weight="900" font-size="22" letter-spacing="2">DEMO</text></svg>');
@@ -24,6 +24,8 @@
           if (favPng) favPng.setAttribute("href", demoSvg);
           if (appleIcon) appleIcon.setAttribute("href", demoSvg);
           if (manifestEl) manifestEl.remove();
+        } else {
+          sessionStorage.removeItem("nfl_client_demo_active");
         }
       } catch (e) {}
     </script>
@@ -97,7 +99,7 @@ body{background:var(--wb-bg)}
           }
         });
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=43', { updateViaCache: 'none' }).then(reg => {
+          navigator.serviceWorker.register('./sw.js?v=44', { updateViaCache: 'none' }).then(reg => {
             reg.update().catch(() => {});
           }).catch(() => {});
         });

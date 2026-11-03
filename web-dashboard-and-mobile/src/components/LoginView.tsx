@@ -300,14 +300,15 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, notice }) => {
   const d = DESIGNATIONS.find(x => x.name === regDesignation);
   const bg = `${import.meta.env.BASE_URL}login-bg.jpg`;
   const selectStyle: React.CSSProperties = { ...fieldStyle, width: '100%', color: '#0F172A', fontSize: 15.5, outline: 'none', appearance: 'auto' };
-  const [demoModeForced, setDemoModeForced] = useState(() => {
-    try {
-      return isDemoLink || sessionStorage.getItem('nfl_client_demo_active') === '1';
-    } catch {
-      return isDemoLink;
+  React.useEffect(() => {
+    if (!isDemoLink) {
+      try {
+        sessionStorage.removeItem('nfl_client_demo_active');
+      } catch {}
     }
-  });
-  const showDemoBrand = demoModeForced || isDemoLink || usernameInput.trim().toUpperCase() === 'DEMO';
+  }, [isDemoLink]);
+
+  const showDemoBrand = isDemoLink;
 
   return (
     <div style={{ minHeight: '100vh', background: '#061B43', position: 'relative', overflow: 'hidden' }}>
@@ -393,23 +394,20 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, notice }) => {
               )}
               <Field icon={ICON.id} value={usernameInput} placeholder="Employee ID" onChange={v => { setUsernameInput(v); setErrorMessage(null); }} />
               <Field icon={ICON.lock} type="password" autoComplete="new-password" value={passwordInput} placeholder="Password" onChange={v => { setPasswordInput(v); setErrorMessage(null); }} />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      sessionStorage.setItem('nfl_client_demo_active', '1');
-                      document.title = 'DEMO LIVE — Production & Quality';
-                    } catch {}
-                    setDemoModeForced(true);
-                    setUsernameInput(CLIENT_DEMO_ID);
-                    setPasswordInput(CLIENT_DEMO_PASS);
-                    setErrorMessage(null);
-                  }}
-                  style={{ background: 'none', border: 0, color: '#0D8A55', fontWeight: 800, fontSize: 12, textAlign: 'left', cursor: 'pointer', padding: 0 }}
-                >
-                  👁️ Fill Client Demo (ID: DEMO / Pass: demo1234)
-                </button>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: isDemoLink ? 'space-between' : 'flex-end', gap: 8 }}>
+                {isDemoLink && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUsernameInput(CLIENT_DEMO_ID);
+                      setPasswordInput(CLIENT_DEMO_PASS);
+                      setErrorMessage(null);
+                    }}
+                    style={{ background: 'none', border: 0, color: '#0D8A55', fontWeight: 800, fontSize: 12, textAlign: 'left', cursor: 'pointer', padding: 0 }}
+                  >
+                    👁️ Fill Demo (ID: DEMO / Pass: demo1234)
+                  </button>
+                )}
                 <button type="button" onClick={handleForgotPassword} style={{ background: 'none', border: 0, color: '#1D4ED8', fontWeight: 700, fontSize: 13, textAlign: 'right', cursor: 'pointer', padding: 0 }}>Forgot password?</button>
               </div>
               {infoMessage && <Message kind="info" text={infoMessage} />}

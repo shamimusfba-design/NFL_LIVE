@@ -63,6 +63,7 @@ import { accountFromRecord, saveSessionCache, readSessionCache, clearSessionCach
 import {
   CLIENT_DEMO_ID,
   CLIENT_DEMO_PASS,
+  DEFAULT_UPWORK_URL,
   isClientDemoUser,
   generateRichClientDemoBundle,
   getUpworkUrl,
@@ -1629,7 +1630,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      const clean = upworkInput.trim() || 'https://www.upwork.com/';
+                      const clean = upworkInput.trim() || DEFAULT_UPWORK_URL;
                       setCustomUpworkUrl(clean);
                       setUpworkUrl(clean);
                       setCopyFeedback('✓ Upwork URL saved!');
@@ -1646,41 +1647,18 @@ export default function App() {
                 const baseOrigin = typeof window !== 'undefined'
                   ? `${window.location.origin}${window.location.pathname.replace(/\/demo\/?.*$/, '').replace(/\/$/, '')}`
                   : 'https://shamimusfba-design.github.io/NFL_LIVE';
-                const customParam = upworkUrl && upworkUrl !== 'https://www.upwork.com/'
-                  ? `?upwork=${encodeURIComponent(upworkUrl)}`
-                  : '';
-                const demoFolderLink = `${baseOrigin}/demo/${customParam}`;
-                const demoQueryLink = `${baseOrigin}/?demo=client${customParam ? `&upwork=${encodeURIComponent(upworkUrl)}` : ''}`;
+                const customParam =
+                  upworkUrl &&
+                  upworkUrl !== DEFAULT_UPWORK_URL &&
+                  upworkUrl !== 'https://www.upwork.com/'
+                    ? `&upwork=${encodeURIComponent(upworkUrl)}`
+                    : '';
+                const demoQueryLink = `${baseOrigin}/?demo=client${customParam}`;
                 return (
                   <div className="space-y-2 pt-1">
                     <div>
                       <label className="block text-[11px] font-black text-slate-700 mb-1">
-                        🌐 Dedicated Client Demo Link 1 (Clean Folder Link):
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          readOnly
-                          value={demoFolderLink}
-                          className="flex-1 rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1.5 font-mono text-[11px] font-bold text-slate-800"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard?.writeText(demoFolderLink);
-                            setCopyFeedback('✓ Copied Demo Folder Link!');
-                            setTimeout(() => setCopyFeedback(null), 2500);
-                          }}
-                          className="rounded-lg bg-[#0A2558] hover:bg-blue-900 px-3 py-1.5 text-xs font-black text-white"
-                        >
-                          Copy
-                        </button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-black text-slate-700 mb-1">
-                        🌐 Dedicated Client Demo Link 2 (Direct Query Link):
+                        🌐 Official Client Demo Link (Built-in Upwork Profile & DEMO Branding):
                       </label>
                       <div className="flex gap-2">
                         <input
@@ -1693,12 +1671,12 @@ export default function App() {
                           type="button"
                           onClick={() => {
                             navigator.clipboard?.writeText(demoQueryLink);
-                            setCopyFeedback('✓ Copied Direct Demo Link!');
+                            setCopyFeedback('✓ Copied Client Demo Link!');
                             setTimeout(() => setCopyFeedback(null), 2500);
                           }}
                           className="rounded-lg bg-[#0A2558] hover:bg-blue-900 px-3 py-1.5 text-xs font-black text-white"
                         >
-                          Copy
+                          Copy Link
                         </button>
                       </div>
                     </div>
