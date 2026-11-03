@@ -42,6 +42,7 @@ import {
   softDeleteCloudRecord,
   canonicalProdDocId,
   canonicalQaDocId,
+  purgeAllDemoAlertsFromCloud,
   purgeAllOperationalCloudRecords,
   approveCloudUserRegistration,
   rejectCloudUserRegistration,
@@ -181,11 +182,21 @@ export default function App() {
       const savedWeekly = JSON.parse(localStorage.getItem(STORAGE_KEYS.WEEKLY_QUALITY) || '[]');
       const savedMonthly = JSON.parse(localStorage.getItem(STORAGE_KEYS.MONTHLY_TARGETS) || '[]');
 
+      const isRealInc = (i: IncidentRecord) =>
+        !i.isDemo &&
+        !i.id.startsWith('demo-') &&
+        !i.id.startsWith('inc-demo-') &&
+        (i.startTimeMillis || 0) > Date.now() - 48 * 3600 * 1000;
+      const cleanSavedIncs = savedIncs.filter(isRealInc);
+      try {
+        localStorage.setItem(STORAGE_KEYS.INCIDENTS, JSON.stringify(cleanSavedIncs));
+      } catch {}
+
       if (sampleCleared) {
         setTargets(savedTargets.filter((t: LineTargetConfig) => !t.isDemo));
         setProductions(savedProds.filter((p: ProductionEntryRecord) => !p.isDemo));
         setQualities(savedQuals.filter((q: QualityEntryRecord) => !q.isDemo));
-        setIncidents(savedIncs.filter((i: IncidentRecord) => !i.isDemo));
+        setIncidents(cleanSavedIncs);
         setWeeklyQuality(savedWeekly.filter((w: WeeklyQualityRecord) => !w.isDemo));
         setMonthlyTargets(savedMonthly);
         setIsDemoMode(false);
@@ -199,7 +210,7 @@ export default function App() {
         setTargets(savedTargets);
         setProductions(savedProds);
         setQualities(savedQuals);
-        setIncidents(savedIncs);
+        setIncidents(cleanSavedIncs);
         setWeeklyQuality(savedWeekly.length > 0 ? savedWeekly : demo.weeklyQuality);
         setMonthlyTargets(savedMonthly.length > 0 ? savedMonthly : demo.monthlyTargets);
       } else {
@@ -207,7 +218,7 @@ export default function App() {
         setTargets(demo.targets);
         setProductions(demo.productions);
         setQualities(demo.qualities);
-        setIncidents(demo.incidents);
+        setIncidents([]);
         setWeeklyQuality(demo.weeklyQuality);
         setMonthlyTargets(demo.monthlyTargets);
       }
@@ -342,10 +353,26 @@ export default function App() {
         });
       },
       onIncidentsUpdated: remoteIncs => {
-        const validRemote = remoteIncs.filter(r => r.startTimeMillis > lastResetMs);
+        const cutoff = Date.now() - 48 * 3600 * 1000;
+        const validRemote = remoteIncs.filter(
+          r =>
+            !r.isDemo &&
+            !r.id.startsWith('demo-') &&
+            !r.id.startsWith('inc-demo-') &&
+            (r.startTimeMillis || 0) > cutoff &&
+            r.startTimeMillis > lastResetMs
+        );
         setIncidents(prev => {
           const map = new Map<string, IncidentRecord>();
-          prev.forEach(i => map.set(i.id, i));
+          prev
+            .filter(
+              i =>
+                !i.isDemo &&
+                !i.id.startsWith('demo-') &&
+                !i.id.startsWith('inc-demo-') &&
+                (i.startTimeMillis || 0) > cutoff
+            )
+            .forEach(i => map.set(i.id, i));
           validRemote.forEach(r => {
             const existing = map.get(r.id);
             map.set(r.id, {
@@ -353,7 +380,11 @@ export default function App() {
               isMutedOnCurrentDevice: existing?.isMutedOnCurrentDevice ?? false
             });
           });
-          return Array.from(map.values()).sort((a, b) => b.startTimeMillis - a.startTimeMillis);
+          const result = Array.from(map.values()).sort((a, b) => b.startTimeMillis - a.startTimeMillis);
+          try {
+            localStorage.setItem(STORAGE_KEYS.INCIDENTS, JSON.stringify(result));
+          } catch {}
+          return result;
         });
       },
       onSetupsUpdated: remoteSetups => {
@@ -685,6 +716,23 @@ export default function App() {
       })
     );
   };
+
+  const handlePurgeDemoAlerts = async () => {
+    setIncidents([]);
+    try {
+      localStorage.setItem(STORAGE_KEYS.INCIDENTS, '[]');
+      localStorage.removeItem('nfl_seen_incidents');
+      localStorage.setItem(STORAGE_KEYS.LAST_RESET_MS, String(Date.now()));
+    } catch {}
+    setLastResetMs(Date.now());
+    await purgeAllDemoAlertsFromCloud();
+  };
+
+  useEffect(() => {
+    if (cloudConnected) {
+      purgeAllDemoAlertsFromCloud().catch(() => {});
+    }
+  }, [cloudConnected]);
 
   // Turns the demo data on or off on THIS screen only. Used for the Admin's own click and for the shared switch.
   const applyDemo = (on: boolean) => {
@@ -1490,6 +1538,7 @@ export default function App() {
           lockedFloor={lockedFloor}
           onAddComment={handleAddComment}
           highOqlLines={highOqlToday}
+          onPurgeDemoAlerts={handlePurgeDemoAlerts}
           onClose={() => setShowIncidentModal(false)}
         />
       )}

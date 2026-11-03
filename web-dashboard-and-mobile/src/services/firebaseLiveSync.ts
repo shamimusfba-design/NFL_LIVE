@@ -663,6 +663,10 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
           snap.forEach(d => {
             const data = d.data();
             if (data.isDeleted === true) return;
+            if (data.isDemo === true || d.id.startsWith('demo-') || d.id.startsWith('inc-demo-')) return;
+            const startMs = Number(data.startTimeMillis || 0);
+            // Stale demo/test alerts older than 48 hours are excluded (e.g. 280h old test alerts)
+            if (startMs > 0 && startMs < Date.now() - 48 * 3600 * 1000) return;
             list.push({
               id: data.id || d.id,
               floor: (data.floor as any) || 'Sew 2',
@@ -1178,6 +1182,36 @@ export async function pushSetupToCloud(setup: LineTargetConfig): Promise<boolean
     console.warn('pushSetupToCloud error:', e);
     return false;
   }
+}
+
+export async function purgeAllDemoAlertsFromCloud(): Promise<number> {
+  const db = getDb();
+  if (!db) return 0;
+  let totalDeleted = 0;
+  try {
+    const snap = await getDocs(collection(db, 'factory_alerts'));
+    const cutoff = Date.now() - 48 * 3600 * 1000;
+    const docsToDelete = snap.docs.filter(d => {
+      const data = d.data();
+      if (data.isDemo === true) return true;
+      if (d.id.startsWith('demo-') || d.id.startsWith('inc-demo-')) return true;
+      if (typeof data.startTimeMillis === 'number' && data.startTimeMillis < cutoff) return true;
+      if (String(data.reportedBy || '').toLowerCase().includes('demo')) return true;
+      return false;
+    });
+
+    for (let i = 0; i < docsToDelete.length; i += 400) {
+      const chunk = docsToDelete.slice(i, i + 400);
+      const batch = writeBatch(db);
+      chunk.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      totalDeleted += chunk.length;
+    }
+    console.log(`[firebaseLiveSync] Purged ${totalDeleted} demo/stale alerts from cloud.`);
+  } catch (e) {
+    console.warn('Failed purging demo alerts from cloud:', e);
+  }
+  return totalDeleted;
 }
 
 export async function purgeAllOperationalCloudRecords(): Promise<number> {

@@ -357,39 +357,8 @@ export function generateSyntheticDemoDataset(dateStr: string = getBangladeshToda
     });
   });
 
-  const incidents: IncidentRecord[] = [
-    {
-      id: 'demo-inc-1',
-      floor: 'Sew 2',
-      lineId: 'K1',
-      category: 'MACHINE_BREAKDOWN',
-      machineRef: 'SNLS-04',
-      description: 'Needle bar vibration & thread breakage on SNLS-04',
-      reportedCause: 'Drive belt tension slip',
-      impactLevel: 'HIGH',
-      affectedManpower: 4,
-      startTimeMillis: Date.now() - 25 * 60 * 1000,
-      status: 'OPEN',
-      reportedBy: 'Floor Supervisor',
-      isDemo: true
-    },
-    {
-      id: 'demo-inc-2',
-      floor: 'Sew 1',
-      lineId: 'A2',
-      category: 'INPUT_MATERIAL',
-      description: 'Waiting for collar rib bundles from cutting store',
-      reportedCause: 'Bundle numbering delay',
-      impactLevel: 'MEDIUM',
-      affectedManpower: 8,
-      startTimeMillis: Date.now() - 18 * 60 * 1000,
-      status: 'ACKNOWLEDGED',
-      acknowledgedBy: 'Biplob Das',
-      acknowledgedTimeMillis: Date.now() - 10 * 60 * 1000,
-      reportedBy: 'Line Supervisor',
-      isDemo: true
-    }
-  ];
+  // Incidents are empty by default - real incidents are reported live by supervisors
+  const incidents: IncidentRecord[] = [];
 
   const recentWeeks = generateRecentIsoWeeks(8);
   const sampleBs = [4.1, 4.4, 3.8, 4.7, 4.2, 3.9, 3.6, 3.5];

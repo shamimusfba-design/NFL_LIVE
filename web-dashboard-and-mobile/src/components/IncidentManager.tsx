@@ -28,6 +28,8 @@ interface IncidentManagerProps {
   highOqlLines?: Array<{ lineId: string; floor: string; oqlPct: number; checked: number; date: string }>;
   /** A floor-bound person reports only for their own floor */
   lockedFloor?: string | null;
+  /** Purge all old demo/test alerts from storage and cloud */
+  onPurgeDemoAlerts?: () => void;
   onClose: () => void;
 }
 
@@ -46,6 +48,7 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
   onAddComment,
   highOqlLines = [],
   lockedFloor = null,
+  onPurgeDemoAlerts,
   onClose
 }) => {
   const [activeTab, setActiveTab] = useState<'ACTIVE' | 'REPORT' | 'INBOX' | 'HISTORY'>('ACTIVE');
@@ -208,53 +211,72 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/70 z-50 flex items-center justify-center p-3 md:p-6 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200">
-        {/* Header */}
-        <div className="bg-[#002D62] text-white px-5 py-3.5 flex items-center justify-between">
+    <div className="fixed inset-0 bg-slate-950/80 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 backdrop-blur-sm overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[92vh] max-h-[820px] flex flex-col overflow-hidden border border-slate-200">
+        {/* Header - Fixed height with shrink-0 */}
+        <div className="bg-[#002D62] text-white px-4 sm:px-6 py-3.5 flex items-center justify-between shrink-0 shadow-sm z-20">
           <div className="flex items-center gap-3">
             <div className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-lg bg-white shadow">
               <NflLogo size={28} />
             </div>
             <div>
-              <h2 className="text-base font-black tracking-wide">
+              <h2 className="text-sm sm:text-base font-black tracking-wide">
                 Live Incident Response & Problem Routing
               </h2>
-              <div className="text-xs text-blue-200">
+              <div className="text-[11px] sm:text-xs text-blue-200">
                 Authoritative Timers • Role-based Alerting • Mute / Acknowledge / Resolve
               </div>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-white/80 hover:text-white bg-blue-900/60 hover:bg-blue-800 p-1.5 rounded-lg text-lg font-bold transition"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            {onPurgeDemoAlerts && (currentUserRole === 'ADMIN' || currentUserRole === 'MANAGEMENT_VIEW') && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('Delete all old demo/test notifications so only real data is tracked?')) {
+                    onPurgeDemoAlerts();
+                  }
+                }}
+                title="Delete all demo/test alerts"
+                className="text-xs bg-red-600/90 hover:bg-red-700 text-white font-bold px-3 py-1.5 rounded-lg shadow transition flex items-center gap-1.5"
+              >
+                <span>🗑️</span>
+                <span className="hidden sm:inline">Delete Demo Alerts</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="text-white/80 hover:text-white bg-blue-900/60 hover:bg-blue-800 p-1.5 rounded-lg text-lg font-bold transition w-8 h-8 flex items-center justify-center"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex border-b border-slate-200 bg-slate-50 px-4 pt-2 gap-2 text-xs font-bold overflow-x-auto">
+        {/* Tab Navigation - Fixed height with shrink-0 and clean pill/tab structure */}
+        <div className="flex items-center border-b border-slate-200 bg-slate-100 px-3 sm:px-5 pt-2.5 gap-1.5 sm:gap-2 text-xs font-bold overflow-x-auto shrink-0 shadow-inner z-10">
           <button
             onClick={() => setActiveTab('ACTIVE')}
-            className={`pb-2.5 px-3 border-b-2 flex items-center gap-1.5 transition whitespace-nowrap ${
+            className={`px-3 sm:px-4 py-2.5 rounded-t-lg font-bold text-xs flex items-center gap-1.5 transition shrink-0 border-b-2 ${
               activeTab === 'ACTIVE'
-                ? 'border-[#002D62] text-[#002D62]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
+                ? 'bg-white border-[#002D62] text-[#002D62] font-black shadow-sm'
+                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
             }`}
           >
             <span>Active Incidents</span>
-            <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+              openIncidents.length > 0 ? 'bg-red-500 text-white' : 'bg-slate-300 text-slate-700'
+            }`}>
               {openIncidents.length}
             </span>
           </button>
 
           <button
             onClick={() => setActiveTab('REPORT')}
-            className={`pb-2.5 px-3 border-b-2 flex items-center gap-1.5 transition whitespace-nowrap ${
+            className={`px-3 sm:px-4 py-2.5 rounded-t-lg font-bold text-xs flex items-center gap-1.5 transition shrink-0 border-b-2 ${
               activeTab === 'REPORT'
-                ? 'border-[#002D62] text-[#002D62]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
+                ? 'bg-white border-[#002D62] text-[#002D62] font-black shadow-sm'
+                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
             }`}
           >
             <span>➕ Report Problem</span>
@@ -262,15 +284,15 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
 
           <button
             onClick={() => setActiveTab('INBOX')}
-            className={`pb-2.5 px-3 border-b-2 flex items-center gap-1.5 transition whitespace-nowrap ${
+            className={`px-3 sm:px-4 py-2.5 rounded-t-lg font-bold text-xs flex items-center gap-1.5 transition shrink-0 border-b-2 ${
               activeTab === 'INBOX'
-                ? 'border-[#002D62] text-[#002D62]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
+                ? 'bg-white border-[#002D62] text-[#002D62] font-black shadow-sm'
+                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
             }`}
           >
             <span>My Inbox ({myDisplayDesignation})</span>
             {roleInboxIncidents.length > 0 && (
-              <span className="bg-amber-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
+              <span className="bg-amber-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black">
                 {roleInboxIncidents.length}
               </span>
             )}
@@ -278,18 +300,18 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
 
           <button
             onClick={() => setActiveTab('HISTORY')}
-            className={`pb-2.5 px-3 border-b-2 flex items-center gap-1.5 transition whitespace-nowrap ${
+            className={`px-3 sm:px-4 py-2.5 rounded-t-lg font-bold text-xs flex items-center gap-1.5 transition shrink-0 border-b-2 ${
               activeTab === 'HISTORY'
-                ? 'border-[#002D62] text-[#002D62]'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
+                ? 'bg-white border-[#002D62] text-[#002D62] font-black shadow-sm'
+                : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
             }`}
           >
             <span>Resolved History ({resolvedIncidents.length})</span>
           </button>
         </div>
 
-        {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F8FAFC]">
+        {/* Content Body - Scrollable with min-h-0 and generous bottom padding so buttons are never hidden */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-24 space-y-4 bg-[#F8FAFC] min-h-0">
           {/* TOP BANNER: Recent Comments across Notifications */}
           {activeTab !== 'REPORT' && recentComments.length > 0 && (
             <div className="rounded-xl border border-blue-300 bg-blue-50/90 p-3 shadow-sm space-y-2">
@@ -623,12 +645,14 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
                 </div>
               )}
 
-              <div className="pt-2 flex justify-end">
+              {/* Sticky Action Footer - guaranteed visible without cutoff */}
+              <div className="pt-4 pb-2 flex justify-end sticky bottom-0 bg-white/95 backdrop-blur-sm -mx-5 px-5 -mb-5 py-3.5 border-t border-slate-200 rounded-b-xl shadow-md z-20">
                 <button
                   type="submit"
-                  className="bg-[#002D62] hover:bg-blue-900 text-white font-black text-xs px-6 py-2.5 rounded-xl shadow transition"
+                  className="bg-[#002D62] hover:bg-blue-900 text-white font-black text-xs px-6 py-3 rounded-xl shadow-lg transition active:scale-95 flex items-center gap-2"
                 >
-                  🚀 Submit & Start Incident Timer
+                  <span>🚀</span>
+                  <span>Submit & Start Alert Timer</span>
                 </button>
               </div>
             </form>
@@ -637,51 +661,138 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
           {/* TAB 3: ROLE INBOX */}
           {activeTab === 'INBOX' && (
             <div className="space-y-3">
-              <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-xs text-blue-900">
-                <b>{myDisplayDesignation} Priority Inbox:</b> Incidents specifically routed to your responsibility group.
+              <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-xs text-blue-900 flex items-center justify-between">
+                <div>
+                  <b>{myDisplayDesignation} Priority Inbox:</b> Incidents specifically routed to your responsibility group.
+                </div>
               </div>
               {roleInboxIncidents.length === 0 ? (
-                <div className="text-center py-8 text-slate-500 text-xs">
-                  No pending incidents waiting for your role action.
+                <div className="text-center py-12 text-slate-500">
+                  <span className="text-4xl">📬</span>
+                  <div className="font-bold text-sm mt-2 text-slate-700">Inbox is Clear</div>
+                  <div className="text-xs">No pending incidents waiting for your role action.</div>
                 </div>
               ) : (
-                roleInboxIncidents.map(inc => (
-                  <div key={inc.id} className="bg-white border rounded-xl p-3 shadow-sm space-y-2">
-                    {renderTopCommentBanner(inc.id)}
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-xs text-slate-900">
-                        {lineDisplayName(inc.lineId)} — {inc.category}
-                      </span>
-                      <span className="font-mono text-xs font-bold text-red-600">
-                        Elapsed: {formatElapsed(inc.startTimeMillis)}
-                      </span>
+                roleInboxIncidents.map(inc => {
+                  const isAck = inc.status === 'ACKNOWLEDGED';
+                  const targetedRole = getTargetRoleForCategory(inc.category);
+
+                  return (
+                    <div
+                      key={inc.id}
+                      className={`bg-white rounded-xl border p-4 shadow-sm transition space-y-3 ${
+                        isAck ? 'border-amber-300 bg-amber-50/20' : 'border-red-400 bg-red-50/30 ring-1 ring-red-300'
+                      }`}
+                    >
+                      {renderTopCommentBanner(inc.id)}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <span className="text-2xl mt-0.5">
+                            {inc.category === 'MACHINE_BREAKDOWN'
+                              ? '🔧'
+                              : inc.category === 'QUALITY_PROBLEM'
+                              ? '🔍'
+                              : inc.category === 'LOW_PRODUCTION'
+                              ? '📉'
+                              : '⚠️'}
+                          </span>
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-black text-sm text-slate-900">
+                                {lineDisplayName(inc.lineId)} ({inc.floor})
+                              </span>
+                              <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-800">
+                                {inc.category.replace('_', ' ')}
+                              </span>
+                              {inc.machineRef && (
+                                <span className="text-xs font-mono bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-bold">
+                                  {inc.machineRef}
+                                </span>
+                              )}
+                              <span
+                                className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                  isAck ? 'bg-amber-100 text-amber-800' : 'bg-red-500 text-white animate-pulse'
+                                }`}
+                              >
+                                {inc.status}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-800 font-semibold mt-1.5">
+                              {inc.description}
+                            </p>
+                            {inc.reportedCause && (
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                <span className="font-bold">Reported Cause:</span> {inc.reportedCause}
+                              </p>
+                            )}
+                            <div className="flex flex-wrap items-center gap-3 text-[10px] text-slate-500 mt-2 font-medium">
+                              <span>Reported by: <b className="text-slate-700">{inc.reportedBy}</b></span>
+                              <span>Targeted: <b className="text-blue-700">{targetedRole}</b></span>
+                              <span>Impact: <b className="text-red-700">{inc.impactLevel} ({inc.affectedManpower} ops)</b></span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Live Elapsed Stopwatch Badge */}
+                        <div className="text-right flex flex-col items-end gap-1.5 shrink-0">
+                          <div className="bg-slate-900 text-white font-mono text-xs font-black px-2.5 py-1 rounded-lg shadow-inner flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-red-400 animate-ping"></span>
+                            <span>{formatElapsed(inc.startTimeMillis)}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-semibold">Elapsed Downtime</span>
+                        </div>
+                      </div>
+
+                      {/* Action Buttons: Mute, Acknowledge, Resolve */}
+                      <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                        {/* 1. MUTE */}
+                        <button
+                          onClick={() => onMuteDeviceAlarm(inc.id)}
+                          className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition flex items-center gap-1 ${
+                            inc.isMutedOnCurrentDevice
+                              ? 'bg-slate-100 text-slate-400 border-slate-200'
+                              : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
+                          }`}
+                          title="Silences alarm on this device only."
+                        >
+                          <span>{inc.isMutedOnCurrentDevice ? '🔇 Muted' : '🔔 Mute Alarm'}</span>
+                        </button>
+
+                        {/* 2. ACKNOWLEDGE */}
+                        {!isAck ? (
+                          <button
+                            onClick={() => onAcknowledgeIncident(inc.id, currentUserName)}
+                            className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-black text-xs px-3.5 py-1.5 rounded-lg shadow-sm transition"
+                          >
+                            ✓ Acknowledge
+                          </button>
+                        ) : (
+                          <span className="text-[11px] font-bold text-amber-800 bg-amber-100 px-2 py-1 rounded-md">
+                            Acknowledged by {inc.acknowledgedBy}
+                          </span>
+                        )}
+
+                        {/* 3. RESOLVE */}
+                        <button
+                          onClick={() => {
+                            setResolvingId(inc.id);
+                            setResolutionNote('');
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-4 py-1.5 rounded-lg shadow-sm transition"
+                        >
+                          ⏹ Resolve & Stop Timer
+                        </button>
+                      </div>
+
+                      <CommentThread
+                        targetId={inc.id}
+                        comments={comments}
+                        users={users}
+                        onAdd={(t, x, p) => onAddComment?.(t, x, p)}
+                      />
                     </div>
-                    <p className="text-xs text-slate-700">{inc.description}</p>
-                    <div className="flex justify-end gap-2 pt-2 border-t">
-                      <button
-                        onClick={() => onAcknowledgeIncident(inc.id, currentUserName)}
-                        className="text-xs bg-amber-500 text-slate-900 font-bold px-3 py-1 rounded"
-                      >
-                        Acknowledge
-                      </button>
-                      <button
-                        onClick={() => {
-                          setResolvingId(inc.id);
-                          setResolutionNote('');
-                        }}
-                        className="text-xs bg-emerald-600 text-white font-bold px-3 py-1 rounded"
-                      >
-                        Resolve
-                      </button>
-                    </div>
-                    <CommentThread
-                      targetId={inc.id}
-                      comments={comments}
-                      users={users}
-                      onAdd={(t, x, p) => onAddComment?.(t, x, p)}
-                    />
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           )}
