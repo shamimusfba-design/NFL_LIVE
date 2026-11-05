@@ -1129,6 +1129,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             </WbPanel>
 
             <WbPanel
+              top
               title="Operator Present vs Machine Running"
               sub={`Active lines · Ratio ${kpis.machinesCount > 0 ? (kpis.operatorsCount / kpis.machinesCount).toFixed(2) : '0.00'}x`}
               right={
@@ -1141,7 +1142,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               className="lg:col-span-5"
               compact={tvFit}
             >
-              <div className="flex flex-col justify-between h-full gap-1.5">
+              <div className="flex-1 min-h-0 flex flex-col justify-start gap-1.5">
                 <div className="grid grid-cols-4 gap-1.5 text-center">
                   <div className="p-1 rounded border" style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.LINE }}>
                     <div className="text-[9px] font-bold" style={{ color: WB_THEME.MUTED }}>Operators</div>
@@ -1162,8 +1163,8 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                     </div>
                   </div>
                 </div>
-                <div className={`overflow-y-auto ${tvFit ? 'max-h-[85px]' : 'max-h-[140px]'} border rounded`} style={{ borderColor: WB_THEME.LINE }}>
-                  <table className="w-full text-xs border-collapse">
+                <div className={`flex-1 min-h-0 overflow-y-auto ${tvFit ? '' : 'max-h-[260px]'} border rounded`} style={{ borderColor: WB_THEME.LINE }}>
+                  <table className={`w-full ${tvFit ? 'text-sm' : 'text-xs'} border-collapse`}>
                     <thead className="sticky top-0 z-10" style={{ backgroundColor: WB_THEME.BG }}>
                       <tr className="text-[10px] font-black uppercase text-left" style={{ color: WB_THEME.MUTED }}>
                         <th className="p-1 pl-2">Line</th>
@@ -1210,6 +1211,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             </WbPanel>
 
             <WbPanel
+              top
               title="NPT (Non-Productive Time) & Stoppages"
               sub={`Total ${kpis.downtimeMinutes} min elapsed today`}
               right={
@@ -1591,7 +1593,9 @@ const WbPanel: React.FC<{
   className?: string;
   children: React.ReactNode;
   compact?: boolean;
-}> = ({ title, sub, right, className = '', children, compact }) => (
+  /** content starts at the top (lists and tables) */
+  top?: boolean;
+}> = ({ title, sub, right, className = '', children, compact, top }) => (
   <div
     style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
     className={`rounded-lg border ${compact ? 'p-1.5 md:p-2' : 'p-2.5'} flex flex-col justify-between overflow-hidden ${className}`}
@@ -1607,7 +1611,7 @@ const WbPanel: React.FC<{
       </div>
       {right}
     </div>
-    <div className={`flex-1 flex flex-col justify-end ${compact ? 'min-h-[110px]' : 'min-h-[180px]'}`}>{children}</div>
+    <div className={`flex-1 min-h-0 flex flex-col ${top ? 'justify-start' : 'justify-end'} ${compact ? 'min-h-[110px]' : 'min-h-[180px]'}`}>{children}</div>
   </div>
 );
 
