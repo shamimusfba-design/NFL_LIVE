@@ -139,17 +139,27 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   const [countdown, setCountdown] = useState(WB_INTERVALS[0]);
   const [deepDiveLine, setDeepDiveLine] = useState<LinePerformanceSummary | null>(null);
   // Cutting, Print and Embroidery get their own page: no sewing cards (DHU, OQL, operator vs machine, efficiency).
-  // TV fit: scale the whole wallboard to the width of the screen (a 43-inch TV fits the 1600px design at about 1.6x).
+  // TV fit mode: when active, dynamically fits all cards and charts into one single screen height (zero vertical scroll).
   const [tvFit, setTvFit] = useState<boolean>(() => { try { return localStorage.getItem('nfl_tv_fit') === '1'; } catch { return false; } });
-  const [vw, setVw] = useState<number>(() => (typeof window !== 'undefined' ? window.innerWidth : 1200));
+  const [vw, setVw] = useState<number>(() => (typeof window !== 'undefined' ? window.innerWidth : 1920));
+  const [vh, setVh] = useState<number>(() => (typeof window !== 'undefined' ? window.innerHeight : 1080));
   useEffect(() => {
-    const onResize = () => setVw(window.innerWidth);
+    const onResize = () => {
+      setVw(window.innerWidth);
+      setVh(window.innerHeight);
+    };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
   useEffect(() => { try { localStorage.setItem('nfl_tv_fit', tvFit ? '1' : '0'); } catch {} }, [tvFit]);
-  const canFit = vw >= 1100;
-  const fitScale = tvFit && canFit ? Math.min(1.6, Math.max(0.6, vw / 1600)) : 1;
+
+  // Constrain 2D scale by available height so height NEVER overflows the single screen on TV/laptop
+  const availW = Math.max(768, vw - 16);
+  const availH = Math.max(480, vh - 44);
+  const scaleX = availW / 1520;
+  const scaleY = availH / 840;
+  const fitScale = tvFit ? Math.min(scaleX, scaleY, 1.15) : 1;
+  const chartPlotH = tvFit ? 'h-24 md:h-28' : PLOT_H;
   const isDept = isDepartmentFloor(selectedFloor) || selectedFloor === 'Print & Embroidery';
   const hasQc = selectedFloor === 'Print' || selectedFloor === 'Embroidery' || selectedFloor === 'Print & Embroidery';
   const unit = unitWord(selectedFloor);
@@ -250,12 +260,31 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       .filter(w => w.bsOqlPct !== null || w.nflAqcPct !== null)
       .sort((a, b) => a.weekKey.localeCompare(b.weekKey));
   }, [weeklyQuality]);
+
+  const latestWeeklyRecord = useMemo(() => {
+    return [...weeklyQuality]
+      .filter(w => w.bsOqlPct !== null || w.nflAqcPct !== null)
+      .sort((a, b) => b.weekKey.localeCompare(a.weekKey))[0];
+  }, [weeklyQuality]);
+
+  const auditPassStats = useMemo(() => {
+    const done = auditByLine.reduce((a, r) => a + r.pass + r.fail, 0);
+    const passed = auditByLine.reduce((a, r) => a + r.pass, 0);
+    const failed = auditByLine.reduce((a, r) => a + r.fail, 0);
+    const rate = done > 0 ? (passed / done) * 100 : null;
+    return { done, passed, failed, rate };
+  }, [auditByLine]);
+
   const brand = isClientDemoSession() ? 'DEMO' : 'NFL';
 
   return (
     <div
       style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.TXT, ...(fitScale !== 1 ? { zoom: fitScale } : {}) }}
-      className="tv-dashboard-root min-h-[calc(100vh-42px)] flex flex-col p-2.5 gap-2 select-none font-sans tabular-nums"
+      className={`tv-dashboard-root flex flex-col font-sans tabular-nums select-none ${
+        tvFit
+          ? 'h-[calc(100vh-42px)] max-h-[calc(100vh-42px)] overflow-hidden p-1.5 md:p-2 gap-1.5'
+          : 'min-h-[calc(100vh-42px)] p-2.5 gap-2 overflow-y-auto'
+      }`}
     >
       {/* ==================== HEADER BAR (Matches TvDashboardScreen.kt) ==================== */}
       <div className="flex flex-wrap items-center justify-between gap-2 min-h-[40px]">
@@ -451,16 +480,19 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             </button>
           )}
 
-          {canFit && (
-            <button
-              onClick={() => setTvFit(v => !v)}
-              title="Scale the whole screen to fill this TV or monitor"
-              className="px-2 py-0.5 rounded border text-[11px] font-black"
-              style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE, color: tvFit ? WB_THEME.BLUE : WB_THEME.MUTED }}
-            >
-              {tvFit ? 'TV fit: On' : 'TV fit: Off'}
-            </button>
-          )}
+          <button
+            onClick={() => setTvFit(v => !v)}
+            title="টিভি ফিট মোড: চাপ দিলে এক সিঙ্গেল স্ক্রিনে সব চার্ট আঁটবে (কোন স্ক্রল করতে হবে না)"
+            className="px-2.5 py-0.5 rounded border text-[11px] font-black transition flex items-center gap-1.5 shadow-xs"
+            style={{
+              backgroundColor: tvFit ? (theme === 'light' ? '#002D62' : '#1D4ED8') : WB_THEME.PANEL,
+              borderColor: tvFit ? '#002D62' : WB_THEME.LINE,
+              color: tvFit ? '#FFFFFF' : WB_THEME.TXT
+            }}
+          >
+            <span>📺</span>
+            <span>{tvFit ? 'TV Fit: ON (Single Screen)' : 'TV Fit: OFF (Scrollable)'}</span>
+          </button>
           {isDemoMode && (
             <button
               onClick={onToggleDemo}
@@ -481,8 +513,8 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
         </div>
       </div>
 
-      {/* ==================== FACTORY COMMON STRIP: same on every section ==================== */}
-      {(() => {
+      {/* ==================== FACTORY COMMON STRIP: only on Factory view ==================== */}
+      {selectedFloor === 'Factory' && (() => {
         const inP = (d: string) => CalcForPeriod.isDateInPeriod(d, todayW, selectedPeriod);
         const all = qualities.filter(q => inP(q.date));
         const checked = all.reduce((a, q) => a + (q.checkedGarments || 0), 0);
@@ -496,11 +528,11 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           v === null ? WB_THEME.GREY : lowerBetter ? (v <= good ? WB_THEME.GREEN : v <= warn ? WB_THEME.AMBER : WB_THEME.RED) : (v >= good ? WB_THEME.GREEN : v >= warn ? WB_THEME.AMBER : WB_THEME.RED);
         return (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-            <WbTile label="Factory QC pass" value={pass !== null ? `${pass.toFixed(1)}%` : '—'} color={pc(pass, 97, 93, false)} sub={`${(checked - defective).toLocaleString()} passed of ${checked.toLocaleString()} checked`} />
-            <WbTile label="Factory DHU" value={dhu !== null ? `${dhu.toFixed(2)}%` : '—'} color={pc(dhu, 4, 5.5, true)} sub={`${defects.toLocaleString()} defects`} />
-            <WbTile label="Factory OQL" value={oql !== null ? `${oql.toFixed(2)}%` : '—'} color={pc(oql, AUDIT_PASS_OQL_PCT, 7, true)} sub={`limit ${AUDIT_PASS_OQL_PCT}%`} />
-            <WbTile label="BS OQL (weekly)" value={latestW && latestW.bsOqlPct !== null ? `${latestW.bsOqlPct.toFixed(2)}%` : '—'} color={pc(latestW?.bsOqlPct ?? null, 4.5, 7, true)} sub={latestW ? `Week ${latestW.weekKey.replace(/^\d{4}-/, '')}` : 'No weekly record yet'} />
-            <WbTile label={`${brand} AQC (weekly)`} value={latestW && latestW.nflAqcPct !== null ? `${latestW.nflAqcPct.toFixed(2)}%` : '—'} color={pc(latestW?.nflAqcPct ?? null, 4.5, 7, true)} sub={latestW ? `Week ${latestW.weekKey.replace(/^\d{4}-/, '')}` : 'No weekly record yet'} />
+            <WbTile label="Factory QC pass" value={pass !== null ? `${pass.toFixed(1)}%` : '—'} color={pc(pass, 97, 93, false)} sub={`${(checked - defective).toLocaleString()} passed of ${checked.toLocaleString()} checked`} compact={tvFit} />
+            <WbTile label="Factory DHU" value={dhu !== null ? `${dhu.toFixed(2)}%` : '—'} color={pc(dhu, 4, 5.5, true)} sub={`${defects.toLocaleString()} defects`} compact={tvFit} />
+            <WbTile label="Factory OQL" value={oql !== null ? `${oql.toFixed(2)}%` : '—'} color={pc(oql, AUDIT_PASS_OQL_PCT, 7, true)} sub={`limit ${AUDIT_PASS_OQL_PCT}%`} compact={tvFit} />
+            <WbTile label="BS OQL (weekly)" value={latestW && latestW.bsOqlPct !== null ? `${latestW.bsOqlPct.toFixed(2)}%` : '—'} color={pc(latestW?.bsOqlPct ?? null, 4.5, 7, true)} sub={latestW ? `Week ${latestW.weekKey.replace(/^\d{4}-/, '')}` : 'No weekly record yet'} compact={tvFit} />
+            <WbTile label={`${brand} AQC (weekly)`} value={latestW && latestW.nflAqcPct !== null ? `${latestW.nflAqcPct.toFixed(2)}%` : '—'} color={pc(latestW?.nflAqcPct ?? null, 4.5, 7, true)} sub={latestW ? `Week ${latestW.weekKey.replace(/^\d{4}-/, '')}` : 'No weekly record yet'} compact={tvFit} />
           </div>
         );
       })()}
@@ -663,90 +695,61 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
       {/* ==================== PAGE 1: PRODUCTION ==================== */}
       {!isDept && page === 'PRODUCTION' && (
-        <div className="flex-1 flex flex-col gap-2">
-          {/* 5 KPI Tiles */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+        <div className={`flex-1 flex flex-col ${tvFit ? 'gap-1.5' : 'gap-2'}`}>
+          {/* 6 Top KPI Tiles */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
             <WbTile
-              label={`EFFICIENCY · target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
+              label="TARGET EFFICIENCY"
+              value={`${kpis.targetEfficiencyPct.toFixed(0)}%`}
+              color={WB_THEME.BLUE}
+              sub={`Floor: ${FLOOR_LABEL[selectedFloor]}`}
+              compact={tvFit}
+            />
+            <WbTile
+              label="TODAY EFFICIENCY"
               value={kpis.reportedLinesCount > 0 ? `${kpis.todayEfficiencyPct.toFixed(1)}%` : '—'}
               color={effColor(kpis.reportedLinesCount > 0 ? kpis.todayEfficiencyPct : null, kpis.targetEfficiencyPct)}
-              sub={`Month ${kpis.monthlyEfficiencyPct.toFixed(1)}% · Δ ${kpis.monthlyEfficiencyDelta >= 0 ? '+' : ''}${kpis.monthlyEfficiencyDelta.toFixed(1)} pp`}
+              sub={`Target: ${kpis.targetEfficiencyPct.toFixed(0)}%`}
+              compact={tvFit}
+            />
+            <WbTile
+              label="MONTHLY EFFICIENCY"
+              value={kpis.monthlyEfficiencyPct > 0 ? `${kpis.monthlyEfficiencyPct.toFixed(1)}%` : '—'}
+              color={effColor(kpis.monthlyEfficiencyPct > 0 ? kpis.monthlyEfficiencyPct : null, kpis.targetEfficiencyPct)}
+              sub={`Δ ${kpis.monthlyEfficiencyDelta >= 0 ? '+' : ''}${kpis.monthlyEfficiencyDelta.toFixed(1)} pp vs target`}
+              compact={tvFit}
             />
             <WbTile
               label="OUTPUT vs TARGET"
               value={kpis.todayOutputPcs.toLocaleString()}
-              unit={`/ ${kpis.todayTargetPcs.toLocaleString()} pcs`}
+              unit={`/ ${kpis.todayTargetPcs.toLocaleString()}`}
               color={achColor(kpis.achievementPct)}
-              sub={`${kpis.achievementPct.toFixed(0)}% of target · gap ${(kpis.todayOutputPcs - kpis.todayTargetPcs >= 0 ? '+' : '')}${(kpis.todayOutputPcs - kpis.todayTargetPcs).toLocaleString()} pcs`}
+              sub={`${kpis.achievementPct.toFixed(0)}% · Gap ${kpis.todayOutputPcs - kpis.todayTargetPcs >= 0 ? '+' : ''}${(kpis.todayOutputPcs - kpis.todayTargetPcs).toLocaleString()} pcs`}
+              compact={tvFit}
             />
             <WbTile
               label="LINES REPORTED"
               value={`${kpis.reportedLinesCount}`}
               unit={`/ ${kpis.totalFloorLinesCount}`}
               color={kpis.reportedLinesCount === kpis.totalFloorLinesCount && kpis.totalFloorLinesCount > 0 ? WB_THEME.GREEN : WB_THEME.AMBER}
-              sub={`${noOutputCount} lines with no output · ${notRunningCount} not running`}
+              sub={`${noOutputCount} no output · ${notRunningCount} not running`}
+              compact={tvFit}
             />
             <WbTile
-              label="DOWNTIME (elapsed)"
+              label="DOWNTIME (NPT)"
               value={`${kpis.downtimeMinutes}`}
               unit="min"
               color={kpis.openIncidentsCount > 0 ? WB_THEME.RED : kpis.downtimeMinutes > 0 ? WB_THEME.AMBER : WB_THEME.GREEN}
               sub={`${kpis.openIncidentsCount} open · ${allIncidents.length} total today`}
-            />
-            <WbTile
-              label="OPERATORS / MACHINES"
-              value={`${kpis.operatorsCount} / ${kpis.machinesCount}`}
-              color={WB_THEME.BLUE}
-              sub={`Helpers ${kpis.helpersCount} · Ratio ${kpis.machinesCount > 0 ? (kpis.operatorsCount / kpis.machinesCount).toFixed(2) : '0.00'}`}
+              compact={tvFit}
             />
           </div>
 
-          {/* Monthly Performance Benchmarks Row (Efficiency, Achieve %, OQL, DHU) */}
-          <div className="rounded-xl border p-2.5 shadow-xs" style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}>
-            <div className="flex items-center justify-between mb-2 px-1">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: WB_THEME.BLUE }}></span>
-                <span className="text-xs font-black uppercase tracking-wider" style={{ color: WB_THEME.TXT }}>
-                  Monthly Performance &amp; Targets ({selectedPeriod === 'Month' ? 'Month View' : 'Month-to-Date (MTD)'})
-                </span>
-              </div>
-              <span className="text-[11px] font-bold" style={{ color: WB_THEME.MUTED }}>
-                Floor: {FLOOR_LABEL[selectedFloor]}
-              </span>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <WbTile
-                label={`MONTHLY EFFICIENCY · target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
-                value={kpis.monthlyEfficiencyPct > 0 ? `${kpis.monthlyEfficiencyPct.toFixed(1)}%` : '—'}
-                color={effColor(kpis.monthlyEfficiencyPct > 0 ? kpis.monthlyEfficiencyPct : null, kpis.targetEfficiencyPct)}
-                sub={`Target ${kpis.targetEfficiencyPct.toFixed(0)}% · Δ ${kpis.monthlyEfficiencyDelta >= 0 ? '+' : ''}${kpis.monthlyEfficiencyDelta.toFixed(1)} pp`}
-              />
-              <WbTile
-                label="MONTHLY ACHIEVE %"
-                value={kpis.monthlyAchievePct !== undefined && kpis.monthlyAchievePct !== null ? `${kpis.monthlyAchievePct.toFixed(1)}%` : `${kpis.achievementPct.toFixed(1)}%`}
-                color={achColor(kpis.monthlyAchievePct ?? kpis.achievementPct)}
-                sub="Target output fulfillment"
-              />
-              <WbTile
-                label={`MONTHLY OQL · limit ${kpis.oqlCommitmentPct.toFixed(1)}%`}
-                value={kpis.monthlyOqlPct !== undefined && kpis.monthlyOqlPct !== null ? `${kpis.monthlyOqlPct.toFixed(2)}%` : (kpis.todayOqlPct > 0 ? `${kpis.todayOqlPct.toFixed(2)}%` : '—')}
-                color={oqlColor(kpis.monthlyOqlPct ?? kpis.todayOqlPct, kpis.oqlCommitmentPct)}
-                sub={`Commitment limit: ${kpis.oqlCommitmentPct.toFixed(1)}%`}
-              />
-              <WbTile
-                label={`MONTHLY DHU · limit ${kpis.dhuLimitPct.toFixed(1)}%`}
-                value={kpis.monthlyDhuPct !== undefined && kpis.monthlyDhuPct !== null ? `${kpis.monthlyDhuPct.toFixed(2)}%` : (kpis.todayDhuPct > 0 ? `${kpis.todayDhuPct.toFixed(2)}%` : '—')}
-                color={dhuColor(kpis.monthlyDhuPct ?? kpis.todayDhuPct, kpis.dhuLimitPct)}
-                sub={`Floor DHU limit: ${kpis.dhuLimitPct.toFixed(1)}%`}
-              />
-            </div>
-          </div>
-
-          {/* Row 1 Panels */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[220px]">
+          {/* Row 1 Panels: Target vs Achievement & Efficiency by Line & Lowest Efficiency */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1">
             <WbPanel
               title="Live Target vs Achievement"
-              sub="Column: target (grey) vs output (status) · % below"
+              sub="Target (blue) vs Output (status colored) · % below"
               right={
                 <div className="flex gap-1">
                   <WbBadge text="≥95%" bg={WB_THEME.GREEN} fg="var(--wb-on-green)" />
@@ -755,22 +758,25 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 </div>
               }
               className="lg:col-span-5"
+              compact={tvFit}
             >
-              <LiveTargetVsAchievementChart lines={activeLines} onSelectLine={setDeepDiveLine} />
+              <LiveTargetVsAchievementChart lines={activeLines} onSelectLine={setDeepDiveLine} plotH={chartPlotH} />
             </WbPanel>
 
             <WbPanel
               title="Efficiency by Line"
-              sub={`Front: ${selectedPeriod} · Back: Month · Dashed: target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
+              sub={`Blue: Month Avg · Colored: Today · Dashed: target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
               className="lg:col-span-4"
+              compact={tvFit}
             >
-              <EfficiencyByLineChart lines={activeLines} targetEff={kpis.targetEfficiencyPct} onSelectLine={setDeepDiveLine} />
+              <EfficiencyByLineChart lines={activeLines} targetEff={kpis.targetEfficiencyPct} onSelectLine={setDeepDiveLine} plotH={chartPlotH} />
             </WbPanel>
 
             <WbPanel
               title="Lowest Efficiency Lines"
               sub="Action focus · vs line target"
               className="lg:col-span-3"
+              compact={tvFit}
             >
               <HorizontalRankBars
                 rows={[...activeLines]
@@ -788,20 +794,22 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             </WbPanel>
           </div>
 
-          {/* Row 2 Panels */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
+          {/* Row 2 Panels: Hourly Output vs Target & Downtime */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1">
             <WbPanel
               title="Hourly Output vs Target"
               sub="By hour of work (1st hr, 2nd hr…) · Target (back) vs Output (front)"
-              className="lg:col-span-6"
+              className="lg:col-span-7"
+              compact={tvFit}
             >
-              <HourlyOutputWallboardChart buckets={hourlySeries} />
+              <HourlyOutputWallboardChart buckets={hourlySeries} plotH={chartPlotH} />
             </WbPanel>
 
             <WbPanel
               title="Downtime by Cause (min)"
               sub={`Total ${kpis.downtimeMinutes} min`}
-              className="lg:col-span-3"
+              className="lg:col-span-5"
+              compact={tvFit}
             >
               <HorizontalRankBars
                 rows={downtimeByCause.map(d => ({
@@ -812,90 +820,96 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 }))}
               />
             </WbPanel>
+          </div>
 
-            <WbPanel
-              title="Open Stoppages"
-              sub="Lines currently stopped or slowed"
-              right={
-                <WbBadge
-                  text={`${openIncidents.length} open`}
-                  bg={openIncidents.length > 0 ? WB_THEME.RED : WB_THEME.GREEN}
-                  fg={openIncidents.length > 0 ? 'var(--wb-on-red)' : 'var(--wb-on-green)'}
-                />
-              }
-              className="lg:col-span-3"
-            >
-              <OpenStoppagesList incidents={openIncidents} onClick={onOpenIncidentPanel} />
-            </WbPanel>
+          {/* Detailed Line Performance Report Table (below charts) */}
+          <div className="mt-2">
+            <LiveLinePerformanceTable
+              lines={lineSummaries}
+              onSelectLine={setDeepDiveLine}
+              selectedFloor={selectedFloor}
+              selectedPeriod={selectedPeriod}
+            />
           </div>
         </div>
       )}
 
       {/* ==================== PAGE 2: QUALITY ==================== */}
-      {!isDept && (page === 'QUALITY' || page === 'ALL') && (() => {
-        const done = auditByLine.reduce((a, r) => a + r.pass + r.fail, 0);
-        const passed = auditByLine.reduce((a, r) => a + r.pass, 0);
-        const failed = auditByLine.reduce((a, r) => a + r.fail, 0);
-        const rate = done > 0 ? (passed / done) * 100 : null;
-        const linesAudited = auditByLine.length;
-        return (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
-            <WbTile label="Audits done" value={String(done)} color={WB_THEME.BLUE} sub={`${linesAudited} line${linesAudited === 1 ? '' : 's'} audited · ${selectedFloor === 'All Sewing' ? 'all sewing' : FLOOR_LABEL[selectedFloor]}`} />
-            <WbTile label="Passed" value={String(passed)} color={WB_THEME.GREEN} sub={`OQL at or below ${AUDIT_PASS_OQL_PCT}%`} />
-            <WbTile label="Failed" value={String(failed)} color={failed > 0 ? WB_THEME.RED : WB_THEME.GREEN} sub="OQL above the limit" />
-            <WbTile label="Pass rate" value={rate !== null ? `${rate.toFixed(1)}%` : '—'} color={rate === null ? WB_THEME.GREY : rate >= 90 ? WB_THEME.GREEN : rate >= 70 ? WB_THEME.AMBER : WB_THEME.RED} sub="of audits done" />
-          </div>
-        );
-      })()}
-
       {!isDept && page === 'QUALITY' && (
-        <div className="flex-1 flex flex-col gap-2">
-          {/* 5 KPI Tiles */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+        <div className={`flex-1 flex flex-col ${tvFit ? 'gap-1.5' : 'gap-2'}`}>
+          {/* Top 7 Quality KPI Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
+            {/* 1. Today OQL */}
             <WbTile
-              label={`DHU · limit ${kpis.dhuLimitPct.toFixed(1)}`}
-              value={kpis.checkedGarments > 0 ? kpis.todayDhuPct.toFixed(2) : '—'}
-              color={dhuColor(kpis.checkedGarments > 0 ? kpis.todayDhuPct : null, kpis.dhuLimitPct)}
-              sub={`${kpis.totalDefects} defects / ${kpis.checkedGarments} checked`}
-            />
-            <WbTile
-              label={`OQL · commitment ${kpis.oqlCommitmentPct.toFixed(1)}%`}
+              label="TODAY OQL"
               value={kpis.checkedGarments > 0 ? `${kpis.todayOqlPct.toFixed(2)}%` : '—'}
               color={oqlColor(kpis.checkedGarments > 0 ? kpis.todayOqlPct : null, kpis.oqlCommitmentPct)}
-              sub={`BS QA OQL ${kpis.bsQaOqlPct.toFixed(2)}% · FRI Pass ${kpis.friPassRatePct.toFixed(1)}%`}
+              sub={`Limit ≤ ${kpis.oqlCommitmentPct.toFixed(1)}% · ${kpis.defectiveGarments} def`}
+              compact={tvFit}
             />
+
+            {/* 2. Monthly OQL */}
             <WbTile
-              label="FIRST-TIME RIGHT (derived)"
-              value={
-                kpis.checkedGarments > 0
-                  ? `${Math.max(0, 100 - (kpis.defectiveGarments / kpis.checkedGarments) * 100).toFixed(1)}%`
-                  : '—'
-              }
-              color={WB_THEME.GREEN}
-              sub={`${Math.max(0, kpis.checkedGarments - kpis.defectiveGarments)} clean / ${kpis.checkedGarments} checked`}
+              label="MONTHLY OQL"
+              value={kpis.monthlyOqlPct !== undefined && kpis.monthlyOqlPct !== null ? `${kpis.monthlyOqlPct.toFixed(2)}%` : (kpis.todayOqlPct > 0 ? `${kpis.todayOqlPct.toFixed(2)}%` : '—')}
+              color={oqlColor(kpis.monthlyOqlPct ?? kpis.todayOqlPct, kpis.oqlCommitmentPct)}
+              sub={`Commitment ≤ ${kpis.oqlCommitmentPct.toFixed(1)}%`}
+              compact={tvFit}
             />
+
+            {/* 3. Today DHU */}
             <WbTile
-              label="DEFECTS PENDING"
-              value={`${kpis.defectsPending}`}
-              unit="pcs"
-              color={kpis.defectsPending > 15 ? WB_THEME.RED : kpis.defectsPending > 0 ? WB_THEME.AMBER : WB_THEME.GREEN}
-              sub={`Sewing ${kpis.sewPending} (sent ${kpis.sewSent}) · Spot ${kpis.spotPending} (sent ${kpis.spotSent})`}
+              label="TODAY DHU"
+              value={kpis.checkedGarments > 0 ? `${kpis.todayDhuPct.toFixed(2)}%` : '—'}
+              color={dhuColor(kpis.checkedGarments > 0 ? kpis.todayDhuPct : null, kpis.dhuLimitPct)}
+              sub={`Limit ≤ ${kpis.dhuLimitPct.toFixed(1)}% · ${kpis.totalDefects} defects`}
+              compact={tvFit}
             />
+
+            {/* 4. Monthly DHU */}
             <WbTile
-              label="CHECKED"
-              value={kpis.checkedGarments.toLocaleString()}
-              unit="pcs"
-              color={WB_THEME.BLUE}
-              sub={`${kpis.defectiveGarments} defective pcs · ${kpis.totalDefects} total defects`}
+              label="MONTHLY DHU"
+              value={kpis.monthlyDhuPct !== undefined && kpis.monthlyDhuPct !== null ? `${kpis.monthlyDhuPct.toFixed(2)}%` : (kpis.todayDhuPct > 0 ? `${kpis.todayDhuPct.toFixed(2)}%` : '—')}
+              color={dhuColor(kpis.monthlyDhuPct ?? kpis.todayDhuPct, kpis.dhuLimitPct)}
+              sub={`Floor Limit ≤ ${kpis.dhuLimitPct.toFixed(1)}%`}
+              compact={tvFit}
+            />
+
+            {/* 5. Inspection Pass % */}
+            <WbTile
+              label="INSPECTION PASS %"
+              value={auditPassStats.rate !== null ? `${auditPassStats.rate.toFixed(1)}%` : (kpis.friPassRatePct > 0 ? `${kpis.friPassRatePct.toFixed(1)}%` : '—')}
+              color={auditPassStats.rate === null ? WB_THEME.GREY : auditPassStats.rate >= 90 ? WB_THEME.GREEN : auditPassStats.rate >= 75 ? WB_THEME.AMBER : WB_THEME.RED}
+              sub={`${auditPassStats.passed} pass / ${auditPassStats.done} audits (${auditPassStats.failed} fail)`}
+              compact={tvFit}
+            />
+
+            {/* 6. BS QA OQL */}
+            <WbTile
+              label="BS QA OQL"
+              value={`${kpis.bsQaOqlPct.toFixed(2)}%`}
+              color={oqlColor(kpis.bsQaOqlPct, kpis.oqlCommitmentPct)}
+              sub={`Target ≤ ${kpis.oqlCommitmentPct.toFixed(1)}%`}
+              compact={tvFit}
+            />
+
+            {/* 7. Northern AQC */}
+            <WbTile
+              label={`${brand} AQC`}
+              value={latestWeeklyRecord?.nflAqcPct !== null && latestWeeklyRecord?.nflAqcPct !== undefined ? `${latestWeeklyRecord.nflAqcPct.toFixed(2)}%` : '—'}
+              color={oqlColor(latestWeeklyRecord?.nflAqcPct ?? null, kpis.oqlCommitmentPct)}
+              sub={latestWeeklyRecord ? `Week ${latestWeeklyRecord.weekKey.replace(/^\d{4}-/, '')}` : 'Weekly AQC benchmark'}
+              compact={tvFit}
             />
           </div>
 
-          {/* Row 1 Panels */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[220px]">
+          {/* Quality Visuals Row 1: DHU by Line, OQL by Line, Top Defects */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1">
             <WbPanel
               title="DHU by Line"
-              sub={`Dashed: limit ${kpis.dhuLimitPct.toFixed(1)}`}
+              sub={`Dashed: limit ${kpis.dhuLimitPct.toFixed(1)}%`}
               className="lg:col-span-4"
+              compact={tvFit}
             >
               <MetricByLineBarChart
                 lines={activeLines}
@@ -904,6 +918,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 formatVal={v => v.toFixed(1)}
                 limitVal={kpis.dhuLimitPct}
                 onSelectLine={setDeepDiveLine}
+                plotH={chartPlotH}
               />
             </WbPanel>
 
@@ -911,6 +926,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               title="OQL by Line"
               sub={`Dashed: commitment ${kpis.oqlCommitmentPct.toFixed(1)}%`}
               className="lg:col-span-4"
+              compact={tvFit}
             >
               <MetricByLineBarChart
                 lines={activeLines}
@@ -919,6 +935,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 formatVal={v => `${v.toFixed(1)}%`}
                 limitVal={kpis.oqlCommitmentPct}
                 onSelectLine={setDeepDiveLine}
+                plotH={chartPlotH}
               />
             </WbPanel>
 
@@ -926,6 +943,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               title="Top Defects (Pareto)"
               sub="Count and DHU contribution"
               className="lg:col-span-4"
+              compact={tvFit}
             >
               <HorizontalRankBars
                 rows={topDefects.map(d => ({
@@ -938,35 +956,31 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             </WbPanel>
           </div>
 
-          {/* Row 2 Panels */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
+          {/* Quality Visuals Row 2: Bi-hourly Audit Pass/Fail, Hourly DHU & OQL, Main Defect Worst Lines */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1">
             <WbPanel
-              title="Hourly DHU and OQL"
-              sub="By hour of work (1st hr, 2nd hr…) · Orange: DHU · Blue: OQL%"
+              title="Audit: Pass / Fail by Line"
+              sub={`Bi-hourly OQL audits · PASS ≤ ${AUDIT_PASS_OQL_PCT}%`}
               className="lg:col-span-5"
+              compact={tvFit}
             >
-              <HourlyQualityLineChart buckets={hourlySeries} limit={kpis.oqlCommitmentPct} />
+              <AuditPassFailChart rows={auditByLine} />
             </WbPanel>
 
             <WbPanel
-              title="Defect Rectification Pending"
-              sub="Unreturned pcs · Orange: Sewing · Blue: Spot"
-              right={
-                <WbBadge
-                  text={`${kpis.defectsPending} pcs pending`}
-                  bg={kpis.defectsPending > 0 ? WB_THEME.AMBER : WB_THEME.GREEN}
-                  fg="var(--wb-on-green)"
-                />
-              }
+              title="Hourly DHU and OQL"
+              sub="Orange: DHU · Blue: OQL% · Red dashed: 4.5% limit"
               className="lg:col-span-4"
+              compact={tvFit}
             >
-              <RectificationPendingChart lines={activeLines} onSelectLine={setDeepDiveLine} />
+              <HourlyQualityLineChart buckets={hourlySeries} limit={kpis.oqlCommitmentPct} />
             </WbPanel>
 
             <WbPanel
               title="Main Defect, Worst Lines"
               sub={`Top contributor: ${mainDefectName}`}
               className="lg:col-span-3"
+              compact={tvFit}
             >
               <HorizontalRankBars
                 rows={
@@ -987,249 +1001,214 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               />
             </WbPanel>
           </div>
+
+          {/* Quality Weekly Trend */}
+          <WbPanel
+            title={`Weekly BS OQL vs ${brand} AQC (from Week 32)`}
+            sub={`Blue: BS OQL · Orange: ${brand} AQC · Red dashed: 4.5% commitment`}
+            compact={tvFit}
+          >
+            <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} />
+          </WbPanel>
         </div>
       )}
 
-      {/* ==================== PAGE 3: ALL (EXECUTIVE COMBINED WALLBOARD) ==================== */}
-      {!isDept && page === 'QUALITY' && (
-        <WbPanel title={`Weekly BS OQL vs ${brand} AQC (from week 32)`} sub={`Blue: BS OQL · Orange: ${brand} AQC · Red dashed: 4.5% commitment`}>
-          <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} />
-        </WbPanel>
-      )}
-
+      {/* ==================== PAGE 3: ALL (EXECUTIVE COMBINED SEWING WALLBOARD) ==================== */}
       {!isDept && page === 'ALL' && (
-        <div className="flex-1 flex flex-col gap-2">
-          {/* Top 7 Summary Panels */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7 gap-2">
-            {/* 1. Today Live Efficiency Gauge */}
-            <WbSummaryCard
-              title="Today Live Efficiency"
-              badge={kpis.todayEfficiencyPct >= kpis.targetEfficiencyPct ? 'GOOD' : 'LOW'}
-              badgeColor={effColor(kpis.todayEfficiencyPct, kpis.targetEfficiencyPct)}
+        <div className={`flex-1 flex flex-col ${tvFit ? 'gap-1.5' : 'gap-2'}`}>
+          {/* Top 6 KPI Cards: Today Eff, Up-to-Date Eff, Today DHU, Up-to-Date DHU, Today OQL, Up-to-Date OQL */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            {/* 1. Today Efficiency */}
+            <WbTile
+              label="TODAY EFFICIENCY"
+              value={kpis.reportedLinesCount > 0 ? `${kpis.todayEfficiencyPct.toFixed(1)}%` : '—'}
+              color={effColor(kpis.reportedLinesCount > 0 ? kpis.todayEfficiencyPct : null, kpis.targetEfficiencyPct)}
+              sub={`Target: ${kpis.targetEfficiencyPct.toFixed(0)}%`}
+              compact={tvFit}
+            />
+
+            {/* 2. Up to Date (MTD) Efficiency */}
+            <WbTile
+              label="UP TO DATE (MTD) EFFICIENCY"
+              value={kpis.monthlyEfficiencyPct > 0 ? `${kpis.monthlyEfficiencyPct.toFixed(1)}%` : '—'}
+              color={effColor(kpis.monthlyEfficiencyPct > 0 ? kpis.monthlyEfficiencyPct : null, kpis.targetEfficiencyPct)}
+              sub={`Δ ${kpis.monthlyEfficiencyDelta >= 0 ? '+' : ''}${kpis.monthlyEfficiencyDelta.toFixed(1)} pp vs target`}
+              compact={tvFit}
+            />
+
+            {/* 3. Today DHU */}
+            <WbTile
+              label="TODAY DHU"
+              value={kpis.checkedGarments > 0 ? `${kpis.todayDhuPct.toFixed(2)}%` : '—'}
+              color={dhuColor(kpis.checkedGarments > 0 ? kpis.todayDhuPct : null, kpis.dhuLimitPct)}
+              sub={`Limit ≤ ${kpis.dhuLimitPct.toFixed(1)}% · ${kpis.totalDefects} defects`}
+              compact={tvFit}
+            />
+
+            {/* 4. Up to Date (MTD) DHU */}
+            <WbTile
+              label="UP TO DATE (MTD) DHU"
+              value={kpis.monthlyDhuPct !== undefined && kpis.monthlyDhuPct !== null ? `${kpis.monthlyDhuPct.toFixed(2)}%` : (kpis.todayDhuPct > 0 ? `${kpis.todayDhuPct.toFixed(2)}%` : '—')}
+              color={dhuColor(kpis.monthlyDhuPct ?? kpis.todayDhuPct, kpis.dhuLimitPct)}
+              sub={`Floor Limit ≤ ${kpis.dhuLimitPct.toFixed(1)}%`}
+              compact={tvFit}
+            />
+
+            {/* 5. Today OQL */}
+            <WbTile
+              label="TODAY OQL"
+              value={kpis.checkedGarments > 0 ? `${kpis.todayOqlPct.toFixed(2)}%` : '—'}
+              color={oqlColor(kpis.checkedGarments > 0 ? kpis.todayOqlPct : null, kpis.oqlCommitmentPct)}
+              sub={`Commitment ≤ ${kpis.oqlCommitmentPct.toFixed(1)}%`}
+              compact={tvFit}
+            />
+
+            {/* 6. Up to Date (MTD) OQL */}
+            <WbTile
+              label="UP TO DATE (MTD) OQL"
+              value={kpis.monthlyOqlPct !== undefined && kpis.monthlyOqlPct !== null ? `${kpis.monthlyOqlPct.toFixed(2)}%` : (kpis.todayOqlPct > 0 ? `${kpis.todayOqlPct.toFixed(2)}%` : '—')}
+              color={oqlColor(kpis.monthlyOqlPct ?? kpis.todayOqlPct, kpis.oqlCommitmentPct)}
+              sub={`Commitment ≤ ${kpis.oqlCommitmentPct.toFixed(1)}%`}
+              compact={tvFit}
+            />
+          </div>
+
+          {/* Body Row 1: Line-wise Target vs Achievement + Operator Present vs Machine Running */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1">
+            <WbPanel
+              title="Line-wise Target vs Achievement"
+              sub={`Target (blue) vs Output (achievement status) · Output ${kpis.todayOutputPcs.toLocaleString()} / ${kpis.todayTargetPcs.toLocaleString()} pcs (${kpis.achievementPct.toFixed(0)}%)`}
+              right={
+                <div className="flex gap-1">
+                  <WbBadge text="≥95%" bg={WB_THEME.GREEN} fg="var(--wb-on-green)" />
+                  <WbBadge text="80-95%" bg={WB_THEME.AMBER} fg="var(--wb-on-amber)" />
+                  <WbBadge text="<80%" bg={WB_THEME.RED} fg="var(--wb-on-red)" />
+                </div>
+              }
+              className="lg:col-span-7"
+              compact={tvFit}
             >
-              <SemicircleGauge
-                value={kpis.todayEfficiencyPct}
-                max={100}
-                label={`${kpis.todayEfficiencyPct.toFixed(1)}%`}
-                color={effColor(kpis.todayEfficiencyPct, kpis.targetEfficiencyPct)}
-                sub={`Target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
-              />
-            </WbSummaryCard>
+              <LiveTargetVsAchievementChart lines={activeLines} onSelectLine={setDeepDiveLine} plotH={chartPlotH} />
+            </WbPanel>
 
-            {/* 2. Monthly Efficiency */}
-            <WbSummaryCard
-              title="Monthly Efficiency"
-              badge={`${kpis.monthlyEfficiencyDelta >= 0 ? '+' : ''}${kpis.monthlyEfficiencyDelta.toFixed(1)} pp`}
-              badgeColor={kpis.monthlyEfficiencyDelta >= 0 ? WB_THEME.GREEN : WB_THEME.RED}
+            <WbPanel
+              title="Operator Present vs Machine Running"
+              sub={`Active lines · Ratio ${kpis.machinesCount > 0 ? (kpis.operatorsCount / kpis.machinesCount).toFixed(2) : '0.00'}x`}
+              right={
+                <div className="flex items-center gap-1">
+                  <WbBadge text={`Ops: ${kpis.operatorsCount}`} bg={WB_THEME.ORANGE} fg="var(--wb-on-orange)" />
+                  <WbBadge text={`Mach: ${kpis.machinesCount}`} bg={WB_THEME.BLUE} fg="var(--wb-on-selected)" />
+                  {kpis.helpersCount > 0 && <WbBadge text={`Help: ${kpis.helpersCount}`} bg={WB_THEME.GREEN} fg="var(--wb-on-green)" />}
+                </div>
+              }
+              className="lg:col-span-5"
+              compact={tvFit}
             >
-              <div className="flex flex-col justify-between h-full pt-1">
-                <div style={{ color: WB_THEME.BLUE }} className="text-3xl font-black">
-                  {kpis.monthlyEfficiencyPct.toFixed(1)}%
-                </div>
-                <div className="w-full h-1.5 rounded bg-[var(--wb-bg)] overflow-hidden my-1">
-                  <div
-                    style={{
-                      width: `${Math.min(100, kpis.monthlyEfficiencyPct)}%`,
-                      backgroundColor: WB_THEME.BLUE
-                    }}
-                    className="h-full"
-                  />
-                </div>
-                <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-bold">
-                  Target: {kpis.targetEfficiencyPct.toFixed(0)}%
-                </div>
-              </div>
-            </WbSummaryCard>
-
-            {/* 3. Operator vs Machine */}
-            <WbSummaryCard title="Operator vs Machine">
-              <div className="flex items-center justify-between h-full gap-2">
-                <div>
-                  <div className="text-xl font-black">
-                    {kpis.operatorsCount}/{kpis.machinesCount}
+              <div className="flex flex-col justify-between h-full gap-1.5">
+                <div className="grid grid-cols-4 gap-1.5 text-center">
+                  <div className="p-1 rounded border" style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.LINE }}>
+                    <div className="text-[9px] font-bold" style={{ color: WB_THEME.MUTED }}>Operators</div>
+                    <div className="text-lg md:text-xl font-black" style={{ color: WB_THEME.ORANGE }}>{kpis.operatorsCount}</div>
                   </div>
-                  <div style={{ color: WB_THEME.ORANGE }} className="text-[10px] font-bold">
-                    ● Ops {kpis.operatorsCount}
+                  <div className="p-1 rounded border" style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.LINE }}>
+                    <div className="text-[9px] font-bold" style={{ color: WB_THEME.MUTED }}>Machines</div>
+                    <div className="text-lg md:text-xl font-black" style={{ color: WB_THEME.BLUE }}>{kpis.machinesCount}</div>
                   </div>
-                  <div style={{ color: WB_THEME.BLUE }} className="text-[10px] font-bold">
-                    ● Mach {kpis.machinesCount}
+                  <div className="p-1 rounded border" style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.LINE }}>
+                    <div className="text-[9px] font-bold" style={{ color: WB_THEME.MUTED }}>Helpers</div>
+                    <div className="text-lg md:text-xl font-black" style={{ color: WB_THEME.GREEN }}>{kpis.helpersCount}</div>
                   </div>
-                </div>
-                <div className="w-12 h-12 rounded-full border-4 border-[#5AA9FF] flex items-center justify-center text-[10px] font-black">
-                  {kpis.machinesCount > 0 ? (kpis.operatorsCount / kpis.machinesCount).toFixed(1) : '1.0'}x
-                </div>
-              </div>
-            </WbSummaryCard>
-
-            {/* 4. Floor & Factory Efficiency */}
-            <WbSummaryCard title="Floor & Factory Efficiency (Today / Month)">
-              {floorBenchmarks.length === 0 || floorBenchmarks.every(b => !b.todayEff && !b.monthEff) ? (
-                <div style={{ color: WB_THEME.MUTED }} className="text-[11px] font-semibold text-center py-3">
-                  No data yet
-                </div>
-              ) : (
-                <div className="flex items-end justify-around gap-1 pt-1">
-                  {floorBenchmarks.map(b => (
-                    <div key={b.floor} className="flex flex-col items-center gap-0.5">
-                      <div className="flex items-end gap-1 h-14">
-                        {[
-                          { v: b.todayEff, c: WB_THEME.BLUE, tip: 'Today' },
-                          { v: b.monthEff, c: WB_THEME.GREEN, tip: 'Month' }
-                        ].map(bar => (
-                          <div key={bar.tip} className="flex flex-col items-center justify-end h-full">
-                            <span style={{ color: bar.c }} className="text-[11px] font-black leading-none mb-0.5">
-                              {Math.round(bar.v)}
-                            </span>
-                            <div
-                              style={{ height: `${Math.min(100, Math.max(6, bar.v)) * 0.62}%`, backgroundColor: bar.c }}
-                              className="w-3 rounded-t-sm"
-                              title={`${bar.tip}: ${bar.v}%`}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <span style={{ color: WB_THEME.MUTED }} className="text-[9px] font-bold">
-                        {b.floor}
-                      </span>
+                  <div className="p-1 rounded border" style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.LINE }}>
+                    <div className="text-[9px] font-bold" style={{ color: WB_THEME.MUTED }}>Op/Mc Ratio</div>
+                    <div className="text-lg md:text-xl font-black" style={{ color: WB_THEME.TXT }}>
+                      {kpis.machinesCount > 0 ? (kpis.operatorsCount / kpis.machinesCount).toFixed(2) : '1.00'}x
                     </div>
-                  ))}
+                  </div>
                 </div>
-              )}
-              <div className="flex justify-center gap-3 pt-1 text-[9px] font-bold" style={{ color: WB_THEME.MUTED }}>
-                <span><span style={{ backgroundColor: WB_THEME.BLUE }} className="inline-block w-2 h-2 rounded-sm mr-1" />Today</span>
-                <span><span style={{ backgroundColor: WB_THEME.GREEN }} className="inline-block w-2 h-2 rounded-sm mr-1" />Month</span>
-              </div>
-            </WbSummaryCard>
-
-            {/* 5. BS QA OQL */}
-            <WbSummaryCard
-              title="BS QA OQL"
-              badge={kpis.bsQaOqlPct <= kpis.oqlCommitmentPct ? 'PASS' : 'HIGH'}
-              badgeColor={oqlColor(kpis.bsQaOqlPct, kpis.oqlCommitmentPct)}
-            >
-              <div className="flex flex-col justify-between h-full pt-1">
-                <div
-                  style={{ color: oqlColor(kpis.bsQaOqlPct, kpis.oqlCommitmentPct) }}
-                  className="text-3xl font-black"
-                >
-                  {kpis.bsQaOqlPct.toFixed(2)}%
-                </div>
-                <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-bold">
-                  Target ≤ {kpis.oqlCommitmentPct.toFixed(1)}%
-                </div>
-              </div>
-            </WbSummaryCard>
-
-            {/* 6. Today Live OQL Gauge */}
-            <WbSummaryCard
-              title="Today Live OQL"
-              badge={kpis.todayOqlPct <= kpis.oqlCommitmentPct ? 'STANDARD' : 'HIGH'}
-              badgeColor={oqlColor(kpis.todayOqlPct, kpis.oqlCommitmentPct)}
-            >
-              <SemicircleGauge
-                value={kpis.todayOqlPct}
-                max={12}
-                label={`${kpis.todayOqlPct.toFixed(2)}%`}
-                color={oqlColor(kpis.todayOqlPct, kpis.oqlCommitmentPct)}
-                sub={`Limit ≤ ${kpis.oqlCommitmentPct.toFixed(1)}%`}
-              />
-            </WbSummaryCard>
-
-            {/* 7. BS QA FRI Pass */}
-            <WbSummaryCard
-              title="BS QA FRI Pass"
-              badge={kpis.friPassRatePct >= 95 ? 'EXCELLENT' : 'WATCH'}
-              badgeColor={kpis.friPassRatePct >= 95 ? WB_THEME.GREEN : WB_THEME.AMBER}
-            >
-              <div className="flex flex-col justify-between h-full pt-1">
-                <div style={{ color: WB_THEME.GREEN }} className="text-3xl font-black">
-                  {kpis.friPassRatePct.toFixed(1)}%
-                </div>
-                <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-bold">
-                  Final Random Inspection
+                <div className={`overflow-y-auto ${tvFit ? 'max-h-[85px]' : 'max-h-[140px]'} border rounded`} style={{ borderColor: WB_THEME.LINE }}>
+                  <table className="w-full text-xs border-collapse">
+                    <thead className="sticky top-0 z-10" style={{ backgroundColor: WB_THEME.BG }}>
+                      <tr className="text-[10px] font-black uppercase text-left" style={{ color: WB_THEME.MUTED }}>
+                        <th className="p-1 pl-2">Line</th>
+                        <th className="p-1 text-right">Ops</th>
+                        <th className="p-1 text-right">Mach</th>
+                        <th className="p-1 text-right">Help</th>
+                        <th className="p-1 text-right pr-2">Ratio</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y font-semibold" style={{ borderColor: WB_THEME.LINE }}>
+                      {activeLines.map(l => (
+                        <tr key={l.lineId} className="hover:bg-blue-50/10 cursor-pointer" onClick={() => setDeepDiveLine(l)}>
+                          <td className="p-1 pl-2 font-black">{lineDisplayName(l.lineId)}</td>
+                          <td className="p-1 text-right font-bold" style={{ color: WB_THEME.ORANGE }}>{l.operators}</td>
+                          <td className="p-1 text-right font-bold" style={{ color: WB_THEME.BLUE }}>{l.machines}</td>
+                          <td className="p-1 text-right font-bold" style={{ color: WB_THEME.GREEN }}>{l.helpers}</td>
+                          <td className="p-1 text-right pr-2 font-black">
+                            {l.machines > 0 ? (l.operators / l.machines).toFixed(2) : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            </WbSummaryCard>
-          </div>
-
-          {/* Row 1 Panels */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
-            <WbPanel
-              title="Live Target vs Achievement"
-              sub="Grey: Target · Colored: Output · % below"
-              className="lg:col-span-5"
-            >
-              <LiveTargetVsAchievementChart lines={activeLines} onSelectLine={setDeepDiveLine} />
-            </WbPanel>
-
-            <WbPanel
-              title="OQL by Line"
-              sub={`Dashed: commitment ${kpis.oqlCommitmentPct.toFixed(1)}%`}
-              className="lg:col-span-4"
-            >
-              <MetricByLineBarChart
-                lines={activeLines}
-                getValue={l => l.todayOqlPct}
-                getColor={v => oqlColor(v, kpis.oqlCommitmentPct)}
-                formatVal={v => `${v.toFixed(1)}%`}
-                limitVal={kpis.oqlCommitmentPct}
-                onSelectLine={setDeepDiveLine}
-              />
-            </WbPanel>
-
-            <WbPanel
-              title="Top 5 Defects (DHU)"
-              sub={`Checked ${kpis.checkedGarments} pcs · Total ${kpis.totalDefects} defects`}
-              className="lg:col-span-3"
-            >
-              <HorizontalRankBars
-                rows={topDefects.map(d => ({
-                  label: d.defect,
-                  value: d.dhu,
-                  text: `${d.dhu.toFixed(2)} (${d.count})`,
-                  color: WB_THEME.RED
-                }))}
-              />
             </WbPanel>
           </div>
 
-          {/* Row 2 Panels */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1 min-h-[210px]">
+          {/* Body Row 2: Trend Chart (Week 32 to Current) + Corner: NPT */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1">
             <WbPanel
-              title="Efficiency by Line"
-              sub={`Front: ${selectedPeriod} · Back: Month · Dashed: target ${kpis.targetEfficiencyPct.toFixed(0)}%`}
-              className="lg:col-span-5"
-            >
-              <EfficiencyByLineChart lines={activeLines} targetEff={kpis.targetEfficiencyPct} onSelectLine={setDeepDiveLine} />
-            </WbPanel>
-
-            <WbPanel
-              title={`Weekly BS OQL and ${brand} AQC`}
-              sub="Weekly trend (%) · Dashed: 4.5% commitment · Level 1 <7% · Red >10%"
+              title={`Weekly BS OQL vs ${brand} AQC (from Week 32)`}
+              sub={`Blue: BS OQL · Orange: ${brand} AQC · Red dashed: 4.5% commitment`}
               right={
                 <div className="flex gap-1">
                   <WbBadge text="BS OQL" bg={WB_THEME.BLUE} fg="var(--wb-on-selected)" />
                   <WbBadge text={`${brand} AQC`} bg={WB_THEME.ORANGE} fg="var(--wb-on-orange)" />
                 </div>
               }
-              className="lg:col-span-4"
+              className="lg:col-span-7"
+              compact={tvFit}
             >
-              <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} />
+              <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} />
             </WbPanel>
 
             <WbPanel
-              title="Poor 5 DHU Lines"
-              sub={`Highest defect rate · limit ${kpis.dhuLimitPct.toFixed(1)}`}
-              className="lg:col-span-3"
+              title="NPT (Non-Productive Time) & Stoppages"
+              sub={`Total ${kpis.downtimeMinutes} min elapsed today`}
+              right={
+                <WbBadge
+                  text={`${openIncidents.length} open`}
+                  bg={openIncidents.length > 0 ? WB_THEME.RED : WB_THEME.GREEN}
+                  fg={openIncidents.length > 0 ? 'var(--wb-on-red)' : 'var(--wb-on-green)'}
+                />
+              }
+              className="lg:col-span-5"
+              compact={tvFit}
             >
-              <HorizontalRankBars
-                rows={highestDhuLines.map(r => ({
-                  label: r.line,
-                  value: r.dhu,
-                  text: r.dhu.toFixed(2),
-                  color: dhuColor(r.dhu, kpis.dhuLimitPct)
-                }))}
-              />
+              <div className="flex flex-col justify-between h-full gap-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="text-[10px] font-extrabold uppercase mb-1" style={{ color: WB_THEME.MUTED }}>
+                      Downtime by Cause
+                    </div>
+                    <HorizontalRankBars
+                      rows={downtimeByCause.length > 0 ? downtimeByCause.map(d => ({
+                        label: d.cause,
+                        value: d.mins,
+                        text: `${d.mins}m`,
+                        color: WB_THEME.AMBER
+                      })) : [{ label: 'Zero downtime', value: 0, text: '0m', color: WB_THEME.GREEN }]}
+                    />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-extrabold uppercase mb-1 flex items-center justify-between" style={{ color: WB_THEME.MUTED }}>
+                      <span>Open Stoppages</span>
+                      <span className="text-[9px] font-bold" style={{ color: WB_THEME.MUTED }}>${openIncidents.length} active</span>
+                    </div>
+                    <OpenStoppagesList incidents={openIncidents} onClick={onOpenIncidentPanel} />
+                  </div>
+                </div>
+              </div>
             </WbPanel>
           </div>
         </div>
@@ -1237,136 +1216,13 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
       {/* ==================== PAGE 4: TABLE (15-COLUMN LIVE LINE PERFORMANCE TABLE) ==================== */}
       {!isDept && page === 'TABLE' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 mb-2">
-          <div style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }} className="rounded-lg border p-2.5 lg:col-span-7 overflow-hidden flex flex-col justify-between">
-            <div>
-              <div className="text-xs font-black">Audit: Pass / Fail by Line</div>
-              <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold mb-1">Bi-hourly OQL audits · PASS when OQL is at or below {AUDIT_PASS_OQL_PCT}%</div>
-            </div>
-            <div className="w-full overflow-hidden"><AuditPassFailChart rows={auditByLine} /></div>
-          </div>
-          <div style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }} className="rounded-lg border p-2.5 lg:col-span-5 overflow-hidden flex flex-col">
-            <div className="text-xs font-black">Audit results by Line</div>
-            <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold mb-1">Passed and failed audits in this period</div>
-            <div className="max-h-[115px] overflow-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead className="sticky top-0" style={{ backgroundColor: WB_THEME.BG }}>
-                  <tr className="text-left" style={{ color: WB_THEME.MUTED }}>
-                    <th className="p-2">Line</th><th className="p-2 text-right">Pass</th><th className="p-2 text-right">Fail</th><th className="p-2 text-right">Pass rate</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {auditByLine.length === 0 && (<tr><td colSpan={4} className="p-3 text-center" style={{ color: WB_THEME.MUTED }}>No audits yet</td></tr>)}
-                  {auditByLine.map(r => {
-                    const tot = r.pass + r.fail;
-                    const rate = tot > 0 ? (r.pass / tot) * 100 : 0;
-                    return (
-                      <tr key={r.lineId} className="border-t" style={{ borderColor: WB_THEME.LINE }}>
-                        <td className="p-2 font-black">{lineDisplayName(r.lineId)}</td>
-                        <td className="p-2 text-right font-black" style={{ color: WB_THEME.GREEN }}>{r.pass}</td>
-                        <td className="p-2 text-right font-black" style={{ color: WB_THEME.RED }}>{r.fail}</td>
-                        <td className="p-2 text-right font-black" style={{ color: rate >= 90 ? WB_THEME.GREEN : rate >= 70 ? WB_THEME.AMBER : WB_THEME.RED }}>{rate.toFixed(0)}%</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-      {!isDept && page === 'TABLE' && (
-        <div className="flex-1 min-h-[72vh] bg-slate-100 text-slate-900 rounded-lg overflow-auto p-2">
-          <div className="flex items-center justify-between mb-1">
-            <div>
-              <h3 className="text-sm font-black text-[#002D62]">
-                Live Line Performance Table ({FLOOR_LABEL[selectedFloor]} · {selectedPeriod})
-              </h3>
-              <p className="text-[11px] text-slate-500">
-                Click any line row to open its Line Deep Dive &amp; Rectification Ledger
-              </p>
-            </div>
-          </div>
-          <table className="w-full text-xs border-collapse bg-white rounded-lg overflow-hidden shadow">
-            <thead className="sticky top-0 z-10">
-              <tr className="bg-[#002D62] text-white text-[11px] font-black">
-                <th className="py-2 px-2 text-left">Line</th>
-                <th className="py-2 px-2 text-left">Item</th>
-                <th className="py-2 px-2 text-right">SMV</th>
-                <th className="py-2 px-2 text-right">Hourly Tgt</th>
-                <th className="py-2 px-2 text-right">Day Tgt</th>
-                <th className="py-2 px-2 text-right">Day Output</th>
-                <th className="py-2 px-2 text-right">Efficiency</th>
-                <th className="py-2 px-2 text-right">Achieve %</th>
-                <th className="py-2 px-2 text-right">Day DHU</th>
-                <th className="py-2 px-2 text-right">Day OQL</th>
-                <th className="py-2 px-2 text-right bg-amber-900/60">Sew Sent</th>
-                <th className="py-2 px-2 text-right bg-amber-900/60">Sew Recv</th>
-                <th className="py-2 px-2 text-right bg-amber-900/60">Sew Bal</th>
-                <th className="py-2 px-2 text-right bg-sky-900/60">Spot Sent</th>
-                <th className="py-2 px-2 text-right bg-sky-900/60">Spot Recv</th>
-                <th className="py-2 px-2 text-right bg-sky-900/60">Spot Bal</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 font-semibold">
-              {lineSummaries.map(l => (
-                <tr
-                  key={l.lineId}
-                  onClick={() => setDeepDiveLine(l)}
-                  className="hover:bg-blue-50 cursor-pointer transition"
-                >
-                  <td className="py-1.5 px-2 font-black text-[#002D62]">{lineDisplayName(l.lineId)}</td>
-                  <td className="py-1.5 px-2 text-slate-700">{l.styleNumber}</td>
-                  <td className="py-1.5 px-2 text-right">{l.smv > 0 ? l.smv.toFixed(1) : '—'}</td>
-                  <td className="py-1.5 px-2 text-right">{l.hourlyTarget || '—'}</td>
-                  <td className="py-1.5 px-2 text-right">{l.target || '—'}</td>
-                  <td className="py-1.5 px-2 text-right font-black">
-                    {l.output !== null ? l.output : '—'}
-                  </td>
-                  <td
-                    className={`py-1.5 px-2 text-right font-black ${
-                      l.efficiencyPct === null
-                        ? 'text-slate-400'
-                        : l.efficiencyPct >= l.targetEfficiencyPct
-                        ? 'text-emerald-600'
-                        : 'text-red-600'
-                    }`}
-                  >
-                    {l.efficiencyPct !== null ? `${l.efficiencyPct.toFixed(1)}%` : '—'}
-                  </td>
-                  <td
-                    className={`py-1.5 px-2 text-right font-black ${
-                      l.achievementPct === null
-                        ? 'text-slate-400'
-                        : l.achievementPct >= 95
-                        ? 'text-emerald-600'
-                        : l.achievementPct >= 80
-                        ? 'text-amber-600'
-                        : 'text-red-600'
-                    }`}
-                  >
-                    {l.achievementPct !== null ? `${l.achievementPct.toFixed(0)}%` : '—'}
-                  </td>
-                  <td className="py-1.5 px-2 text-right font-bold">
-                    {l.dhu !== null ? `${l.dhu.toFixed(2)}%` : '—'}
-                  </td>
-                  <td className="py-1.5 px-2 text-right font-bold">
-                    {l.todayOqlPct !== null ? `${l.todayOqlPct.toFixed(2)}%` : '—'}
-                  </td>
-                  <td className="py-1.5 px-2 text-right">{l.sewSent}</td>
-                  <td className="py-1.5 px-2 text-right">{l.sewRecv}</td>
-                  <td className={`py-1.5 px-2 text-right font-black ${l.sewBal > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                    {l.sewBal}
-                  </td>
-                  <td className="py-1.5 px-2 text-right">{l.spotSent}</td>
-                  <td className="py-1.5 px-2 text-right">{l.spotRecv}</td>
-                  <td className={`py-1.5 px-2 text-right font-black ${l.spotBal > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                    {l.spotBal}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="flex-1 min-h-[72vh] overflow-auto">
+          <LiveLinePerformanceTable
+            lines={lineSummaries}
+            onSelectLine={setDeepDiveLine}
+            selectedFloor={selectedFloor}
+            selectedPeriod={selectedPeriod}
+          />
         </div>
       )}
 
@@ -1519,6 +1375,113 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   );
 };
 
+/* ==================== REUSABLE LIVE LINE PERFORMANCE TABLE ==================== */
+
+const LiveLinePerformanceTable: React.FC<{
+  lines: LinePerformanceSummary[];
+  onSelectLine: (l: LinePerformanceSummary) => void;
+  selectedFloor: FloorId;
+  selectedPeriod: PeriodId;
+}> = ({ lines, onSelectLine, selectedFloor, selectedPeriod }) => (
+  <div className="bg-slate-100 text-slate-900 rounded-lg overflow-hidden p-2 border border-slate-200 shadow-xs">
+    <div className="flex items-center justify-between mb-1.5 px-1">
+      <div>
+        <h3 className="text-sm font-black text-[#002D62]">
+          Live Line Performance Table ({FLOOR_LABEL[selectedFloor]} · {selectedPeriod})
+        </h3>
+        <p className="text-[11px] text-slate-500">
+          Click any line row to open its Line Deep Dive &amp; Rectification Ledger
+        </p>
+      </div>
+      <span className="text-[11px] font-black px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-300">
+        {lines.length} Lines
+      </span>
+    </div>
+    <div className="overflow-x-auto rounded-lg shadow-xs">
+      <table className="w-full text-xs border-collapse bg-white">
+        <thead className="sticky top-0 z-10">
+          <tr className="bg-[#002D62] text-white text-[11px] font-black">
+            <th className="py-2 px-2 text-left">Line</th>
+            <th className="py-2 px-2 text-left">Item</th>
+            <th className="py-2 px-2 text-right">SMV</th>
+            <th className="py-2 px-2 text-right">Hourly Tgt</th>
+            <th className="py-2 px-2 text-right">Day Tgt</th>
+            <th className="py-2 px-2 text-right">Day Output</th>
+            <th className="py-2 px-2 text-right">Efficiency</th>
+            <th className="py-2 px-2 text-right">Achieve %</th>
+            <th className="py-2 px-2 text-right">Day DHU</th>
+            <th className="py-2 px-2 text-right">Day OQL</th>
+            <th className="py-2 px-2 text-right bg-amber-900/80">Sew Sent</th>
+            <th className="py-2 px-2 text-right bg-amber-900/80">Sew Recv</th>
+            <th className="py-2 px-2 text-right bg-amber-900/80">Sew Bal</th>
+            <th className="py-2 px-2 text-right bg-sky-900/80">Spot Sent</th>
+            <th className="py-2 px-2 text-right bg-sky-900/80">Spot Recv</th>
+            <th className="py-2 px-2 text-right bg-sky-900/80">Spot Bal</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-200 font-semibold">
+          {lines.map(l => (
+            <tr
+              key={l.lineId}
+              onClick={() => onSelectLine(l)}
+              className="hover:bg-blue-50 cursor-pointer transition"
+            >
+              <td className="py-1.5 px-2 font-black text-[#002D62]">{lineDisplayName(l.lineId)}</td>
+              <td className="py-1.5 px-2 text-slate-700">{l.styleNumber}</td>
+              <td className="py-1.5 px-2 text-right">{l.smv > 0 ? l.smv.toFixed(1) : '—'}</td>
+              <td className="py-1.5 px-2 text-right">{l.hourlyTarget || '—'}</td>
+              <td className="py-1.5 px-2 text-right">{l.target || '—'}</td>
+              <td className="py-1.5 px-2 text-right font-black">
+                {l.output !== null ? l.output : '—'}
+              </td>
+              <td
+                className={`py-1.5 px-2 text-right font-black ${
+                  l.efficiencyPct === null
+                    ? 'text-slate-400'
+                    : l.efficiencyPct >= l.targetEfficiencyPct
+                    ? 'text-emerald-600'
+                    : 'text-red-600'
+                }`}
+              >
+                {l.efficiencyPct !== null ? `${l.efficiencyPct.toFixed(1)}%` : '—'}
+              </td>
+              <td
+                className={`py-1.5 px-2 text-right font-black ${
+                  l.achievementPct === null
+                    ? 'text-slate-400'
+                    : l.achievementPct >= 95
+                    ? 'text-emerald-600'
+                    : l.achievementPct >= 80
+                    ? 'text-amber-600'
+                    : 'text-red-600'
+                }`}
+              >
+                {l.achievementPct !== null ? `${l.achievementPct.toFixed(0)}%` : '—'}
+              </td>
+              <td className="py-1.5 px-2 text-right font-bold">
+                {l.dhu !== null ? `${l.dhu.toFixed(2)}%` : '—'}
+              </td>
+              <td className="py-1.5 px-2 text-right font-bold">
+                {l.todayOqlPct !== null ? `${l.todayOqlPct.toFixed(2)}%` : '—'}
+              </td>
+              <td className="py-1.5 px-2 text-right">{l.sewSent}</td>
+              <td className="py-1.5 px-2 text-right">{l.sewRecv}</td>
+              <td className={`py-1.5 px-2 text-right font-black ${l.sewBal > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                {l.sewBal}
+              </td>
+              <td className="py-1.5 px-2 text-right">{l.spotSent}</td>
+              <td className="py-1.5 px-2 text-right">{l.spotRecv}</td>
+              <td className={`py-1.5 px-2 text-right font-black ${l.spotBal > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                {l.spotBal}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+);
+
 /* ==================== SUB-COMPONENTS MATCHING WbComponents.kt ==================== */
 
 const WbTile: React.FC<{
@@ -1527,26 +1490,27 @@ const WbTile: React.FC<{
   unit?: string;
   color: string;
   sub: string;
-}> = ({ label, value, unit, color, sub }) => (
+  compact?: boolean;
+}> = ({ label, value, unit, color, sub, compact }) => (
   <div
     style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-    className="rounded-lg border p-2.5 flex flex-col justify-between relative overflow-hidden"
+    className={`rounded-lg border ${compact ? 'p-1.5 md:p-2' : 'p-2.5'} flex flex-col justify-between relative overflow-hidden`}
   >
     <div style={{ backgroundColor: color }} className="absolute left-0 top-0 bottom-0 w-1" />
-    <div style={{ color: WB_THEME.MUTED }} className="text-[11px] md:text-xs font-extrabold uppercase tracking-wider pl-1.5">
+    <div style={{ color: WB_THEME.MUTED }} className={`${compact ? 'text-[9px] md:text-[10px]' : 'text-[11px] md:text-xs'} font-extrabold uppercase tracking-wider pl-1.5 truncate`}>
       {label}
     </div>
-    <div className="flex items-baseline gap-1.5 my-1 pl-1.5">
-      <span style={{ color }} className="text-2xl md:text-3xl font-black leading-none">
+    <div className="flex items-baseline gap-1.5 my-0.5 pl-1.5">
+      <span style={{ color }} className={`${compact ? 'text-xl md:text-2xl' : 'text-2xl md:text-3xl'} font-black leading-none`}>
         {value}
       </span>
       {unit && (
-        <span style={{ color: WB_THEME.MUTED }} className="text-xs font-bold">
+        <span style={{ color: WB_THEME.MUTED }} className={`${compact ? 'text-[10px]' : 'text-xs'} font-bold`}>
           {unit}
         </span>
       )}
     </div>
-    <div style={{ color: WB_THEME.MUTED }} className="text-xs md:text-sm font-semibold pl-1.5 leading-snug">
+    <div style={{ color: WB_THEME.MUTED }} className={`${compact ? 'text-[9px] md:text-[10px]' : 'text-xs md:text-sm'} font-semibold pl-1.5 leading-snug truncate`}>
       {sub}
     </div>
   </div>
@@ -1583,23 +1547,24 @@ const WbPanel: React.FC<{
   right?: React.ReactNode;
   className?: string;
   children: React.ReactNode;
-}> = ({ title, sub, right, className = '', children }) => (
+  compact?: boolean;
+}> = ({ title, sub, right, className = '', children, compact }) => (
   <div
     style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-    className={`rounded-lg border p-2.5 flex flex-col justify-between overflow-hidden ${className}`}
+    className={`rounded-lg border ${compact ? 'p-1.5 md:p-2' : 'p-2.5'} flex flex-col justify-between overflow-hidden ${className}`}
   >
-    <div className="flex items-start justify-between gap-2 mb-1.5">
+    <div className={`flex items-start justify-between gap-2 ${compact ? 'mb-1' : 'mb-1.5'}`}>
       <div>
-        <div className="text-xs font-black tracking-wide">{title}</div>
+        <div className={`${compact ? 'text-[11px] md:text-xs' : 'text-xs'} font-black tracking-wide`}>{title}</div>
         {sub && (
-          <div style={{ color: WB_THEME.MUTED }} className="text-[10px] font-semibold">
+          <div style={{ color: WB_THEME.MUTED }} className={`${compact ? 'text-[9px]' : 'text-[10px]'} font-semibold`}>
             {sub}
           </div>
         )}
       </div>
       {right}
     </div>
-    <div className="flex-1 flex flex-col justify-end min-h-[200px]">{children}</div>
+    <div className={`flex-1 flex flex-col justify-end ${compact ? 'min-h-[110px]' : 'min-h-[180px]'}`}>{children}</div>
   </div>
 );
 
@@ -1670,11 +1635,11 @@ const Col: React.FC<{ v: number; max: number; color: string; label?: React.React
 };
 
 /** The scrolling row of column groups, with an optional dashed reference line. */
-const ChartRow: React.FC<{ children: React.ReactNode; refPct?: number | null; refColor?: string }> = ({ children, refPct, refColor }) => (
-  <div className="nfl-scroll overflow-x-auto pb-2">
-    <div className="relative flex items-end justify-between gap-1.5 min-w-full pt-5">{children}
+const ChartRow: React.FC<{ children: React.ReactNode; refPct?: number | null; refColor?: string; plotH?: string }> = ({ children, refPct, refColor, plotH = PLOT_H }) => (
+  <div className="nfl-scroll overflow-x-auto pb-1">
+    <div className="relative flex items-end justify-between gap-1.5 min-w-full pt-3">{children}
       {refPct !== undefined && refPct !== null && (
-        <div className={`absolute left-0 right-0 pointer-events-none ${PLOT_H}`} style={{ top: 20 }}>
+        <div className={`absolute left-0 right-0 pointer-events-none ${plotH}`} style={{ top: 12 }}>
           <div className="absolute left-0 right-0 border-t-2 border-dashed" style={{ bottom: `${Math.min(100, refPct)}%`, borderColor: refColor || WB_THEME.AMBER }} />
         </div>
       )}
@@ -1684,23 +1649,24 @@ const ChartRow: React.FC<{ children: React.ReactNode; refPct?: number | null; re
 
 const Group: React.FC<{ children: React.ReactNode; name: React.ReactNode; sub?: React.ReactNode; subColor?: string; onClick?: () => void; minW?: string; plotH?: string }> = ({ children, name, sub, subColor, onClick, minW = 'min-w-[44px] md:min-w-[54px]', plotH = PLOT_H }) => (
   <div onClick={onClick} className={`flex flex-col items-center flex-1 ${minW} ${onClick ? 'cursor-pointer' : ''}`}>
-    <div className={`w-full ${plotH} flex items-end justify-center gap-2 md:gap-3 border-b`} style={{ borderColor: WB_THEME.LINE }}>{children}</div>
-    <div className="text-[11px] md:text-xs font-black mt-1 whitespace-nowrap">{name}</div>
-    {sub !== undefined && <div style={{ color: subColor }} className="text-[10px] md:text-[11px] font-bold leading-tight">{sub}</div>}
+    <div className={`w-full ${plotH} flex items-end justify-center gap-1.5 md:gap-2.5 border-b`} style={{ borderColor: WB_THEME.LINE }}>{children}</div>
+    <div className="text-[10px] md:text-xs font-black mt-0.5 whitespace-nowrap">{name}</div>
+    {sub !== undefined && <div style={{ color: subColor }} className="text-[9px] md:text-[10px] font-bold leading-tight">{sub}</div>}
   </div>
 );
 
 const LiveTargetVsAchievementChart: React.FC<{
   lines: LinePerformanceSummary[];
   onSelectLine: (l: LinePerformanceSummary) => void;
-}> = ({ lines, onSelectLine }) => {
+  plotH?: string;
+}> = ({ lines, onSelectLine, plotH = PLOT_H }) => {
   const max = niceMax(lines.flatMap(l => [l.target, l.output ?? 0]));
   return (
-    <ChartRow>
+    <ChartRow plotH={plotH}>
       {lines.map(l => {
         const col = achColor(l.achievementPct);
         return (
-          <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)} sub={l.achievementPct !== null ? `${l.achievementPct.toFixed(0)}%` : '—'} subColor={col}>
+          <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)} sub={l.achievementPct !== null ? `${l.achievementPct.toFixed(0)}%` : '—'} subColor={col} plotH={plotH}>
             <Col v={l.target} max={max} color={WB_THEME.BLUE} labelColor={WB_THEME.BLUE} label={l.target} w="w-2.5 md:w-3.5" title={`Target: ${l.target}`} />
             <Col v={l.output ?? 0} max={max} color={col} label={l.output ?? '—'} w="w-3 md:w-4" title={`Output: ${l.output ?? 0}`} />
           </Group>
@@ -1714,14 +1680,15 @@ const EfficiencyByLineChart: React.FC<{
   lines: LinePerformanceSummary[];
   targetEff: number;
   onSelectLine: (l: LinePerformanceSummary) => void;
-}> = ({ lines, targetEff, onSelectLine }) => {
+  plotH?: string;
+}> = ({ lines, targetEff, onSelectLine, plotH = PLOT_H }) => {
   const max = niceMax([targetEff, ...lines.flatMap(l => [l.efficiencyPct ?? 0, l.monthlyEfficiencyPct ?? 0])]);
   return (
-    <ChartRow refPct={(targetEff / max) * 100}>
+    <ChartRow refPct={(targetEff / max) * 100} plotH={plotH}>
       {lines.map(l => {
         const col = effColor(l.efficiencyPct, l.targetEfficiencyPct);
         return (
-          <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)}>
+          <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)} plotH={plotH}>
             <Col v={l.monthlyEfficiencyPct ?? 0} max={max} color={WB_THEME.BLUE} labelColor={WB_THEME.MUTED} w="w-2.5 md:w-3.5" title={`Month Target/Avg: ${l.monthlyEfficiencyPct ?? 0}%`} />
             <Col v={l.efficiencyPct ?? 0} max={max} color={col} label={l.efficiencyPct !== null ? `${(l.efficiencyPct ?? 0).toFixed(0)}%` : '—'} title={`Today: ${l.efficiencyPct ?? 0}%`} />
           </Group>
@@ -1738,15 +1705,16 @@ const MetricByLineBarChart: React.FC<{
   formatVal: (v: number) => string;
   limitVal: number;
   onSelectLine: (l: LinePerformanceSummary) => void;
-}> = ({ lines, getValue, getColor, formatVal, limitVal, onSelectLine }) => {
+  plotH?: string;
+}> = ({ lines, getValue, getColor, formatVal, limitVal, onSelectLine, plotH = PLOT_H }) => {
   const max = niceMax([limitVal, ...lines.map(l => getValue(l) ?? 0)]);
   return (
-    <ChartRow refPct={(limitVal / max) * 100} refColor={WB_THEME.RED}>
+    <ChartRow refPct={(limitVal / max) * 100} refColor={WB_THEME.RED} plotH={plotH}>
       {lines.map(l => {
         const val = getValue(l);
         const col = getColor(val);
         return (
-          <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)}>
+          <Group key={l.lineId} onClick={() => onSelectLine(l)} name={lineDisplayName(l.lineId)} plotH={plotH}>
             <Col v={val ?? 0} max={max} color={col} label={val !== null ? formatVal(val) : '—'} w="w-4 md:w-6" />
           </Group>
         );
@@ -1755,15 +1723,15 @@ const MetricByLineBarChart: React.FC<{
   );
 };
 
-const HourlyOutputWallboardChart: React.FC<{ buckets: HourlyWallboardBucket[] }> = ({ buckets }) => {
+const HourlyOutputWallboardChart: React.FC<{ buckets: HourlyWallboardBucket[]; plotH?: string }> = ({ buckets, plotH = PLOT_H }) => {
   const max = niceMax(buckets.flatMap(b => [b.target, b.output]));
   return (
-    <ChartRow>
+    <ChartRow plotH={plotH}>
       {buckets.map(b => {
         const pct = b.target > 0 ? Math.round((b.output / b.target) * 100) : 0;
         const col = b.output === 0 ? WB_THEME.DIM : achColor(pct);
         return (
-          <Group key={b.slot24} name={b.label12h} sub={b.output > 0 && b.target > 0 ? `${pct}%` : ''} subColor={col} minW="min-w-[52px] md:min-w-[64px]">
+          <Group key={b.slot24} name={b.label12h} sub={b.output > 0 && b.target > 0 ? `${pct}%` : ''} subColor={col} minW="min-w-[52px] md:min-w-[64px]" plotH={plotH}>
             <Col v={b.target} max={max} color={WB_THEME.BLUE} labelColor={WB_THEME.BLUE} label={b.target > 0 ? b.target : ""} w="w-3 md:w-5" title={`Target: ${b.target}`} />
             <Col v={b.output} max={max} color={col} label={b.output > 0 ? b.output : '—'} w="w-4 md:w-6" title={`Output: ${b.output}`} />
           </Group>
@@ -1849,7 +1817,7 @@ const RectificationPendingChart: React.FC<{
 };
 
 /** Weekly BS OQL vs NFL AQC trend, from ISO week 32 of the current year (blue: BS OQL, orange: NFL AQC). */
-const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: number }> = ({ records, commitment }) => {
+const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: number; compact?: boolean }> = ({ records, commitment, compact = false }) => {
   const now = new Date();
   const tempUtc = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
   const dayNum = tempUtc.getUTCDay() || 7;
@@ -1901,12 +1869,12 @@ const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: n
   const maxVal = Math.max(minVal + 2, Math.ceil(Math.max(...allValues) + 1.2));
   const span = Math.max(1, maxVal - minVal);
 
-  const step = 74;
-  const padL = 44;
-  const padR = 134;
-  const top = 38;
-  const plotH = 180;
-  const bottom = 38;
+  const step = compact ? 56 : 74;
+  const padL = compact ? 34 : 44;
+  const padR = compact ? 110 : 134;
+  const top = compact ? 22 : 38;
+  const plotH = compact ? 100 : 180;
+  const bottom = compact ? 24 : 38;
   const lastSlotX = padL + step * Math.max(0, slots.length - 1);
   const W = Math.max(480, lastSlotX + padR);
   const H = top + plotH + bottom;
