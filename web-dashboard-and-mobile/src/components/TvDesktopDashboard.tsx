@@ -158,8 +158,10 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   const availH = Math.max(480, vh - 44);
   const scaleX = availW / 1520;
   const scaleY = availH / 840;
-  const fitScale = tvFit ? Math.min(scaleX, scaleY, 1.15) : 1;
-  const chartPlotH = tvFit ? 'h-24 md:h-28' : PLOT_H;
+  // Grow with the screen: a 4K TV scales about 2.5x, a 1080p TV about 1.25x. Never below 0.7.
+  const fitScale = tvFit ? Math.max(0.7, Math.min(scaleX, scaleY, 3)) : 1;
+  // Charts fill their panels on the TV instead of a short strip at the bottom.
+  const chartPlotH = tvFit ? 'h-[210px]' : PLOT_H;
   const isDept = isDepartmentFloor(selectedFloor) || selectedFloor === 'Print & Embroidery';
   const hasQc = selectedFloor === 'Print' || selectedFloor === 'Embroidery' || selectedFloor === 'Print & Embroidery';
   const unit = unitWord(selectedFloor);
@@ -279,10 +281,15 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
   return (
     <div
-      style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.TXT, ...(fitScale !== 1 ? { zoom: fitScale } : {}) }}
+      style={{
+        backgroundColor: WB_THEME.BG,
+        color: WB_THEME.TXT,
+        ...(fitScale !== 1 ? { zoom: fitScale } : {}),
+        ...(tvFit ? { height: `calc((100vh - 42px) / ${fitScale})`, maxHeight: `calc((100vh - 42px) / ${fitScale})` } : {})
+      }}
       className={`tv-dashboard-root flex flex-col font-sans tabular-nums select-none ${
         tvFit
-          ? 'h-[calc(100vh-42px)] max-h-[calc(100vh-42px)] overflow-hidden p-1.5 md:p-2 gap-1.5'
+          ? 'overflow-hidden p-1.5 md:p-2 gap-1.5'
           : 'min-h-[calc(100vh-42px)] p-2.5 gap-2 overflow-y-auto'
       }`}
     >
