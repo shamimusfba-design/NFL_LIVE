@@ -286,230 +286,260 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           : 'min-h-[calc(100vh-42px)] p-2.5 gap-2 overflow-y-auto'
       }`}
     >
-      {/* ==================== HEADER BAR (Matches TvDashboardScreen.kt) ==================== */}
-      <div className="flex flex-wrap items-center justify-between gap-2 min-h-[40px]">
-        <div className="hidden md:flex items-center gap-2">
-          <div className="bg-white text-[#002D62] px-2.5 py-1 rounded flex items-center gap-1.5 font-black text-sm shadow">
-            <span className="inline-flex h-5 w-5 items-center justify-center overflow-hidden rounded-sm">
-              <NflLogo size={20} />
+      {/* ==================== TIER 1: MAIN NAVIGATION BAR ==================== */}
+      <div
+        className="flex flex-wrap items-center justify-between gap-2 p-1.5 rounded-xl border shadow-xs"
+        style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
+      >
+        {/* Left: Brand + Floor Selector */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="bg-[#002D62] text-white px-2.5 py-1 rounded-lg flex items-center gap-1.5 font-black text-xs sm:text-sm shadow-xs shrink-0">
+            <span className="inline-flex h-4 w-4 items-center justify-center overflow-hidden rounded-sm">
+              <NflLogo size={16} />
             </span>
             <span>{brand} LIVE</span>
           </div>
-          <span className="hidden sm:inline text-xs font-bold" style={{ color: WB_THEME.MUTED }}>
-            TV Wallboard &amp; Command Center
-          </span>
+
+          {/* Floor Segmented Control */}
+          <div
+            className="nfl-scroll flex items-center p-0.5 rounded-lg border gap-0.5 overflow-x-auto"
+            style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.LINE }}
+          >
+            {FLOOR_BUTTONS.map(fl => (
+              <button
+                key={fl}
+                onClick={() => onSelectFloor(fl)}
+                style={{
+                  backgroundColor: selectedFloor === fl ? WB_THEME.BLUE : 'transparent',
+                  color: selectedFloor === fl ? 'var(--wb-on-selected)' : WB_THEME.MUTED
+                }}
+                className="shrink-0 whitespace-nowrap px-2.5 py-1 rounded-md text-[11px] sm:text-xs font-black transition text-center"
+              >
+                {FLOOR_LABEL[fl]}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* 4-Page Segment: Production | Quality | All | Table (sewing only) */}
-        <div
-          style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-          className={`${isDept ? 'hidden' : 'grid'} grid-cols-5 sm:flex w-full sm:w-auto items-center p-0.5 rounded-md border gap-0.5`}
-        >
-          {(
-            [
-              { id: 'PRODUCTION', label: 'Production' },
-              { id: 'QUALITY', label: 'Quality' },
-              { id: 'FINISHING', label: 'Finishing' },
-              { id: 'ALL', label: 'All' },
-              { id: 'TABLE', label: 'Table' }
-            ] as Array<{ id: WbPageId; label: string }>
-          ).map(item => (
+        {/* Right: Page Switcher + Global Controls */}
+        <div className="flex items-center gap-2 flex-wrap ml-auto">
+          {/* Page Switcher */}
+          {!isDept && (
+            <div
+              className="flex items-center p-0.5 rounded-lg border gap-0.5"
+              style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.LINE }}
+            >
+              {[
+                { id: 'ALL', label: '⚡ All Overview' },
+                { id: 'PRODUCTION', label: '🏭 Production' },
+                { id: 'QUALITY', label: '🛡️ Quality' },
+                { id: 'FINISHING', label: '👔 Finishing' },
+                { id: 'TABLE', label: '📋 Table' }
+              ].map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setPage(item.id as WbPageId);
+                    setCountdown(interval > 0 ? interval : WB_INTERVALS[0]);
+                  }}
+                  style={{
+                    backgroundColor: page === item.id ? WB_THEME.BLUE : 'transparent',
+                    color: page === item.id ? 'var(--wb-on-selected)' : WB_THEME.MUTED
+                  }}
+                  className="shrink-0 px-2.5 py-1 rounded-md text-[11px] sm:text-xs font-black transition text-center whitespace-nowrap"
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Utility Controls Group */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* TV Fit Toggle */}
             <button
-              key={item.id}
+              onClick={() => setTvFit(v => !v)}
+              title="টিভি ফিট মোড: চাপ দিলে এক সিঙ্গেল স্ক্রিনে সব চার্ট ও কার্ড আঁটবে (কোন স্ক্রল করতে হবে না)"
+              className="px-2.5 py-1 rounded-lg border text-[11px] font-black transition flex items-center gap-1.5 shadow-xs"
+              style={{
+                backgroundColor: tvFit ? (theme === 'light' ? '#002D62' : '#1D4ED8') : WB_THEME.BG,
+                borderColor: tvFit ? '#002D62' : WB_THEME.LINE,
+                color: tvFit ? '#FFFFFF' : WB_THEME.TXT
+              }}
+            >
+              <span>📺</span>
+              <span>{tvFit ? 'TV Fit: ON' : 'TV Fit: OFF'}</span>
+            </button>
+
+            {/* Day / Night Toggle */}
+            {onToggleTheme && (
+              <button
+                onClick={onToggleTheme}
+                title={`Switch to ${theme === 'light' ? 'Night' : 'Day'} mode`}
+                className="px-2 py-1 rounded-lg border flex items-center gap-1 text-[11px] font-black transition shadow-xs"
+                style={{
+                  backgroundColor: WB_THEME.BG,
+                  borderColor: WB_THEME.LINE,
+                  color: WB_THEME.TXT
+                }}
+              >
+                {theme === 'light' ? (
+                  <>
+                    <span className="text-amber-500 font-bold">☼</span>
+                    <span>Day</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-blue-400 font-bold">☾</span>
+                    <span>Night</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {/* Auto Slide Cycle Pill */}
+            <button
               onClick={() => {
-                setPage(item.id);
-                setCountdown(interval > 0 ? interval : WB_INTERVALS[0]);
+                const nextIdx = (intervalIdx + 1) % WB_INTERVALS.length;
+                setIntervalIdx(nextIdx);
+                setCountdown(WB_INTERVALS[nextIdx] > 0 ? WB_INTERVALS[nextIdx] : WB_INTERVALS[0]);
               }}
-              style={{
-                backgroundColor: page === item.id ? WB_THEME.BLUE : 'transparent',
-                color: page === item.id ? 'var(--wb-on-selected)' : WB_THEME.MUTED
-              }}
-              className="shrink-0 px-3 py-1.5 sm:py-1 rounded text-xs font-black transition text-center whitespace-nowrap"
+              title="Click to change auto-rotation slide timer"
+              className="px-2 py-1 rounded-lg border flex items-center gap-1.5 text-[11px] font-bold shadow-xs hover:border-amber-400 transition"
+              style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.LINE }}
             >
-              {item.label}
+              <span style={{ color: WB_THEME.MUTED }}>
+                {interval > 0 ? `Slide ${countdown}s` : 'Paused'}
+              </span>
+              <div className="flex items-center gap-0.5">
+                {(['ALL', 'PRODUCTION', 'QUALITY', 'FINISHING'] as WbPageId[]).map(p => (
+                  <span
+                    key={p}
+                    style={{ backgroundColor: page === p ? WB_THEME.BLUE : WB_THEME.DIM }}
+                    className="w-2 h-1 rounded-xs inline-block"
+                  />
+                ))}
+              </div>
             </button>
-          ))}
-        </div>
 
-        {/* Floor Segment: Sew 1 | Sew 2 | Sew 3 | All Floors */}
-        <div
-          style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-          className="nfl-scroll flex w-full sm:w-auto items-center p-0.5 rounded-md border gap-0.5 overflow-x-auto"
-        >
-          {FLOOR_BUTTONS.map(fl => (
-            <button
-              key={fl}
-              onClick={() => onSelectFloor(fl)}
-              style={{
-                backgroundColor: selectedFloor === fl ? WB_THEME.BLUE : 'transparent',
-                color: selectedFloor === fl ? 'var(--wb-on-selected)' : WB_THEME.MUTED
-              }}
-              className="shrink-0 whitespace-nowrap px-2.5 py-1.5 sm:py-1 rounded text-[11px] sm:text-xs font-black transition text-center"
-            >
-              {FLOOR_LABEL[fl]}
-            </button>
-          ))}
-        </div>
+            {isDemoMode && (
+              <button
+                onClick={onToggleDemo}
+                style={{ backgroundColor: WB_THEME.RED, color: 'var(--wb-on-red)' }}
+                className="px-2 py-1 rounded-lg font-black text-[11px] shadow-xs"
+                title="Click to clear Demo Data"
+              >
+                DEMO
+              </button>
+            )}
 
-        {/* Period Segment: Today | Yesterday | Week | Month */}
-        <div
-          style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-          className="grid grid-cols-4 sm:flex w-full sm:w-auto items-center p-0.5 rounded-md border gap-0.5"
-        >
-          {(['Today', 'Yesterday', 'Week', 'Month'] as PeriodId[]).map(p => (
-            <button
-              key={p}
-              onClick={() => onSelectPeriod(p)}
-              style={{
-                backgroundColor: selectedPeriod === p ? WB_THEME.BLUE : 'transparent',
-                color: selectedPeriod === p ? 'var(--wb-on-selected)' : WB_THEME.MUTED
-              }}
-              className="px-2.5 py-1.5 sm:py-1 rounded text-xs font-black transition text-center"
+            {/* Live Sync Badge */}
+            <span
+              style={{ backgroundColor: '#10B98118', color: WB_THEME.GREEN, borderColor: '#10B98140' }}
+              className="px-2 py-1 rounded-lg border font-black text-[11px] flex items-center gap-1 shadow-xs"
             >
-              {p}
-            </button>
-          ))}
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>Live</span>
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* ==================== STATUS STRIP ==================== */}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex w-full sm:w-auto items-center gap-1.5 overflow-x-auto whitespace-nowrap sm:flex-wrap sm:overflow-visible pb-1 sm:pb-0">
-          <span className="font-extrabold text-sm mr-1 shrink-0">
-            {FLOOR_LABEL[selectedFloor]} ·{' '}
-            {page === 'PRODUCTION'
-              ? 'Production'
-              : page === 'FINISHING'
-              ? 'Finishing'
-              : page === 'QUALITY'
-              ? 'Quality'
-              : page === 'ALL'
-              ? 'All'
-              : 'Table'}{' '}
-            · {selectedPeriod}
-          </span>
+      {/* ==================== TIER 2: PERIOD & STATUS STRIP ==================== */}
+      <div
+        className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl border text-xs shadow-xs"
+        style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
+      >
+        {/* Left: Current Scope & Period Tabs */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 font-black text-xs" style={{ color: WB_THEME.TXT }}>
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: WB_THEME.BLUE }}></span>
+            <span>{FLOOR_LABEL[selectedFloor]}</span>
+            <span style={{ color: WB_THEME.MUTED }}>·</span>
+            <span style={{ color: WB_THEME.BLUE }}>
+              {page === 'PRODUCTION'
+                ? 'Production'
+                : page === 'QUALITY'
+                ? 'Quality'
+                : page === 'FINISHING'
+                ? 'Finishing'
+                : page === 'ALL'
+                ? 'Executive Overview'
+                : 'Line Table'}
+            </span>
+          </div>
+
+          {/* Period Tabs: Today | Yesterday | Week | Month */}
+          <div
+            className="flex items-center p-0.5 rounded-lg border gap-0.5 ml-1"
+            style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.LINE }}
+          >
+            {(['Today', 'Yesterday', 'Week', 'Month'] as PeriodId[]).map(p => (
+              <button
+                key={p}
+                onClick={() => onSelectPeriod(p)}
+                style={{
+                  backgroundColor: selectedPeriod === p ? WB_THEME.BLUE : 'transparent',
+                  color: selectedPeriod === p ? 'var(--wb-on-selected)' : WB_THEME.MUTED
+                }}
+                className="px-2.5 py-0.5 rounded-md text-[11px] font-black transition text-center"
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Right: Line Status Badges */}
+        <div className="flex items-center gap-1.5 flex-wrap">
           {selectedPeriod === 'Today' ? (
             <>
               <span
                 style={{ backgroundColor: WB_THEME.GREEN, color: 'var(--wb-on-green)' }}
-                className="px-2 py-0.5 rounded font-black text-[11px]"
+                className="px-2 py-0.5 rounded-md text-[11px] font-black flex items-center gap-1 shadow-xs"
               >
-                {onTargetCount} on target
+                <span>●</span>
+                <span>{onTargetCount} On Target (≥95%)</span>
               </span>
               <span
                 style={{ backgroundColor: WB_THEME.AMBER, color: 'var(--wb-on-amber)' }}
-                className="px-2 py-0.5 rounded font-black text-[11px]"
+                className="px-2 py-0.5 rounded-md text-[11px] font-black flex items-center gap-1 shadow-xs"
               >
-                {slightBehindCount} slightly behind
+                <span>●</span>
+                <span>{slightBehindCount} Behind (80-95%)</span>
               </span>
               <span
                 style={{ backgroundColor: WB_THEME.RED, color: 'var(--wb-on-red)' }}
-                className="px-2 py-0.5 rounded font-black text-[11px]"
+                className="px-2 py-0.5 rounded-md text-[11px] font-black flex items-center gap-1 shadow-xs"
               >
-                {farBehindCount} far behind
+                <span>●</span>
+                <span>{farBehindCount} Critical (&lt;80%)</span>
               </span>
               <span
                 style={{ backgroundColor: WB_THEME.GREY, color: 'var(--wb-on-grey)' }}
-                className="px-2 py-0.5 rounded font-black text-[11px]"
+                className="px-2 py-0.5 rounded-md text-[11px] font-black flex items-center gap-1 shadow-xs"
               >
-                {noOutputCount} no output
+                <span>●</span>
+                <span>{noOutputCount} No Output</span>
               </span>
-              <span
-                style={{ backgroundColor: WB_THEME.DIM, color: WB_THEME.TXT }}
-                className="px-2 py-0.5 rounded font-black text-[11px]"
-              >
-                {notRunningCount} not running
-              </span>
+              {notRunningCount > 0 && (
+                <span
+                  style={{ backgroundColor: WB_THEME.DIM, color: WB_THEME.TXT }}
+                  className="px-2 py-0.5 rounded-md text-[11px] font-black flex items-center gap-1 shadow-xs"
+                >
+                  <span>●</span>
+                  <span>{notRunningCount} Not Running</span>
+                </span>
+              )}
             </>
           ) : (
             <span
-              style={{ backgroundColor: WB_THEME.DIM, color: WB_THEME.TXT }}
-              className="px-2 py-0.5 rounded font-black text-[11px]"
+              style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.MUTED, borderColor: WB_THEME.LINE }}
+              className="px-2 py-0.5 rounded-md border text-[11px] font-bold"
             >
-              Target % shown for Today only
+              Target benchmarks are evaluated for Today view
             </span>
           )}
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => {
-              const nextIdx = (intervalIdx + 1) % WB_INTERVALS.length;
-              setIntervalIdx(nextIdx);
-              setCountdown(WB_INTERVALS[nextIdx] > 0 ? WB_INTERVALS[nextIdx] : WB_INTERVALS[0]);
-            }}
-            style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-            className="px-2.5 py-1 rounded border flex items-center gap-2 hover:border-amber-400 transition"
-          >
-            <span style={{ color: WB_THEME.MUTED }} className="text-[11px] font-bold">
-              {interval > 0 ? `Auto-slide ${interval}s · next ${countdown}s` : 'Auto-slide paused'}
-            </span>
-            <div className="flex items-center gap-1">
-              {(['PRODUCTION', 'QUALITY', 'FINISHING', 'ALL'] as WbPageId[]).map(p => (
-                <span
-                  key={p}
-                  style={{ backgroundColor: page === p ? WB_THEME.BLUE : WB_THEME.DIM }}
-                  className="w-5 h-1.5 rounded-sm inline-block"
-                />
-              ))}
-            </div>
-          </button>
-
-          {onToggleTheme && (
-            <button
-              onClick={onToggleTheme}
-              title={`Switch to ${theme === 'light' ? 'Night' : 'Day'} mode`}
-              className="px-2.5 py-1 rounded border flex items-center gap-1.5 text-xs font-black transition shadow-xs"
-              style={{
-                backgroundColor: WB_THEME.PANEL,
-                borderColor: WB_THEME.LINE,
-                color: WB_THEME.TXT
-              }}
-            >
-              {theme === 'light' ? (
-                <>
-                  <span className="text-amber-500 font-bold">☼</span>
-                  <span>Day</span>
-                </>
-              ) : (
-                <>
-                  <span className="text-blue-400 font-bold">☾</span>
-                  <span>Night</span>
-                </>
-              )}
-            </button>
-          )}
-
-          <button
-            onClick={() => setTvFit(v => !v)}
-            title="টিভি ফিট মোড: চাপ দিলে এক সিঙ্গেল স্ক্রিনে সব চার্ট আঁটবে (কোন স্ক্রল করতে হবে না)"
-            className="px-2.5 py-0.5 rounded border text-[11px] font-black transition flex items-center gap-1.5 shadow-xs"
-            style={{
-              backgroundColor: tvFit ? (theme === 'light' ? '#002D62' : '#1D4ED8') : WB_THEME.PANEL,
-              borderColor: tvFit ? '#002D62' : WB_THEME.LINE,
-              color: tvFit ? '#FFFFFF' : WB_THEME.TXT
-            }}
-          >
-            <span>📺</span>
-            <span>{tvFit ? 'TV Fit: ON (Single Screen)' : 'TV Fit: OFF (Scrollable)'}</span>
-          </button>
-          {isDemoMode && (
-            <button
-              onClick={onToggleDemo}
-              style={{ backgroundColor: WB_THEME.RED, color: 'var(--wb-on-red)' }}
-              className="px-2 py-0.5 rounded font-black text-[11px]"
-              title="Click to clear Demo Data"
-            >
-              DEMO DATA
-            </button>
-          )}
-
-          <span
-            style={{ backgroundColor: WB_THEME.PANEL, color: WB_THEME.GREEN, borderColor: WB_THEME.LINE }}
-            className="px-2 py-0.5 rounded border font-black text-[11px]"
-          >
-            Synced Live
-          </span>
         </div>
       </div>
 
@@ -699,28 +729,28 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           {/* 6 Top KPI Tiles */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
             <WbTile
-              label="TARGET EFFICIENCY"
+              label="Target Efficiency"
               value={`${kpis.targetEfficiencyPct.toFixed(0)}%`}
               color={WB_THEME.BLUE}
               sub={`Floor: ${FLOOR_LABEL[selectedFloor]}`}
               compact={tvFit}
             />
             <WbTile
-              label="TODAY EFFICIENCY"
+              label="Today Efficiency"
               value={kpis.reportedLinesCount > 0 ? `${kpis.todayEfficiencyPct.toFixed(1)}%` : '—'}
               color={effColor(kpis.reportedLinesCount > 0 ? kpis.todayEfficiencyPct : null, kpis.targetEfficiencyPct)}
               sub={`Target: ${kpis.targetEfficiencyPct.toFixed(0)}%`}
               compact={tvFit}
             />
             <WbTile
-              label="MONTHLY EFFICIENCY"
+              label="Monthly Efficiency"
               value={kpis.monthlyEfficiencyPct > 0 ? `${kpis.monthlyEfficiencyPct.toFixed(1)}%` : '—'}
               color={effColor(kpis.monthlyEfficiencyPct > 0 ? kpis.monthlyEfficiencyPct : null, kpis.targetEfficiencyPct)}
               sub={`Δ ${kpis.monthlyEfficiencyDelta >= 0 ? '+' : ''}${kpis.monthlyEfficiencyDelta.toFixed(1)} pp vs target`}
               compact={tvFit}
             />
             <WbTile
-              label="OUTPUT vs TARGET"
+              label="Output vs Target"
               value={kpis.todayOutputPcs.toLocaleString()}
               unit={`/ ${kpis.todayTargetPcs.toLocaleString()}`}
               color={achColor(kpis.achievementPct)}
@@ -728,7 +758,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               compact={tvFit}
             />
             <WbTile
-              label="LINES REPORTED"
+              label="Lines Reported"
               value={`${kpis.reportedLinesCount}`}
               unit={`/ ${kpis.totalFloorLinesCount}`}
               color={kpis.reportedLinesCount === kpis.totalFloorLinesCount && kpis.totalFloorLinesCount > 0 ? WB_THEME.GREEN : WB_THEME.AMBER}
@@ -736,7 +766,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               compact={tvFit}
             />
             <WbTile
-              label="DOWNTIME (NPT)"
+              label="Downtime (NPT)"
               value={`${kpis.downtimeMinutes}`}
               unit="min"
               color={kpis.openIncidentsCount > 0 ? WB_THEME.RED : kpis.downtimeMinutes > 0 ? WB_THEME.AMBER : WB_THEME.GREEN}
@@ -841,7 +871,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
             {/* 1. Today OQL */}
             <WbTile
-              label="TODAY OQL"
+              label="Today OQL"
               value={kpis.checkedGarments > 0 ? `${kpis.todayOqlPct.toFixed(2)}%` : '—'}
               color={oqlColor(kpis.checkedGarments > 0 ? kpis.todayOqlPct : null, kpis.oqlCommitmentPct)}
               sub={`Limit ≤ ${kpis.oqlCommitmentPct.toFixed(1)}% · ${kpis.defectiveGarments} def`}
@@ -850,7 +880,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
             {/* 2. Monthly OQL */}
             <WbTile
-              label="MONTHLY OQL"
+              label="Monthly OQL"
               value={kpis.monthlyOqlPct !== undefined && kpis.monthlyOqlPct !== null ? `${kpis.monthlyOqlPct.toFixed(2)}%` : (kpis.todayOqlPct > 0 ? `${kpis.todayOqlPct.toFixed(2)}%` : '—')}
               color={oqlColor(kpis.monthlyOqlPct ?? kpis.todayOqlPct, kpis.oqlCommitmentPct)}
               sub={`Commitment ≤ ${kpis.oqlCommitmentPct.toFixed(1)}%`}
@@ -859,7 +889,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
             {/* 3. Today DHU */}
             <WbTile
-              label="TODAY DHU"
+              label="Today DHU"
               value={kpis.checkedGarments > 0 ? `${kpis.todayDhuPct.toFixed(2)}%` : '—'}
               color={dhuColor(kpis.checkedGarments > 0 ? kpis.todayDhuPct : null, kpis.dhuLimitPct)}
               sub={`Limit ≤ ${kpis.dhuLimitPct.toFixed(1)}% · ${kpis.totalDefects} defects`}
@@ -868,7 +898,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
             {/* 4. Monthly DHU */}
             <WbTile
-              label="MONTHLY DHU"
+              label="Monthly DHU"
               value={kpis.monthlyDhuPct !== undefined && kpis.monthlyDhuPct !== null ? `${kpis.monthlyDhuPct.toFixed(2)}%` : (kpis.todayDhuPct > 0 ? `${kpis.todayDhuPct.toFixed(2)}%` : '—')}
               color={dhuColor(kpis.monthlyDhuPct ?? kpis.todayDhuPct, kpis.dhuLimitPct)}
               sub={`Floor Limit ≤ ${kpis.dhuLimitPct.toFixed(1)}%`}
@@ -877,7 +907,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
             {/* 5. Inspection Pass % */}
             <WbTile
-              label="INSPECTION PASS %"
+              label="Inspection Pass %"
               value={auditPassStats.rate !== null ? `${auditPassStats.rate.toFixed(1)}%` : (kpis.friPassRatePct > 0 ? `${kpis.friPassRatePct.toFixed(1)}%` : '—')}
               color={auditPassStats.rate === null ? WB_THEME.GREY : auditPassStats.rate >= 90 ? WB_THEME.GREEN : auditPassStats.rate >= 75 ? WB_THEME.AMBER : WB_THEME.RED}
               sub={`${auditPassStats.passed} pass / ${auditPassStats.done} audits (${auditPassStats.failed} fail)`}
@@ -1020,7 +1050,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
             {/* 1. Today Efficiency */}
             <WbTile
-              label="TODAY EFFICIENCY"
+              label="Today Efficiency"
               value={kpis.reportedLinesCount > 0 ? `${kpis.todayEfficiencyPct.toFixed(1)}%` : '—'}
               color={effColor(kpis.reportedLinesCount > 0 ? kpis.todayEfficiencyPct : null, kpis.targetEfficiencyPct)}
               sub={`Target: ${kpis.targetEfficiencyPct.toFixed(0)}%`}
@@ -1029,7 +1059,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
             {/* 2. Up to Date (MTD) Efficiency */}
             <WbTile
-              label="UP TO DATE (MTD) EFFICIENCY"
+              label="Up-to-Date (MTD) Efficiency"
               value={kpis.monthlyEfficiencyPct > 0 ? `${kpis.monthlyEfficiencyPct.toFixed(1)}%` : '—'}
               color={effColor(kpis.monthlyEfficiencyPct > 0 ? kpis.monthlyEfficiencyPct : null, kpis.targetEfficiencyPct)}
               sub={`Δ ${kpis.monthlyEfficiencyDelta >= 0 ? '+' : ''}${kpis.monthlyEfficiencyDelta.toFixed(1)} pp vs target`}
@@ -1038,7 +1068,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
             {/* 3. Today DHU */}
             <WbTile
-              label="TODAY DHU"
+              label="Today DHU"
               value={kpis.checkedGarments > 0 ? `${kpis.todayDhuPct.toFixed(2)}%` : '—'}
               color={dhuColor(kpis.checkedGarments > 0 ? kpis.todayDhuPct : null, kpis.dhuLimitPct)}
               sub={`Limit ≤ ${kpis.dhuLimitPct.toFixed(1)}% · ${kpis.totalDefects} defects`}
@@ -1047,7 +1077,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
             {/* 4. Up to Date (MTD) DHU */}
             <WbTile
-              label="UP TO DATE (MTD) DHU"
+              label="Up-to-Date (MTD) DHU"
               value={kpis.monthlyDhuPct !== undefined && kpis.monthlyDhuPct !== null ? `${kpis.monthlyDhuPct.toFixed(2)}%` : (kpis.todayDhuPct > 0 ? `${kpis.todayDhuPct.toFixed(2)}%` : '—')}
               color={dhuColor(kpis.monthlyDhuPct ?? kpis.todayDhuPct, kpis.dhuLimitPct)}
               sub={`Floor Limit ≤ ${kpis.dhuLimitPct.toFixed(1)}%`}
@@ -1056,7 +1086,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
             {/* 5. Today OQL */}
             <WbTile
-              label="TODAY OQL"
+              label="Today OQL"
               value={kpis.checkedGarments > 0 ? `${kpis.todayOqlPct.toFixed(2)}%` : '—'}
               color={oqlColor(kpis.checkedGarments > 0 ? kpis.todayOqlPct : null, kpis.oqlCommitmentPct)}
               sub={`Commitment ≤ ${kpis.oqlCommitmentPct.toFixed(1)}%`}
@@ -1065,7 +1095,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
             {/* 6. Up to Date (MTD) OQL */}
             <WbTile
-              label="UP TO DATE (MTD) OQL"
+              label="Up-to-Date (MTD) OQL"
               value={kpis.monthlyOqlPct !== undefined && kpis.monthlyOqlPct !== null ? `${kpis.monthlyOqlPct.toFixed(2)}%` : (kpis.todayOqlPct > 0 ? `${kpis.todayOqlPct.toFixed(2)}%` : '—')}
               color={oqlColor(kpis.monthlyOqlPct ?? kpis.todayOqlPct, kpis.oqlCommitmentPct)}
               sub={`Commitment ≤ ${kpis.oqlCommitmentPct.toFixed(1)}%`}
@@ -1259,7 +1289,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 sub={`Target ${deepDiveLine.targetEfficiencyPct}%`}
               />
               <WbTile
-                label="OUTPUT vs TARGET"
+                label="Output vs Target"
                 value={`${deepDiveLine.output ?? 0}`}
                 unit={`/ ${deepDiveLine.target}`}
                 color={achColor(deepDiveLine.achievementPct)}
@@ -1494,23 +1524,29 @@ const WbTile: React.FC<{
 }> = ({ label, value, unit, color, sub, compact }) => (
   <div
     style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-    className={`rounded-lg border ${compact ? 'p-1.5 md:p-2' : 'p-2.5'} flex flex-col justify-between relative overflow-hidden`}
+    className={`rounded-xl border ${compact ? 'p-2 md:p-2.5 min-h-[96px]' : 'p-3 min-h-[108px]'} flex flex-col justify-between relative overflow-hidden shadow-xs`}
   >
-    <div style={{ backgroundColor: color }} className="absolute left-0 top-0 bottom-0 w-1" />
-    <div style={{ color: WB_THEME.MUTED }} className={`${compact ? 'text-[9px] md:text-[10px]' : 'text-[11px] md:text-xs'} font-extrabold uppercase tracking-wider pl-1.5 truncate`}>
+    <div style={{ backgroundColor: color }} className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l" />
+    <div
+      style={{ color: 'var(--wb-txt)' }}
+      className={`${compact ? 'text-[11px] sm:text-xs' : 'text-xs sm:text-[13px]'} font-black uppercase tracking-wide pl-2 leading-tight break-words`}
+    >
       {label}
     </div>
-    <div className="flex items-baseline gap-1.5 my-0.5 pl-1.5">
-      <span style={{ color }} className={`${compact ? 'text-xl md:text-2xl' : 'text-2xl md:text-3xl'} font-black leading-none`}>
+    <div className="flex items-baseline gap-1.5 my-1 pl-2">
+      <span style={{ color }} className={`${compact ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-4xl'} font-black leading-none`}>
         {value}
       </span>
       {unit && (
-        <span style={{ color: WB_THEME.MUTED }} className={`${compact ? 'text-[10px]' : 'text-xs'} font-bold`}>
+        <span style={{ color: WB_THEME.MUTED }} className={`${compact ? 'text-[11px]' : 'text-xs sm:text-sm'} font-bold`}>
           {unit}
         </span>
       )}
     </div>
-    <div style={{ color: WB_THEME.MUTED }} className={`${compact ? 'text-[9px] md:text-[10px]' : 'text-xs md:text-sm'} font-semibold pl-1.5 leading-snug truncate`}>
+    <div
+      style={{ color: WB_THEME.MUTED }}
+      className={`${compact ? 'text-[10px] sm:text-[11px]' : 'text-xs'} font-bold pl-2 leading-snug break-words`}
+    >
       {sub}
     </div>
   </div>
