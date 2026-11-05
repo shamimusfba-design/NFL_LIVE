@@ -87,6 +87,10 @@ export default function App() {
   });
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    // "only light" / "only dark" tells every browser and TV WebView not to repaint the page in its own dark mode.
+    let meta = document.querySelector('meta[name="color-scheme"]') as HTMLMetaElement | null;
+    if (!meta) { meta = document.createElement('meta'); meta.name = 'color-scheme'; document.head.appendChild(meta); }
+    meta.content = theme === 'light' ? 'only light' : 'only dark';
     try { localStorage.setItem('nfl_theme', theme); } catch {}
   }, [theme]);
 
