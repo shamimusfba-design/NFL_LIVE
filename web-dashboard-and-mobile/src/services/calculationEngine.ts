@@ -290,7 +290,21 @@ export class CalculationEngine {
     const floorMonthly = monthlyTargets.find(
       m => !m.lineId && floorMatches(m.floor, floor)
     );
-    const targetEfficiencyPct = floorMonthly?.targetEfficiencyPct || 75;
+    // Today's target efficiency = weighted average of each line's target %:
+    // total target minutes (hourly target x SMV) / total available minutes (manpower x 60), for lines set up today.
+    // Only when no line is set up does it fall back to the floor's monthly figure.
+    let targetMinutes = 0;
+    let availableMinutes = 0;
+    summaries.forEach(i => {
+      const manpower = (i.operators || 0) + (i.helpers || 0);
+      if (i.hourlyTarget > 0 && i.smv > 0 && manpower > 0) {
+        targetMinutes += i.hourlyTarget * i.smv;
+        availableMinutes += manpower * 60;
+      }
+    });
+    const targetEfficiencyPct = availableMinutes > 0
+      ? Number(((targetMinutes / availableMinutes) * 100).toFixed(1))
+      : floorMonthly?.targetEfficiencyPct || 75;
     // Factory standard: DHU target below 4%, OQL target below 4.5%.
     const dhuLimitPct = 4.0;
     const oqlCommitmentPct = 4.5;
