@@ -19,7 +19,7 @@ import {
   ordinalHr,
   formatSlotShortLabel12h,
   normalizeHourSlot24h,
-  isBiHourlyAuditSlot,
+  isAuditEntry,
   auditResultOf
 } from '../data/masterData';
 
@@ -202,8 +202,8 @@ export class CalculationEngine {
       const monthlyDhuPct = lineMonthly?.actualDhuPct ??
         (lineMonthly?.targetDhuPct ?? (dhu !== null ? dhu : 0));
 
-      const auditPassCount = lineQas.filter(q => isBiHourlyAuditSlot(q.hourSlot) && auditResultOf(q.checkedGarments, q.defectiveGarments, q.auditResult) === 'PASS').length;
-      const auditFailCount = lineQas.filter(q => isBiHourlyAuditSlot(q.hourSlot) && auditResultOf(q.checkedGarments, q.defectiveGarments, q.auditResult) === 'FAIL').length;
+      const auditPassCount = lineQas.filter(q => isAuditEntry(q) && auditResultOf(q.checkedGarments, q.defectiveGarments, q.auditResult) === 'PASS').length;
+      const auditFailCount = lineQas.filter(q => isAuditEntry(q) && auditResultOf(q.checkedGarments, q.defectiveGarments, q.auditResult) === 'FAIL').length;
 
       let reportingStatus: 'Complete' | 'Not reported' | 'In Progress' = 'Not reported';
       if (hasReportedProd) {
@@ -389,8 +389,9 @@ export class CalculationEngine {
     const floorProds = productions.filter(
       p => floorMatches(p.floor, floor) && this.isDateInPeriod(p.date, todayIso, period)
     );
+    // Hourly buckets show the hourly DHU QC only; OQL audit records are not mixed into the hour columns.
     const floorQas = qualities.filter(
-      q => floorMatches(q.floor, floor) && this.isDateInPeriod(q.date, todayIso, period)
+      q => !isAuditEntry(q) && floorMatches(q.floor, floor) && this.isDateInPeriod(q.date, todayIso, period)
     );
 
     // Hour numbers, not clock time: hour 1 of every line (General, Shift A, Shift B) is counted together.
@@ -472,7 +473,7 @@ export class CalculationEngine {
     return floors.map(floor => {
       const n = floor.replace(/\D/g, '');
       const floorLineIds = new Set(lines.filter(l => l.floor === floor && !isFinishingUnit(l.id)).map(l => l.id));
-      const qs = qualities.filter(q => floorLineIds.has(q.lineId) && ok(q.isDemo) && inPeriod(q.date));
+      const qs = qualities.filter(q => !isAuditEntry(q) && floorLineIds.has(q.lineId) && ok(q.isDemo) && inPeriod(q.date));
       const maxHour = Math.max(1, ...qs.map(q => hourNoOfSlot(q.lineId, q.hourSlot) ?? 0));
       const qBuckets: HourlyWallboardBucket[] = [];
       for (let k = 1; k <= Math.min(15, maxHour); k++) {

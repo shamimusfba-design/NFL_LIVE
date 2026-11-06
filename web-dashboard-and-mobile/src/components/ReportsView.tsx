@@ -10,7 +10,7 @@ import {
   UserRole
 } from '../types';
 import { formatHourSlot12h,
-  hourLabelOfSlot, isBiHourlyAuditSlot, lineDisplayName } from '../data/masterData';
+  hourLabelOfSlot, isAuditEntry, lineDisplayName } from '../data/masterData';
 import { isClientDemoSession } from '../data/clientDemo';
 
 interface ReportsViewProps {
@@ -148,7 +148,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           p.reportedBy
         ]),
         ...qualities.map(q => [
-          isBiHourlyAuditSlot(q.hourSlot) ? '2-Hr Bi-Hourly Audit (OQL)' : '1-Hr Quality DHU',
+          isAuditEntry(q) ? 'Hourly OQL Audit' : '1-Hr Quality DHU',
           q.floor,
           lineDisplayName(q.lineId),
           q.date,
@@ -229,7 +229,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         <div className="bg-[#002D62] text-white px-5 py-3.5 flex items-center justify-between">
           <div>
             <h2 className="text-base font-black tracking-wide">
-              Production, Quality, Bi-Hourly Audit &amp; History Ledger
+              Production, Quality, OQL Audit &amp; History Ledger
             </h2>
             <div className="text-xs text-blue-200">
               Hour numbers (1st hr, 2nd hr…) • CSV / Excel Export • Admin Record Correction
@@ -437,8 +437,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                           <td className="py-2 px-3">{q.date}</td>
                           <td className="py-2 px-3 font-black">{hourLabelOfSlot(q.lineId, q.hourSlot)}</td>
                           <td className="py-2 px-3 text-emerald-700">
-                            {isBiHourlyAuditSlot(q.hourSlot)
-                              ? '2-Hr Bi-Hourly Audit (OQL)'
+                            {isAuditEntry(q)
+                              ? 'Hourly OQL Audit'
                               : '1-Hr Quality DHU'}
                           </td>
                           <td className="py-2 px-3">

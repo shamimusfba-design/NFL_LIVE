@@ -19,7 +19,10 @@ import {
   getBangladeshTodayIso,
   generateSyntheticDemoDataset,
   floorMatches,
-  lineDisplayName
+  lineDisplayName,
+  isAuditEntry,
+  auditResultOf,
+  hourLabelOfSlot
 } from './data/masterData';
 import { CalculationEngine } from './services/calculationEngine';
 import {
@@ -499,6 +502,26 @@ export default function App() {
       .sort((a, b) => b.oqlPct - a.oqlPct);
   }, [qualities, targets, todayIso, isDemoMode, seesAllFloors, currentUser?.floor]);
 
+  // Every hourly OQL audit that FAILED today is a notification of its own, with the OQL of that audit.
+  const auditFailsToday = useMemo(() => {
+    return qualities
+      .filter(q => q.date === todayIso && (isDemoMode || !q.isDemo) && isAuditEntry(q) && myFloorOk(q.floor))
+      .filter(q => auditResultOf(q.checkedGarments, q.defectiveGarments, q.auditResult) === 'FAIL')
+      .map(q => ({
+        key: `auditfail|${q.lineId}|${q.date}|${q.hourSlot}`,
+        lineId: q.lineId,
+        floor: q.floor,
+        date: q.date,
+        hourLabel: hourLabelOfSlot(q.lineId, q.hourSlot),
+        oqlPct: q.checkedGarments > 0 ? (q.defectiveGarments / q.checkedGarments) * 100 : 0,
+        checked: q.checkedGarments,
+        defective: q.defectiveGarments,
+        auditor: q.reportedBy,
+        timestamp: q.timestamp
+      }))
+      .sort((a, b) => b.timestamp - a.timestamp);
+  }, [qualities, todayIso, isDemoMode, seesAllFloors, currentUser?.floor]);
+
   // The alert sounds ONLY for an incident that is new, once, for about 3 seconds, with vibration on a phone.
   // Incidents that were already there when the page opened never make a sound.
   const seenIncidentsRef = useRef<Set<string>>(
@@ -541,11 +564,15 @@ export default function App() {
       ? highOqlToday.map(h => `oql|${h.lineId}|${h.date}`).filter(k => !seen.has(k))
       : [];
     freshOql.forEach(k => seen.add(k));
-    if (fresh.length === 0 && freshOql.length === 0) return;
+    const freshAuditFail = oqlRoles.includes(currentUser.role)
+      ? auditFailsToday.map(a => a.key).filter(k => !seen.has(k))
+      : [];
+    freshAuditFail.forEach(k => seen.add(k));
+    if (fresh.length === 0 && freshOql.length === 0 && freshAuditFail.length === 0) return;
     fresh.forEach(inc => seen.add(inc.id));
     try { localStorage.setItem('nfl_seen_incidents', JSON.stringify(Array.from(seen).slice(-500))); } catch {}
     if (alertArmedRef.current) playNewIncidentAlert();
-  }, [incidents, currentUser, highOqlToday]);
+  }, [incidents, currentUser, highOqlToday, auditFailsToday]);
 
   // Cutting, Print and Embroidery count different pieces from sewing, so they are never added into sewing totals.
   // "Factory" therefore shows all sewing in its charts plus a separate department strip.
@@ -858,7 +885,12 @@ export default function App() {
     setQualities(prev => [
       newRecord,
       ...prev.filter(
-        q => !(q.lineId === newRecord.lineId && q.date === newRecord.date && q.hourSlot === newRecord.hourSlot)
+        q => !(
+          q.lineId === newRecord.lineId &&
+          q.date === newRecord.date &&
+          q.hourSlot === newRecord.hourSlot &&
+          isAuditEntry(q) === isAuditEntry(newRecord)
+        )
       )
     ]);
     pushQualityToCloud(newRecord);
@@ -1045,24 +1077,29 @@ export default function App() {
     }
   };
   const myIncidents = incidents.filter(i => myFloorOk(i.floor));
-  const notificationCount = myIncidents.filter(i => i.status !== 'RESOLVED').length + highOqlToday.length;
+  const notificationCount = myIncidents.filter(i => i.status !== 'RESOLVED').length + highOqlToday.length + auditFailsToday.length;
 
   const latestBannerComment = useMemo(() => {
     if (alertComments.length === 0) return null;
     const validTargets = new Set<string>([
       ...myIncidents.map(i => i.id),
-      ...highOqlToday.map(h => `oql|${h.lineId}|${h.date}`)
+      ...highOqlToday.map(h => `oql|${h.lineId}|${h.date}`),
+      ...auditFailsToday.map(a => a.key)
     ]);
     const sorted = [...alertComments]
       .filter(c => validTargets.size === 0 || validTargets.has(c.targetId))
       .sort((a, b) => b.createdMillis - a.createdMillis);
     return sorted.length > 0 ? sorted[0] : null;
-  }, [alertComments, myIncidents, highOqlToday]);
+  }, [alertComments, myIncidents, highOqlToday, auditFailsToday]);
 
   const describeCommentTarget = (targetId: string): string => {
     if (targetId.startsWith('oql|')) {
       const parts = targetId.split('|');
       return `${lineDisplayName(parts[1] || '')} · High OQL`;
+    }
+    if (targetId.startsWith('auditfail|')) {
+      const parts = targetId.split('|');
+      return `${lineDisplayName(parts[1] || '')} · OQL Audit Fail`;
     }
     const inc = incidents.find(i => i.id === targetId);
     if (inc) {
@@ -1290,7 +1327,7 @@ export default function App() {
           {notificationCount > 0 && (
             <button
               onClick={() => setShowIncidentModal(true)}
-              title="NPT incidents and lines with OQL above 10% today"
+              title="NPT incidents, failed hourly OQL audits and lines with OQL above 10% today"
               className="rounded-lg bg-red-600 px-2.5 py-1 text-[11px] font-black text-white"
             >
               {notificationCount}<span className="hidden sm:inline"> alerts</span>
@@ -1499,7 +1536,7 @@ export default function App() {
               </button>
             </div>
             <p className="text-xs text-slate-600">
-              Permissions (including Admin &amp; Auditor access for Bi-Hourly Audit and Weekly BS OQL / {isClientDemo ? 'DEMO' : 'NFL'} AQC) are enforced based on your active role:
+              Permissions (including Admin &amp; Auditor access for Hourly OQL Audit and Weekly BS OQL / {isClientDemo ? 'DEMO' : 'NFL'} AQC) are enforced based on your active role:
             </p>
             <div className="max-h-80 overflow-y-auto space-y-1.5">
               {users.map(u => (
@@ -1548,6 +1585,7 @@ export default function App() {
           lockedFloor={lockedFloor}
           onAddComment={handleAddComment}
           highOqlLines={highOqlToday}
+          auditFails={auditFailsToday}
           onPurgeDemoAlerts={handlePurgeDemoAlerts}
           onClose={() => setShowIncidentModal(false)}
         />

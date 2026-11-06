@@ -381,7 +381,9 @@ export function canonicalQaDocId(entry: QualityEntryRecord): string {
   const cleanLine = (entry.lineId || '').trim().toUpperCase().replace(/\//g, '_');
   const cleanDate = (entry.date || '').trim().replace(/\//g, '_');
   const cleanHour = cleanHourSlotKey(entry.hourSlot);
-  return `QA_${cleanLine}_${cleanDate}_${cleanHour}`;
+  // An hourly OQL audit shares its hour with the hourly DHU record, so it gets its own document.
+  const auditSuffix = entry.entryType === 'AUDIT' ? '_AUDIT' : '';
+  return `QA_${cleanLine}_${cleanDate}_${cleanHour}${auditSuffix}`;
 }
 
 export function canonicalSetupDocId(setup: LineTargetConfig): string {
@@ -605,7 +607,7 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
       )
     );
 
-    // 2. Quality Entries (including 1-Hr DHU and 2-Hr Bi-Hourly OQL Audit)
+    // 2. Quality Entries (hourly DHU and hourly OQL audit; older 2-hr audits still load)
     const qaQ = query(collection(db, 'quality_entries'), where('date', '>=', bangladeshIsoDaysAgo(7)), orderBy('date', 'desc'), limit(2000));
     unsubscribers.push(
       onSnapshot(
@@ -643,6 +645,8 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
               reportedBy: String(data.modifiedBy || 'Quality Inspector'),
               timestamp: Number(data.timestamp || Date.now()),
               revision: Number(data.revision || 1),
+              entryType: data.entryType === 'AUDIT' ? 'AUDIT' : undefined,
+              auditResult: data.auditResult === 'PASS' || data.auditResult === 'FAIL' ? data.auditResult : undefined,
               isDemo: false
             });
           });
@@ -986,6 +990,8 @@ export async function pushQualityToCloud(entry: QualityEntryRecord): Promise<boo
         revision: entry.revision,
         modifiedBy: entry.reportedBy,
         isConfirmedZero: entry.isConfirmedZero,
+        entryType: entry.entryType === 'AUDIT' ? 'AUDIT' : 'DHU',
+        ...(entry.auditResult ? { auditResult: entry.auditResult } : {}),
         isDeleted: false
       },
       { merge: true }

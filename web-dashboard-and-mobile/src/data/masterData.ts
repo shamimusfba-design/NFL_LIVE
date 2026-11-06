@@ -177,6 +177,14 @@ export function normalizeHourSlot24h(rawSlot: string): string {
   return `${s}:00 - ${e}:00`;
 }
 
+/**
+ * True when a quality record is an OQL audit. New audits are hourly and carry entryType 'AUDIT';
+ * older audits were saved as 2-hour slots and are still recognised that way.
+ */
+export function isAuditEntry(q: { hourSlot: string; entryType?: string | null }): boolean {
+  return q.entryType === 'AUDIT' || isBiHourlyAuditSlot(q.hourSlot);
+}
+
 export function isBiHourlyAuditSlot(rawSlot: string): boolean {
   const parsed = parseSlotHours24(rawSlot);
   if (!parsed) return false;
@@ -336,7 +344,8 @@ export function generateSyntheticDemoDataset(dateStr: string = getBangladeshToda
       lineId: line.id,
       floor: line.floor,
       date: dateStr,
-      hourSlot: BI_HOURLY_AUDIT_SLOTS[idx % 3],
+      hourSlot: hourOptionsForLine(line.id)[idx % 3].key,
+      entryType: 'AUDIT',
       styleNumber: styleObj.styleNumber,
       checkedGarments: 80,
       defectiveGarments: biDefective,
@@ -349,7 +358,7 @@ export function generateSyntheticDemoDataset(dateStr: string = getBangladeshToda
       spotSent: 0,
       spotReceived: 0,
       isConfirmedZero: false,
-      remarks: 'Demo 2-Hr Bi-Hourly Audit',
+      remarks: 'Demo Hourly OQL Audit',
       reportedBy: 'NFL Auditor',
       timestamp: Date.now() - 2400_000,
       revision: 1,
@@ -622,7 +631,7 @@ export function nptCategoriesFor(floor: string): Array<{ id: string; label: stri
   ];
 }
 
-/** Audit rule: a bi-hourly OQL audit PASSES when its OQL is at or below this limit (the weekly commitment, 4.5%). */
+/** Audit rule: an hourly OQL audit PASSES when its OQL is at or below this limit (the weekly commitment, 4.5%). */
 export const AUDIT_PASS_OQL_PCT = 4.5;
 
 export function auditResultOf(checked: number, defective: number, storedResult?: 'PASS' | 'FAIL' | string | null): 'PASS' | 'FAIL' | null {

@@ -16,7 +16,6 @@ import type { PhysicalFloor } from '../types';
 import { EntryModuleId, ENTRY_MODULES } from '../data/entryModules';
 import {
   STANDARD_HOUR_SLOTS,
-  BI_HOURLY_AUDIT_SLOTS,
   STANDARD_DEFECT_TYPES,
   getBangladeshTodayIso,
   formatHourSlot12h,
@@ -26,7 +25,6 @@ import {
   isFinishingUnit,
   AUDIT_PASS_OQL_PCT,
   floorMatches,
-  biHourlyOptionsForLine,
   ordinalHr,
   canWriteWeeklyQualityOrBiHourlyAudit,
   isoWeeksOfYear,
@@ -116,7 +114,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const [batchQtys, setBatchQtys] = useState<Record<string, string>>({});
   const [prodSuccess, setProdSuccess] = useState<string | null>(null);
 
-  // Quality State (Hourly DHU 1-Hr vs Bi-Hourly Audit 2-Hr OQL)
+  // Quality State (Hourly DHU vs Hourly OQL Audit)
   const [qaMode, setQaMode] = useState<'HOURLY_DHU' | 'BI_HOURLY_AUDIT'>(module === 'AUDIT' ? 'BI_HOURLY_AUDIT' : 'HOURLY_DHU');
   const [biPairNo, setBiPairNo] = useState(1);
   const [checkedGarments, setCheckedGarments] = useState('');
@@ -213,7 +211,8 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const formHourSlot = lineHourOpts[hourNoSafe - 1]?.key ?? lineHourOpts[0].key;
   const hourLabel = `${ordinalHr(hourNoSafe)} hr`;
   const batchHourCount = Math.max(1, ...availableLines.map(l => hourOptionsForLine(l.id).length));
-  const biOpts = biHourlyOptionsForLine(formLine);
+  // The OQL audit is done every hour, so it uses the same hour list as the line (1st hr, 2nd hr...).
+  const biOpts = lineHourOpts;
   const biNoSafe = Math.min(biPairNo, biOpts.length);
   const biHourlySlot = biOpts[biNoSafe - 1]?.key ?? biOpts[0].key;
   const biLabel = biOpts[biNoSafe - 1]?.label ?? biOpts[0].label;
@@ -224,6 +223,10 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const totalDefects = Object.values(defectCounts).reduce((s, c) => s + c, 0);
   const liveOql = numChecked > 0 ? ((numDefective / numChecked) * 100).toFixed(2) : '0.00';
   const liveDhu = numChecked > 0 ? ((totalDefects / numChecked) * 100).toFixed(2) : '0.00';
+  // Audit result: the auditor's PASS/FAIL choice when made, otherwise the standard rule (PASS when OQL <= limit).
+  const effectiveAuditStatus: 'PASS' | 'FAIL' = auditManualOverride
+    ? auditStatus
+    : numChecked > 0 && (numDefective / numChecked) * 100 > AUDIT_PASS_OQL_PCT ? 'FAIL' : 'PASS';
 
   const handleDefectChange = (defect: string, delta: number) => {
     const current = defectCounts[defect] || 0;
@@ -293,13 +296,13 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
     e.preventDefault();
     setQaError(null);
     if (readOnlyDemo) {
-      triggerDemoReadOnlyNotice(qaMode === 'BI_HOURLY_AUDIT' ? 'Bi-Hourly OQL Audit' : 'Hourly Quality DHU');
+      triggerDemoReadOnlyNotice(qaMode === 'BI_HOURLY_AUDIT' ? 'Hourly OQL Audit' : 'Hourly Quality DHU');
       return;
     }
 
     if (qaMode === 'BI_HOURLY_AUDIT' && !canWriteAuditOrWeekly) {
       setQaError(
-        'Access Denied: Only Admin, Auditor, and IE roles can submit Daily Bi-Hourly Audit (2-Hr OQL) data.'
+        'Access Denied: Only Admin, Auditor, and IE roles can submit Hourly OQL Audit data.'
       );
       return;
     }
@@ -370,12 +373,18 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
       isConfirmedZero: numDefective === 0,
       remarks: qaRemarks,
       reportedBy: currentUserName,
+      entryType: qaMode === 'BI_HOURLY_AUDIT' ? 'AUDIT' : 'DHU',
+      ...(qaMode === 'BI_HOURLY_AUDIT' && numChecked > 0 ? { auditResult: effectiveAuditStatus } : {}),
       isDemo: false
     });
+    if (qaMode === 'BI_HOURLY_AUDIT') {
+      setAuditManualOverride(false);
+      setAuditStatus('PASS');
+    }
 
     setQaSuccess(
       `✓ Saved ${
-        qaMode === 'BI_HOURLY_AUDIT' ? '2-Hr Bi-Hourly Audit (OQL)' : '1-Hr Quality DHU'
+        qaMode === 'BI_HOURLY_AUDIT' ? 'Hourly OQL Audit' : '1-Hr Quality DHU'
       } for Line ${formLine} (${qaMode === 'BI_HOURLY_AUDIT' ? biLabel : hourLabel})!`
     );
     setTimeout(() => setQaSuccess(null), 2500);
@@ -565,7 +574,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 : 'border-transparent text-slate-500'
             }`}
           >
-            🔍 Quality &amp; Bi-Hourly Audit
+            🔍 Quality &amp; Hourly OQL Audit
           </button>
           <button
             onClick={() => setActiveTab('WEEKLY_OQL')}
@@ -794,7 +803,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
               onSubmit={handleQualitySubmit}
               className="space-y-4 bg-white p-5 rounded-xl border border-slate-200"
             >
-              {/* Mode Sub-Tabs (hidden when Hourly DHU or Bi-Hourly OQL was chosen from the menu) */}
+              {/* Mode Sub-Tabs (hidden when Hourly DHU or Hourly OQL was chosen from the menu) */}
               <div className={`flex flex-wrap gap-2 border-b pb-3 ${module === 'DHU' || module === 'AUDIT' ? 'hidden' : ''}`}>
                 <button
                   type="button"
@@ -816,13 +825,13 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                       : 'bg-slate-100 text-slate-600'
                   }`}
                 >
-                  📋 Daily Bi-Hourly Audit (2-Hr OQL • Admin &amp; Auditor)
+                  📋 Hourly OQL Audit (Admin &amp; Auditor)
                 </button>
               </div>
 
               {qaMode === 'BI_HOURLY_AUDIT' && !canWriteAuditOrWeekly && (
                 <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold">
-                  🔒 Daily Bi-Hourly Audit (2-Hr OQL) entry is restricted strictly to <b>Admin</b> and <b>Auditor</b> roles (IE and Quality Manager have view-only access).
+                  🔒 Hourly OQL Audit entry is restricted strictly to <b>Admin</b> and <b>Auditor</b> roles (IE and Quality Manager have view-only access).
                 </div>
               )}
 
@@ -830,7 +839,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     {qaMode === 'BI_HOURLY_AUDIT'
-                      ? '2-Hr Audit Slot'
+                      ? 'Audit Hour'
                       : 'Inspection Hour'}
                   </label>
                   {qaMode === 'BI_HOURLY_AUDIT' ? (
@@ -897,7 +906,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 </div>
               </div>
 
-                            {/* Bi-Hourly Audit Result Selector & Pass/Fail Option */}
+                            {/* Hourly OQL Audit Result Selector & Pass/Fail Option */}
               {qaMode === 'BI_HOURLY_AUDIT' && (
                 <div className="bg-slate-50 border-2 border-slate-200 rounded-xl p-3.5 space-y-2.5">
                   <div className="flex items-center justify-between">
@@ -906,12 +915,12 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                     </span>
                     <span
                       className={`text-xs font-black px-2.5 py-0.5 rounded-full ${
-                        auditStatus === 'PASS'
+                        effectiveAuditStatus === 'PASS'
                           ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                           : 'bg-red-100 text-red-800 border border-red-300'
                       }`}
                     >
-                      Status: {auditStatus}
+                      Status: {effectiveAuditStatus}
                     </span>
                   </div>
 
@@ -926,7 +935,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                         }
                       }}
                       className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm font-black border-2 transition-all shadow-sm ${
-                        auditStatus === 'PASS'
+                        effectiveAuditStatus === 'PASS'
                           ? 'bg-emerald-600 text-white border-emerald-700 shadow-emerald-200 ring-2 ring-emerald-400'
                           : 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50'
                       }`}
@@ -945,7 +954,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                         }
                       }}
                       className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm font-black border-2 transition-all shadow-sm ${
-                        auditStatus === 'FAIL'
+                        effectiveAuditStatus === 'FAIL'
                           ? 'bg-red-600 text-white border-red-700 shadow-red-200 ring-2 ring-red-400'
                           : 'bg-white text-red-700 border-red-200 hover:bg-red-50'
                       }`}
@@ -1094,7 +1103,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                   {deptFloor
                     ? 'Save Checked & QC Pass'
                     : qaMode === 'BI_HOURLY_AUDIT'
-                    ? 'Save 2-Hr Bi-Hourly Audit (OQL)'
+                    ? 'Save Hourly OQL Audit'
                     : 'Save 1-Hr Quality DHU'}
                 </button>
               </div>

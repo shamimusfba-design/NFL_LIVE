@@ -140,6 +140,8 @@ export interface QualityEntryRecord {
   revision: number;
   isDemo?: boolean;
   auditResult?: 'PASS' | 'FAIL';
+  /** 'AUDIT' = hourly OQL audit record, 'DHU' (or missing) = hourly DHU QC record. */
+  entryType?: 'DHU' | 'AUDIT';
 }
 
 export type IncidentCategory =

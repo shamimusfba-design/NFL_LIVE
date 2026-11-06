@@ -19,7 +19,7 @@ import {
 } from '../types';
 import { HourlyWallboardBucket, FinishingFloorSummary } from '../services/calculationEngine';
 import { formatHourSlot12h,
-  hourLabelOfSlot, isBiHourlyAuditSlot, floorMatches, lineDisplayName, isDepartmentFloor, unitWord,
+  hourLabelOfSlot, isAuditEntry, floorMatches, lineDisplayName, isDepartmentFloor, unitWord,
   AUDIT_PASS_OQL_PCT, auditResultOf, getBangladeshTodayIso } from '../data/masterData';
 import { CalculationEngine as CalcForPeriod } from '../services/calculationEngine';
 import { NflLogo } from './NflLogo';
@@ -169,9 +169,9 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   const auditByLine = useMemo(() => {
     const m = new Map<string, { lineId: string; floor: string; pass: number; fail: number }>();
     qualities
-      .filter(q => isBiHourlyAuditSlot(q.hourSlot) && floorMatches(q.floor, selectedFloor) && CalcForPeriod.isDateInPeriod(q.date, todayW, selectedPeriod))
+      .filter(q => isAuditEntry(q) && floorMatches(q.floor, selectedFloor) && CalcForPeriod.isDateInPeriod(q.date, todayW, selectedPeriod))
       .forEach(q => {
-        const r = auditResultOf(q.checkedGarments, q.defectiveGarments);
+        const r = auditResultOf(q.checkedGarments, q.defectiveGarments, q.auditResult);
         if (!r) return;
         const v = m.get(q.lineId) || { lineId: q.lineId, floor: q.floor, pass: 0, fail: 0 };
         if (r === 'PASS') v.pass++; else v.fail++;
@@ -997,7 +997,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1">
             <WbPanel
               title="Audit: Pass / Fail by Line"
-              sub={`Bi-hourly OQL audits · PASS ≤ ${AUDIT_PASS_OQL_PCT}%`}
+              sub={`Hourly OQL audits · PASS ≤ ${AUDIT_PASS_OQL_PCT}%`}
               className="lg:col-span-5"
               compact={tvFit}
             >
@@ -1326,7 +1326,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             </div>
 
             <div className="text-xs font-black uppercase tracking-wider" style={{ color: WB_THEME.MUTED }}>
-              Hourly &amp; Bi-Hourly Records (scroll up and down)
+              Hourly DHU &amp; OQL Audit Records (scroll up and down)
             </div>
             <div className="max-h-[48vh] overflow-auto rounded-lg border" style={{ borderColor: WB_THEME.LINE }}>
               <table className="w-full min-w-[860px] text-sm border-collapse">
@@ -1364,13 +1364,13 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                       );
                     })}
                   {qualities
-                    .filter(q => q.lineId === deepDiveLine.lineId && isBiHourlyAuditSlot(q.hourSlot))
+                    .filter(q => q.lineId === deepDiveLine.lineId && isAuditEntry(q))
                     .map(q => {
-                      const r = auditResultOf(q.checkedGarments, q.defectiveGarments);
+                      const r = auditResultOf(q.checkedGarments, q.defectiveGarments, q.auditResult);
                       return (
                         <tr key={q.id} className="border-t" style={{ borderColor: WB_THEME.LINE }}>
                           <td className="p-2.5 font-black whitespace-nowrap" style={{ color: WB_THEME.BLUE }}>{hourLabelOfSlot(q.lineId, q.hourSlot)}</td>
-                          <td className="p-2.5 font-bold whitespace-nowrap" style={{ color: WB_THEME.BLUE }}>Bi-Hourly Audit (OQL)</td>
+                          <td className="p-2.5 font-bold whitespace-nowrap" style={{ color: WB_THEME.BLUE }}>Hourly OQL Audit</td>
                           <td className="p-2.5 text-right">—</td>
                           <td className="p-2.5 text-right font-bold">{q.checkedGarments}</td>
                           <td className="p-2.5 text-right font-bold">{q.defectiveGarments}</td>
@@ -1788,7 +1788,7 @@ const HourlyOutputWallboardChart: React.FC<{ buckets: HourlyWallboardBucket[]; p
   );
 };
 
-/** Pass and fail counts of the bi-hourly audits, one pair of columns per line. */
+/** Pass and fail counts of the hourly OQL audits, one pair of columns per line. */
 const AuditPassFailChart: React.FC<{ rows: Array<{ lineId: string; pass: number; fail: number }> }> = ({ rows }) => {
   if (rows.length === 0) {
     return <div style={{ color: WB_THEME.MUTED }} className="flex items-center justify-center h-20 text-xs font-bold">No audits recorded in this period</div>;

@@ -26,6 +26,8 @@ interface IncidentManagerProps {
   onAddComment?: (targetId: string, text: string, parentId: string | null) => void;
   /** Lines whose OQL today is above 10%. They are notifications too. */
   highOqlLines?: Array<{ lineId: string; floor: string; oqlPct: number; checked: number; date: string }>;
+  /** Hourly OQL audits that FAILED today, each with its own OQL. They are notifications too. */
+  auditFails?: Array<{ key: string; lineId: string; floor: string; date: string; hourLabel: string; oqlPct: number; checked: number; defective: number; auditor: string; timestamp: number }>;
   /** A floor-bound person reports only for their own floor */
   lockedFloor?: string | null;
   /** Purge all old demo/test alerts from storage and cloud */
@@ -47,6 +49,7 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
   comments = [],
   onAddComment,
   highOqlLines = [],
+  auditFails = [],
   lockedFloor = null,
   onPurgeDemoAlerts,
   onClose
@@ -97,6 +100,10 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
       const parts = targetId.split('|');
       return `${lineDisplayName(parts[1] || '')} · High OQL Alert`;
     }
+    if (targetId.startsWith('auditfail|')) {
+      const parts = targetId.split('|');
+      return `${lineDisplayName(parts[1] || '')} · OQL Audit Fail`;
+    }
     const inc = incidents.find(i => i.id === targetId);
     if (inc) {
       return `${lineDisplayName(inc.lineId)} (${inc.floor}) · ${inc.category.replace(/_/g, ' ')}`;
@@ -107,13 +114,14 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
   const recentComments = useMemo(() => {
     const validTargets = new Set<string>([
       ...incidents.map(i => i.id),
-      ...highOqlLines.map(h => `oql|${h.lineId}|${h.date}`)
+      ...highOqlLines.map(h => `oql|${h.lineId}|${h.date}`),
+      ...auditFails.map(a => a.key)
     ]);
     return [...comments]
       .filter(c => validTargets.size === 0 || validTargets.has(c.targetId))
       .sort((a, b) => b.createdMillis - a.createdMillis)
       .slice(0, 5);
-  }, [comments, incidents, highOqlLines]);
+  }, [comments, incidents, highOqlLines, auditFails]);
 
   const renderTopCommentBanner = (targetId: string) => {
     const latest = latestCommentFor(targetId);
@@ -353,6 +361,32 @@ export const IncidentManager: React.FC<IncidentManagerProps> = ({
           {/* TAB 1: ACTIVE INCIDENTS */}
           {activeTab === 'ACTIVE' && (
             <div className="space-y-3">
+              {auditFails.length > 0 && (
+                <div className="space-y-2 rounded-xl border border-red-300 bg-red-50 p-3">
+                  <div className="text-sm font-black text-red-800">OQL audit FAIL today: {auditFails.length} audit(s)</div>
+                  {auditFails.map(a => (
+                    <div key={a.key} className="rounded-lg border border-red-200 bg-white p-2.5">
+                      {renderTopCommentBanner(a.key)}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded bg-[#0A2558] px-2 py-0.5 text-xs font-black text-white">{lineDisplayName(a.lineId)}</span>
+                        <span className="text-xs text-slate-500">{a.floor} · {a.hourLabel}</span>
+                        <span className="rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-black text-white">FAIL</span>
+                        <span className="ml-auto text-sm font-black text-red-700">OQL {a.oqlPct.toFixed(1)}%</span>
+                        <span className="text-[11px] text-slate-500">{a.defective} of {a.checked} pcs defective</span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-slate-500">
+                        Audited by {a.auditor || 'Auditor'} · {new Date(a.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Dhaka' })}
+                      </div>
+                      <CommentThread
+                        targetId={a.key}
+                        comments={comments}
+                        users={users}
+                        onAdd={(t, x, p) => onAddComment?.(t, x, p)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
               {highOqlLines.length > 0 && (
                 <div className="space-y-2 rounded-xl border border-red-300 bg-red-50 p-3">
                   <div className="text-sm font-black text-red-800">High OQL today (above 10%): {highOqlLines.length} line(s)</div>
