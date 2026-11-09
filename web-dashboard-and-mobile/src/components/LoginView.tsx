@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { UserAccount } from '../types';
 import {
   signInWebEmployee,
@@ -73,14 +73,19 @@ const bareInput: React.CSSProperties = {
 const Field: React.FC<{
   icon: string; value: string; placeholder: string; onChange: (v: string) => void;
   type?: 'text' | 'password'; autoComplete?: string;
-}> = ({ icon, value, placeholder, onChange, type = 'text', autoComplete = 'off' }) => {
+  id?: string; name?: string;
+}> = ({ icon, value, placeholder, onChange, type = 'text', autoComplete = 'off', id, name }) => {
   const [show, setShow] = useState(false);
   const [focus, setFocus] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const isPassword = type === 'password';
   return (
     <div style={{ ...fieldStyle, borderColor: focus ? '#0755F5' : '#DCE5F2', boxShadow: focus ? '0 0 0 3px rgba(7,85,245,.12)' : 'none' }}>
       <span style={{ color: focus ? '#0755F5' : '#64748B', display: 'grid' }}><Icon d={icon} /></span>
       <input
+        ref={inputRef}
+        id={id}
+        name={name}
         type={isPassword && !show ? 'password' : 'text'}
         value={value}
         placeholder={placeholder}
@@ -96,8 +101,12 @@ const Field: React.FC<{
       {isPassword && (
         <button
           type="button"
+          tabIndex={-1}
           aria-label={show ? 'Hide password' : 'Show password'}
-          onClick={() => setShow(v => !v)}
+          onClick={() => {
+            setShow(v => !v);
+            setTimeout(() => inputRef.current?.focus(), 50);
+          }}
           style={{ background: 'none', border: 0, color: '#64748B', cursor: 'pointer', display: 'grid', padding: 4, borderRadius: 8 }}
         >
           <Icon d={show ? ICON.eyeOff : ICON.eye} />
@@ -392,8 +401,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, notice }) => {
                   </div>
                 </div>
               )}
-              <Field icon={ICON.id} value={usernameInput} placeholder="Employee ID" onChange={v => { setUsernameInput(v); setErrorMessage(null); }} />
-              <Field icon={ICON.lock} type="password" autoComplete="new-password" value={passwordInput} placeholder="Password" onChange={v => { setPasswordInput(v); setErrorMessage(null); }} />
+              <Field id="login_employee_id" name="username" icon={ICON.id} value={usernameInput} placeholder="Employee ID" autoComplete="username" onChange={v => { setUsernameInput(v); setErrorMessage(null); }} />
+              <Field id="login_password" name="password" icon={ICON.lock} type="password" autoComplete="current-password" value={passwordInput} placeholder="Password" onChange={v => { setPasswordInput(v); setErrorMessage(null); }} />
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: isDemoLink ? 'space-between' : 'flex-end', gap: 8 }}>
                 {isDemoLink && (
                   <button
@@ -445,8 +454,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, notice }) => {
                   Dept: {d?.department} · Auto-Scope: {d?.scope === 'ALL' ? 'All Floor' : 'Finishing'}
                 </div>
               )}
-              <Field icon={ICON.lock} type="password" autoComplete="new-password" value={regPassword} placeholder="At least 6 characters" onChange={v => { setRegPassword(v); setErrorMessage(null); }} />
-              <Field icon={ICON.lock} type="password" autoComplete="new-password" value={regConfirm} placeholder="Re-enter password" onChange={v => { setRegConfirm(v); setErrorMessage(null); }} />
+              <Field id="reg_password" name="new-password" icon={ICON.lock} type="password" autoComplete="new-password" value={regPassword} placeholder="At least 6 characters" onChange={v => { setRegPassword(v); setErrorMessage(null); }} />
+              <Field id="reg_confirm" name="confirm-password" icon={ICON.lock} type="password" autoComplete="new-password" value={regConfirm} placeholder="Re-enter password" onChange={v => { setRegConfirm(v); setErrorMessage(null); }} />
               {errorMessage && <Message kind="error" text={errorMessage} />}
               <button type="submit" disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.65 : 1 }}>
                 {busy ? 'Sending...' : 'Submit Registration for Approval'}

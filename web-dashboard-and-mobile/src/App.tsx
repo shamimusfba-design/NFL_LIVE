@@ -147,8 +147,20 @@ export default function App() {
   const [showIncidentModal, setShowIncidentModal] = useState(false);
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [entryModule, setEntryModule] = useState<EntryModuleId | undefined>(undefined);
-  const [floorTotals, setFloorTotals] = useState<FloorManpowerRecord[]>([]);
   const [alertComments, setAlertComments] = useState<AlertComment[]>([]);
+  const [floorTotals, setFloorTotals] = useState<FloorManpowerRecord[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('nfl_floor_totals') || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('nfl_floor_totals', JSON.stringify(floorTotals));
+    } catch {}
+  }, [floorTotals]);
   const [dismissedCommentId, setDismissedCommentId] = useState<string | null>(null);
   const demoSwitchRef = useRef<(on: boolean) => void>(() => {});
   const [sidebarHidden, setSidebarHidden] = useState<boolean>(() => { try { return localStorage.getItem('nfl_sidebar_hidden') === '1'; } catch { return false; } });
@@ -607,9 +619,11 @@ export default function App() {
       lineSummaries,
       incidents,
       monthlyTargets,
-      sewingView
+      sewingView,
+      floorTotals,
+      todayIso
     );
-  }, [lineSummaries, incidents, monthlyTargets, sewingView]);
+  }, [lineSummaries, incidents, monthlyTargets, sewingView, floorTotals, todayIso]);
 
   const floorBenchmarks = useMemo(() => {
     const scopes: Array<{ id: FloorId; label: string }> = [
@@ -628,14 +642,14 @@ export default function App() {
         todayIso,
         selectedPeriod
       );
-      const k = CalculationEngine.computeFloorKpis(sums, incidents, monthlyTargets, sc.id);
+      const k = CalculationEngine.computeFloorKpis(sums, incidents, monthlyTargets, sc.id, floorTotals, todayIso);
       return {
         floor: sc.label,
         todayEff: k.todayEfficiencyPct,
         monthEff: k.monthlyEfficiencyPct
       };
     });
-  }, [lines, targets, productions, qualities, incidents, monthlyTargets, todayIso, selectedPeriod, isDemoMode]);
+  }, [lines, targets, productions, qualities, incidents, monthlyTargets, todayIso, selectedPeriod, isDemoMode, floorTotals]);
 
   const hourlySeries = useMemo(() => {
     return CalculationEngine.computeHourlySeries(
