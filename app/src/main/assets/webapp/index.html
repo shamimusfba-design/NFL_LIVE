@@ -100,7 +100,7 @@ body{background:var(--wb-bg)}
           }
         });
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=48', { updateViaCache: 'none' }).then(reg => {
+          navigator.serviceWorker.register('./sw.js?v=54', { updateViaCache: 'none' }).then(reg => {
             reg.update().catch(() => {});
           }).catch(() => {});
         });
