@@ -365,10 +365,13 @@ class NflRepository(private val context: Context) {
     if (user == null || !user.isActive || user.accountStatus != AccountStatus.APPROVED || user.isViewOnly) return false
     if (user.isAdmin && user.role == UserRole.ADMIN) return true
     if (user.isAdmin) return true
-    return user.role in setOf(UserRole.AUDITOR, UserRole.IE) && (user.canOqlWrite || user.canQualityWrite)
+    return user.role in setOf(UserRole.AUDITOR, UserRole.QUALITY_REPORTER, UserRole.QUALITY_MANAGER, UserRole.IE) && (user.canOqlWrite || user.canQualityWrite)
   }
 
   val standardDefectTypes = listOf(
+    "Poor Iron",
+    "Part Up-Down",
+    "Cutting Sticker",
     "Skip Stitch",
     "Uncut Thread",
     "Dirty Spot",
@@ -377,8 +380,7 @@ class NflRepository(private val context: Context) {
     "Broken Stitch",
     "Puckering",
     "Pleat",
-    "Shading",
-    "Poor Iron"
+    "Shading"
   )
 
   // Reactive state

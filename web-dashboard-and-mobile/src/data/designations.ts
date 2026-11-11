@@ -23,6 +23,9 @@ export const DESIGNATIONS: Array<{ name: string; department: string; role: strin
   { name: 'Production Officer', department: 'Production', role: 'SUPERVISOR', scope: null },
   { name: 'Quality Supervisor', department: 'Quality', role: 'QUALITY_REPORTER', scope: null },
   { name: 'Quality Officer', department: 'Quality', role: 'AUDITOR', scope: null },
+  { name: 'Quality Controller', department: 'Quality', role: 'AUDITOR', scope: null },
+  { name: 'Quality Controller (Audit)', department: 'Audit', role: 'AUDITOR', scope: null },
+  { name: 'Auditor', department: 'Quality', role: 'AUDITOR', scope: null },
   { name: 'QI (Quality Inspector)', department: 'Quality', role: 'QUALITY_REPORTER', scope: null },
   { name: 'Iron Supervisor', department: 'Finishing', role: 'SUPERVISOR', scope: null },
   { name: 'Packing Supervisor', department: 'Finishing', role: 'SUPERVISOR', scope: null },
@@ -72,6 +75,10 @@ export function formatUserDesignation(input: {
   const rawDept = (input.department || '').trim();
   const rawFloor = (input.floor || '').trim();
 
+  if (rawDesig.toLowerCase() === 'auditor') {
+    return 'Auditor';
+  }
+
   if (
     rawDesig &&
     rawDesig.toLowerCase() !== 'other' &&
@@ -97,10 +104,10 @@ export function formatUserDesignation(input: {
     case 'IE':
       return rawFloor === 'ALL' || rawFloor === 'All Floor' || rawFloor === 'Factory' ? 'IEM' : 'IE';
     case 'AUDITOR':
-      return 'Quality Officer';
+      return /audit/i.test(rawDept) ? 'Quality Controller (Audit)' : 'Auditor';
     case 'QUALITY_REPORTER':
     case 'QUALITY':
-      return 'Quality Supervisor';
+      return 'Quality Controller';
     case 'PRODUCTION_REPORTER':
       return 'Reporter';
     case 'PACKING':

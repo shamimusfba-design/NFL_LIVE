@@ -332,8 +332,14 @@ export async function submitWebRegistration(input: WebRegistrationInput): Promis
       firebaseUid: uid, googleEmail: '', fcmToken: '', fcmDeviceId: '', fcmUpdatedAtMillis: 0,
       canViewDashboard: true, canViewTvDashboard: true, canViewMonthlyEfficiency: true, canViewMonthlyDhu: true,
       canViewMonthlyOql: true, canViewLineDeepDive: true, canViewAuditLogs: false, canExportReports: false,
-      canProductionWrite: false, canFinishingWrite: false, canQualityWrite: false, canOqlWrite: false,
-      canNptWrite: false, canMorningTargetWrite: false, canMonthlyTargetWrite: false, canTargetRevisionWrite: false,
+      canProductionWrite: ['SUPERVISOR', 'PRODUCTION_REPORTER', 'PRODUCTION_MANAGER', 'IE'].includes(input.role),
+      canFinishingWrite: input.scopeName === 'FINISHING',
+      canQualityWrite: ['QUALITY_REPORTER', 'AUDITOR', 'QUALITY_MANAGER', 'IE'].includes(input.role),
+      canOqlWrite: ['QUALITY_REPORTER', 'AUDITOR', 'QUALITY_MANAGER', 'IE'].includes(input.role),
+      canNptWrite: true,
+      canMorningTargetWrite: ['IE', 'PRODUCTION_REPORTER', 'SUPERVISOR', 'PRODUCTION_MANAGER'].includes(input.role),
+      canMonthlyTargetWrite: input.role === 'IE',
+      canTargetRevisionWrite: input.role === 'IE',
       isDeleted: false
     });
     const requestId = `REG_${id}`;

@@ -61,6 +61,10 @@ enum class EmployeeDesignation(
   PRODUCTION_OFFICER("Production Officer", "Production", UserRole.SUPERVISOR, null, true, true),
   QUALITY_SUPERVISOR("Quality Supervisor", "Quality", UserRole.QUALITY_REPORTER, null, true, true),
   QUALITY_OFFICER("Quality Officer", "Quality", UserRole.AUDITOR, null, true, true),
+  QUALITY_CONTROLLER("Quality Controller", "Quality", UserRole.AUDITOR, null, true, true),
+  QUALITY_CONTROLLER_AUDIT("Quality Controller (Audit)", "Audit", UserRole.AUDITOR, null, true, true),
+  AUDITOR("Auditor", "Quality", UserRole.AUDITOR, null, true, true),
+  QUALITY_INSPECTOR("QI (Quality Inspector)", "Quality", UserRole.QUALITY_REPORTER, null, true, true),
   FINISHING_SUPERVISOR("Finishing Supervisor", "Finishing", UserRole.SUPERVISOR, FloorScope.FINISHING, false, true),
   FINISHING_IN_CHARGE("Finishing In-charge", "Finishing", UserRole.SUPERVISOR, FloorScope.FINISHING, false, true),
   FINISHING_MANAGER("Finishing Manager", "Finishing", UserRole.PRODUCTION_MANAGER, FloorScope.FINISHING, false, true),
@@ -306,7 +310,8 @@ object DesignationPolicy {
         canMonthlyTargetWrite = false,
         canTargetRevisionWrite = false
       )
-      EmployeeDesignation.QUALITY_SUPERVISOR -> base.copy(
+      EmployeeDesignation.QUALITY_SUPERVISOR,
+      EmployeeDesignation.QUALITY_INSPECTOR -> base.copy(
         designation = designation.displayName,
         department = designation.department,
         role = UserRole.QUALITY_REPORTER,
@@ -324,13 +329,16 @@ object DesignationPolicy {
         canProductionWrite = false,
         canFinishingWrite = false,
         canQualityWrite = true,
-        canOqlWrite = false,
+        canOqlWrite = true,
         canNptWrite = true,
         canMorningTargetWrite = false,
         canMonthlyTargetWrite = false,
         canTargetRevisionWrite = false
       )
-      EmployeeDesignation.QUALITY_OFFICER -> base.copy(
+      EmployeeDesignation.QUALITY_OFFICER,
+      EmployeeDesignation.QUALITY_CONTROLLER,
+      EmployeeDesignation.QUALITY_CONTROLLER_AUDIT,
+      EmployeeDesignation.AUDITOR -> base.copy(
         designation = designation.displayName,
         department = designation.department,
         role = UserRole.AUDITOR,

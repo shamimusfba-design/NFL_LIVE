@@ -8,7 +8,8 @@ import {
   QualityEntryRecord,
   IncidentRecord,
   LinePerformanceSummary,
-  FloorKpis
+  FloorKpis,
+  FloorManpowerRecord
 } from '../types';
 import {
   STANDARD_HOUR_SLOTS,
@@ -258,7 +259,9 @@ export class CalculationEngine {
     summaries: LinePerformanceSummary[],
     incidents: IncidentRecord[],
     monthlyTargets: MonthlyTargetConfig[] = [],
-    floor: FloorId = 'Sew 2'
+    floor: FloorId = 'Sew 2',
+    floorTotals: FloorManpowerRecord[] = [],
+    dateStr: string = ''
   ): FloorKpis {
     const totalFloorLinesCount = summaries.length;
     const activeTargetLines = summaries.filter(s => s.target > 0 || s.output !== null || s.checkedGarments > 0);
@@ -270,9 +273,25 @@ export class CalculationEngine {
     const todayTargetDuePcs = summaries.reduce((s, i) => s + i.targetDue, 0);
     const todayOutputPcs = reportedSummaries.reduce((s, i) => s + (i.output ?? 0), 0);
 
-    const operatorsCount = summaries.reduce((s, i) => s + i.operators, 0);
-    const machinesCount = summaries.reduce((s, i) => s + i.machines, 0);
-    const helpersCount = summaries.reduce((s, i) => s + i.helpers, 0);
+    const matchingTotals = floorTotals.filter(f => {
+      if (dateStr && f.date !== dateStr) return false;
+      return floorMatches(f.floor, floor);
+    });
+
+    let operatorsCount = summaries.reduce((s, i) => s + i.operators, 0);
+    let machinesCount = summaries.reduce((s, i) => s + i.machines, 0);
+    let helpersCount = summaries.reduce((s, i) => s + i.helpers, 0);
+
+    if (matchingTotals.length > 0) {
+      const sumPresent = matchingTotals.reduce((s, f) => s + (f.operatorsPresent || 0), 0);
+      const sumRunning = matchingTotals.reduce((s, f) => s + (f.machinesRunning || 0), 0);
+      const sumHelpers = matchingTotals.reduce((s, f) => s + (f.helpersPresent || 0), 0);
+      if (sumPresent > 0 || sumRunning > 0) {
+        operatorsCount = sumPresent;
+        machinesCount = sumRunning;
+        helpersCount = sumHelpers;
+      }
+    }
 
     const achievementPct =
       todayTargetPcs > 0 ? Number(((todayOutputPcs / todayTargetPcs) * 100).toFixed(1)) : 0;

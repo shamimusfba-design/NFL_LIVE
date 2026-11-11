@@ -302,7 +302,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
 
     if (qaMode === 'BI_HOURLY_AUDIT' && !canWriteAuditOrWeekly) {
       setQaError(
-        'Access Denied: Only Admin, Auditor, and IE roles can submit Hourly OQL Audit data.'
+        'Access Denied: Only Admin, Auditor, Quality Controller, and IE roles can submit Hourly OQL Audit data.'
       );
       return;
     }
@@ -825,13 +825,13 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                       : 'bg-slate-100 text-slate-600'
                   }`}
                 >
-                  📋 Hourly OQL Audit (Admin &amp; Auditor)
+                  📋 Hourly OQL Audit (Auditor &amp; Quality Controller)
                 </button>
               </div>
 
               {qaMode === 'BI_HOURLY_AUDIT' && !canWriteAuditOrWeekly && (
                 <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold">
-                  🔒 Hourly OQL Audit entry is restricted strictly to <b>Admin</b> and <b>Auditor</b> roles (IE and Quality Manager have view-only access).
+                  🔒 Hourly OQL Audit entry is restricted strictly to <b>Admin</b>, <b>Auditor</b>, and <b>Quality Controller</b> roles.
                 </div>
               )}
 

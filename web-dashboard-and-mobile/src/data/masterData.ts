@@ -192,15 +192,32 @@ export function isBiHourlyAuditSlot(rawSlot: string): boolean {
 }
 
 /**
- * Admin, Auditor, and IE can write Weekly BS OQL / NFL AQC and Daily Bi-Hourly Audit data.
+ * Admin, Auditor, Quality Controller / Quality Reporter, Quality Manager, and IE can write Weekly BS OQL / NFL AQC and Hourly OQL Audit data.
  */
 export function canWriteWeeklyQualityOrBiHourlyAudit(role?: UserRole | null): boolean {
-  return role === 'ADMIN' || role === 'AUDITOR' || role === 'IE';
+  return (
+    role === 'ADMIN' ||
+    role === 'AUDITOR' ||
+    role === 'QUALITY_REPORTER' ||
+    role === 'QUALITY_MANAGER' ||
+    role === 'IE'
+  );
 }
 
 export const DEFECT_TYPES = [
-  'Poor iron', 'Uncut thread', 'Dirty spot', 'Oil spot', 'Skip stitch',
-  'Open seam', 'Broken stitch', 'Puckering', 'Pleat', 'Shading', 'Custom'
+  'Poor iron',
+  'Part up-down',
+  'Cutting sticker',
+  'Uncut thread',
+  'Dirty spot',
+  'Oil spot',
+  'Skip stitch',
+  'Open seam',
+  'Broken stitch',
+  'Puckering',
+  'Pleat',
+  'Shading',
+  'Custom'
 ];
 
 export const STANDARD_DEFECT_TYPES = DEFECT_TYPES.filter(d => d !== 'Custom');
