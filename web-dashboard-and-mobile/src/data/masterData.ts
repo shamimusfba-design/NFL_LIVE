@@ -254,6 +254,192 @@ export function generateRecentIsoWeeks(count = 12): Array<{ weekKey: string; wee
   return result;
 }
 
+
+/**
+ * Factory-level Weekly BS OQL and Pass Rate records (Week 32 to Week 45).
+ * Auto-seeded from factory quality records.
+ */
+export const SEEDED_WEEKLY_QUALITY: WeeklyQualityRecord[] = [
+  {
+    weekKey: '2026-W32',
+    weekStartIso: '2026-08-03',
+    bsOqlPct: 4.67,
+    nflAqcPct: 7.50,
+    bsPassRatePct: 100.0,
+    nflAqcPassRatePct: 100.0,
+    lastUpdatedBy: 'Factory Quality (Seeded)',
+    lastUpdatedMillis: 1785715200000,
+    isDemo: false
+  },
+  {
+    weekKey: '2026-W33',
+    weekStartIso: '2026-08-10',
+    bsOqlPct: 5.00,
+    nflAqcPct: 7.67,
+    bsPassRatePct: 100.0,
+    nflAqcPassRatePct: 96.1,
+    lastUpdatedBy: 'Factory Quality (Seeded)',
+    lastUpdatedMillis: 1786320000000,
+    isDemo: false
+  },
+  {
+    weekKey: '2026-W34',
+    weekStartIso: '2026-08-17',
+    bsOqlPct: 5.00,
+    nflAqcPct: 7.63,
+    bsPassRatePct: 100.0,
+    nflAqcPassRatePct: 97.0,
+    lastUpdatedBy: 'Factory Quality (Seeded)',
+    lastUpdatedMillis: 1786924800000,
+    isDemo: false
+  },
+  {
+    weekKey: '2026-W35',
+    weekStartIso: '2026-08-24',
+    bsOqlPct: 5.11,
+    nflAqcPct: 7.72,
+    bsPassRatePct: 100.0,
+    nflAqcPassRatePct: 96.3,
+    lastUpdatedBy: 'Factory Quality (Seeded)',
+    lastUpdatedMillis: 1787529600000,
+    isDemo: false
+  },
+  {
+    weekKey: '2026-W36',
+    weekStartIso: '2026-08-31',
+    bsOqlPct: 4.80,
+    nflAqcPct: 7.30,
+    bsPassRatePct: 100.0,
+    nflAqcPassRatePct: 96.6,
+    lastUpdatedBy: 'Factory Quality (Seeded)',
+    lastUpdatedMillis: 1788134400000,
+    isDemo: false
+  },
+  {
+    weekKey: '2026-W37',
+    weekStartIso: '2026-09-07',
+    bsOqlPct: 4.80,
+    nflAqcPct: 7.11,
+    bsPassRatePct: 100.0,
+    nflAqcPassRatePct: 96.6,
+    lastUpdatedBy: 'Factory Quality (Seeded)',
+    lastUpdatedMillis: 1788739200000,
+    isDemo: false
+  },
+  {
+    weekKey: '2026-W38',
+    weekStartIso: '2026-09-14',
+    bsOqlPct: 5.00,
+    nflAqcPct: 7.00,
+    bsPassRatePct: 100.0,
+    nflAqcPassRatePct: 96.8,
+    lastUpdatedBy: 'Factory Quality (Seeded)',
+    lastUpdatedMillis: 1789344000000,
+    isDemo: false
+  },
+  {
+    weekKey: '2026-W39',
+    weekStartIso: '2026-09-21',
+    bsOqlPct: 5.00,
+    nflAqcPct: 6.70,
+    bsPassRatePct: 100.0,
+    nflAqcPassRatePct: 97.0,
+    lastUpdatedBy: 'Factory Quality (Seeded)',
+    lastUpdatedMillis: 1789948800000,
+    isDemo: false
+  },
+  {
+    weekKey: '2026-W40',
+    weekStartIso: '2026-09-28',
+    bsOqlPct: 5.35,
+    nflAqcPct: 6.53,
+    bsPassRatePct: 100.0,
+    nflAqcPassRatePct: 97.0,
+    lastUpdatedBy: 'Factory Quality (Seeded)',
+    lastUpdatedMillis: 1790553600000,
+    isDemo: false
+  },
+  {
+    weekKey: '2026-W41',
+    weekStartIso: '2026-10-05',
+    bsOqlPct: 5.10,
+    nflAqcPct: 6.43,
+    bsPassRatePct: 100.0,
+    nflAqcPassRatePct: 96.7,
+    lastUpdatedBy: 'Factory Quality (Seeded)',
+    lastUpdatedMillis: 1791158400000,
+    isDemo: false
+  },
+  {
+    weekKey: '2026-W42',
+    weekStartIso: '2026-10-12',
+    bsOqlPct: 5.64,
+    nflAqcPct: 6.41,
+    bsPassRatePct: 98.0,
+    nflAqcPassRatePct: 96.8,
+    lastUpdatedBy: 'Factory Quality (Seeded)',
+    lastUpdatedMillis: 1791763200000,
+    isDemo: false
+  },
+  {
+    weekKey: '2026-W43',
+    weekStartIso: '2026-10-19',
+    bsOqlPct: 5.58,
+    nflAqcPct: 6.39,
+    bsPassRatePct: 98.3,
+    nflAqcPassRatePct: 97.0,
+    lastUpdatedBy: 'Factory Quality (Seeded)',
+    lastUpdatedMillis: 1792368000000,
+    isDemo: false
+  },
+  {
+    weekKey: '2026-W44',
+    weekStartIso: '2026-10-26',
+    bsOqlPct: 5.72,
+    nflAqcPct: 6.37,
+    bsPassRatePct: 98.4,
+    nflAqcPassRatePct: 96.0,
+    lastUpdatedBy: 'Factory Quality (Seeded)',
+    lastUpdatedMillis: 1792972800000,
+    isDemo: false
+  },
+  {
+    weekKey: '2026-W45',
+    weekStartIso: '2026-11-02',
+    bsOqlPct: 5.75,
+    nflAqcPct: 6.36,
+    bsPassRatePct: 98.6,
+    nflAqcPassRatePct: 96.2,
+    lastUpdatedBy: 'Factory Quality (Seeded)',
+    lastUpdatedMillis: 1793577600000,
+    isDemo: false
+  }
+];
+
+export function mergeWithSeededWeekly(existing: WeeklyQualityRecord[] = []): WeeklyQualityRecord[] {
+  const map = new Map<string, WeeklyQualityRecord>();
+  // 1. Seed base data (W32 - W45)
+  SEEDED_WEEKLY_QUALITY.forEach(s => map.set(s.weekKey, { ...s }));
+  // 2. Overlay existing data
+  (existing || []).forEach(r => {
+    const cur = map.get(r.weekKey);
+    if (!cur) {
+      map.set(r.weekKey, { ...r, isDemo: false });
+    } else {
+      map.set(r.weekKey, {
+        ...cur,
+        ...r,
+        bsOqlPct: (r.bsOqlPct !== null && r.bsOqlPct !== undefined) ? r.bsOqlPct : cur.bsOqlPct,
+        nflAqcPct: (r.nflAqcPct !== null && r.nflAqcPct !== undefined) ? r.nflAqcPct : cur.nflAqcPct,
+        bsPassRatePct: (r.bsPassRatePct !== null && r.bsPassRatePct !== undefined) ? r.bsPassRatePct : cur.bsPassRatePct,
+        nflAqcPassRatePct: (r.nflAqcPassRatePct !== null && r.nflAqcPassRatePct !== undefined) ? r.nflAqcPassRatePct : cur.nflAqcPassRatePct,
+        isDemo: false
+      });
+    }
+  });
+  return Array.from(map.values()).sort((a, b) => a.weekKey.localeCompare(b.weekKey));
+}
+
 export function generateSyntheticDemoDataset(dateStr: string = getBangladeshTodayIso()): {
   targets: LineTargetConfig[];
   productions: ProductionEntryRecord[];
@@ -386,18 +572,7 @@ export function generateSyntheticDemoDataset(dateStr: string = getBangladeshToda
   // Incidents are empty by default - real incidents are reported live by supervisors
   const incidents: IncidentRecord[] = [];
 
-  const recentWeeks = generateRecentIsoWeeks(8);
-  const sampleBs = [4.1, 4.4, 3.8, 4.7, 4.2, 3.9, 3.6, 3.5];
-  const sampleAqc = [5.2, 4.9, 4.6, 5.1, 4.5, 4.3, 4.1, 3.9];
-  const weeklyQuality: WeeklyQualityRecord[] = recentWeeks.map((w, i) => ({
-    weekKey: w.weekKey,
-    weekStartIso: w.weekStartIso,
-    bsOqlPct: sampleBs[i % sampleBs.length],
-    nflAqcPct: sampleAqc[i % sampleAqc.length],
-    lastUpdatedBy: 'NFL Auditor',
-    lastUpdatedMillis: Date.now() - (8 - i) * 86400_000,
-    isDemo: true
-  }));
+  const weeklyQuality: WeeklyQualityRecord[] = SEEDED_WEEKLY_QUALITY.map(w => ({ ...w, isDemo: true }));
 
   const monthYear = dateStr.slice(0, 7);
   const monthlyTargets: MonthlyTargetConfig[] = [

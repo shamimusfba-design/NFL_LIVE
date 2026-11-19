@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nfl-live-desktop-v54';
+const CACHE_NAME = 'nfl-live-desktop-v55';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', event => {
@@ -20,6 +20,15 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
-    fetch(event.request, { cache: 'no-store' }).catch(() => caches.match(event.request))
+    caches.match(event.request).then(cached => {
+      return (
+        cached ||
+        fetch(event.request).catch(() => {
+          if (event.request.mode === 'navigate') {
+            return caches.match('./index.html');
+          }
+        })
+      );
+    })
   );
 });

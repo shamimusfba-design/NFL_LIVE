@@ -22,7 +22,9 @@ import {
   lineDisplayName,
   isAuditEntry,
   auditResultOf,
-  hourLabelOfSlot
+  hourLabelOfSlot,
+  mergeWithSeededWeekly,
+  SEEDED_WEEKLY_QUALITY
 } from './data/masterData';
 import { CalculationEngine } from './services/calculationEngine';
 import {
@@ -220,7 +222,7 @@ export default function App() {
         setProductions(savedProds.filter((p: ProductionEntryRecord) => !p.isDemo));
         setQualities(savedQuals.filter((q: QualityEntryRecord) => !q.isDemo));
         setIncidents(cleanSavedIncs);
-        setWeeklyQuality(savedWeekly.filter((w: WeeklyQualityRecord) => !w.isDemo));
+        setWeeklyQuality(mergeWithSeededWeekly(savedWeekly.filter((w: WeeklyQualityRecord) => !w.isDemo)));
         setMonthlyTargets(savedMonthly);
         setIsDemoMode(false);
       } else if (
@@ -234,7 +236,7 @@ export default function App() {
         setProductions(savedProds);
         setQualities(savedQuals);
         setIncidents(cleanSavedIncs);
-        setWeeklyQuality(savedWeekly.length > 0 ? savedWeekly : demo.weeklyQuality);
+        setWeeklyQuality(mergeWithSeededWeekly(savedWeekly));
         setMonthlyTargets(savedMonthly.length > 0 ? savedMonthly : demo.monthlyTargets);
       } else {
         const demo = generateSyntheticDemoDataset();
@@ -242,7 +244,7 @@ export default function App() {
         setProductions(demo.productions);
         setQualities(demo.qualities);
         setIncidents([]);
-        setWeeklyQuality(demo.weeklyQuality);
+        setWeeklyQuality(mergeWithSeededWeekly([]));
         setMonthlyTargets(demo.monthlyTargets);
       }
     } catch {
@@ -420,12 +422,8 @@ export default function App() {
         });
       },
       onWeeklyQualityUpdate: remoteWeekly => {
-        if (remoteWeekly.length === 0) return;
         setWeeklyQuality(prev => {
-          const map = new Map<string, WeeklyQualityRecord>();
-          prev.forEach(w => map.set(w.weekKey, w));
-          remoteWeekly.forEach(r => map.set(r.weekKey, r));
-          return Array.from(map.values()).sort((a, b) => a.weekKey.localeCompare(b.weekKey));
+          return mergeWithSeededWeekly([...prev, ...remoteWeekly]);
         });
       },
       onMonthlyTargetsUpdate: remoteMonthly => {
@@ -909,6 +907,13 @@ export default function App() {
     ]);
     pushQualityToCloud(newRecord);
   };
+
+  // Auto-sync seeded weekly quality data to cloud in background
+  useEffect(() => {
+    SEEDED_WEEKLY_QUALITY.forEach(rec => {
+      pushWeeklyQualityToCloud(rec).catch(() => {});
+    });
+  }, []);
 
   const handleSaveWeeklyQuality = (record: WeeklyQualityRecord) => {
     if (isClientDemo) {

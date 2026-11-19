@@ -90,6 +90,8 @@ export interface WeeklyQualityRecord {
   weekStartIso: string; // Monday ISO date
   bsOqlPct: number | null;
   nflAqcPct: number | null;
+  bsPassRatePct?: number | null;
+  nflAqcPassRatePct?: number | null;
   lastUpdatedBy: string;
   lastUpdatedMillis: number;
   isDemo?: boolean;

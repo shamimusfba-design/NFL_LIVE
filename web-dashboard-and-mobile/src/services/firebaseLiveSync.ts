@@ -821,6 +821,8 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
               weekStartIso: String(data.weekStartIso || ''),
               bsOqlPct: typeof data.bsOqlPct === 'number' ? data.bsOqlPct : null,
               nflAqcPct: typeof data.nflAqcPct === 'number' ? data.nflAqcPct : null,
+              bsPassRatePct: typeof data.bsPassRatePct === 'number' ? data.bsPassRatePct : null,
+              nflAqcPassRatePct: typeof data.nflAqcPassRatePct === 'number' ? data.nflAqcPassRatePct : null,
               lastUpdatedBy: String(data.lastUpdatedBy || 'Auditor'),
               lastUpdatedMillis: Number(data.lastUpdatedMillis || Date.now()),
               isDemo: false
@@ -1021,6 +1023,8 @@ export async function pushWeeklyQualityToCloud(record: WeeklyQualityRecord): Pro
         weekStartIso: record.weekStartIso,
         bsOqlPct: record.bsOqlPct,
         nflAqcPct: record.nflAqcPct,
+        bsPassRatePct: record.bsPassRatePct ?? null,
+        nflAqcPassRatePct: record.nflAqcPassRatePct ?? null,
         lastUpdatedBy: record.lastUpdatedBy,
         lastUpdatedMillis: record.lastUpdatedMillis
       },

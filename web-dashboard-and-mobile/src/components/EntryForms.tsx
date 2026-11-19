@@ -142,7 +142,19 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   const selectedWeekStartIso = selectedWeek?.weekStartIso || getBangladeshTodayIso();
   const [bsOqlInput, setBsOqlInput] = useState('');
   const [nflAqcInput, setNflAqcInput] = useState('');
+  const [bsPassRateInput, setBsPassRateInput] = useState('');
+  const [nflPassRateInput, setNflPassRateInput] = useState('');
   const [weeklyMsg, setWeeklyMsg] = useState<string | null>(null);
+
+  // Auto-populate weekly inputs on week or records change
+  useEffect(() => {
+    if (activeTab !== 'WEEKLY_OQL') return;
+    const existing = weeklyRecords.find(r => r.weekKey === selectedWeekKey);
+    setBsOqlInput(existing && existing.bsOqlPct !== null && existing.bsOqlPct !== undefined ? String(existing.bsOqlPct) : '');
+    setNflAqcInput(existing && existing.nflAqcPct !== null && existing.nflAqcPct !== undefined ? String(existing.nflAqcPct) : '');
+    setBsPassRateInput(existing && existing.bsPassRatePct !== null && existing.bsPassRatePct !== undefined ? String(existing.bsPassRatePct) : '');
+    setNflPassRateInput(existing && existing.nflAqcPassRatePct !== null && existing.nflAqcPassRatePct !== undefined ? String(existing.nflAqcPassRatePct) : '');
+  }, [selectedWeekKey, weeklyRecords, activeTab]);
 
   // Supervisor Setup State
   const [setupDailyTarget, setSetupDailyTarget] = useState('500');
@@ -406,8 +418,10 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
     }
     const bs = bsOqlInput.trim() !== '' ? Number(bsOqlInput) : null;
     const aqc = nflAqcInput.trim() !== '' ? Number(nflAqcInput) : null;
-    if (!selectedWeekKey || (bs === null && aqc === null)) {
-      setWeeklyMsg(`⚠️ Please enter BS OQL (%) or ${aqcBrand} AQC (%) for the selected week.`);
+    const bsPass = bsPassRateInput.trim() !== '' ? Number(bsPassRateInput) : null;
+    const aqcPass = nflPassRateInput.trim() !== '' ? Number(nflPassRateInput) : null;
+    if (!selectedWeekKey || (bs === null && aqc === null && bsPass === null && aqcPass === null)) {
+      setWeeklyMsg(`⚠️ Please enter at least one OQL (%) or Pass Rate (%) value for ${selectedWeekKey}.`);
       return;
     }
     onSaveWeeklyQuality?.({
@@ -415,11 +429,13 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
       weekStartIso: selectedWeekStartIso,
       bsOqlPct: bs,
       nflAqcPct: aqc,
+      bsPassRatePct: bsPass,
+      nflAqcPassRatePct: aqcPass,
       lastUpdatedBy: currentUserName,
       lastUpdatedMillis: Date.now(),
       isDemo: false
     });
-    setWeeklyMsg(`✓ Saved Weekly BS OQL / ${aqcBrand} AQC for ${selectedWeekKey}!`);
+    setWeeklyMsg(`✓ Saved Weekly BS OQL & Pass Rate for ${selectedWeekKey}!`);
     setTimeout(() => setWeeklyMsg(null), 3000);
   };
 
@@ -1110,151 +1126,230 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
             </form>
           )}
 
-          {/* ==================== TAB 3: WEEKLY BS OQL / NFL AQC ==================== */}
+          {/* ==================== TAB 3: WEEKLY BS OQL & PASS RATE % ==================== */}
           {activeTab === 'WEEKLY_OQL' && (
             <form
               onSubmit={handleWeeklySubmit}
               className="space-y-4 bg-white p-5 rounded-xl border border-slate-200"
             >
-              <div>
-                <h3 className="text-sm font-black text-[#002D62]">
-                  Weekly BS OQL &amp; {aqcBrand} AQC Entry (Admin &amp; Auditor Only)
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Commitment ≤ 4.5% • Level 1 below 7.0% • Critical Red above 10.0%. Only Admin and Auditor can enter or update weekly figures.
-                </p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-3">
+                <div>
+                  <h3 className="text-sm font-black text-[#002D62] flex items-center gap-2">
+                    <span>📊 Weekly Quality Entry: OQL % &amp; Pass Rate %</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-bold uppercase tracking-wider">
+                      Week 32 to 52
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Enter BSBD QA/QC and {aqcBrand} AQC weekly figures. Saved data dynamically updates both TV Wallboard graphs.
+                  </p>
+                </div>
+                <div className="text-right text-[11px] font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                  Target: OQL ≤ 4.5% · Pass Rate ≥ 97.0%
+                </div>
               </div>
 
               {!canWriteAuditOrWeekly && (
                 <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs font-bold">
-                  🔒 Access Denied: Only Admin and Auditor roles can save Weekly BS OQL / {aqcBrand} AQC data (Quality Manager and IE have view-only access).
+                  🔒 Access Denied: Only Admin and Auditor roles can save Weekly Quality figures (View-only mode active).
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-2">Week</label>
-                <div className="grid grid-cols-3 gap-2">
-                  <select
-                    value={weekYear}
-                    onChange={e => {
-                      const y = Number(e.target.value);
-                      setWeekYear(y);
-                      const first = isoWeeksOfYear(y)[0];
-                      if (first) setSelectedWeekKey(first.weekKey);
-                      setBsOqlInput(''); setNflAqcInput('');
-                    }}
-                    className="rounded-lg border border-slate-300 bg-white p-2.5 text-sm font-black text-slate-900"
-                  >
-                    {[2025, 2026, 2027, 2028].map(y => <option key={y} value={y}>{y}</option>)}
-                  </select>
-                  <select
-                    value={selectedWeekKey}
-                    onChange={e => {
-                      const key = e.target.value;
-                      setSelectedWeekKey(key);
-                      const existing = weeklyRecords.find(r => r.weekKey === key);
-                      setBsOqlInput(existing && existing.bsOqlPct !== null ? String(existing.bsOqlPct) : '');
-                      setNflAqcInput(existing && existing.nflAqcPct !== null ? String(existing.nflAqcPct) : '');
-                    }}
-                    className="col-span-2 rounded-lg border border-slate-300 bg-white p-2.5 text-sm font-black text-slate-900"
-                  >
-                    {yearWeeks.map(w => (
-                      <option key={w.weekKey} value={w.weekKey}>
-                        Week {w.weekNo} ({w.weekStartIso.slice(5)} to {w.weekEndIso.slice(5)}){weeklyRecords.some(r => r.weekKey === w.weekKey) ? ' ✓' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="mt-1 text-[11px] text-slate-500">{yearWeeks.length} weeks in {weekYear}. A tick means a value is already saved.</div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Week Start Date (Monday ISO)
-                  </label>
-                  <div className="w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-700">
-                    {selectedWeekStartIso}
+              {/* Week & Date Selectors */}
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                <label className="block text-xs font-black text-slate-700 mb-1.5">
+                  Select Calendar Year &amp; ISO Week
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">Year</label>
+                    <select
+                      value={weekYear}
+                      onChange={e => {
+                        const y = Number(e.target.value);
+                        setWeekYear(y);
+                        const first = isoWeeksOfYear(y)[0];
+                        if (first) setSelectedWeekKey(first.weekKey);
+                      }}
+                      className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm font-black text-slate-900"
+                    >
+                      {[2025, 2026, 2027, 2028].map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">Week Number &amp; Date Range</label>
+                    <select
+                      value={selectedWeekKey}
+                      onChange={e => setSelectedWeekKey(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm font-black text-slate-900"
+                    >
+                      {yearWeeks.map(w => (
+                        <option key={w.weekKey} value={w.weekKey}>
+                          Week {w.weekNo} ({w.weekStartIso.slice(5)} to {w.weekEndIso.slice(5)}){weeklyRecords.some(r => r.weekKey === w.weekKey) ? ' ✓' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">Monday ISO</label>
+                    <div className="w-full rounded-lg border border-slate-200 bg-white p-2 text-xs font-black text-slate-700">
+                      {selectedWeekStartIso}
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    BS OQL (%)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    max={100}
-                    value={bsOqlInput}
-                    onChange={e => setBsOqlInput(e.target.value)}
-                    placeholder="e.g. 3.85"
-                    className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
-                  />
+                <div className="mt-2 text-[11px] text-slate-500">
+                  {yearWeeks.length} weeks in {weekYear}. Weeks marked with (✓) already have records saved.
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    {aqcBrand} AQC (%)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    max={100}
-                    value={nflAqcInput}
-                    onChange={e => setNflAqcInput(e.target.value)}
-                    placeholder="e.g. 4.20"
-                    className="w-full text-sm font-black border border-slate-300 rounded-lg p-2"
-                  />
+              </div>
+
+              {/* Data Inputs: 2 Sections side-by-side (OQL % and Pass Rate %) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* 1. Graph 1: OQL % */}
+                <div className="p-3.5 rounded-xl border border-blue-200 bg-blue-50/40">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-black text-[#002D62] flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" />
+                      1. Weekly OQL % (Graph 1)
+                    </h4>
+                    <span className="text-[10px] text-blue-700 font-bold">Commitment: 4.5%</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        BSBD QA / QC OQL (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        max={100}
+                        value={bsOqlInput}
+                        onChange={e => setBsOqlInput(e.target.value)}
+                        placeholder="e.g. 5.75"
+                        className="w-full text-sm font-black border border-blue-300 rounded-lg p-2 bg-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        {aqcBrand} AQC OQL (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        max={100}
+                        value={nflAqcInput}
+                        onChange={e => setNflAqcInput(e.target.value)}
+                        placeholder="e.g. 6.36"
+                        className="w-full text-sm font-black border border-orange-300 rounded-lg p-2 bg-white focus:ring-2 focus:ring-orange-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Graph 2: Pass Rate % */}
+                <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block" />
+                      2. Weekly Pass Rate % (Graph 2)
+                    </h4>
+                    <span className="text-[10px] text-emerald-700 font-bold">Benchmark: 97.0%</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        BSBD QA / QC Pass (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        max={100}
+                        value={bsPassRateInput}
+                        onChange={e => setBsPassRateInput(e.target.value)}
+                        placeholder="e.g. 98.6"
+                        className="w-full text-sm font-black border border-emerald-300 rounded-lg p-2 bg-white focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        {aqcBrand} AQC Pass (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        max={100}
+                        value={nflPassRateInput}
+                        onChange={e => setNflPassRateInput(e.target.value)}
+                        placeholder="e.g. 96.2"
+                        className="w-full text-sm font-black border border-purple-300 rounded-lg p-2 bg-white focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
               {weeklyMsg && (
-                <div className="p-2.5 bg-blue-50 text-blue-900 text-xs font-bold rounded-lg border border-blue-200">
-                  {weeklyMsg}
+                <div className="p-3 bg-blue-50 text-blue-900 text-xs font-bold rounded-lg border border-blue-200 flex items-center gap-2">
+                  <span>ℹ️</span> {weeklyMsg}
                 </div>
               )}
 
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
                 <button
                   type="submit"
                   disabled={!canWriteAuditOrWeekly}
                   className="bg-[#002D62] disabled:bg-slate-400 hover:bg-blue-900 text-white font-black text-xs px-6 py-2.5 rounded-xl shadow transition"
                 >
-                  Save Weekly BS OQL / {aqcBrand} AQC
+                  💾 Save Weekly Quality (OQL &amp; Pass Rate)
                 </button>
               </div>
 
               {/* Saved Weekly History Table */}
               <div className="border-t pt-3">
-                <div className="text-xs font-black text-slate-700 mb-2">
-                  Saved Weekly BS OQL &amp; {aqcBrand} AQC History
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-black text-slate-800">
+                    Saved Weekly Quality History ({weeklyRecords.length} weeks recorded)
+                  </div>
+                  <span className="text-[11px] text-slate-500">Auto-synced with TV Wallboard &amp; Cloud</span>
                 </div>
-                <div className="overflow-x-auto max-h-44">
+                <div className="overflow-x-auto max-h-56 rounded-lg border border-slate-200">
                   <table className="w-full text-xs border-collapse">
-                    <thead>
-                      <tr className="bg-slate-100 text-slate-700 font-bold text-left">
+                    <thead className="sticky top-0 bg-slate-100 z-10">
+                      <tr className="text-slate-700 font-black text-left border-b border-slate-200">
                         <th className="p-2">Week</th>
                         <th className="p-2">Week Start</th>
-                        <th className="p-2 text-right">BS OQL %</th>
-                        <th className="p-2 text-right">{aqcBrand} AQC %</th>
+                        <th className="p-2 text-right bg-blue-50 text-blue-900">BS OQL %</th>
+                        <th className="p-2 text-right bg-orange-50 text-orange-900">{aqcBrand} AQC OQL %</th>
+                        <th className="p-2 text-right bg-blue-50/60 text-blue-900">BS Pass %</th>
+                        <th className="p-2 text-right bg-purple-50 text-purple-900">{aqcBrand} Pass %</th>
                         <th className="p-2">Updated By</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {weeklyRecords.map(r => (
-                        <tr key={r.weekKey}>
-                          <td className="p-2 font-black text-[#002D62]">{r.weekKey}</td>
-                          <td className="p-2">{r.weekStartIso}</td>
-                          <td className="p-2 text-right font-bold">
-                            {r.bsOqlPct !== null ? `${r.bsOqlPct.toFixed(2)}%` : '—'}
-                          </td>
-                          <td className="p-2 text-right font-bold">
-                            {r.nflAqcPct !== null ? `${r.nflAqcPct.toFixed(2)}%` : '—'}
-                          </td>
-                          <td className="p-2 text-slate-500">{r.lastUpdatedBy}</td>
-                        </tr>
-                      ))}
+                    <tbody className="divide-y divide-slate-200 bg-white">
+                      {[...weeklyRecords]
+                        .sort((a, b) => b.weekKey.localeCompare(a.weekKey))
+                        .map(r => (
+                          <tr key={r.weekKey} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-2 font-black text-[#002D62]">{r.weekKey}</td>
+                            <td className="p-2 font-mono text-[11px]">{r.weekStartIso}</td>
+                            <td className="p-2 text-right font-black text-blue-700">
+                              {r.bsOqlPct !== null && r.bsOqlPct !== undefined ? `${r.bsOqlPct.toFixed(2)}%` : '—'}
+                            </td>
+                            <td className="p-2 text-right font-black text-orange-700">
+                              {r.nflAqcPct !== null && r.nflAqcPct !== undefined ? `${r.nflAqcPct.toFixed(2)}%` : '—'}
+                            </td>
+                            <td className="p-2 text-right font-black text-emerald-700">
+                              {r.bsPassRatePct !== null && r.bsPassRatePct !== undefined ? `${r.bsPassRatePct.toFixed(1)}%` : '—'}
+                            </td>
+                            <td className="p-2 text-right font-black text-purple-700">
+                              {r.nflAqcPassRatePct !== null && r.nflAqcPassRatePct !== undefined ? `${r.nflAqcPassRatePct.toFixed(1)}%` : '—'}
+                            </td>
+                            <td className="p-2 text-slate-500 text-[11px]">{r.lastUpdatedBy}</td>
+                          </tr>
+                        ))}
                     </tbody>
                   </table>
                 </div>

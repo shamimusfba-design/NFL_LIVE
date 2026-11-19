@@ -18,6 +18,8 @@ data class WeeklyQualityEntry(
   val weekStartIso: String,
   val bsOqlPct: Double? = null,
   val nflAqcPct: Double? = null,
+  val bsPassRatePct: Double? = null,
+  val nflAqcPassRatePct: Double? = null,
   val lastUpdatedBy: String = "",
   val lastUpdatedMillis: Long = 0L
 )

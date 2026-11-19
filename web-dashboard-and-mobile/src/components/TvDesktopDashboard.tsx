@@ -138,6 +138,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   const interval = WB_INTERVALS[intervalIdx];
   const [countdown, setCountdown] = useState(WB_INTERVALS[0]);
   const [deepDiveLine, setDeepDiveLine] = useState<LinePerformanceSummary | null>(null);
+  const [weeklyMetric, setWeeklyMetric] = useState<'OQL' | 'PASS_RATE' | 'BOTH'>('OQL');
   // Cutting, Print and Embroidery get their own page: no sewing cards (DHU, OQL, operator vs machine, efficiency).
   // TV fit mode: when active, dynamically fits all cards and charts into one single screen height (zero vertical scroll).
   const [tvFit, setTvFit] = useState<boolean>(() => { try { return localStorage.getItem('nfl_tv_fit') === '1'; } catch { return false; } });
@@ -259,13 +260,13 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
   const sortedWeekly = useMemo(() => {
     return [...weeklyQuality]
-      .filter(w => w.bsOqlPct !== null || w.nflAqcPct !== null)
+      .filter(w => w.bsOqlPct !== null || w.nflAqcPct !== null || (w.bsPassRatePct !== null && w.bsPassRatePct !== undefined) || (w.nflAqcPassRatePct !== null && w.nflAqcPassRatePct !== undefined))
       .sort((a, b) => a.weekKey.localeCompare(b.weekKey));
   }, [weeklyQuality]);
 
   const latestWeeklyRecord = useMemo(() => {
     return [...weeklyQuality]
-      .filter(w => w.bsOqlPct !== null || w.nflAqcPct !== null)
+      .filter(w => w.bsOqlPct !== null || w.nflAqcPct !== null || (w.bsPassRatePct !== null && w.bsPassRatePct !== undefined) || (w.nflAqcPassRatePct !== null && w.nflAqcPassRatePct !== undefined))
       .sort((a, b) => b.weekKey.localeCompare(a.weekKey))[0];
   }, [weeklyQuality]);
 
@@ -629,8 +630,41 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       })()}
 
       {isDept && (
-        <WbPanel title={`Weekly BS OQL vs ${brand} AQC (from week 32)`} sub={`Blue: BS OQL · Orange: ${brand} AQC · Red dashed: 4.5% commitment`}>
-          <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} />
+        <WbPanel
+          title="Weekly Quality Trend (from Week 32)"
+          sub={
+            weeklyMetric === 'OQL'
+              ? `Blue: BSBD QA/QC · Orange: ${brand} AQC · Red dashed: 4.50% commitment`
+              : `Blue (Gold Ring): BSBD QA/QC · Purple: ${brand} AQC · Benchmark: 97.0%`
+          }
+          right={
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setWeeklyMetric('OQL')}
+                className={`px-2.5 py-1 text-xs font-black rounded-lg transition-all ${
+                  weeklyMetric === 'OQL'
+                    ? 'bg-[#002D62] text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                📉 OQL %
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeeklyMetric('PASS_RATE')}
+                className={`px-2.5 py-1 text-xs font-black rounded-lg transition-all ${
+                  weeklyMetric === 'PASS_RATE'
+                    ? 'bg-[#002D62] text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                🎯 Pass Rate %
+              </button>
+            </div>
+          }
+        >
+          <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} metric={weeklyMetric === 'BOTH' ? 'OQL' : weeklyMetric} />
         </WbPanel>
       )}
 
@@ -1041,11 +1075,73 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
           {/* Quality Weekly Trend */}
           <WbPanel
-            title={`Weekly BS OQL vs ${brand} AQC (from Week 32)`}
-            sub={`Blue: BS OQL · Orange: ${brand} AQC · Red dashed: 4.5% commitment`}
+            title="Weekly Quality Trend: BSBD QA/QC vs AQC (from Week 32)"
+            sub={
+              weeklyMetric === 'OQL'
+                ? `Blue: BSBD QA/QC · Orange: ${brand} AQC · Red dashed: 4.50% commitment`
+                : weeklyMetric === 'PASS_RATE'
+                ? `Blue (Gold Ring): BSBD QA/QC · Purple: ${brand} AQC · Benchmark: 97.0%`
+                : `Dual View: Weekly OQL % & Weekly Pass Rate % (from Week 32 to Week 52)`
+            }
+            right={
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setWeeklyMetric('OQL')}
+                  className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
+                    weeklyMetric === 'OQL'
+                      ? 'bg-[#002D62] text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  📉 Weekly OQL %
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWeeklyMetric('PASS_RATE')}
+                  className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
+                    weeklyMetric === 'PASS_RATE'
+                      ? 'bg-[#002D62] text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  🎯 Pass Rate %
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWeeklyMetric('BOTH')}
+                  className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
+                    weeklyMetric === 'BOTH'
+                      ? 'bg-[#002D62] text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  ⊞ Both Graphs
+                </button>
+              </div>
+            }
             compact={tvFit}
           >
-            <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} />
+            {weeklyMetric === 'BOTH' ? (
+              <div className="space-y-4">
+                <div>
+                  <div className="text-xs font-black text-blue-900 dark:text-blue-300 mb-1 flex items-center gap-2">
+                    <span>📉 1. Weekly BSBD QA/QC vs AQC (OQL %)</span>
+                    <span className="text-[10px] text-red-600 font-bold border border-red-300 px-1.5 py-0.5 rounded">4.50% commitment</span>
+                  </div>
+                  <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} metric="OQL" />
+                </div>
+                <div className="border-t border-slate-200 dark:border-slate-700 pt-3">
+                  <div className="text-xs font-black text-emerald-900 dark:text-emerald-300 mb-1 flex items-center gap-2">
+                    <span>🎯 2. Weekly BSBD QA/QC vs AQC (Pass Rate %)</span>
+                    <span className="text-[10px] text-emerald-600 font-bold border border-emerald-300 px-1.5 py-0.5 rounded">97.0% target</span>
+                  </div>
+                  <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} metric="PASS_RATE" />
+                </div>
+              </div>
+            ) : (
+              <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} metric={weeklyMetric} />
+            )}
           </WbPanel>
         </div>
       )}
@@ -1863,16 +1959,31 @@ const RectificationPendingChart: React.FC<{
   );
 };
 
-/** Weekly BS OQL vs NFL AQC trend, from ISO week 32 of the current year (blue: BS OQL, orange: NFL AQC). */
-const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: number; compact?: boolean }> = ({ records, commitment, compact = false }) => {
+/**
+ * Weekly BSBD QA / QC vs AQC Performance Trend (from ISO Week 32 to Week 52).
+ * Supports both:
+ *  - 'OQL' (Graph 1: BSBD QA/QC vs AQC OQL %, 4.50% - 9.50% scale, red commitment at 4.50%)
+ *  - 'PASS_RATE' (Graph 2: BSBD QA/QC vs AQC Pass Rate %, 94.0% - 100.0% scale)
+ */
+const WeeklyBsOqlChart: React.FC<{
+  records: WeeklyQualityRecord[];
+  commitment: number;
+  compact?: boolean;
+  metric?: 'OQL' | 'PASS_RATE';
+}> = ({ records, commitment, compact = false, metric = 'OQL' }) => {
+  const isPass = metric === 'PASS_RATE';
   const now = new Date();
   const tempUtc = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
   const dayNum = tempUtc.getUTCDay() || 7;
   tempUtc.setUTCDate(tempUtc.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(tempUtc.getUTCFullYear(), 0, 1));
-  const currentIsoWeek = Math.ceil((((tempUtc.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 
-  const validRecords = [...records].filter(r => r.bsOqlPct !== null || r.nflAqcPct !== null);
+  const validRecords = [...records].filter(r =>
+    isPass
+      ? (r.bsPassRatePct !== null && r.bsPassRatePct !== undefined) || (r.nflAqcPassRatePct !== null && r.nflAqcPassRatePct !== undefined)
+      : (r.bsOqlPct !== null && r.bsOqlPct !== undefined) || (r.nflAqcPct !== null && r.nflAqcPct !== undefined)
+  );
+
   const recordYears = validRecords
     .map(r => {
       const m = r.weekKey.match(/^(\d{4})-W(\d{2})$/);
@@ -1892,9 +2003,8 @@ const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: n
     }
   });
 
-  const maxRecordWeek = byWeekNo.size > 0 ? Math.max(...Array.from(byWeekNo.keys())) : 32;
   const startWeek = 32;
-  const endWeek = Math.min(52, Math.max(44, currentIsoWeek >= 32 ? currentIsoWeek : 44, maxRecordWeek));
+  const endWeek = 52;
 
   const slots = Array.from({ length: endWeek - startWeek + 1 }, (_, idx) => {
     const weekNo = startWeek + idx;
@@ -1903,119 +2013,208 @@ const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: n
     return {
       weekNo,
       weekKey,
-      bsOqlPct: rec?.bsOqlPct ?? null,
-      nflAqcPct: rec?.nflAqcPct ?? null
+      bsVal: isPass ? (rec?.bsPassRatePct ?? null) : (rec?.bsOqlPct ?? null),
+      aqcVal: isPass ? (rec?.nflAqcPassRatePct ?? null) : (rec?.nflAqcPct ?? null)
     };
   });
 
-  const allValues = [
-    commitment,
-    ...slots.flatMap(s => [s.bsOqlPct, s.nflAqcPct]).filter((v): v is number => v !== null)
-  ];
-  const minVal = Math.max(0, Math.floor(Math.min(...allValues) - 1.2));
-  const maxVal = Math.max(minVal + 2, Math.ceil(Math.max(...allValues) + 1.2));
-  const span = Math.max(1, maxVal - minVal);
+  // Calculate axis bounds & ticks
+  let minVal: number;
+  let maxVal: number;
+  let ticks: number[] = [];
 
-  const step = compact ? 56 : 74;
-  const padL = compact ? 34 : 44;
-  const padR = compact ? 110 : 134;
-  const top = compact ? 22 : 38;
-  const plotH = compact ? 100 : 180;
-  const bottom = compact ? 24 : 38;
-  const lastSlotX = padL + step * Math.max(0, slots.length - 1);
-  const W = Math.max(480, lastSlotX + padR);
+  if (isPass) {
+    minVal = 94.0;
+    maxVal = 100.0;
+    ticks = [94.0, 94.5, 95.0, 95.5, 96.0, 96.5, 97.0, 97.5, 98.0, 98.5, 99.0, 99.5, 100.0];
+  } else {
+    minVal = 4.5;
+    maxVal = 9.5;
+    ticks = [4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5];
+  }
+  const span = Math.max(0.1, maxVal - minVal);
+
+  const step = compact ? 48 : 56;
+  const padL = compact ? 52 : 64;
+  const padR = compact ? 44 : 56;
+  const top = compact ? 55 : 65;
+  const plotH = compact ? 180 : 220;
+  const bottom = compact ? 65 : 75;
+  const lastSlotX = padL + step * (slots.length - 1);
+  const W = lastSlotX + padR;
   const H = top + plotH + bottom;
 
-  const x = (i: number) => (slots.length === 1 ? (W - padR) / 2 : padL + i * step);
+  const x = (i: number) => padL + i * step;
   const y = (v: number) => top + plotH - ((v - minVal) / span) * plotH;
 
-  // Compute non-overlapping label positions in the empty space above the top point and below the bottom point
-  const labelYFor = (i: number, key: 'bs' | 'aqc'): number => {
-    const s = slots[i];
-    const bs = s.bsOqlPct;
-    const aqc = s.nflAqcPct;
-    const v = key === 'bs' ? bs : aqc;
-    if (v === null) return 0;
-    if (bs !== null && aqc !== null) {
-      const isBsUpper = bs > aqc || (bs === aqc && key === 'bs');
-      const isThisUpper = (key === 'bs' && isBsUpper) || (key === 'aqc' && !isBsUpper);
-      return isThisUpper ? y(v) - 14 : y(v) + 22;
-    }
-    return y(v) - 14;
-  };
-
   const bsPts = slots
-    .map((s, i) => (s.bsOqlPct !== null ? { i, v: s.bsOqlPct } : null))
-    .filter((p): p is { i: number; v: number } => p !== null);
+    .map((s, i) => (s.bsVal !== null ? { i, v: s.bsVal, weekNo: s.weekNo } : null))
+    .filter((p): p is { i: number; v: number; weekNo: number } => p !== null);
+
   const aqcPts = slots
-    .map((s, i) => (s.nflAqcPct !== null ? { i, v: s.nflAqcPct } : null))
-    .filter((p): p is { i: number; v: number } => p !== null);
+    .map((s, i) => (s.aqcVal !== null ? { i, v: s.aqcVal, weekNo: s.weekNo } : null))
+    .filter((p): p is { i: number; v: number; weekNo: number } => p !== null);
+
+  // Series Styling
+  const bsColor = '#0052cc';
+  const bsBorder = isPass ? '#d4af37' : 'var(--wb-panel)';
+  const aqcColor = isPass ? '#7e22ce' : '#ea580c';
+  const aqcBorder = isPass ? '#ea580c' : '#ffffff';
 
   return (
     <div className="nfl-scroll overflow-x-auto pb-1">
+      <div className="flex items-center justify-between px-2 mb-2">
+        <div className="flex items-center gap-6 text-xs font-black">
+          {/* Legend for BSBD QA / QC */}
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-block w-3.5 h-3.5 rounded-full"
+              style={{
+                backgroundColor: bsColor,
+                border: isPass ? '2px solid #d4af37' : '2px solid white',
+                boxShadow: '0 0 2px rgba(0,0,0,0.3)'
+              }}
+            />
+            <span style={{ color: 'var(--wb-txt)' }}>BSBD QA / QC</span>
+          </div>
+
+          {/* Legend for AQC */}
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-block w-3.5 h-3.5 rotate-45"
+              style={{
+                backgroundColor: aqcColor,
+                border: isPass ? '1.5px solid #ea580c' : '1.5px solid white',
+                boxShadow: '0 0 2px rgba(0,0,0,0.3)'
+              }}
+            />
+            <span style={{ color: 'var(--wb-txt)' }}>{isClientDemoSession() ? 'DEMO' : 'NFL'} AQC</span>
+          </div>
+
+          {!isPass && (
+            <div className="flex items-center gap-2 text-red-600">
+              <span className="inline-block w-5 h-0 border-t-2 border-dashed border-red-500" />
+              <span>4.50% Commitment Limit</span>
+            </div>
+          )}
+          {isPass && (
+            <div className="flex items-center gap-2 text-emerald-600">
+              <span className="inline-block w-5 h-0 border-t-2 border-dashed border-emerald-500" />
+              <span>97.0% Inspection Benchmark</span>
+            </div>
+          )}
+        </div>
+
+        <div className="text-[11px] font-bold text-slate-500">
+          Showing Week 32 to Week 52
+        </div>
+      </div>
+
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', minWidth: W, height: H }}>
-        {/* Subtle vertical week slot guides from W32 so empty weeks clearly show their reserved space */}
-        {slots.map((s, i) => {
-          const hasData = s.bsOqlPct !== null || s.nflAqcPct !== null;
+        {/* Horizontal dashed gridlines & Left Y-axis percentage labels */}
+        {ticks.map(t => {
+          const yPos = y(t);
+          const isMajor = isPass ? (t % 1.0 === 0.0) : (t % 0.5 === 0.0);
           return (
-            <g key={s.weekKey}>
+            <g key={`grid-${t}`}>
               <line
-                x1={x(i)}
-                x2={x(i)}
-                y1={top}
-                y2={top + plotH}
+                x1={padL - 10}
+                x2={lastSlotX + 10}
+                y1={yPos}
+                y2={yPos}
                 stroke={WB_THEME.LINE}
-                strokeWidth={1}
-                strokeDasharray={hasData ? '2 4' : '3 5'}
-                opacity={hasData ? 0.45 : 0.3}
+                strokeWidth={isMajor ? 1 : 0.75}
+                strokeDasharray={isMajor ? '3 3' : '2 4'}
+                opacity={isMajor ? 0.55 : 0.3}
               />
-              {!hasData && (
-                <text
-                  x={x(i)}
-                  y={top + plotH - 8}
-                  textAnchor="middle"
-                  fontSize={10}
-                  fontWeight={700}
-                  fill={WB_THEME.MUTED}
-                  opacity={0.65}
-                >
-                  —
-                </text>
-              )}
+              <text
+                x={padL - 14}
+                y={yPos + 3.5}
+                textAnchor="end"
+                fontSize={isMajor ? 11 : 9.5}
+                fontWeight={isMajor ? 800 : 600}
+                fill={isMajor ? WB_THEME.TXT : WB_THEME.MUTED}
+              >
+                {t.toFixed(isPass ? 1 : 2)}%
+              </text>
             </g>
           );
         })}
 
-        {/* Red dashed commitment line + label placed in the dedicated empty right margin */}
-        <line
-          x1={padL - 16}
-          x2={lastSlotX + 14}
-          y1={y(commitment)}
-          y2={y(commitment)}
-          stroke={WB_THEME.RED}
-          strokeWidth={2}
-          strokeDasharray="6 5"
-        />
-        <text
-          x={lastSlotX + 20}
-          y={y(commitment) + 4}
-          textAnchor="start"
-          fontSize={11}
-          fontWeight={800}
-          fill={WB_THEME.RED}
-          style={{ paintOrder: 'stroke', stroke: 'var(--wb-panel)', strokeWidth: 4, strokeLinejoin: 'round' }}
-        >
-          {commitment}% commitment
-        </text>
+        {/* Commitment or Benchmark Reference Line */}
+        {!isPass && commitment >= minVal && commitment <= maxVal && (
+          <g>
+            <line
+              x1={padL - 10}
+              x2={lastSlotX + 10}
+              y1={y(commitment)}
+              y2={y(commitment)}
+              stroke={WB_THEME.RED}
+              strokeWidth={2}
+              strokeDasharray="6 4"
+            />
+            <text
+              x={lastSlotX + 14}
+              y={y(commitment) + 4}
+              textAnchor="start"
+              fontSize={10.5}
+              fontWeight={800}
+              fill={WB_THEME.RED}
+            >
+              {commitment.toFixed(1)}% limit
+            </text>
+          </g>
+        )}
+
+        {isPass && (
+          <g>
+            <line
+              x1={padL - 10}
+              x2={lastSlotX + 10}
+              y1={y(97.0)}
+              y2={y(97.0)}
+              stroke="#10b981"
+              strokeWidth={1.5}
+              strokeDasharray="5 4"
+            />
+            <text
+              x={lastSlotX + 14}
+              y={y(97.0) + 4}
+              textAnchor="start"
+              fontSize={10.5}
+              fontWeight={800}
+              fill="#10b981"
+            >
+              97.0% target
+            </text>
+          </g>
+        )}
 
         {/* Bottom axis line */}
-        <line x1={padL - 16} x2={lastSlotX + 14} y1={top + plotH} y2={top + plotH} stroke={WB_THEME.LINE} strokeWidth={1.5} />
+        <line
+          x1={padL - 10}
+          x2={lastSlotX + 10}
+          y1={top + plotH}
+          y2={top + plotH}
+          stroke={WB_THEME.LINE}
+          strokeWidth={2}
+        />
 
-        {/* Polylines drawn first so value labels always render cleanly on top */}
+        {/* Left axis line */}
+        <line
+          x1={padL - 10}
+          x2={padL - 10}
+          y1={top}
+          y2={top + plotH}
+          stroke={WB_THEME.LINE}
+          strokeWidth={2}
+        />
+
+        {/* Connecting Polylines */}
         {bsPts.length > 1 && (
           <polyline
             fill="none"
-            stroke={WB_THEME.BLUE}
+            stroke={bsColor}
             strokeWidth={3}
             strokeLinejoin="round"
             strokeLinecap="round"
@@ -2025,7 +2224,7 @@ const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: n
         {aqcPts.length > 1 && (
           <polyline
             fill="none"
-            stroke={WB_THEME.ORANGE}
+            stroke={aqcColor}
             strokeWidth={3}
             strokeLinejoin="round"
             strokeLinecap="round"
@@ -2033,63 +2232,154 @@ const WeeklyBsOqlChart: React.FC<{ records: WeeklyQualityRecord[]; commitment: n
           />
         )}
 
-        {/* Dots and non-overlapping labels in empty space above/below */}
-        {bsPts.map(p => (
-          <g key={`bs-${p.i}`}>
-            <circle cx={x(p.i)} cy={y(p.v)} r={5} fill={WB_THEME.BLUE} stroke="var(--wb-panel)" strokeWidth={1.5} />
-            <text
-              x={x(p.i)}
-              y={labelYFor(p.i, 'bs')}
-              textAnchor="middle"
-              fontSize={12}
-              fontWeight={900}
-              fill={WB_THEME.BLUE}
-              style={{ paintOrder: 'stroke', stroke: 'var(--wb-panel)', strokeWidth: 4, strokeLinejoin: 'round' }}
-            >
-              {p.v.toFixed(1)}
-            </text>
-          </g>
-        ))}
+        {/* Markers & Value Callout Pills for BSBD QA / QC */}
+        {bsPts.map(p => {
+          const cx = x(p.i);
+          const cy = y(p.v);
+          const isAbove = isPass ? true : false;
+          const boxH = 38;
+          const boxW = 20;
+          const stemLen = 12;
+          const boxY = isAbove ? cy - stemLen - boxH : cy + stemLen;
+          const textCenterY = boxY + boxH / 2;
 
-        {aqcPts.map(p => (
-          <g key={`aqc-${p.i}`}>
-            <circle cx={x(p.i)} cy={y(p.v)} r={5} fill={WB_THEME.ORANGE} stroke="var(--wb-panel)" strokeWidth={1.5} />
-            <text
-              x={x(p.i)}
-              y={labelYFor(p.i, 'aqc')}
-              textAnchor="middle"
-              fontSize={12}
-              fontWeight={900}
-              fill={WB_THEME.ORANGE}
-              style={{ paintOrder: 'stroke', stroke: 'var(--wb-panel)', strokeWidth: 4, strokeLinejoin: 'round' }}
-            >
-              {p.v.toFixed(1)}
-            </text>
-          </g>
-        ))}
-
-        {/* Week labels from W32 onwards */}
-        {slots.map((s, i) => {
-          const hasData = s.bsOqlPct !== null || s.nflAqcPct !== null;
           return (
-            <text
-              key={`lbl-${s.weekKey}`}
-              x={x(i)}
-              y={top + plotH + 22}
-              textAnchor="middle"
-              fontSize={12}
-              fontWeight={hasData ? 800 : 700}
-              fill={hasData ? WB_THEME.TXT : WB_THEME.MUTED}
-            >
-              W{String(s.weekNo).padStart(2, '0')}
-            </text>
+            <g key={`bs-pt-${p.i}`}>
+              <circle
+                cx={cx}
+                cy={cy}
+                r={isPass ? 6.5 : 5.5}
+                fill={bsColor}
+                stroke={bsBorder}
+                strokeWidth={isPass ? 2.5 : 2}
+              />
+              <line
+                x1={cx}
+                y1={isAbove ? cy - (isPass ? 6.5 : 5.5) : cy + (isPass ? 6.5 : 5.5)}
+                x2={cx}
+                y2={isAbove ? boxY + boxH : boxY}
+                stroke={bsColor}
+                strokeWidth={1.5}
+              />
+              <rect
+                x={cx - boxW / 2}
+                y={boxY}
+                width={boxW}
+                height={boxH}
+                rx={4}
+                fill="var(--wb-panel)"
+                stroke={bsColor}
+                strokeWidth={1.5}
+              />
+              <text
+                x={cx}
+                y={textCenterY}
+                textAnchor="middle"
+                dominantBaseline="central"
+                transform={`rotate(-90 ${cx} ${textCenterY})`}
+                fontSize={10}
+                fontWeight={900}
+                fill={bsColor}
+              >
+                {p.v.toFixed(isPass ? 1 : 2)}%
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Markers & Value Callout Pills for AQC */}
+        {aqcPts.map(p => {
+          const cx = x(p.i);
+          const cy = y(p.v);
+          const isAbove = isPass ? false : true;
+          const boxH = 38;
+          const boxW = 20;
+          const stemLen = 12;
+          const boxY = isAbove ? cy - stemLen - boxH : cy + stemLen;
+          const textCenterY = boxY + boxH / 2;
+
+          return (
+            <g key={`aqc-pt-${p.i}`}>
+              <polygon
+                points={`${cx},${cy - 6.5} ${cx + 6.5},${cy} ${cx},${cy + 6.5} ${cx - 6.5},${cy}`}
+                fill={aqcColor}
+                stroke={aqcBorder}
+                strokeWidth={isPass ? 2 : 1.5}
+              />
+              <line
+                x1={cx}
+                y1={isAbove ? cy - 6.5 : cy + 6.5}
+                x2={cx}
+                y2={isAbove ? boxY + boxH : boxY}
+                stroke={aqcColor}
+                strokeWidth={1.5}
+              />
+              <rect
+                x={cx - boxW / 2}
+                y={boxY}
+                width={boxW}
+                height={boxH}
+                rx={4}
+                fill="var(--wb-panel)"
+                stroke={aqcColor}
+                strokeWidth={1.5}
+              />
+              <text
+                x={cx}
+                y={textCenterY}
+                textAnchor="middle"
+                dominantBaseline="central"
+                transform={`rotate(-90 ${cx} ${textCenterY})`}
+                fontSize={10}
+                fontWeight={900}
+                fill={aqcColor}
+              >
+                {p.v.toFixed(isPass ? 1 : 2)}%
+              </text>
+            </g>
+          );
+        })}
+
+        {/* X-axis Ticks & Vertical Week Labels (Week - 32 to Week - 52) */}
+        {slots.map((s, i) => {
+          const cx = x(i);
+          const hasData = s.bsVal !== null || s.aqcVal !== null;
+          return (
+            <g key={`x-tick-${s.weekKey}`}>
+              <line
+                x1={cx}
+                x2={cx}
+                y1={top + plotH}
+                y2={top + plotH + 6}
+                stroke={WB_THEME.LINE}
+                strokeWidth={1.5}
+              />
+              <line
+                x1={cx}
+                x2={cx}
+                y1={top}
+                y2={top + plotH}
+                stroke={WB_THEME.LINE}
+                strokeWidth={1}
+                strokeDasharray="2 4"
+                opacity={hasData ? 0.25 : 0.12}
+              />
+              <text
+                x={cx}
+                y={top + plotH + 42}
+                textAnchor="middle"
+                dominantBaseline="central"
+                transform={`rotate(-90 ${cx} ${top + plotH + 42})`}
+                fontSize={11}
+                fontWeight={hasData ? 900 : 600}
+                fill={hasData ? WB_THEME.TXT : WB_THEME.MUTED}
+              >
+                Week - {s.weekNo}
+              </text>
+            </g>
           );
         })}
       </svg>
-      <div className="flex justify-center gap-4 text-xs font-bold" style={{ color: WB_THEME.MUTED }}>
-        <span><span className="inline-block w-3 h-1 align-middle mr-1" style={{ backgroundColor: WB_THEME.BLUE }} />BS OQL (empty space below/above line)</span>
-        <span><span className="inline-block w-3 h-1 align-middle mr-1" style={{ backgroundColor: WB_THEME.ORANGE }} />{isClientDemoSession() ? 'DEMO' : 'NFL'} AQC (from Week 32)</span>
-      </div>
     </div>
   );
 };

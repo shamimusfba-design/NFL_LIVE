@@ -161,12 +161,14 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       ];
     } else if (reportSection === 'WEEKLY_OQL') {
       const brand = isClientDemoSession() ? 'DEMO' : 'NFL';
-      headers = ['ISO Week', 'Week Start Date', 'BS OQL (%)', `${brand} AQC (%)`, 'Updated By'];
+      headers = ['ISO Week', 'Week Start Date', 'BS OQL (%)', `${brand} AQC (%)`, 'BS Pass Rate (%)', `${brand} AQC Pass Rate (%)`, 'Updated By'];
       rows = weeklyQuality.map(w => [
         w.weekKey,
         w.weekStartIso,
         w.bsOqlPct ?? '',
         w.nflAqcPct ?? '',
+        w.bsPassRatePct ?? '',
+        w.nflAqcPassRatePct ?? '',
         w.lastUpdatedBy
       ]);
     } else {
@@ -468,11 +470,17 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                       <tr key={w.weekKey}>
                         <td className="py-2 px-3 font-black text-[#002D62]">{w.weekKey}</td>
                         <td className="py-2 px-3">{w.weekStartIso}</td>
-                        <td className="py-2 px-3 text-right font-black">
+                        <td className="py-2 px-3 text-right font-black text-blue-700">
                           {w.bsOqlPct !== null ? `${w.bsOqlPct.toFixed(2)}%` : '—'}
                         </td>
-                        <td className="py-2 px-3 text-right font-black">
+                        <td className="py-2 px-3 text-right font-black text-orange-700">
                           {w.nflAqcPct !== null ? `${w.nflAqcPct.toFixed(2)}%` : '—'}
+                        </td>
+                        <td className="py-2 px-3 text-right font-black text-emerald-700">
+                          {w.bsPassRatePct !== null && w.bsPassRatePct !== undefined ? `${w.bsPassRatePct.toFixed(1)}%` : '—'}
+                        </td>
+                        <td className="py-2 px-3 text-right font-black text-purple-700">
+                          {w.nflAqcPassRatePct !== null && w.nflAqcPassRatePct !== undefined ? `${w.nflAqcPassRatePct.toFixed(1)}%` : '—'}
                         </td>
                         <td className="py-2 px-3">{w.lastUpdatedBy}</td>
                       </tr>
