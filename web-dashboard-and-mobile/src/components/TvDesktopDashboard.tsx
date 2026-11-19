@@ -1075,31 +1075,24 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
           {/* Quality Weekly Trend */}
           <WbPanel
-            title="Weekly Quality Trend: BSBD QA/QC vs AQC (from Week 32)"
-            sub={
-              weeklyMetric === 'OQL'
-                ? `Blue: BSBD QA/QC · Orange: ${brand} AQC · Red dashed: 4.50% commitment`
-                : weeklyMetric === 'PASS_RATE'
-                ? `Blue (Gold Ring): BSBD QA/QC · Purple: ${brand} AQC · Benchmark: 97.0%`
-                : `Dual View: Weekly OQL % & Weekly Pass Rate % (from Week 32 to Week 52)`
-            }
+            title="Weekly Quality Trend (BSBD QA/QC vs AQC)"
             right={
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
                 <button
                   type="button"
                   onClick={() => setWeeklyMetric('OQL')}
-                  className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
+                  className={`px-2.5 py-1 text-xs font-black rounded-md transition-all ${
                     weeklyMetric === 'OQL'
                       ? 'bg-[#002D62] text-white shadow-sm'
                       : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                   }`}
                 >
-                  📉 Weekly OQL %
+                  📉 OQL %
                 </button>
                 <button
                   type="button"
                   onClick={() => setWeeklyMetric('PASS_RATE')}
-                  className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
+                  className={`px-2.5 py-1 text-xs font-black rounded-md transition-all ${
                     weeklyMetric === 'PASS_RATE'
                       ? 'bg-[#002D62] text-white shadow-sm'
                       : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -1110,7 +1103,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => setWeeklyMetric('BOTH')}
-                  className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
+                  className={`px-2.5 py-1 text-xs font-black rounded-md transition-all ${
                     weeklyMetric === 'BOTH'
                       ? 'bg-[#002D62] text-white shadow-sm'
                       : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -1123,20 +1116,12 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             compact={tvFit}
           >
             {weeklyMetric === 'BOTH' ? (
-              <div className="space-y-4">
-                <div>
-                  <div className="text-xs font-black text-blue-900 dark:text-blue-300 mb-1 flex items-center gap-2">
-                    <span>📉 1. Weekly BSBD QA/QC vs AQC (OQL %)</span>
-                    <span className="text-[10px] text-red-600 font-bold border border-red-300 px-1.5 py-0.5 rounded">4.50% commitment</span>
-                  </div>
-                  <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} metric="OQL" />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                <div className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
+                  <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={true} metric="OQL" />
                 </div>
-                <div className="border-t border-slate-200 dark:border-slate-700 pt-3">
-                  <div className="text-xs font-black text-emerald-900 dark:text-emerald-300 mb-1 flex items-center gap-2">
-                    <span>🎯 2. Weekly BSBD QA/QC vs AQC (Pass Rate %)</span>
-                    <span className="text-[10px] text-emerald-600 font-bold border border-emerald-300 px-1.5 py-0.5 rounded">97.0% target</span>
-                  </div>
-                  <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} metric="PASS_RATE" />
+                <div className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
+                  <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={true} metric="PASS_RATE" />
                 </div>
               </div>
             ) : (
@@ -1206,11 +1191,11 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             />
           </div>
 
-          {/* Body Row 1: Line-wise Target vs Achievement + Operator Present vs Machine Running */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1">
+          {/* Body Row 1: Line-wise Target vs Achievement + NPT (Non-Productive Time) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 flex-1">
             <WbPanel
               title="Line-wise Target vs Achievement"
-              sub={`Target (blue) vs Output (achievement status) · Output ${kpis.todayOutputPcs.toLocaleString()} / ${kpis.todayTargetPcs.toLocaleString()} pcs (${kpis.achievementPct.toFixed(0)}%)`}
+              sub={`Target vs Output · ${kpis.todayOutputPcs.toLocaleString()} / ${kpis.todayTargetPcs.toLocaleString()} pcs (${kpis.achievementPct.toFixed(0)}%)`}
               right={
                 <div className="flex gap-1">
                   <WbBadge text="≥95%" bg={WB_THEME.GREEN} fg="var(--wb-on-green)" />
@@ -1218,164 +1203,10 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                   <WbBadge text="<80%" bg={WB_THEME.RED} fg="var(--wb-on-red)" />
                 </div>
               }
-              className="lg:col-span-7"
+              className="lg:col-span-8"
               compact={tvFit}
             >
-              <LiveTargetVsAchievementChart lines={activeLines} onSelectLine={setDeepDiveLine} plotH={chartPlotH} />
-            </WbPanel>
-
-            <WbPanel
-              top
-              title="Operator Present vs Machine Running"
-              sub={`Active lines · Ratio ${kpis.machinesCount > 0 ? (kpis.operatorsCount / kpis.machinesCount).toFixed(2) : '0.00'}x`}
-              right={
-                <div className="flex items-center gap-1">
-                  <WbBadge text={`Ops: ${kpis.operatorsCount}`} bg={WB_THEME.ORANGE} fg="var(--wb-on-orange)" />
-                  <WbBadge text={`Mach: ${kpis.machinesCount}`} bg={WB_THEME.BLUE} fg="var(--wb-on-selected)" />
-                  {kpis.helpersCount > 0 && <WbBadge text={`Help: ${kpis.helpersCount}`} bg={WB_THEME.GREEN} fg="var(--wb-on-green)" />}
-                </div>
-              }
-              className="lg:col-span-5"
-              compact={tvFit}
-            >
-              <div className="flex-1 min-h-0 flex flex-col justify-start gap-1.5">
-                <div className="grid grid-cols-4 gap-1.5 text-center">
-                  <div className="p-1 rounded border" style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.LINE }}>
-                    <div className="text-[9px] font-bold" style={{ color: WB_THEME.MUTED }}>Operators</div>
-                    <div className="text-lg md:text-xl font-black" style={{ color: WB_THEME.ORANGE }}>{kpis.operatorsCount}</div>
-                  </div>
-                  <div className="p-1 rounded border" style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.LINE }}>
-                    <div className="text-[9px] font-bold" style={{ color: WB_THEME.MUTED }}>Machines</div>
-                    <div className="text-lg md:text-xl font-black" style={{ color: WB_THEME.BLUE }}>{kpis.machinesCount}</div>
-                  </div>
-                  <div className="p-1 rounded border" style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.LINE }}>
-                    <div className="text-[9px] font-bold" style={{ color: WB_THEME.MUTED }}>Helpers</div>
-                    <div className="text-lg md:text-xl font-black" style={{ color: WB_THEME.GREEN }}>{kpis.helpersCount}</div>
-                  </div>
-                  <div className="p-1 rounded border" style={{ backgroundColor: WB_THEME.BG, borderColor: WB_THEME.LINE }}>
-                    <div className="text-[9px] font-bold" style={{ color: WB_THEME.MUTED }}>Op/Mc Ratio</div>
-                    <div className="text-lg md:text-xl font-black" style={{ color: WB_THEME.TXT }}>
-                      {kpis.machinesCount > 0 ? (kpis.operatorsCount / kpis.machinesCount).toFixed(2) : '1.00'}x
-                    </div>
-                  </div>
-                </div>
-                <div className={`flex-1 min-h-0 overflow-y-auto ${tvFit ? '' : 'max-h-[260px]'} border rounded`} style={{ borderColor: WB_THEME.LINE }}>
-                  <table className={`w-full ${tvFit ? 'text-sm' : 'text-xs'} border-collapse`}>
-                    <thead className="sticky top-0 z-10" style={{ backgroundColor: WB_THEME.BG }}>
-                      <tr className="text-[10px] font-black uppercase text-left" style={{ color: WB_THEME.MUTED }}>
-                        <th className="p-1 pl-2">Line</th>
-                        <th className="p-1 text-right">Ops</th>
-                        <th className="p-1 text-right">Mach</th>
-                        <th className="p-1 text-right">Help</th>
-                        <th className="p-1 text-right pr-2">Ratio</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y font-semibold" style={{ borderColor: WB_THEME.LINE }}>
-                      {activeLines.map(l => (
-                        <tr key={l.lineId} className="hover:bg-blue-50/10 cursor-pointer" onClick={() => setDeepDiveLine(l)}>
-                          <td className="p-1 pl-2 font-black">{lineDisplayName(l.lineId)}</td>
-                          <td className="p-1 text-right font-bold" style={{ color: WB_THEME.ORANGE }}>{l.operators}</td>
-                          <td className="p-1 text-right font-bold" style={{ color: WB_THEME.BLUE }}>{l.machines}</td>
-                          <td className="p-1 text-right font-bold" style={{ color: WB_THEME.GREEN }}>{l.helpers}</td>
-                          <td className="p-1 text-right pr-2 font-black">
-                            {l.machines > 0 ? (l.operators / l.machines).toFixed(2) : '—'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </WbPanel>
-          </div>
-
-          {/* Body Row 2: Trend Chart (Week 32 to Current) + Corner: NPT */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1">
-            <WbPanel
-              title={
-                weeklyMetric === 'OQL'
-                  ? `Weekly BS OQL vs ${brand} AQC (from Week 32)`
-                  : weeklyMetric === 'PASS_RATE'
-                  ? `Weekly Production Pass Rate: BSBD QA/QC vs ${brand} AQC (from Week 32)`
-                  : `Weekly Quality Trend: Pass Rate & OQL (from Week 32)`
-              }
-              sub={
-                weeklyMetric === 'OQL'
-                  ? `Blue: BS OQL · Orange: ${brand} AQC · Red dashed: 4.5% commitment`
-                  : weeklyMetric === 'PASS_RATE'
-                  ? `Blue (Gold Ring): BSBD QA/QC · Purple: ${brand} AQC · Target: 97.0%`
-                  : `Dual View: Production Pass Rate % & OQL % (Week 32 to Week 52)`
-              }
-              right={
-                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <button
-                    type="button"
-                    onClick={() => setWeeklyMetric('PASS_RATE')}
-                    className={`px-2 py-0.5 text-[11px] font-black rounded-md transition-all ${
-                      weeklyMetric === 'PASS_RATE'
-                        ? 'bg-[#002D62] text-white shadow-sm'
-                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    🎯 Pass Rate %
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setWeeklyMetric('OQL')}
-                    className={`px-2 py-0.5 text-[11px] font-black rounded-md transition-all ${
-                      weeklyMetric === 'OQL'
-                        ? 'bg-[#002D62] text-white shadow-sm'
-                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    📉 OQL %
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setWeeklyMetric('BOTH')}
-                    className={`px-2 py-0.5 text-[11px] font-black rounded-md transition-all ${
-                      weeklyMetric === 'BOTH'
-                        ? 'bg-[#002D62] text-white shadow-sm'
-                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    ⊞ Both
-                  </button>
-                </div>
-              }
-              className="lg:col-span-7"
-              compact={tvFit}
-            >
-              {weeklyMetric === 'BOTH' ? (
-                <div className="space-y-4">
-                  <div>
-                    <div className="text-xs font-black text-emerald-900 dark:text-emerald-300 mb-1 flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-600"></span>
-                        <span>🎯 Weekly BSBD QA/QC vs AQC (Production Pass Rate %)</span>
-                      </div>
-                      <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold border border-emerald-300 px-1.5 py-0.5 rounded">
-                        Target: 97.0%
-                      </span>
-                    </div>
-                    <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} metric="PASS_RATE" />
-                  </div>
-                  <div className="border-t border-slate-200 dark:border-slate-700 pt-3">
-                    <div className="text-xs font-black text-blue-900 dark:text-blue-300 mb-1 flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-600"></span>
-                        <span>📉 Weekly BSBD QA/QC vs AQC (OQL %)</span>
-                      </div>
-                      <span className="text-[10px] text-red-600 dark:text-red-400 font-bold border border-red-300 px-1.5 py-0.5 rounded">
-                        4.50% commitment
-                      </span>
-                    </div>
-                    <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} metric="OQL" />
-                  </div>
-                </div>
-              ) : (
-                <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} metric={weeklyMetric} />
-              )}
+              <LiveTargetVsAchievementChart lines={activeLines} onSelectLine={setDeepDiveLine} plotH={tvFit ? '80px' : '95px'} />
             </WbPanel>
 
             <WbPanel
@@ -1389,7 +1220,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                   fg={openIncidents.length > 0 ? 'var(--wb-on-red)' : 'var(--wb-on-green)'}
                 />
               }
-              className="lg:col-span-5"
+              className="lg:col-span-4"
               compact={tvFit}
             >
               <div className="flex flex-col justify-between h-full gap-2">
@@ -1403,19 +1234,87 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
                         label: d.cause,
                         value: d.mins,
                         text: `${d.mins}m`,
-                        color: WB_THEME.AMBER
-                      })) : [{ label: 'Zero downtime', value: 0, text: '0m', color: WB_THEME.GREEN }]}
+                        color: WB_THEME.RED
+                      })) : [{ label: 'No downtime', value: 0, text: '0m', color: WB_THEME.GREEN }]}
+                      maxVal={Math.max(1, ...downtimeByCause.map(d => d.mins))}
                     />
                   </div>
                   <div>
-                    <div className="text-[10px] font-extrabold uppercase mb-1 flex items-center justify-between" style={{ color: WB_THEME.MUTED }}>
-                      <span>Open Stoppages</span>
-                      <span className="text-[9px] font-bold" style={{ color: WB_THEME.MUTED }}>${openIncidents.length} active</span>
+                    <div className="text-[10px] font-extrabold uppercase mb-1" style={{ color: WB_THEME.MUTED }}>
+                      Stoppages Status
                     </div>
-                    <OpenStoppagesList incidents={openIncidents} onClick={onOpenIncidentPanel} />
+                    <div className="flex flex-col justify-center h-full">
+                      {openIncidents.length === 0 ? (
+                        <div className="text-emerald-700 dark:text-emerald-400 font-black text-xs">
+                          ✓ All lines running smoothly (0 active stoppages)
+                        </div>
+                      ) : (
+                        <div className="text-red-700 dark:text-red-400 font-black text-xs">
+                          ⚠️ {openIncidents.length} line{openIncidents.length > 1 ? 's' : ''} currently stopped
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
+            </WbPanel>
+          </div>
+
+          {/* Body Row 2: Weekly Quality Trend (Pass Rate & OQL Side-by-Side in Dual View) */}
+          <div className="flex-1 min-h-0">
+            <WbPanel
+              title="Weekly Quality Trend (BSBD QA/QC vs AQC)"
+              right={
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyMetric('PASS_RATE')}
+                    className={`px-2.5 py-1 text-xs font-black rounded-md transition-all ${
+                      weeklyMetric === 'PASS_RATE'
+                        ? 'bg-[#002D62] text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    🎯 Pass Rate %
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyMetric('OQL')}
+                    className={`px-2.5 py-1 text-xs font-black rounded-md transition-all ${
+                      weeklyMetric === 'OQL'
+                        ? 'bg-[#002D62] text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    📉 OQL %
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyMetric('BOTH')}
+                    className={`px-2.5 py-1 text-xs font-black rounded-md transition-all ${
+                      weeklyMetric === 'BOTH'
+                        ? 'bg-[#002D62] text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    ⊞ Both Graphs
+                  </button>
+                </div>
+              }
+              compact={tvFit}
+            >
+              {weeklyMetric === 'BOTH' ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                  <div className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
+                    <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={true} metric="OQL" />
+                  </div>
+                  <div className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
+                    <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={true} metric="PASS_RATE" />
+                  </div>
+                </div>
+              ) : (
+                <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} metric={weeklyMetric} />
+              )}
             </WbPanel>
           </div>
         </div>
@@ -2052,11 +1951,11 @@ export const WeeklyBsOqlChart: React.FC<{
   metric?: 'OQL' | 'PASS_RATE';
 }> = ({ records, commitment, compact = false, metric = 'OQL' }) => {
   const isPass = metric === 'PASS_RATE';
+  const scrollRef = React.useRef<HTMLDivElement>(null);
   const now = new Date();
   const tempUtc = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
   const dayNum = tempUtc.getUTCDay() || 7;
   tempUtc.setUTCDate(tempUtc.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(tempUtc.getUTCFullYear(), 0, 1));
 
   const validRecords = [...records].filter(r =>
     isPass
@@ -2098,6 +1997,18 @@ export const WeeklyBsOqlChart: React.FC<{
     };
   });
 
+  // Automatically scroll to the right (latest weeks) on load and metric change
+  React.useEffect(() => {
+    const scrollToEnd = () => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+      }
+    };
+    scrollToEnd();
+    const timer = setTimeout(scrollToEnd, 60);
+    return () => clearTimeout(timer);
+  }, [records, metric]);
+
   // Calculate axis bounds & ticks
   let minVal: number;
   let maxVal: number;
@@ -2106,20 +2017,20 @@ export const WeeklyBsOqlChart: React.FC<{
   if (isPass) {
     minVal = 94.0;
     maxVal = 100.0;
-    ticks = [94.0, 94.5, 95.0, 95.5, 96.0, 96.5, 97.0, 97.5, 98.0, 98.5, 99.0, 99.5, 100.0];
+    ticks = [94.0, 95.0, 96.0, 97.0, 98.0, 99.0, 100.0];
   } else {
     minVal = 4.5;
     maxVal = 9.5;
-    ticks = [4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5];
+    ticks = [4.5, 5.5, 6.5, 7.5, 8.5, 9.5];
   }
   const span = Math.max(0.1, maxVal - minVal);
 
-  const step = compact ? 48 : 56;
-  const padL = compact ? 52 : 64;
-  const padR = compact ? 44 : 56;
-  const top = compact ? 55 : 65;
-  const plotH = compact ? 200 : 230;
-  const bottom = compact ? 82 : 94;
+  const step = compact ? 34 : 40;
+  const padL = compact ? 36 : 44;
+  const padR = compact ? 18 : 24;
+  const top = compact ? 26 : 32;
+  const plotH = compact ? 100 : 125;
+  const bottom = compact ? 46 : 54;
   const lastSlotX = padL + step * (slots.length - 1);
   const W = lastSlotX + padR;
   const H = top + plotH + bottom;
@@ -2142,51 +2053,39 @@ export const WeeklyBsOqlChart: React.FC<{
   const aqcBorder = isPass ? '#ea580c' : '#ffffff';
 
   return (
-    <div className="nfl-scroll overflow-x-auto pb-1">
-      <div className="flex items-center justify-between px-2 mb-2">
-        <div className="flex items-center gap-6 text-xs font-black">
-          {/* Legend for BSBD QA / QC */}
-          <div className="flex items-center gap-2">
+    <div ref={scrollRef} className="nfl-scroll overflow-x-auto pb-0.5">
+      <div className="flex items-center justify-between px-1 mb-1 text-[11px] font-black">
+        <div className="flex items-center gap-2">
+          <span className="text-[#002D62] dark:text-blue-300 font-extrabold">{isPass ? '🎯 Pass Rate %' : '📉 OQL %'}</span>
+          <div className="flex items-center gap-1 text-[10px]">
             <span
-              className="inline-block w-3.5 h-3.5 rounded-full"
+              className="inline-block w-2.5 h-2.5 rounded-full"
               style={{
                 backgroundColor: bsColor,
-                border: isPass ? '2px solid #d4af37' : '2px solid white',
-                boxShadow: '0 0 2px rgba(0,0,0,0.3)'
+                border: isPass ? '1.5px solid #d4af37' : '1.5px solid white'
               }}
             />
-            <span style={{ color: 'var(--wb-txt)' }}>BSBD QA / QC</span>
+            <span style={{ color: 'var(--wb-txt)' }}>BSBD</span>
           </div>
 
-          {/* Legend for AQC */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 text-[10px]">
             <span
-              className="inline-block w-3.5 h-3.5 rotate-45"
+              className="inline-block w-2.5 h-2.5 rotate-45"
               style={{
                 backgroundColor: aqcColor,
-                border: isPass ? '1.5px solid #ea580c' : '1.5px solid white',
-                boxShadow: '0 0 2px rgba(0,0,0,0.3)'
+                border: isPass ? '1.5px solid #ea580c' : '1.5px solid white'
               }}
             />
-            <span style={{ color: 'var(--wb-txt)' }}>{isClientDemoSession() ? 'DEMO' : 'NFL'} AQC</span>
+            <span style={{ color: 'var(--wb-txt)' }}>{isClientDemoSession() ? 'DEMO' : 'NFL'}</span>
           </div>
 
-          {!isPass && (
-            <div className="flex items-center gap-2 text-red-600">
-              <span className="inline-block w-5 h-0 border-t-2 border-dashed border-red-500" />
-              <span>4.50% Commitment Limit</span>
-            </div>
-          )}
-          {isPass && (
-            <div className="flex items-center gap-2 text-emerald-600">
-              <span className="inline-block w-5 h-0 border-t-2 border-dashed border-emerald-500" />
-              <span>97.0% Inspection Benchmark</span>
-            </div>
-          )}
+          <span className={`text-[9.5px] px-1.5 py-0.5 rounded font-bold ${isPass ? 'text-emerald-700 bg-emerald-100 dark:bg-emerald-950/60' : 'text-red-700 bg-red-100 dark:bg-red-950/60'}`}>
+            {isPass ? 'Target: 97.0%' : 'Commitment: 4.5%'}
+          </span>
         </div>
 
-        <div className="text-[11px] font-bold text-slate-500">
-          Showing Week 32 to Week 52
+        <div className="text-[10px] font-semibold text-slate-400">
+          Week 32–52
         </div>
       </div>
 
@@ -2194,12 +2093,12 @@ export const WeeklyBsOqlChart: React.FC<{
         {/* Horizontal dashed gridlines & Left Y-axis percentage labels */}
         {ticks.map(t => {
           const yPos = y(t);
-          const isMajor = isPass ? (t % 1.0 === 0.0) : (t % 0.5 === 0.0);
+          const isMajor = isPass ? (t % 1.0 === 0.0) : (t % 1.0 === 0.5);
           return (
             <g key={`grid-${t}`}>
               <line
-                x1={padL - 10}
-                x2={lastSlotX + 10}
+                x1={padL - 8}
+                x2={lastSlotX + 8}
                 y1={yPos}
                 y2={yPos}
                 stroke={WB_THEME.LINE}
@@ -2208,14 +2107,14 @@ export const WeeklyBsOqlChart: React.FC<{
                 opacity={isMajor ? 0.55 : 0.3}
               />
               <text
-                x={padL - 14}
-                y={yPos + 3.5}
+                x={padL - 10}
+                y={yPos + 3}
                 textAnchor="end"
-                fontSize={isMajor ? 11 : 9.5}
+                fontSize={compact ? 8.5 : 9.5}
                 fontWeight={isMajor ? 800 : 600}
                 fill={isMajor ? WB_THEME.TXT : WB_THEME.MUTED}
               >
-                {t.toFixed(isPass ? 1 : 2)}%
+                {t.toFixed(isPass ? 0 : 1)}%
               </text>
             </g>
           );
@@ -2225,23 +2124,23 @@ export const WeeklyBsOqlChart: React.FC<{
         {!isPass && commitment >= minVal && commitment <= maxVal && (
           <g>
             <line
-              x1={padL - 10}
-              x2={lastSlotX + 10}
+              x1={padL - 8}
+              x2={lastSlotX + 8}
               y1={y(commitment)}
               y2={y(commitment)}
               stroke={WB_THEME.RED}
-              strokeWidth={2}
-              strokeDasharray="6 4"
+              strokeWidth={1.5}
+              strokeDasharray="5 3"
             />
             <text
-              x={lastSlotX + 14}
-              y={y(commitment) + 4}
+              x={lastSlotX + 10}
+              y={y(commitment) + 3}
               textAnchor="start"
-              fontSize={10.5}
+              fontSize={9}
               fontWeight={800}
               fill={WB_THEME.RED}
             >
-              {commitment.toFixed(1)}% limit
+              4.5% limit
             </text>
           </g>
         )}
@@ -2249,19 +2148,19 @@ export const WeeklyBsOqlChart: React.FC<{
         {isPass && (
           <g>
             <line
-              x1={padL - 10}
-              x2={lastSlotX + 10}
+              x1={padL - 8}
+              x2={lastSlotX + 8}
               y1={y(97.0)}
               y2={y(97.0)}
               stroke="#10b981"
               strokeWidth={1.5}
-              strokeDasharray="5 4"
+              strokeDasharray="5 3"
             />
             <text
-              x={lastSlotX + 14}
-              y={y(97.0) + 4}
+              x={lastSlotX + 10}
+              y={y(97.0) + 3}
               textAnchor="start"
-              fontSize={10.5}
+              fontSize={9}
               fontWeight={800}
               fill="#10b981"
             >
@@ -2272,22 +2171,22 @@ export const WeeklyBsOqlChart: React.FC<{
 
         {/* Bottom axis line */}
         <line
-          x1={padL - 10}
-          x2={lastSlotX + 10}
+          x1={padL - 8}
+          x2={lastSlotX + 8}
           y1={top + plotH}
           y2={top + plotH}
           stroke={WB_THEME.LINE}
-          strokeWidth={2}
+          strokeWidth={1.5}
         />
 
         {/* Left axis line */}
         <line
-          x1={padL - 10}
-          x2={padL - 10}
+          x1={padL - 8}
+          x2={padL - 8}
           y1={top}
           y2={top + plotH}
           stroke={WB_THEME.LINE}
-          strokeWidth={2}
+          strokeWidth={1.5}
         />
 
         {/* Connecting Polylines */}
@@ -2295,7 +2194,7 @@ export const WeeklyBsOqlChart: React.FC<{
           <polyline
             fill="none"
             stroke={bsColor}
-            strokeWidth={3}
+            strokeWidth={2.5}
             strokeLinejoin="round"
             strokeLinecap="round"
             points={bsPts.map(p => `${x(p.i)},${y(p.v)}`).join(' ')}
@@ -2305,7 +2204,7 @@ export const WeeklyBsOqlChart: React.FC<{
           <polyline
             fill="none"
             stroke={aqcColor}
-            strokeWidth={3}
+            strokeWidth={2.5}
             strokeLinejoin="round"
             strokeLinecap="round"
             points={aqcPts.map(p => `${x(p.i)},${y(p.v)}`).join(' ')}
@@ -2319,17 +2218,17 @@ export const WeeklyBsOqlChart: React.FC<{
           // In Pass Rate mode, BSBD is on top (100% to 98%): callout is ABOVE!
           // In OQL mode, matching user reference chart: Week 32-39 callout is ABOVE, Week 40+ is BELOW!
           const isAbove = isPass ? true : p.weekNo <= 39;
-          const boxH = 34;
-          const boxW = 19;
-          const stemLen = 9;
+          const boxH = 24;
+          const boxW = 15;
+          const stemLen = 6;
           let boxY: number;
           if (isAbove) {
             boxY = cy - stemLen - boxH;
             if (boxY < top + 2) boxY = top + 2;
           } else {
             boxY = cy + stemLen;
-            if (boxY + boxH > top + plotH - 3) {
-              boxY = top + plotH - boxH - 3;
+            if (boxY + boxH > top + plotH - 2) {
+              boxY = top + plotH - boxH - 2;
             }
           }
           const textCenterY = boxY + boxH / 2;
@@ -2339,28 +2238,28 @@ export const WeeklyBsOqlChart: React.FC<{
               <circle
                 cx={cx}
                 cy={cy}
-                r={isPass ? 6.5 : 5.5}
+                r={isPass ? 5 : 4.5}
                 fill={bsColor}
                 stroke={bsBorder}
-                strokeWidth={isPass ? 2.5 : 2}
+                strokeWidth={isPass ? 2 : 1.5}
               />
               <line
                 x1={cx}
-                y1={isAbove ? cy - (isPass ? 6.5 : 5.5) : cy + (isPass ? 6.5 : 5.5)}
+                y1={isAbove ? cy - (isPass ? 5 : 4.5) : cy + (isPass ? 5 : 4.5)}
                 x2={cx}
                 y2={isAbove ? boxY + boxH : boxY}
                 stroke={bsColor}
-                strokeWidth={1.5}
+                strokeWidth={1.2}
               />
               <rect
                 x={cx - boxW / 2}
                 y={boxY}
                 width={boxW}
                 height={boxH}
-                rx={3.5}
+                rx={3}
                 fill="var(--wb-panel)"
                 stroke={bsColor}
-                strokeWidth={1.5}
+                strokeWidth={1.2}
               />
               <text
                 x={cx}
@@ -2368,7 +2267,7 @@ export const WeeklyBsOqlChart: React.FC<{
                 textAnchor="middle"
                 dominantBaseline="central"
                 transform={`rotate(-90 ${cx} ${textCenterY})`}
-                fontSize={9.5}
+                fontSize={8}
                 fontWeight={900}
                 fill={bsColor}
               >
@@ -2385,17 +2284,17 @@ export const WeeklyBsOqlChart: React.FC<{
           // In Pass Rate mode, AQC is lower (96% to 97%): callout is BELOW!
           // In OQL mode, AQC is higher (6.3% to 7.7%): callout is ABOVE!
           const isAbove = isPass ? false : true;
-          const boxH = 34;
-          const boxW = 19;
-          const stemLen = 9;
+          const boxH = 24;
+          const boxW = 15;
+          const stemLen = 6;
           let boxY: number;
           if (isAbove) {
             boxY = cy - stemLen - boxH;
             if (boxY < top + 2) boxY = top + 2;
           } else {
             boxY = cy + stemLen;
-            if (boxY + boxH > top + plotH - 3) {
-              boxY = top + plotH - boxH - 3;
+            if (boxY + boxH > top + plotH - 2) {
+              boxY = top + plotH - boxH - 2;
             }
           }
           const textCenterY = boxY + boxH / 2;
@@ -2403,28 +2302,28 @@ export const WeeklyBsOqlChart: React.FC<{
           return (
             <g key={`aqc-pt-${p.i}`}>
               <polygon
-                points={`${cx},${cy - 6.5} ${cx + 6.5},${cy} ${cx},${cy + 6.5} ${cx - 6.5},${cy}`}
+                points={`${cx},${cy - 5} ${cx + 5},${cy} ${cx},${cy + 5} ${cx - 5},${cy}`}
                 fill={aqcColor}
                 stroke={aqcBorder}
-                strokeWidth={isPass ? 2 : 1.5}
+                strokeWidth={1.5}
               />
               <line
                 x1={cx}
-                y1={isAbove ? cy - 6.5 : cy + 6.5}
+                y1={isAbove ? cy - 5 : cy + 5}
                 x2={cx}
                 y2={isAbove ? boxY + boxH : boxY}
                 stroke={aqcColor}
-                strokeWidth={1.5}
+                strokeWidth={1.2}
               />
               <rect
                 x={cx - boxW / 2}
                 y={boxY}
                 width={boxW}
                 height={boxH}
-                rx={3.5}
+                rx={3}
                 fill="var(--wb-panel)"
                 stroke={aqcColor}
-                strokeWidth={1.5}
+                strokeWidth={1.2}
               />
               <text
                 x={cx}
@@ -2432,7 +2331,7 @@ export const WeeklyBsOqlChart: React.FC<{
                 textAnchor="middle"
                 dominantBaseline="central"
                 transform={`rotate(-90 ${cx} ${textCenterY})`}
-                fontSize={9.5}
+                fontSize={8}
                 fontWeight={900}
                 fill={aqcColor}
               >
@@ -2452,9 +2351,9 @@ export const WeeklyBsOqlChart: React.FC<{
                 x1={cx}
                 x2={cx}
                 y1={top + plotH}
-                y2={top + plotH + 6}
+                y2={top + plotH + 5}
                 stroke={WB_THEME.LINE}
-                strokeWidth={1.5}
+                strokeWidth={1.2}
               />
               <line
                 x1={cx}
@@ -2462,21 +2361,21 @@ export const WeeklyBsOqlChart: React.FC<{
                 y1={top}
                 y2={top + plotH}
                 stroke={WB_THEME.LINE}
-                strokeWidth={1}
+                strokeWidth={0.8}
                 strokeDasharray="2 4"
-                opacity={hasData ? 0.25 : 0.12}
+                opacity={hasData ? 0.22 : 0.1}
               />
               <text
                 x={cx}
-                y={top + plotH + 46}
+                y={top + plotH + 28}
                 textAnchor="middle"
                 dominantBaseline="central"
-                transform={`rotate(-90 ${cx} ${top + plotH + 46})`}
-                fontSize={10.5}
+                transform={`rotate(-90 ${cx} ${top + plotH + 28})`}
+                fontSize={8.5}
                 fontWeight={hasData ? 900 : 600}
                 fill={hasData ? WB_THEME.TXT : WB_THEME.MUTED}
               >
-                Week - {s.weekNo}
+                W-{s.weekNo}
               </text>
             </g>
           );

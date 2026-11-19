@@ -145,6 +145,18 @@ export default function App() {
   const [weeklyQuality, setWeeklyQuality] = useState<WeeklyQualityRecord[]>([]);
   const [monthlyTargets, setMonthlyTargets] = useState<MonthlyTargetConfig[]>([]);
   const [cloudConnected, setCloudConnected] = useState<boolean>(false);
+  const [liveClockStr, setLiveClockStr] = useState<string>(() =>
+    new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true })
+  );
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLiveClockStr(
+        new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true })
+      );
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const [showIncidentModal, setShowIncidentModal] = useState(false);
   const [showEntryModal, setShowEntryModal] = useState(false);
@@ -1368,14 +1380,14 @@ export default function App() {
             </button>
           )}
           <span
-            className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold ${
-              cloudConnected
-                ? 'border-emerald-700 bg-emerald-950/80 text-emerald-300'
-                : 'border-slate-700 bg-slate-800 text-slate-300'
-            }`}
+            title={`Live Bangladesh Time (AM/PM) · Cloud: ${cloudConnected ? 'Synced' : 'Local'}`}
+            className="whitespace-nowrap rounded-full border border-emerald-500/40 bg-emerald-950/80 px-2.5 py-1 text-[11px] font-black text-emerald-300 flex items-center gap-1.5 shadow-sm"
           >
-            <span className="inline-block h-2 w-2 rounded-full sm:hidden" style={{ backgroundColor: cloudConnected ? '#10B981' : '#94A3B8' }} />
-            <span className="hidden sm:inline">{cloudConnected ? 'Cloud Live' : 'Local'}</span>
+            <span
+              className="inline-block h-2 w-2 rounded-full animate-pulse shrink-0"
+              style={{ backgroundColor: cloudConnected ? '#10B981' : '#F59E0B' }}
+            />
+            <span className="font-mono tracking-wide">{liveClockStr}</span>
           </span>
         </header>
 

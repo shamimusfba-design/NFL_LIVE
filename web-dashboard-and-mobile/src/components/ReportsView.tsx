@@ -342,18 +342,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
                 <div>
                   <h3 className="text-sm font-black text-[#002D62] flex items-center gap-2">
-                    <span>Weekly Quality &amp; Production Performance Trend (from Week 32)</span>
-                    <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
-                      BSBD QA/QC vs {isClientDemoSession() ? 'DEMO' : 'NFL'} AQC
-                    </span>
+                    <span>Weekly Quality Trend (from Week 32)</span>
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    {weeklyMetric === 'PASS_RATE'
-                      ? 'Production Pass Rate %: Target 97.0% (Week 32 to Current)'
-                      : weeklyMetric === 'OQL'
-                      ? 'OQL Quality Audit %: Limit 4.50% commitment'
-                      : 'Dual View: Production Pass Rate % (Target 97.0%) & OQL Quality % (Limit 4.50%)'}
-                  </p>
                 </div>
 
                 <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
@@ -394,26 +384,12 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               </div>
 
               {weeklyMetric === 'BOTH' ? (
-                <div className="space-y-4">
-                  <div>
-                    <div className="text-xs font-black text-emerald-900 mb-1 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block"></span>
-                        <span>🎯 1. Weekly BSBD QA/QC vs AQC (Production Pass Rate %)</span>
-                      </span>
-                      <span className="text-[10px] text-emerald-700 font-bold border border-emerald-300 px-1.5 py-0.5 rounded">Target: 97.0%</span>
-                    </div>
-                    <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} metric="PASS_RATE" />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <div className="p-2 rounded-xl border border-slate-200 bg-slate-50/50">
+                    <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} compact={true} metric="OQL" />
                   </div>
-                  <div className="border-t border-slate-200 pt-3">
-                    <div className="text-xs font-black text-blue-900 mb-1 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"></span>
-                        <span>📉 2. Weekly BSBD QA/QC vs AQC (OQL %)</span>
-                      </span>
-                      <span className="text-[10px] text-red-600 font-bold border border-red-300 px-1.5 py-0.5 rounded">4.50% commitment</span>
-                    </div>
-                    <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} metric="OQL" />
+                  <div className="p-2 rounded-xl border border-slate-200 bg-slate-50/50">
+                    <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} compact={true} metric="PASS_RATE" />
                   </div>
                 </div>
               ) : (
