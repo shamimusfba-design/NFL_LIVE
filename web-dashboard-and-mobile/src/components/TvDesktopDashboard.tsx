@@ -138,7 +138,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
   const interval = WB_INTERVALS[intervalIdx];
   const [countdown, setCountdown] = useState(WB_INTERVALS[0]);
   const [deepDiveLine, setDeepDiveLine] = useState<LinePerformanceSummary | null>(null);
-  const [weeklyMetric, setWeeklyMetric] = useState<'OQL' | 'PASS_RATE' | 'BOTH'>('OQL');
+  const [weeklyMetric, setWeeklyMetric] = useState<'OQL' | 'PASS_RATE' | 'BOTH'>('BOTH');
   // Cutting, Print and Embroidery get their own page: no sewing cards (DHU, OQL, operator vs machine, efficiency).
   // TV fit mode: when active, dynamically fits all cards and charts into one single screen height (zero vertical scroll).
   const [tvFit, setTvFit] = useState<boolean>(() => { try { return localStorage.getItem('nfl_tv_fit') === '1'; } catch { return false; } });
@@ -1292,18 +1292,90 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           {/* Body Row 2: Trend Chart (Week 32 to Current) + Corner: NPT */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2 flex-1">
             <WbPanel
-              title={`Weekly BS OQL vs ${brand} AQC (from Week 32)`}
-              sub={`Blue: BS OQL · Orange: ${brand} AQC · Red dashed: 4.5% commitment`}
+              title={
+                weeklyMetric === 'OQL'
+                  ? `Weekly BS OQL vs ${brand} AQC (from Week 32)`
+                  : weeklyMetric === 'PASS_RATE'
+                  ? `Weekly Production Pass Rate: BSBD QA/QC vs ${brand} AQC (from Week 32)`
+                  : `Weekly Quality Trend: Pass Rate & OQL (from Week 32)`
+              }
+              sub={
+                weeklyMetric === 'OQL'
+                  ? `Blue: BS OQL · Orange: ${brand} AQC · Red dashed: 4.5% commitment`
+                  : weeklyMetric === 'PASS_RATE'
+                  ? `Blue (Gold Ring): BSBD QA/QC · Purple: ${brand} AQC · Target: 97.0%`
+                  : `Dual View: Production Pass Rate % & OQL % (Week 32 to Week 52)`
+              }
               right={
-                <div className="flex gap-1">
-                  <WbBadge text="BS OQL" bg={WB_THEME.BLUE} fg="var(--wb-on-selected)" />
-                  <WbBadge text={`${brand} AQC`} bg={WB_THEME.ORANGE} fg="var(--wb-on-orange)" />
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyMetric('PASS_RATE')}
+                    className={`px-2 py-0.5 text-[11px] font-black rounded-md transition-all ${
+                      weeklyMetric === 'PASS_RATE'
+                        ? 'bg-[#002D62] text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    🎯 Pass Rate %
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyMetric('OQL')}
+                    className={`px-2 py-0.5 text-[11px] font-black rounded-md transition-all ${
+                      weeklyMetric === 'OQL'
+                        ? 'bg-[#002D62] text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    📉 OQL %
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyMetric('BOTH')}
+                    className={`px-2 py-0.5 text-[11px] font-black rounded-md transition-all ${
+                      weeklyMetric === 'BOTH'
+                        ? 'bg-[#002D62] text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    ⊞ Both
+                  </button>
                 </div>
               }
               className="lg:col-span-7"
               compact={tvFit}
             >
-              <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} />
+              {weeklyMetric === 'BOTH' ? (
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-xs font-black text-emerald-900 dark:text-emerald-300 mb-1 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-600"></span>
+                        <span>🎯 Weekly BSBD QA/QC vs AQC (Production Pass Rate %)</span>
+                      </div>
+                      <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold border border-emerald-300 px-1.5 py-0.5 rounded">
+                        Target: 97.0%
+                      </span>
+                    </div>
+                    <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} metric="PASS_RATE" />
+                  </div>
+                  <div className="border-t border-slate-200 dark:border-slate-700 pt-3">
+                    <div className="text-xs font-black text-blue-900 dark:text-blue-300 mb-1 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+                        <span>📉 Weekly BSBD QA/QC vs AQC (OQL %)</span>
+                      </div>
+                      <span className="text-[10px] text-red-600 dark:text-red-400 font-bold border border-red-300 px-1.5 py-0.5 rounded">
+                        4.50% commitment
+                      </span>
+                    </div>
+                    <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} metric="OQL" />
+                  </div>
+                </div>
+              ) : (
+                <WeeklyBsOqlChart records={sortedWeekly} commitment={kpis.oqlCommitmentPct} compact={tvFit} metric={weeklyMetric} />
+              )}
             </WbPanel>
 
             <WbPanel
@@ -1965,7 +2037,7 @@ const RectificationPendingChart: React.FC<{
  *  - 'OQL' (Graph 1: BSBD QA/QC vs AQC OQL %, 4.50% - 9.50% scale, red commitment at 4.50%)
  *  - 'PASS_RATE' (Graph 2: BSBD QA/QC vs AQC Pass Rate %, 94.0% - 100.0% scale)
  */
-const WeeklyBsOqlChart: React.FC<{
+export const WeeklyBsOqlChart: React.FC<{
   records: WeeklyQualityRecord[];
   commitment: number;
   compact?: boolean;

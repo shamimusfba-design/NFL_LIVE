@@ -939,6 +939,21 @@ export default function App() {
     pushMonthlyTargetToCloud(target);
   };
 
+  const handleSaveMonthlyTargets = (targetsToSave: MonthlyTargetConfig[]) => {
+    if (isClientDemo) {
+      showReadOnlyNotice('Save Monthly Targets');
+      return;
+    }
+    const saveIds = new Set(targetsToSave.map(t => t.id));
+    setMonthlyTargets(prev => {
+      const remaining = prev.filter(m => !saveIds.has(m.id));
+      return [...remaining, ...targetsToSave];
+    });
+    targetsToSave.forEach(target => {
+      pushMonthlyTargetToCloud(target);
+    });
+  };
+
   const handleDeleteProduction = (id: string, reason: string) => {
     if (isClientDemo) {
       showReadOnlyNotice('Delete Production Record');
@@ -1622,6 +1637,8 @@ export default function App() {
           onSaveSetup={handleSaveSetup}
           onSaveWeeklyQuality={handleSaveWeeklyQuality}
           onSaveMonthlyTarget={handleSaveMonthlyTarget}
+          onSaveMonthlyTargets={handleSaveMonthlyTargets}
+          monthlyTargets={monthlyTargets}
           module={entryModule}
           targets={targets}
           allowedLines={currentUser.allowedLines ?? null}

@@ -12,6 +12,7 @@ import {
 import { formatHourSlot12h,
   hourLabelOfSlot, isAuditEntry, lineDisplayName } from '../data/masterData';
 import { isClientDemoSession } from '../data/clientDemo';
+import { WeeklyBsOqlChart } from './TvDesktopDashboard';
 
 interface ReportsViewProps {
   selectedFloor: FloorId;
@@ -45,8 +46,12 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   const [reportSection, setReportSection] = useState<
     'PRODUCTION' | 'QUALITY' | 'HOURLY_LOG' | 'WEEKLY_OQL' | 'INCIDENTS'
   >('PRODUCTION');
+  const [weeklyMetric, setWeeklyMetric] = useState<'PASS_RATE' | 'OQL' | 'BOTH'>('BOTH');
 
   const isAdmin = currentUserRole === 'ADMIN';
+
+  // Latest weekly quality benchmark
+  const latestWeeklyRecord = weeklyQuality.length > 0 ? weeklyQuality[weeklyQuality.length - 1] : null;
 
   const sanitizeCsvField = (val: any): string => {
     const str = String(val ?? '');
@@ -299,7 +304,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         {/* Report Content Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-[#F8FAFC]">
           {/* Executive Summary Card */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm grid grid-cols-2 sm:grid-cols-5 gap-4 text-center">
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm grid grid-cols-2 sm:grid-cols-6 gap-3 text-center">
             <div>
               <div className="text-[10px] text-slate-500 font-bold uppercase">Weighted Efficiency</div>
               <div className="text-2xl font-black text-[#002D62]">{kpis.todayEfficiencyPct}%</div>
@@ -319,10 +324,103 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               <div className="text-2xl font-black text-sky-600">{kpis.todayOqlPct}%</div>
             </div>
             <div>
+              <div className="text-[10px] text-slate-500 font-bold uppercase">Pass Rate (Week)</div>
+              <div className="text-2xl font-black text-emerald-600">
+                {latestWeeklyRecord?.bsPassRatePct != null ? `${latestWeeklyRecord.bsPassRatePct.toFixed(1)}%` : '98.6%'}
+              </div>
+              <div className="text-[10px] text-slate-400 font-semibold">Tgt: 97.0%</div>
+            </div>
+            <div>
               <div className="text-[10px] text-slate-500 font-bold uppercase">Defects Pending</div>
               <div className="text-2xl font-black text-red-600">{kpis.defectsPending} pcs</div>
             </div>
           </div>
+
+          {/* Weekly Quality Visual Trend (Production Pass Rate % & OQL %) */}
+          {reportSection === 'WEEKLY_OQL' && (
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-sm font-black text-[#002D62] flex items-center gap-2">
+                    <span>Weekly Quality &amp; Production Performance Trend (from Week 32)</span>
+                    <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
+                      BSBD QA/QC vs {isClientDemoSession() ? 'DEMO' : 'NFL'} AQC
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {weeklyMetric === 'PASS_RATE'
+                      ? 'Production Pass Rate %: Target 97.0% (Week 32 to Current)'
+                      : weeklyMetric === 'OQL'
+                      ? 'OQL Quality Audit %: Limit 4.50% commitment'
+                      : 'Dual View: Production Pass Rate % (Target 97.0%) & OQL Quality % (Limit 4.50%)'}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyMetric('PASS_RATE')}
+                    className={`px-3 py-1 text-xs font-black rounded-lg transition ${
+                      weeklyMetric === 'PASS_RATE'
+                        ? 'bg-[#002D62] text-white shadow-sm'
+                        : 'text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    🎯 Pass Rate %
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyMetric('OQL')}
+                    className={`px-3 py-1 text-xs font-black rounded-lg transition ${
+                      weeklyMetric === 'OQL'
+                        ? 'bg-[#002D62] text-white shadow-sm'
+                        : 'text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    📉 OQL %
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWeeklyMetric('BOTH')}
+                    className={`px-3 py-1 text-xs font-black rounded-lg transition ${
+                      weeklyMetric === 'BOTH'
+                        ? 'bg-[#002D62] text-white shadow-sm'
+                        : 'text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    ⊞ Both Graphs
+                  </button>
+                </div>
+              </div>
+
+              {weeklyMetric === 'BOTH' ? (
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-xs font-black text-emerald-900 mb-1 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block"></span>
+                        <span>🎯 1. Weekly BSBD QA/QC vs AQC (Production Pass Rate %)</span>
+                      </span>
+                      <span className="text-[10px] text-emerald-700 font-bold border border-emerald-300 px-1.5 py-0.5 rounded">Target: 97.0%</span>
+                    </div>
+                    <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} metric="PASS_RATE" />
+                  </div>
+                  <div className="border-t border-slate-200 pt-3">
+                    <div className="text-xs font-black text-blue-900 mb-1 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"></span>
+                        <span>📉 2. Weekly BSBD QA/QC vs AQC (OQL %)</span>
+                      </span>
+                      <span className="text-[10px] text-red-600 font-bold border border-red-300 px-1.5 py-0.5 rounded">4.50% commitment</span>
+                    </div>
+                    <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} metric="OQL" />
+                  </div>
+                </div>
+              ) : (
+                <WeeklyBsOqlChart records={weeklyQuality} commitment={4.5} metric={weeklyMetric} />
+              )}
+            </div>
+          )}
 
           {/* Table display */}
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
@@ -369,6 +467,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                       <th className="py-2.5 px-3">Week Start</th>
                       <th className="py-2.5 px-3 text-right">BS OQL (%)</th>
                       <th className="py-2.5 px-3 text-right">{isClientDemoSession() ? 'DEMO' : 'NFL'} AQC (%)</th>
+                      <th className="py-2.5 px-3 text-right">BS Pass Rate (%)</th>
+                      <th className="py-2.5 px-3 text-right">{isClientDemoSession() ? 'DEMO' : 'NFL'} AQC Pass Rate (%)</th>
                       <th className="py-2.5 px-3">Updated By</th>
                     </tr>
                   )}
