@@ -247,7 +247,7 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
       return next;
     });
 
-    setSaveSuccessMsg(`✓ সফলভাবে ${selectedFloor}-এর সকল (${floorLines.length}টি) লাইনের মান্থলি ডেটা ও আপ-টু-ডেট এফিসিয়েন্সি এক ক্লিকে সেভ হয়েছে!`);
+    setSaveSuccessMsg(`✓ Successfully saved monthly targets & up-to-date actual efficiency for all ${floorLines.length} lines on ${selectedFloor}!`);
     setTimeout(() => setSaveSuccessMsg(null), 4000);
   };
 
@@ -263,13 +263,13 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
             </span>
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            একবারে পুরো ফ্লোরের সব লাইনের আপ-টু-ডেট মান্থলি এফিসিয়েন্সি ডে বাই ডে টেবিল আকারে লিখে One-Shot সেভ করুন। বারবার ড্রপডাউন খোলার প্রয়োজন নেই।
+            Enter monthly targets and day-by-day up-to-date actual efficiency for all lines on the floor in one unified spreadsheet grid. No repeated line dropdown switching needed.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <div>
-            <label className="block text-[10px] font-bold text-slate-500 mb-0.5">মাস (Month)</label>
+            <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Month (YYYY-MM)</label>
             <input
               type="month"
               value={selectedMonth}
@@ -289,7 +289,7 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
 
       {/* Floor Selection Pills */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-        <span className="text-xs font-bold text-slate-500 mr-1 shrink-0">ফ্লোর নির্বাচন:</span>
+        <span className="text-xs font-bold text-slate-500 mr-1 shrink-0">Select Floor:</span>
         {AVAILABLE_FLOORS.map(fl => (
           <button
             key={fl}
@@ -311,20 +311,20 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
         <div className="flex items-center justify-between mb-2">
           <div className="text-xs font-black text-slate-800 flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" />
-            <span>{selectedFloor} ফ্লোর বেঞ্চমার্ক ডিফল্ট (Floor Defaults)</span>
+            <span>{selectedFloor} Floor Benchmark Defaults</span>
           </div>
           <button
             type="button"
             onClick={handleApplyDefaultsToAll}
             className="text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-100 hover:bg-blue-200 px-2.5 py-1 rounded-lg transition"
           >
-            ⚡ সব লাইনে ডিফল্ট কপি করুন (Copy Defaults to All)
+            ⚡ Copy Defaults to All Lines
           </button>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
           <div>
-            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">ফ্লোর টার্গেট এফিসিয়েন্সি (%)</label>
+            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Floor Target Efficiency (%)</label>
             <input
               type="number"
               step="0.5"
@@ -334,7 +334,7 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
             />
           </div>
           <div>
-            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">টার্গেট অ্যাচিভ % (%)</label>
+            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Target Achievement (%)</label>
             <input
               type="number"
               step="0.5"
@@ -344,7 +344,7 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
             />
           </div>
           <div>
-            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">DHU লিমিট (%)</label>
+            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">DHU Limit (%)</label>
             <input
               type="number"
               step="0.1"
@@ -354,7 +354,7 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
             />
           </div>
           <div>
-            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">OQL কমিটমেন্ট (%)</label>
+            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">OQL Commitment (%)</label>
             <input
               type="number"
               step="0.1"
@@ -364,7 +364,7 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
             />
           </div>
           <div>
-            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">FRI পাস রেট (%)</label>
+            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">FRI Pass Rate (%)</label>
             <input
               type="number"
               step="0.1"
@@ -387,10 +387,10 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
           <div className="text-xs font-black text-slate-800">
-            {selectedFloor} - মোট {floorLines.length}টি লাইনের ওয়ান শট মান্থলি ডেটা টেবিল ({selectedMonth})
+            {selectedFloor} · Monthly Target &amp; Actual Line Grid ({floorLines.length} Lines · {selectedMonth})
           </div>
           <div className="text-[11px] text-slate-500 font-bold">
-            💡 কীবোর্ডের <kbd className="px-1.5 py-0.5 bg-white border rounded text-[10px] font-mono">Tab</kbd> চাপলে এক লাইন থেকে পরবর্তী লাইনে দ্রুত যেতে পারবেন
+            💡 Press <kbd className="px-1.5 py-0.5 bg-white border rounded text-[10px] font-mono">Tab</kbd> to rapidly navigate between line inputs
           </div>
         </div>
 
@@ -398,22 +398,22 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
           <table className="w-full text-xs border-collapse">
             <thead className="sticky top-0 bg-[#002D62] text-white z-10 text-[11px] font-black uppercase">
               <tr>
-                <th className="p-2.5 text-left w-24">লাইন (Line)</th>
+                <th className="p-2.5 text-left w-24">Line ID</th>
                 <th className="p-2.5 text-center bg-blue-900 w-32">
-                  টার্গেট এফিসিয়েন্সি (%)
-                  <div className="text-[9px] font-normal normal-case text-blue-200">Target Eff %</div>
+                  Target Eff %
+                  <div className="text-[9px] font-normal normal-case text-blue-200">Target Efficiency</div>
                 </th>
                 <th className="p-2.5 text-center bg-emerald-900 w-36 border-x border-emerald-700">
-                  ⭐ আপ-টু-ডেট মান্থলি Eff (%)
-                  <div className="text-[9px] font-normal normal-case text-emerald-200">Day-by-Day Actual Eff</div>
+                  ⭐ MTD Actual Eff %
+                  <div className="text-[9px] font-normal normal-case text-emerald-200">Day-by-Day Actual</div>
                 </th>
                 <th className="p-2.5 text-center w-28">
-                  টার্গেট Achieve %
-                  <div className="text-[9px] font-normal normal-case text-slate-300">Target Ach %</div>
+                  Target Ach %
+                  <div className="text-[9px] font-normal normal-case text-slate-300">Target Achieve</div>
                 </th>
                 <th className="p-2.5 text-center w-32">
-                  আপ-টু-ডেট Achieve %
-                  <div className="text-[9px] font-normal normal-case text-slate-300">Actual Ach %</div>
+                  Actual Ach %
+                  <div className="text-[9px] font-normal normal-case text-slate-300">Actual Achieve</div>
                 </th>
                 <th className="p-2.5 text-center w-24">
                   DHU Limit %
@@ -564,7 +564,7 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
         {/* Table Footer with Bottom Save Action */}
         <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="text-xs text-slate-600 font-semibold">
-            {selectedFloor} ফ্লোরের মোট {floorLines.length}টি লাইনের ডেটা রেডি আছে। সেভ বাটনে চাপলে সব লাইন একবারে ক্লাউড ও সিস্টেমে আপডেট হবে।
+            All {floorLines.length} lines on {selectedFloor} are configured. Clicking Save updates both local state and Cloud Firestore simultaneously.
           </div>
 
           <button
@@ -572,7 +572,7 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
             onClick={handleSaveAll}
             className="w-full sm:w-auto bg-[#002D62] hover:bg-blue-900 text-white font-black text-xs px-6 py-2.5 rounded-xl shadow transition flex items-center justify-center gap-2"
           >
-            <span>💾 Save All Lines in One Shot (সব লাইনের ডেটা একসাথে সেভ করুন)</span>
+            <span>💾 Save All Lines in One Shot</span>
           </button>
         </div>
       </div>

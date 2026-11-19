@@ -367,7 +367,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
             {/* TV Fit Toggle */}
             <button
               onClick={() => setTvFit(v => !v)}
-              title="টিভি ফিট মোড: চাপ দিলে এক সিঙ্গেল স্ক্রিনে সব চার্ট ও কার্ড আঁটবে (কোন স্ক্রল করতে হবে না)"
+              title="TV Fit Mode: Fits all charts & cards into a single screen height (zero scrolling)"
               className="px-2.5 py-1 rounded-lg border text-[11px] font-black transition flex items-center gap-1.5 shadow-xs"
               style={{
                 backgroundColor: tvFit ? (theme === 'light' ? '#002D62' : '#1D4ED8') : WB_THEME.BG,
@@ -1875,6 +1875,14 @@ const LiveTargetVsAchievementChart: React.FC<{
   onSelectLine: (l: LinePerformanceSummary) => void;
   plotH?: string;
 }> = ({ lines, onSelectLine, plotH = PLOT_H }) => {
+  if (lines.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 py-10 text-xs font-semibold">
+        <span className="font-bold text-slate-500">No active production data recorded for today yet</span>
+        <span className="text-[10px] text-slate-400 mt-1">Lines and output comparison will appear here once hourly data is entered</span>
+      </div>
+    );
+  }
   const max = niceMax(lines.flatMap(l => [l.target, l.output ?? 0]));
   return (
     <ChartRow plotH={plotH}>
@@ -2110,8 +2118,8 @@ export const WeeklyBsOqlChart: React.FC<{
   const padL = compact ? 52 : 64;
   const padR = compact ? 44 : 56;
   const top = compact ? 55 : 65;
-  const plotH = compact ? 180 : 220;
-  const bottom = compact ? 65 : 75;
+  const plotH = compact ? 200 : 230;
+  const bottom = compact ? 82 : 94;
   const lastSlotX = padL + step * (slots.length - 1);
   const W = lastSlotX + padR;
   const H = top + plotH + bottom;
@@ -2308,11 +2316,22 @@ export const WeeklyBsOqlChart: React.FC<{
         {bsPts.map(p => {
           const cx = x(p.i);
           const cy = y(p.v);
-          const isAbove = isPass ? true : false;
-          const boxH = 38;
-          const boxW = 20;
-          const stemLen = 12;
-          const boxY = isAbove ? cy - stemLen - boxH : cy + stemLen;
+          // In Pass Rate mode, BSBD is on top (100% to 98%): callout is ABOVE!
+          // In OQL mode, matching user reference chart: Week 32-39 callout is ABOVE, Week 40+ is BELOW!
+          const isAbove = isPass ? true : p.weekNo <= 39;
+          const boxH = 34;
+          const boxW = 19;
+          const stemLen = 9;
+          let boxY: number;
+          if (isAbove) {
+            boxY = cy - stemLen - boxH;
+            if (boxY < top + 2) boxY = top + 2;
+          } else {
+            boxY = cy + stemLen;
+            if (boxY + boxH > top + plotH - 3) {
+              boxY = top + plotH - boxH - 3;
+            }
+          }
           const textCenterY = boxY + boxH / 2;
 
           return (
@@ -2338,7 +2357,7 @@ export const WeeklyBsOqlChart: React.FC<{
                 y={boxY}
                 width={boxW}
                 height={boxH}
-                rx={4}
+                rx={3.5}
                 fill="var(--wb-panel)"
                 stroke={bsColor}
                 strokeWidth={1.5}
@@ -2349,7 +2368,7 @@ export const WeeklyBsOqlChart: React.FC<{
                 textAnchor="middle"
                 dominantBaseline="central"
                 transform={`rotate(-90 ${cx} ${textCenterY})`}
-                fontSize={10}
+                fontSize={9.5}
                 fontWeight={900}
                 fill={bsColor}
               >
@@ -2363,11 +2382,22 @@ export const WeeklyBsOqlChart: React.FC<{
         {aqcPts.map(p => {
           const cx = x(p.i);
           const cy = y(p.v);
+          // In Pass Rate mode, AQC is lower (96% to 97%): callout is BELOW!
+          // In OQL mode, AQC is higher (6.3% to 7.7%): callout is ABOVE!
           const isAbove = isPass ? false : true;
-          const boxH = 38;
-          const boxW = 20;
-          const stemLen = 12;
-          const boxY = isAbove ? cy - stemLen - boxH : cy + stemLen;
+          const boxH = 34;
+          const boxW = 19;
+          const stemLen = 9;
+          let boxY: number;
+          if (isAbove) {
+            boxY = cy - stemLen - boxH;
+            if (boxY < top + 2) boxY = top + 2;
+          } else {
+            boxY = cy + stemLen;
+            if (boxY + boxH > top + plotH - 3) {
+              boxY = top + plotH - boxH - 3;
+            }
+          }
           const textCenterY = boxY + boxH / 2;
 
           return (
@@ -2391,7 +2421,7 @@ export const WeeklyBsOqlChart: React.FC<{
                 y={boxY}
                 width={boxW}
                 height={boxH}
-                rx={4}
+                rx={3.5}
                 fill="var(--wb-panel)"
                 stroke={aqcColor}
                 strokeWidth={1.5}
@@ -2402,7 +2432,7 @@ export const WeeklyBsOqlChart: React.FC<{
                 textAnchor="middle"
                 dominantBaseline="central"
                 transform={`rotate(-90 ${cx} ${textCenterY})`}
-                fontSize={10}
+                fontSize={9.5}
                 fontWeight={900}
                 fill={aqcColor}
               >
@@ -2438,11 +2468,11 @@ export const WeeklyBsOqlChart: React.FC<{
               />
               <text
                 x={cx}
-                y={top + plotH + 42}
+                y={top + plotH + 46}
                 textAnchor="middle"
                 dominantBaseline="central"
-                transform={`rotate(-90 ${cx} ${top + plotH + 42})`}
-                fontSize={11}
+                transform={`rotate(-90 ${cx} ${top + plotH + 46})`}
+                fontSize={10.5}
                 fontWeight={hasData ? 900 : 600}
                 fill={hasData ? WB_THEME.TXT : WB_THEME.MUTED}
               >
