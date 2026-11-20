@@ -635,7 +635,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
           sub={
             weeklyMetric === 'OQL'
               ? `Blue: BSBD QA/QC · Orange: ${brand} AQC · Red dashed: 4.50% commitment`
-              : `Blue (Gold Ring): BSBD QA/QC · Purple: ${brand} AQC · Benchmark: 97.0%`
+              : `Blue (Gold Ring): BSBD QA/QC · Purple: ${brand} AQC · Target: 100%`
           }
           right={
             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
@@ -1206,7 +1206,7 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               className="lg:col-span-8"
               compact={tvFit}
             >
-              <LiveTargetVsAchievementChart lines={activeLines} onSelectLine={setDeepDiveLine} plotH={tvFit ? '80px' : '95px'} />
+              <LiveTargetVsAchievementChart lines={activeLines} onSelectLine={setDeepDiveLine} plotH={tvFit ? '140px' : '160px'} />
             </WbPanel>
 
             <WbPanel
@@ -1748,26 +1748,65 @@ const Col: React.FC<{ v: number; max: number; color: string; label?: React.React
   );
 };
 
-/** The scrolling row of column groups, with an optional dashed reference line. */
-const ChartRow: React.FC<{ children: React.ReactNode; refPct?: number | null; refColor?: string; plotH?: string }> = ({ children, refPct, refColor, plotH = PLOT_H }) => (
-  <div className="nfl-scroll overflow-x-auto pb-1">
-    <div className="relative flex items-end justify-between gap-1.5 min-w-full pt-3">{children}
-      {refPct !== undefined && refPct !== null && (
-        <div className={`absolute left-0 right-0 pointer-events-none ${plotH}`} style={{ top: 12 }}>
-          <div className="absolute left-0 right-0 border-t-2 border-dashed" style={{ bottom: `${Math.min(100, refPct)}%`, borderColor: refColor || WB_THEME.AMBER }} />
-        </div>
-      )}
-    </div>
-  </div>
-);
+const isCssDimension = (val?: string) => Boolean(val && /^\d+(px|rem|em|vh|vw|%)?$/.test(val));
 
-const Group: React.FC<{ children: React.ReactNode; name: React.ReactNode; sub?: React.ReactNode; subColor?: string; onClick?: () => void; minW?: string; plotH?: string }> = ({ children, name, sub, subColor, onClick, minW = 'min-w-[44px] md:min-w-[54px]', plotH = PLOT_H }) => (
-  <div onClick={onClick} className={`flex flex-col items-center flex-1 ${minW} ${onClick ? 'cursor-pointer' : ''}`}>
-    <div className={`w-full ${plotH} flex items-end justify-center gap-1.5 md:gap-2.5 border-b`} style={{ borderColor: WB_THEME.LINE }}>{children}</div>
-    <div className="text-[10px] md:text-xs font-black mt-0.5 whitespace-nowrap">{name}</div>
-    {sub !== undefined && <div style={{ color: subColor }} className="text-[9px] md:text-[10px] font-bold leading-tight">{sub}</div>}
-  </div>
-);
+/** The scrolling row of column groups, with an optional dashed reference line. */
+const ChartRow: React.FC<{ children: React.ReactNode; refPct?: number | null; refColor?: string; plotH?: string }> = ({
+  children,
+  refPct,
+  refColor,
+  plotH = PLOT_H
+}) => {
+  const isCss = isCssDimension(plotH);
+  const hStyle: React.CSSProperties = isCss ? { height: plotH?.endsWith('px') ? plotH : `${plotH}px` } : {};
+  const hClass = isCss ? '' : (plotH || PLOT_H);
+
+  return (
+    <div className="nfl-scroll overflow-x-auto pb-1">
+      <div className="relative flex items-end justify-between gap-1.5 min-w-full pt-3">
+        {children}
+        {refPct !== undefined && refPct !== null && (
+          <div
+            className={`absolute left-0 right-0 pointer-events-none ${hClass}`}
+            style={{ top: 12, ...hStyle }}
+          >
+            <div
+              className="absolute left-0 right-0 border-t-2 border-dashed"
+              style={{ bottom: `${Math.min(100, refPct)}%`, borderColor: refColor || WB_THEME.AMBER }}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const Group: React.FC<{
+  children: React.ReactNode;
+  name: React.ReactNode;
+  sub?: React.ReactNode;
+  subColor?: string;
+  onClick?: () => void;
+  minW?: string;
+  plotH?: string;
+}> = ({ children, name, sub, subColor, onClick, minW = 'min-w-[44px] md:min-w-[54px]', plotH = PLOT_H }) => {
+  const isCss = isCssDimension(plotH);
+  const hStyle: React.CSSProperties = isCss ? { height: plotH?.endsWith('px') ? plotH : `${plotH}px` } : {};
+  const hClass = isCss ? '' : (plotH || PLOT_H);
+
+  return (
+    <div onClick={onClick} className={`flex flex-col items-center flex-1 ${minW} ${onClick ? 'cursor-pointer' : ''}`}>
+      <div
+        className={`w-full ${hClass} flex items-end justify-center gap-1.5 md:gap-2.5 border-b`}
+        style={{ borderColor: WB_THEME.LINE, ...hStyle }}
+      >
+        {children}
+      </div>
+      <div className="text-[10px] md:text-xs font-black mt-0.5 whitespace-nowrap">{name}</div>
+      {sub !== undefined && <div style={{ color: subColor }} className="text-[9px] md:text-[10px] font-bold leading-tight">{sub}</div>}
+    </div>
+  );
+};
 
 const LiveTargetVsAchievementChart: React.FC<{
   lines: LinePerformanceSummary[];
@@ -2027,8 +2066,8 @@ export const WeeklyBsOqlChart: React.FC<{
 
   const step = compact ? 34 : 40;
   const padL = compact ? 36 : 44;
-  const padR = compact ? 18 : 24;
-  const top = compact ? 26 : 32;
+  const padR = compact ? 68 : 75;
+  const top = compact ? 34 : 38;
   const plotH = compact ? 100 : 125;
   const bottom = compact ? 46 : 54;
   const lastSlotX = padL + step * (slots.length - 1);
@@ -2080,7 +2119,7 @@ export const WeeklyBsOqlChart: React.FC<{
           </div>
 
           <span className={`text-[9.5px] px-1.5 py-0.5 rounded font-bold ${isPass ? 'text-emerald-700 bg-emerald-100 dark:bg-emerald-950/60' : 'text-red-700 bg-red-100 dark:bg-red-950/60'}`}>
-            {isPass ? 'Target: 97.0%' : 'Commitment: 4.5%'}
+            {isPass ? 'Target: 100%' : 'Commitment: 4.5%'}
           </span>
         </div>
 
@@ -2150,21 +2189,21 @@ export const WeeklyBsOqlChart: React.FC<{
             <line
               x1={padL - 8}
               x2={lastSlotX + 8}
-              y1={y(97.0)}
-              y2={y(97.0)}
+              y1={y(100.0)}
+              y2={y(100.0)}
               stroke="#10b981"
               strokeWidth={1.5}
               strokeDasharray="5 3"
             />
             <text
               x={lastSlotX + 10}
-              y={y(97.0) + 3}
+              y={y(100.0) + 3}
               textAnchor="start"
               fontSize={9}
               fontWeight={800}
               fill="#10b981"
             >
-              97.0% target
+              100% target
             </text>
           </g>
         )}
@@ -2224,7 +2263,7 @@ export const WeeklyBsOqlChart: React.FC<{
           let boxY: number;
           if (isAbove) {
             boxY = cy - stemLen - boxH;
-            if (boxY < top + 2) boxY = top + 2;
+            if (boxY < 2) boxY = 2;
           } else {
             boxY = cy + stemLen;
             if (boxY + boxH > top + plotH - 2) {
@@ -2290,7 +2329,7 @@ export const WeeklyBsOqlChart: React.FC<{
           let boxY: number;
           if (isAbove) {
             boxY = cy - stemLen - boxH;
-            if (boxY < top + 2) boxY = top + 2;
+            if (boxY < 2) boxY = 2;
           } else {
             boxY = cy + stemLen;
             if (boxY + boxH > top + plotH - 2) {

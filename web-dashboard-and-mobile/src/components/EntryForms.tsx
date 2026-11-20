@@ -1148,7 +1148,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                   </p>
                 </div>
                 <div className="text-right text-[11px] font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
-                  Target: OQL ≤ 4.5% · Pass Rate ≥ 97.0%
+                  Target: OQL ≤ 4.5% · Pass Rate = 100%
                 </div>
               </div>
 
@@ -1257,7 +1257,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block" />
                       2. Weekly Pass Rate % (Graph 2)
                     </h4>
-                    <span className="text-[10px] text-emerald-700 font-bold">Benchmark: 97.0%</span>
+                    <span className="text-[10px] text-emerald-700 font-bold">Target: 100%</span>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>

@@ -328,7 +328,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               <div className="text-2xl font-black text-emerald-600">
                 {latestWeeklyRecord?.bsPassRatePct != null ? `${latestWeeklyRecord.bsPassRatePct.toFixed(1)}%` : '98.6%'}
               </div>
-              <div className="text-[10px] text-slate-400 font-semibold">Tgt: 97.0%</div>
+              <div className="text-[10px] text-slate-400 font-semibold">Tgt: 100%</div>
             </div>
             <div>
               <div className="text-[10px] text-slate-500 font-bold uppercase">Defects Pending</div>
