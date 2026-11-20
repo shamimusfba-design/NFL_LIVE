@@ -1145,12 +1145,12 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               compact={tvFit}
             />
 
-            {/* 2. Up to Date (MTD) Efficiency */}
+            {/* 2. Monthly Efficiency */}
             <WbTile
-              label="Up-to-Date (MTD) Efficiency"
+              label="Monthly Efficiency"
               value={kpis.monthlyEfficiencyPct > 0 ? `${kpis.monthlyEfficiencyPct.toFixed(1)}%` : '—'}
               color={effColor(kpis.monthlyEfficiencyPct > 0 ? kpis.monthlyEfficiencyPct : null, kpis.targetEfficiencyPct)}
-              sub={`Δ ${kpis.monthlyEfficiencyDelta >= 0 ? '+' : ''}${kpis.monthlyEfficiencyDelta.toFixed(1)} pp vs target`}
+              sub={`Target: ${kpis.targetEfficiencyPct.toFixed(0)}%`}
               compact={tvFit}
             />
 
@@ -1163,12 +1163,12 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               compact={tvFit}
             />
 
-            {/* 4. Up to Date (MTD) DHU */}
+            {/* 4. Monthly DHU */}
             <WbTile
-              label="Up-to-Date (MTD) DHU"
+              label="Monthly DHU"
               value={kpis.monthlyDhuPct !== undefined && kpis.monthlyDhuPct !== null ? `${kpis.monthlyDhuPct.toFixed(2)}%` : (kpis.todayDhuPct > 0 ? `${kpis.todayDhuPct.toFixed(2)}%` : '—')}
               color={dhuColor(kpis.monthlyDhuPct ?? kpis.todayDhuPct, kpis.dhuLimitPct)}
-              sub={`Floor Limit ≤ ${kpis.dhuLimitPct.toFixed(1)}%`}
+              sub={`Limit ≤ ${kpis.dhuLimitPct.toFixed(1)}%`}
               compact={tvFit}
             />
 
@@ -1181,9 +1181,9 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
               compact={tvFit}
             />
 
-            {/* 6. Up to Date (MTD) OQL */}
+            {/* 6. Monthly OQL */}
             <WbTile
-              label="Up-to-Date (MTD) OQL"
+              label="Monthly OQL"
               value={kpis.monthlyOqlPct !== undefined && kpis.monthlyOqlPct !== null ? `${kpis.monthlyOqlPct.toFixed(2)}%` : (kpis.todayOqlPct > 0 ? `${kpis.todayOqlPct.toFixed(2)}%` : '—')}
               color={oqlColor(kpis.monthlyOqlPct ?? kpis.todayOqlPct, kpis.oqlCommitmentPct)}
               sub={`Commitment ≤ ${kpis.oqlCommitmentPct.toFixed(1)}%`}

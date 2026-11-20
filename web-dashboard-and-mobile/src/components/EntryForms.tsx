@@ -613,7 +613,7 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                 : 'border-transparent text-slate-500'
             }`}
           >
-            📅 Monthly Targets &amp; FRI
+            📅 Monthly Data
           </button>
         </div>
 

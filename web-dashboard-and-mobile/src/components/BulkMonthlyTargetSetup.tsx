@@ -13,13 +13,9 @@ interface BulkMonthlyTargetSetupProps {
 }
 
 interface LineRowState {
-  targetEff: string;
-  actualEff: string;
-  targetAchieve: string;
-  actualAchieve: string;
-  dhuLimit: string;
-  oqlCommit: string;
-  friPass: string;
+  monthlyEff: string;
+  monthlyDhu: string;
+  monthlyOql: string;
   modified: boolean;
 }
 
@@ -37,12 +33,10 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
   const [selectedFloor, setSelectedFloor] = useState<PhysicalFloor>(formFloor);
   const [selectedMonth, setSelectedMonth] = useState<string>(monthYear);
 
-  // Floor-level Benchmark Defaults
-  const [floorTargetEff, setFloorTargetEff] = useState('75');
-  const [floorTargetAchieve, setFloorTargetAchieve] = useState('95');
-  const [floorDhuLimit, setFloorDhuLimit] = useState('2.0');
-  const [floorOqlCommit, setFloorOqlCommit] = useState('4.5');
-  const [floorFriPass, setFloorFriPass] = useState('98.5');
+  // Floor-level Default Benchmarks
+  const [floorMonthlyEff, setFloorMonthlyEff] = useState('75.0');
+  const [floorMonthlyDhu, setFloorMonthlyDhu] = useState('2.0');
+  const [floorMonthlyOql, setFloorMonthlyOql] = useState('4.5');
 
   // Status message
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
@@ -66,17 +60,21 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
         (!m.lineId || m.lineId === '' || m.lineId.toUpperCase() === 'ALL' || m.id === cleanFloor)
     );
 
-    const fEff = existingFloorTarget ? String(existingFloorTarget.targetEfficiencyPct) : '75';
-    const fAch = existingFloorTarget?.targetAchievePct !== undefined ? String(existingFloorTarget.targetAchievePct) : '95';
-    const fDhu = existingFloorTarget ? String(existingFloorTarget.targetDhuPct) : '2.0';
-    const fOql = existingFloorTarget ? String(existingFloorTarget.targetOqlPct) : '4.5';
-    const fFri = existingFloorTarget ? String(existingFloorTarget.friPassRatePct) : '98.5';
+    const fEff = existingFloorTarget?.actualEfficiencyPct !== undefined && existingFloorTarget.actualEfficiencyPct !== null
+      ? String(existingFloorTarget.actualEfficiencyPct)
+      : (existingFloorTarget ? String(existingFloorTarget.targetEfficiencyPct) : '75.0');
 
-    setFloorTargetEff(fEff);
-    setFloorTargetAchieve(fAch);
-    setFloorDhuLimit(fDhu);
-    setFloorOqlCommit(fOql);
-    setFloorFriPass(fFri);
+    const fDhu = existingFloorTarget?.actualDhuPct !== undefined && existingFloorTarget.actualDhuPct !== null
+      ? String(existingFloorTarget.actualDhuPct)
+      : (existingFloorTarget ? String(existingFloorTarget.targetDhuPct) : '2.0');
+
+    const fOql = existingFloorTarget?.actualOqlPct !== undefined && existingFloorTarget.actualOqlPct !== null
+      ? String(existingFloorTarget.actualOqlPct)
+      : (existingFloorTarget ? String(existingFloorTarget.targetOqlPct) : '4.5');
+
+    setFloorMonthlyEff(fEff);
+    setFloorMonthlyDhu(fDhu);
+    setFloorMonthlyOql(fOql);
 
     // 2. Populate each line on the floor
     const initialRows: Record<string, LineRowState> = {};
@@ -89,18 +87,22 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
           (m.lineId === line.id || m.lineId === cleanLine || m.lineId === 'Line ' + cleanLine || m.id === lineDocId)
       );
 
+      const lEff = existingLineTarget?.actualEfficiencyPct !== undefined && existingLineTarget.actualEfficiencyPct !== null
+        ? String(existingLineTarget.actualEfficiencyPct)
+        : (existingLineTarget ? String(existingLineTarget.targetEfficiencyPct) : fEff);
+
+      const lDhu = existingLineTarget?.actualDhuPct !== undefined && existingLineTarget.actualDhuPct !== null
+        ? String(existingLineTarget.actualDhuPct)
+        : (existingLineTarget ? String(existingLineTarget.targetDhuPct) : fDhu);
+
+      const lOql = existingLineTarget?.actualOqlPct !== undefined && existingLineTarget.actualOqlPct !== null
+        ? String(existingLineTarget.actualOqlPct)
+        : (existingLineTarget ? String(existingLineTarget.targetOqlPct) : fOql);
+
       initialRows[line.id] = {
-        targetEff: existingLineTarget ? String(existingLineTarget.targetEfficiencyPct) : fEff,
-        actualEff: existingLineTarget?.actualEfficiencyPct !== undefined && existingLineTarget.actualEfficiencyPct !== null
-          ? String(existingLineTarget.actualEfficiencyPct)
-          : '',
-        targetAchieve: existingLineTarget?.targetAchievePct !== undefined ? String(existingLineTarget.targetAchievePct) : fAch,
-        actualAchieve: existingLineTarget?.actualAchievePct !== undefined && existingLineTarget.actualAchievePct !== null
-          ? String(existingLineTarget.actualAchievePct)
-          : '',
-        dhuLimit: existingLineTarget ? String(existingLineTarget.targetDhuPct) : fDhu,
-        oqlCommit: existingLineTarget ? String(existingLineTarget.targetOqlPct) : fOql,
-        friPass: existingLineTarget ? String(existingLineTarget.friPassRatePct) : fFri,
+        monthlyEff: lEff,
+        monthlyDhu: lDhu,
+        monthlyOql: lOql,
         modified: false
       };
     });
@@ -109,16 +111,12 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
   }, [selectedFloor, selectedMonth, floorLines, monthlyTargets]);
 
   // Handler for row field change
-  const handleFieldChange = (lineId: string, field: keyof LineRowState, value: string) => {
+  const handleFieldChange = (lineId: string, field: 'monthlyEff' | 'monthlyDhu' | 'monthlyOql', value: string) => {
     setRowStates(prev => {
       const current = prev[lineId] || {
-        targetEff: floorTargetEff,
-        actualEff: '',
-        targetAchieve: floorTargetAchieve,
-        actualAchieve: '',
-        dhuLimit: floorDhuLimit,
-        oqlCommit: floorOqlCommit,
-        friPass: floorFriPass,
+        monthlyEff: floorMonthlyEff,
+        monthlyDhu: floorMonthlyDhu,
+        monthlyOql: floorMonthlyOql,
         modified: true
       };
       return {
@@ -137,15 +135,10 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
     setRowStates(prev => {
       const next: Record<string, LineRowState> = {};
       floorLines.forEach(line => {
-        const cur = prev[line.id] || { actualEff: '', actualAchieve: '' };
         next[line.id] = {
-          targetEff: floorTargetEff,
-          actualEff: cur.actualEff, // keep actual efficiency intact!
-          targetAchieve: floorTargetAchieve,
-          actualAchieve: cur.actualAchieve,
-          dhuLimit: floorDhuLimit,
-          oqlCommit: floorOqlCommit,
-          friPass: floorFriPass,
+          monthlyEff: floorMonthlyEff,
+          monthlyDhu: floorMonthlyDhu,
+          monthlyOql: floorMonthlyOql,
           modified: true
         };
       });
@@ -158,32 +151,40 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
   // ONE-SHOT SAVE ALL LINES
   const handleSaveAll = () => {
     if (readOnlyDemo) {
-      alert('Demo mode: Saving monthly targets is disabled.');
+      alert('Demo mode: Saving monthly data is disabled.');
       return;
     }
 
     const targetsToSave: MonthlyTargetConfig[] = [];
-
     const cleanFloor = selectedFloor.trim().replace(/\//g, '_');
 
     // Calculate floor average of line-wise actuals entered
-    const validActualEffs = floorLines
-      .map(l => rowStates[l.id]?.actualEff)
+    const validEffs = floorLines
+      .map(l => rowStates[l.id]?.monthlyEff)
       .filter((v): v is string => !!v && v.trim() !== '')
       .map(Number)
       .filter(n => !isNaN(n));
-    const floorAvgActualEff = validActualEffs.length > 0
-      ? Number((validActualEffs.reduce((a, b) => a + b, 0) / validActualEffs.length).toFixed(1))
-      : undefined;
+    const floorAvgEff = validEffs.length > 0
+      ? Number((validEffs.reduce((a, b) => a + b, 0) / validEffs.length).toFixed(1))
+      : Number(floorMonthlyEff) || 75.0;
 
-    const validActualAchieves = floorLines
-      .map(l => rowStates[l.id]?.actualAchieve)
+    const validDhus = floorLines
+      .map(l => rowStates[l.id]?.monthlyDhu)
       .filter((v): v is string => !!v && v.trim() !== '')
       .map(Number)
       .filter(n => !isNaN(n));
-    const floorAvgActualAchieve = validActualAchieves.length > 0
-      ? Number((validActualAchieves.reduce((a, b) => a + b, 0) / validActualAchieves.length).toFixed(1))
-      : undefined;
+    const floorAvgDhu = validDhus.length > 0
+      ? Number((validDhus.reduce((a, b) => a + b, 0) / validDhus.length).toFixed(2))
+      : Number(floorMonthlyDhu) || 2.0;
+
+    const validOqls = floorLines
+      .map(l => rowStates[l.id]?.monthlyOql)
+      .filter((v): v is string => !!v && v.trim() !== '')
+      .map(Number)
+      .filter(n => !isNaN(n));
+    const floorAvgOql = validOqls.length > 0
+      ? Number((validOqls.reduce((a, b) => a + b, 0) / validOqls.length).toFixed(2))
+      : Number(floorMonthlyOql) || 4.5;
 
     // 1. Save floor benchmark target
     const floorDocId = cleanFloor;
@@ -192,14 +193,16 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
       floor: selectedFloor,
       lineId: '',
       monthYear: selectedMonth,
-      targetEfficiencyPct: Number(floorTargetEff) || 75,
-      actualEfficiencyPct: floorAvgActualEff,
-      targetAchievePct: Number(floorTargetAchieve) || 95,
-      actualAchievePct: floorAvgActualAchieve,
-      targetDhuPct: Number(floorDhuLimit) || 2.0,
-      targetOqlPct: Number(floorOqlCommit) || 4.5,
-      bsQaOqlPct: Number(floorOqlCommit) || 4.5,
-      friPassRatePct: Number(floorFriPass) || 98.5
+      targetEfficiencyPct: floorAvgEff,
+      actualEfficiencyPct: floorAvgEff,
+      targetAchievePct: 95.0,
+      actualAchievePct: 95.0,
+      targetDhuPct: floorAvgDhu,
+      actualDhuPct: floorAvgDhu,
+      targetOqlPct: floorAvgOql,
+      actualOqlPct: floorAvgOql,
+      bsQaOqlPct: floorAvgOql,
+      friPassRatePct: 100.0
     });
 
     // 2. Save every line on the floor
@@ -208,27 +211,25 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
       const cleanLine = line.id.replace(/^Line\s*/i, '').trim();
       const lineDocId = `${cleanFloor}_${cleanLine}`;
 
-      const targetEff = row && row.targetEff.trim() !== '' ? Number(row.targetEff) : Number(floorTargetEff) || 75;
-      const actualEff = row && row.actualEff.trim() !== '' ? Number(row.actualEff) : undefined;
-      const targetAchieve = row && row.targetAchieve.trim() !== '' ? Number(row.targetAchieve) : Number(floorTargetAchieve) || 95;
-      const actualAchieve = row && row.actualAchieve.trim() !== '' ? Number(row.actualAchieve) : undefined;
-      const dhuLimit = row && row.dhuLimit.trim() !== '' ? Number(row.dhuLimit) : Number(floorDhuLimit) || 2.0;
-      const oqlCommit = row && row.oqlCommit.trim() !== '' ? Number(row.oqlCommit) : Number(floorOqlCommit) || 4.5;
-      const friPass = row && row.friPass.trim() !== '' ? Number(row.friPass) : Number(floorFriPass) || 98.5;
+      const eff = row && row.monthlyEff.trim() !== '' ? Number(row.monthlyEff) : Number(floorMonthlyEff) || 75.0;
+      const dhu = row && row.monthlyDhu.trim() !== '' ? Number(row.monthlyDhu) : Number(floorMonthlyDhu) || 2.0;
+      const oql = row && row.monthlyOql.trim() !== '' ? Number(row.monthlyOql) : Number(floorMonthlyOql) || 4.5;
 
       targetsToSave.push({
         id: lineDocId,
         floor: selectedFloor,
         lineId: cleanLine,
         monthYear: selectedMonth,
-        targetEfficiencyPct: targetEff,
-        actualEfficiencyPct: actualEff,
-        targetAchievePct: targetAchieve,
-        actualAchievePct: actualAchieve,
-        targetDhuPct: dhuLimit,
-        targetOqlPct: oqlCommit,
-        bsQaOqlPct: oqlCommit,
-        friPassRatePct: friPass
+        targetEfficiencyPct: eff,
+        actualEfficiencyPct: eff,
+        targetAchievePct: 95.0,
+        actualAchievePct: 95.0,
+        targetDhuPct: dhu,
+        actualDhuPct: dhu,
+        targetOqlPct: oql,
+        actualOqlPct: oql,
+        bsQaOqlPct: oql,
+        friPassRatePct: 100.0
       });
     });
 
@@ -247,7 +248,7 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
       return next;
     });
 
-    setSaveSuccessMsg(`✓ Successfully saved monthly targets & up-to-date actual efficiency for all ${floorLines.length} lines on ${selectedFloor}!`);
+    setSaveSuccessMsg(`✓ Successfully saved Monthly Data (Efficiency, DHU, OQL) for all ${floorLines.length} lines on ${selectedFloor}!`);
     setTimeout(() => setSaveSuccessMsg(null), 4000);
   };
 
@@ -257,13 +258,13 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-black text-[#002D62] flex items-center gap-2">
-            <span>📋 One-Shot Monthly Data &amp; Line Efficiency Grid</span>
+            <span>📋 Line-wise Monthly Data Entry</span>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold uppercase">
-              All Lines Table
+              3 Key Metrics Only
             </span>
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Enter monthly targets and day-by-day up-to-date actual efficiency for all lines on the floor in one unified spreadsheet grid. No repeated line dropdown switching needed.
+            Enter Line-wise Monthly Efficiency, Monthly DHU, and Monthly OQL in one fast table.
           </p>
         </div>
 
@@ -282,7 +283,7 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
             onClick={handleSaveAll}
             className="self-end bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-4 py-2 rounded-xl shadow transition flex items-center gap-1.5"
           >
-            <span>💾 Save All Lines (One-Shot)</span>
+            <span>💾 Save All Lines</span>
           </button>
         </div>
       </div>
@@ -311,66 +312,52 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
         <div className="flex items-center justify-between mb-2">
           <div className="text-xs font-black text-slate-800 flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" />
-            <span>{selectedFloor} Floor Benchmark Defaults</span>
+            <span>{selectedFloor} Floor Defaults (Quick Fill)</span>
           </div>
           <button
             type="button"
             onClick={handleApplyDefaultsToAll}
-            className="text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-100 hover:bg-blue-200 px-2.5 py-1 rounded-lg transition"
+            className="text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-100 hover:bg-blue-200 px-3 py-1 rounded-lg transition"
           >
             ⚡ Copy Defaults to All Lines
           </button>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Floor Target Efficiency (%)</label>
-            <input
-              type="number"
-              step="0.5"
-              value={floorTargetEff}
-              onChange={e => setFloorTargetEff(e.target.value)}
-              className="w-full text-xs font-black border border-slate-300 rounded-lg p-1.5 bg-white text-emerald-800"
-            />
-          </div>
-          <div>
-            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Target Achievement (%)</label>
-            <input
-              type="number"
-              step="0.5"
-              value={floorTargetAchieve}
-              onChange={e => setFloorTargetAchieve(e.target.value)}
-              className="w-full text-xs font-black border border-slate-300 rounded-lg p-1.5 bg-white text-blue-800"
-            />
-          </div>
-          <div>
-            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">DHU Limit (%)</label>
+            <label className="block text-[11px] font-black text-slate-700 mb-1">
+              Floor Monthly Efficiency (%)
+            </label>
             <input
               type="number"
               step="0.1"
-              value={floorDhuLimit}
-              onChange={e => setFloorDhuLimit(e.target.value)}
-              className="w-full text-xs font-black border border-slate-300 rounded-lg p-1.5 bg-white text-amber-800"
+              value={floorMonthlyEff}
+              onChange={e => setFloorMonthlyEff(e.target.value)}
+              className="w-full text-xs font-black border border-slate-300 rounded-lg p-2 bg-white text-emerald-800"
             />
           </div>
           <div>
-            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">OQL Commitment (%)</label>
+            <label className="block text-[11px] font-black text-slate-700 mb-1">
+              Floor Monthly DHU (%)
+            </label>
             <input
               type="number"
-              step="0.1"
-              value={floorOqlCommit}
-              onChange={e => setFloorOqlCommit(e.target.value)}
-              className="w-full text-xs font-black border border-slate-300 rounded-lg p-1.5 bg-white"
+              step="0.01"
+              value={floorMonthlyDhu}
+              onChange={e => setFloorMonthlyDhu(e.target.value)}
+              className="w-full text-xs font-black border border-slate-300 rounded-lg p-2 bg-white text-amber-800"
             />
           </div>
           <div>
-            <label className="block text-[10px] font-bold text-slate-600 mb-0.5">FRI Pass Rate (%)</label>
+            <label className="block text-[11px] font-black text-slate-700 mb-1">
+              Floor Monthly OQL (%)
+            </label>
             <input
               type="number"
-              step="0.1"
-              value={floorFriPass}
-              onChange={e => setFloorFriPass(e.target.value)}
-              className="w-full text-xs font-black border border-slate-300 rounded-lg p-1.5 bg-white text-emerald-700"
+              step="0.01"
+              value={floorMonthlyOql}
+              onChange={e => setFloorMonthlyOql(e.target.value)}
+              className="w-full text-xs font-black border border-slate-300 rounded-lg p-2 bg-white text-blue-800"
             />
           </div>
         </div>
@@ -383,14 +370,14 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
         </div>
       )}
 
-      {/* ONE-SHOT SPREADSHEET TABLE OF ALL LINES */}
+      {/* ONE-SHOT SPREADSHEET TABLE OF ALL LINES: ONLY 3 METRICS */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
           <div className="text-xs font-black text-slate-800">
-            {selectedFloor} · Monthly Target &amp; Actual Line Grid ({floorLines.length} Lines · {selectedMonth})
+            {selectedFloor} · Monthly Data ({floorLines.length} Lines · {selectedMonth})
           </div>
           <div className="text-[11px] text-slate-500 font-bold">
-            💡 Press <kbd className="px-1.5 py-0.5 bg-white border rounded text-[10px] font-mono">Tab</kbd> to rapidly navigate between line inputs
+            💡 Press <kbd className="px-1.5 py-0.5 bg-white border rounded text-[10px] font-mono">Tab</kbd> to rapidly navigate across fields
           </div>
         </div>
 
@@ -398,47 +385,27 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
           <table className="w-full text-xs border-collapse">
             <thead className="sticky top-0 bg-[#002D62] text-white z-10 text-[11px] font-black uppercase">
               <tr>
-                <th className="p-2.5 text-left w-24">Line ID</th>
-                <th className="p-2.5 text-center bg-blue-900 w-32">
-                  Target Eff %
-                  <div className="text-[9px] font-normal normal-case text-blue-200">Target Efficiency</div>
+                <th className="p-2.5 text-left w-32">Line ID</th>
+                <th className="p-2.5 text-center bg-emerald-900">
+                  Monthly Efficiency %
+                  <div className="text-[9px] font-normal normal-case text-emerald-200">Line Efficiency</div>
                 </th>
-                <th className="p-2.5 text-center bg-emerald-900 w-36 border-x border-emerald-700">
-                  ⭐ MTD Actual Eff %
-                  <div className="text-[9px] font-normal normal-case text-emerald-200">Day-by-Day Actual</div>
+                <th className="p-2.5 text-center bg-amber-900">
+                  Monthly DHU %
+                  <div className="text-[9px] font-normal normal-case text-amber-200">Defects / Hundred</div>
                 </th>
-                <th className="p-2.5 text-center w-28">
-                  Target Ach %
-                  <div className="text-[9px] font-normal normal-case text-slate-300">Target Achieve</div>
-                </th>
-                <th className="p-2.5 text-center w-32">
-                  Actual Ach %
-                  <div className="text-[9px] font-normal normal-case text-slate-300">Actual Achieve</div>
-                </th>
-                <th className="p-2.5 text-center w-24">
-                  DHU Limit %
-                  <div className="text-[9px] font-normal normal-case text-slate-300">Max DHU</div>
-                </th>
-                <th className="p-2.5 text-center w-24">
-                  OQL Limit %
-                  <div className="text-[9px] font-normal normal-case text-slate-300">Max OQL</div>
-                </th>
-                <th className="p-2.5 text-center w-24">
-                  FRI Pass %
-                  <div className="text-[9px] font-normal normal-case text-slate-300">Pass Rate</div>
+                <th className="p-2.5 text-center bg-blue-900">
+                  Monthly OQL %
+                  <div className="text-[9px] font-normal normal-case text-blue-200">Quality Audit %</div>
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 bg-white">
               {floorLines.map((line, idx) => {
                 const row = rowStates[line.id] || {
-                  targetEff: floorTargetEff,
-                  actualEff: '',
-                  targetAchieve: floorTargetAchieve,
-                  actualAchieve: '',
-                  dhuLimit: floorDhuLimit,
-                  oqlCommit: floorOqlCommit,
-                  friPass: floorFriPass,
+                  monthlyEff: floorMonthlyEff,
+                  monthlyDhu: floorMonthlyDhu,
+                  monthlyOql: floorMonthlyOql,
                   modified: false
                 };
 
@@ -453,105 +420,49 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
                     <td className="p-2.5 font-black text-[#002D62]">
                       <div className="flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-blue-600 inline-block" />
-                        <span>{lineDisplayName(line.id)}</span>
+                        <span className="text-xs">{lineDisplayName(line.id)}</span>
                       </div>
                     </td>
 
-                    {/* Target Eff % */}
-                    <td className="p-1.5">
-                      <input
-                        type="number"
-                        step="0.5"
-                        min="0"
-                        max="100"
-                        value={row.targetEff}
-                        onChange={e => handleFieldChange(line.id, 'targetEff', e.target.value)}
-                        placeholder={floorTargetEff}
-                        className="w-full text-center text-xs font-black border border-slate-300 rounded-lg p-1.5 bg-white text-emerald-800 focus:ring-2 focus:ring-blue-500"
-                      />
-                    </td>
-
-                    {/* ⭐ Up-to-Date Actual Efficiency % (Day-by-Day) */}
-                    <td className="p-1.5 bg-emerald-50/50 border-x border-emerald-200">
+                    {/* 1. Monthly Efficiency % */}
+                    <td className="p-2 bg-emerald-50/30">
                       <input
                         type="number"
                         step="0.1"
                         min="0"
                         max="100"
-                        value={row.actualEff}
-                        onChange={e => handleFieldChange(line.id, 'actualEff', e.target.value)}
+                        value={row.monthlyEff}
+                        onChange={e => handleFieldChange(line.id, 'monthlyEff', e.target.value)}
                         placeholder="e.g. 78.5"
-                        className="w-full text-center text-xs font-black border-2 border-emerald-500 rounded-lg p-1.5 bg-white text-emerald-900 shadow-sm focus:ring-2 focus:ring-emerald-600"
+                        className="w-full text-center text-xs font-black border-2 border-emerald-500 rounded-lg p-2 bg-white text-emerald-900 shadow-sm focus:ring-2 focus:ring-emerald-600"
                       />
                     </td>
 
-                    {/* Target Achieve % */}
-                    <td className="p-1.5">
+                    {/* 2. Monthly DHU % */}
+                    <td className="p-2 bg-amber-50/30">
                       <input
                         type="number"
-                        step="0.5"
-                        min="0"
-                        max="100"
-                        value={row.targetAchieve}
-                        onChange={e => handleFieldChange(line.id, 'targetAchieve', e.target.value)}
-                        placeholder={floorTargetAchieve}
-                        className="w-full text-center text-xs font-bold border border-slate-300 rounded-lg p-1.5 bg-white text-blue-800"
-                      />
-                    </td>
-
-                    {/* Up-to-Date Actual Achieve % */}
-                    <td className="p-1.5">
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="150"
-                        value={row.actualAchieve}
-                        onChange={e => handleFieldChange(line.id, 'actualAchieve', e.target.value)}
-                        placeholder="Auto/Calculated"
-                        className="w-full text-center text-xs font-bold border border-slate-300 rounded-lg p-1.5 bg-white text-slate-800"
-                      />
-                    </td>
-
-                    {/* DHU Limit % */}
-                    <td className="p-1.5">
-                      <input
-                        type="number"
-                        step="0.1"
+                        step="0.01"
                         min="0"
                         max="20"
-                        value={row.dhuLimit}
-                        onChange={e => handleFieldChange(line.id, 'dhuLimit', e.target.value)}
-                        placeholder={floorDhuLimit}
-                        className="w-full text-center text-xs font-bold border border-slate-300 rounded-lg p-1.5 bg-white text-amber-800"
+                        value={row.monthlyDhu}
+                        onChange={e => handleFieldChange(line.id, 'monthlyDhu', e.target.value)}
+                        placeholder="e.g. 2.10"
+                        className="w-full text-center text-xs font-black border border-amber-400 rounded-lg p-2 bg-white text-amber-900 shadow-sm focus:ring-2 focus:ring-amber-500"
                       />
                     </td>
 
-                    {/* OQL Limit % */}
-                    <td className="p-1.5">
+                    {/* 3. Monthly OQL % */}
+                    <td className="p-2 bg-blue-50/30">
                       <input
                         type="number"
-                        step="0.1"
+                        step="0.01"
                         min="0"
                         max="20"
-                        value={row.oqlCommit}
-                        onChange={e => handleFieldChange(line.id, 'oqlCommit', e.target.value)}
-                        placeholder={floorOqlCommit}
-                        className="w-full text-center text-xs font-bold border border-slate-300 rounded-lg p-1.5 bg-white text-slate-700"
-                      />
-                    </td>
-
-                    {/* FRI Pass % */}
-                    <td className="p-1.5">
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="100"
-                        value={row.friPass}
-                        onChange={e => handleFieldChange(line.id, 'friPass', e.target.value)}
-                        placeholder={floorFriPass}
-                        className="w-full text-center text-xs font-bold border border-slate-300 rounded-lg p-1.5 bg-white text-emerald-700"
+                        value={row.monthlyOql}
+                        onChange={e => handleFieldChange(line.id, 'monthlyOql', e.target.value)}
+                        placeholder="e.g. 4.25"
+                        className="w-full text-center text-xs font-black border border-blue-400 rounded-lg p-2 bg-white text-blue-900 shadow-sm focus:ring-2 focus:ring-blue-500"
                       />
                     </td>
                   </tr>
@@ -564,7 +475,7 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
         {/* Table Footer with Bottom Save Action */}
         <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="text-xs text-slate-600 font-semibold">
-            All {floorLines.length} lines on {selectedFloor} are configured. Clicking Save updates both local state and Cloud Firestore simultaneously.
+            Configuring all {floorLines.length} lines on {selectedFloor}. Clicking Save updates both local state and Cloud Firestore simultaneously.
           </div>
 
           <button
