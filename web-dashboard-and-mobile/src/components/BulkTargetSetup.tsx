@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { LineMasterItem, LineTargetConfig, FloorManpowerRecord, PhysicalFloor } from '../types';
-import { isDepartmentFloor, lineDisplayName, unitWord, isFinishingUnit, finishingUnitId, GARMENT_ITEMS } from '../data/masterData';
+import { isDepartmentFloor, lineDisplayName, unitWord, isFinishingUnit, finishingUnitId, GARMENT_ITEMS, floorMatches } from '../data/masterData';
 
 type FloorName = PhysicalFloor;
 
@@ -87,7 +87,7 @@ export const BulkTargetSetup: React.FC<Props> = ({ onlyFloor = null, lines, targ
   const unit = unitWord(floor);
 
   const floorLines = useMemo(
-    () => lines.filter(l => l.isActive && l.floor === floor && !isFinishingUnit(l.id)),
+    () => lines.filter(l => l.isActive !== false && floorMatches(l.floor, floor) && !isFinishingUnit(l.id)),
     [lines, floor]
   );
 

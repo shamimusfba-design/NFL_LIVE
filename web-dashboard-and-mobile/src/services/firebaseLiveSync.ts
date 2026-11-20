@@ -37,7 +37,8 @@ import {
   WeeklyQualityRecord,
   MonthlyTargetConfig,
   FloorManpowerRecord,
-  AlertComment
+  AlertComment,
+  LineMasterItem
 } from '../types';
 import { normalizeHourSlot24h } from '../data/masterData';
 import { formatUserDesignation } from '../data/designations';
@@ -415,6 +416,7 @@ export interface LiveCloudCallbacks {
   onWeeklyQualityUpdate?: (records: WeeklyQualityRecord[]) => void;
   onMonthlyTargetsUpdated?: (records: MonthlyTargetConfig[]) => void;
   onMonthlyTargetsUpdate?: (records: MonthlyTargetConfig[]) => void;
+  onLineMasterUpdated?: (lines: LineMasterItem[]) => void;
   onUsersUpdated?: (users: UserAccount[]) => void;
   onStatusChanged?: (status: string) => void;
 }
@@ -921,6 +923,22 @@ export function startLiveFirestoreListeners(callbacks: LiveCloudCallbacks): () =
         () => {}
       )
     );
+
+    // 8. Line Master Active/Inactive Settings
+    unsubscribers.push(
+      onSnapshot(
+        doc(db, 'app_settings', 'line_master'),
+        snap => {
+          if (snap.exists()) {
+            const data = snap.data();
+            if (Array.isArray(data?.lines) && callbacks.onLineMasterUpdated) {
+              callbacks.onLineMasterUpdated(data.lines as LineMasterItem[]);
+            }
+          }
+        },
+        err => console.warn('Line Master listener warning:', err)
+      )
+    );
   } catch (e) {
     console.warn('Error subscribing to Firestore:', e);
   }
@@ -1071,6 +1089,31 @@ export async function pushMonthlyTargetToCloud(target: MonthlyTargetConfig): Pro
     return true;
   } catch (e) {
     console.warn('pushMonthlyTargetToCloud error:', e);
+    return false;
+  }
+}
+
+export async function pushLineMasterToCloud(lines: LineMasterItem[]): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  try {
+    const serialized = lines.map(l => ({
+      id: l.id,
+      floor: l.floor,
+      isActive: l.isActive !== false,
+      notes: l.notes || ''
+    }));
+    await setDoc(
+      doc(db, 'app_settings', 'line_master'),
+      {
+        lines: serialized,
+        updatedAt: Date.now()
+      },
+      { merge: true }
+    );
+    return true;
+  } catch (e) {
+    console.warn('pushLineMasterToCloud error:', e);
     return false;
   }
 }

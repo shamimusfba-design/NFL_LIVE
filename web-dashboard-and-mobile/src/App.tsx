@@ -44,6 +44,7 @@ import {
   pushSetupToCloud,
   pushWeeklyQualityToCloud,
   pushMonthlyTargetToCloud,
+  pushLineMasterToCloud,
   softDeleteCloudRecord,
   canonicalProdDocId,
   canonicalQaDocId,
@@ -84,11 +85,37 @@ const STORAGE_KEYS = {
   QUALITIES: 'nfl_desktop_qualities_v1',
   INCIDENTS: 'nfl_desktop_incidents_v1',
   WEEKLY_QUALITY: 'nfl_desktop_weekly_quality_v1',
-  MONTHLY_TARGETS: 'nfl_desktop_monthly_targets_v1'
+  MONTHLY_TARGETS: 'nfl_desktop_monthly_targets_v1',
+  LINE_MASTER: 'nfl_desktop_line_master_v1'
 };
 
 export default function App() {
-  const [lines, setLines] = useState<LineMasterItem[]>(ALL_FACTORY_LINES);
+  const [lines, setLines] = useState<LineMasterItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('nfl_desktop_line_master_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved) as LineMasterItem[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const map = new Map<string, LineMasterItem>();
+          ALL_FACTORY_LINES.forEach(l => map.set(l.id, { ...l }));
+          parsed.forEach(p => {
+            if (p && p.id) {
+              const existing = map.get(p.id);
+              if (existing) {
+                map.set(p.id, { ...existing, ...p });
+              } else {
+                map.set(p.id, p);
+              }
+            }
+          });
+          return Array.from(map.values());
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to parse line master from storage:', e);
+    }
+    return ALL_FACTORY_LINES;
+  });
   const [users, setUsers] = useState<UserAccount[]>(STANDARD_USERS);
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
@@ -450,6 +477,27 @@ export default function App() {
       onFloorManpowerUpdated: remote => setFloorTotals(remote),
       onAlertCommentsUpdated: remote => setAlertComments(remote),
       onDemoModeUpdated: enabled => { demoSwitchRef.current(enabled); },
+      onLineMasterUpdated: (cloudLines: LineMasterItem[]) => {
+        if (!cloudLines || !Array.isArray(cloudLines)) return;
+        setLines(prev => {
+          const map = new Map<string, LineMasterItem>();
+          prev.forEach(l => map.set(l.id, l));
+          let changed = false;
+          cloudLines.forEach(cl => {
+            const cur = map.get(cl.id);
+            if (cur && cur.isActive !== (cl.isActive !== false)) {
+              map.set(cl.id, { ...cur, isActive: cl.isActive !== false });
+              changed = true;
+            }
+          });
+          if (!changed) return prev;
+          const next = Array.from(map.values());
+          try {
+            localStorage.setItem(STORAGE_KEYS.LINE_MASTER, JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+      },
       onUsersUpdated: remoteUsers => {
         if (remoteUsers.length === 0) return;
         setUsers(prev => {
@@ -1081,9 +1129,16 @@ export default function App() {
       showReadOnlyNotice('Toggle Line Master Status');
       return;
     }
-    setLines(prev =>
-      prev.map(l => (l.id === lineId ? { ...l, isActive: !l.isActive } : l))
-    );
+    setLines(prev => {
+      const next = prev.map(l => (l.id === lineId ? { ...l, isActive: !l.isActive } : l));
+      try {
+        localStorage.setItem(STORAGE_KEYS.LINE_MASTER, JSON.stringify(next));
+      } catch (e) {
+        console.warn('Failed to save lines to storage:', e);
+      }
+      void pushLineMasterToCloud(next);
+      return next;
+    });
   };
 
   const handleTriggerInstallDesktop = async () => {

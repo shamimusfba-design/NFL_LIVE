@@ -41,9 +41,9 @@ export const BulkMonthlyTargetSetup: React.FC<BulkMonthlyTargetSetupProps> = ({
   // Status message
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
 
-  // Filter lines belonging to selected floor
+  // Filter lines belonging to selected floor (active lines only)
   const floorLines = useMemo(() => {
-    return lines.filter(l => floorMatches(l.floor, selectedFloor));
+    return lines.filter(l => l.isActive !== false && floorMatches(l.floor, selectedFloor));
   }, [lines, selectedFloor]);
 
   // Line rows state map

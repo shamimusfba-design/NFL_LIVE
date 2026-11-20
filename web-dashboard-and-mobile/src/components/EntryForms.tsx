@@ -211,11 +211,18 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
   }, [activeTab, moScope, formFloor, formLine, monthYear, monthlyTargets]);
 
   const canWriteAuditOrWeekly = canWriteWeeklyQualityOrBiHourlyAudit(currentUserRole);
-  const floorLines = lines.filter(l => l.floor === formFloor && l.isActive && !isFinishingUnit(l.id));
+  const floorLines = lines.filter(l => floorMatches(l.floor, formFloor) && l.isActive !== false && !isFinishingUnit(l.id));
   const withTarget = floorLines.filter(l => targets.some(t => t.lineId === l.id && t.date === formDate && !t.isDemo && (t.hourlyTargetPcs > 0 || t.dailyTargetPcs > 0)));
   // Lines without a target that day are not running. If no target was set at all yet, every line is shown.
   const allowedSet = Array.isArray(allowedLines) && allowedLines.length > 0 ? new Set(allowedLines) : null;
-  const availableLines = (withTarget.length > 0 ? withTarget : floorLines).filter(l => !allowedSet || allowedSet.has(l.id));
+  const availableLines = (withTarget.length > 0 ? withTarget : floorLines).filter(l => (!allowedSet || allowedSet.has(l.id)) && l.isActive !== false);
+
+  // Automatically keep formLine pointed to an active valid line
+  useEffect(() => {
+    if (availableLines.length > 0 && !availableLines.some(l => l.id === formLine)) {
+      setFormLine(availableLines[0].id);
+    }
+  }, [availableLines, formLine]);
   // Departments: Cutting has no quality check; Print and Embroidery record checked and QC pass only.
   const deptFloor = isDepartmentFloor(formFloor);
   const noQcFloor = formFloor === 'Cutting';
@@ -641,8 +648,8 @@ export const EntryForms: React.FC<EntryFormsProps> = ({
                   onChange={e => {
                     const newFloor = e.target.value as PhysicalFloor;
                     setFormFloor(newFloor);
-                    const firstLine = lines.find(l => l.floor === newFloor)?.id || 'K1';
-                    setFormLine(firstLine);
+                    const firstLine = lines.find(l => floorMatches(l.floor, newFloor) && l.isActive !== false && !isFinishingUnit(l.id))?.id || '';
+                    if (firstLine) setFormLine(firstLine);
                   }}
                   className="w-full text-xs font-bold border border-slate-300 rounded-lg p-2 bg-white"
                 >

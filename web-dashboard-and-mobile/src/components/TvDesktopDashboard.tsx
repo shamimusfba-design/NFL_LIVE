@@ -20,7 +20,7 @@ import {
 import { HourlyWallboardBucket, FinishingFloorSummary } from '../services/calculationEngine';
 import { formatHourSlot12h,
   hourLabelOfSlot, isAuditEntry, floorMatches, lineDisplayName, isDepartmentFloor, unitWord,
-  AUDIT_PASS_OQL_PCT, auditResultOf, getBangladeshTodayIso } from '../data/masterData';
+  AUDIT_PASS_OQL_PCT, auditResultOf, getBangladeshTodayIso, hourOptionsForLine, normalizeHourSlot24h } from '../data/masterData';
 import { CalculationEngine as CalcForPeriod } from '../services/calculationEngine';
 import { NflLogo } from './NflLogo';
 import { isClientDemoSession } from '../data/clientDemo';
@@ -180,6 +180,65 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
       });
     return Array.from(m.values()).sort((a, b) => a.lineId.localeCompare(b.lineId, undefined, { numeric: true }));
   }, [qualities, selectedFloor, selectedPeriod, todayW]);
+
+  const cleanLineId = (id: string) => String(id || '').replace(/^Line\s*/i, '').trim().toLowerCase();
+  const matchLine = (a: string, b: string) => cleanLineId(a) === cleanLineId(b);
+
+  const deepDiveRows = useMemo(() => {
+    if (!deepDiveLine) return [];
+    const inP = (d: string) => CalcForPeriod.isDateInPeriod(d, todayW, selectedPeriod);
+    let lineProds = productions.filter(p => matchLine(p.lineId, deepDiveLine.lineId) && inP(p.date));
+    if (lineProds.length === 0) {
+      lineProds = productions.filter(p => matchLine(p.lineId, deepDiveLine.lineId));
+    }
+    let lineQuals = qualities.filter(q => matchLine(q.lineId, deepDiveLine.lineId) && inP(q.date));
+    if (lineQuals.length === 0) {
+      lineQuals = qualities.filter(q => matchLine(q.lineId, deepDiveLine.lineId));
+    }
+
+    const opts = hourOptionsForLine(deepDiveLine.lineId);
+    const slotKeySet = new Set<string>();
+    opts.forEach(o => slotKeySet.add(o.key));
+    lineProds.forEach(p => slotKeySet.add(p.hourSlot));
+    lineQuals.forEach(q => slotKeySet.add(q.hourSlot));
+
+    const rows = Array.from(slotKeySet).map(slotKey => {
+      const norm = normalizeHourSlot24h(slotKey);
+      const prod = lineProds.find(p => p.hourSlot === slotKey || normalizeHourSlot24h(p.hourSlot) === norm);
+      const qaDhu = lineQuals.find(q => !isAuditEntry(q) && (q.hourSlot === slotKey || normalizeHourSlot24h(q.hourSlot) === norm));
+      const qaAudit = lineQuals.find(q => isAuditEntry(q) && (q.hourSlot === slotKey || normalizeHourSlot24h(q.hourSlot) === norm));
+      const label = hourLabelOfSlot(deepDiveLine.lineId, slotKey);
+      const optIdx = opts.findIndex(o => o.key === slotKey || normalizeHourSlot24h(o.key) === norm);
+      const sortOrder = optIdx >= 0 ? optIdx : 100;
+
+      const checked = qaDhu?.checkedGarments ?? 0;
+      const defects = qaDhu?.totalDefects ?? 0;
+      const defective = qaDhu?.defectiveGarments ?? 0;
+      const dhuPct = checked > 0 ? (defects / checked) * 100 : null;
+
+      const auditRes = qaAudit ? auditResultOf(qaAudit.checkedGarments, qaAudit.defectiveGarments, qaAudit.auditResult) : null;
+
+      return {
+        slotKey,
+        label,
+        sortOrder,
+        output: prod ? prod.outputQty : null,
+        prodRemarks: prod?.remarks || '',
+        checked: checked > 0 ? checked : (qaAudit?.checkedGarments ?? null),
+        defective: defective > 0 ? defective : (qaAudit?.defectiveGarments ?? null),
+        defects: defects > 0 ? defects : (qaAudit?.totalDefects ?? null),
+        dhuPct,
+        sewSent: qaDhu?.defectSent ?? 0,
+        sewRecv: qaDhu?.defectReceived ?? 0,
+        spotSent: qaDhu?.spotSent ?? 0,
+        spotRecv: qaDhu?.spotReceived ?? 0,
+        auditRes,
+        hasData: Boolean(prod || qaDhu || qaAudit)
+      };
+    });
+
+    return rows.sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
+  }, [deepDiveLine, productions, qualities, selectedPeriod, todayW]);
 
   // Auto-slide Production -> Quality -> All (pauses on Table or when interval === 0)
   useEffect(() => {
@@ -1334,145 +1393,164 @@ export const TvDesktopDashboard: React.FC<TvDesktopDashboardProps> = ({
 
       {/* ==================== LINE DEEP DIVE MODAL ==================== */}
       {deepDiveLine && (
-        <div className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-2 sm:p-4">
           <div
             style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE, color: WB_THEME.TXT }}
-            className="w-full max-w-4xl max-h-[90vh] rounded-xl border p-5 flex flex-col gap-4 overflow-y-auto shadow-2xl"
+            className="w-full max-w-4xl h-[92vh] max-h-[92vh] rounded-xl border p-2.5 sm:p-4 flex flex-col gap-2 sm:gap-3 shadow-2xl overflow-hidden"
           >
-            <div className="flex items-start gap-3 border-b pb-3" style={{ borderColor: WB_THEME.LINE }}>
+            {/* Header */}
+            <div className="flex items-center justify-between border-b pb-2 shrink-0" style={{ borderColor: WB_THEME.LINE }}>
               <div className="min-w-0 flex-1">
-                <h3 className="text-lg font-black leading-tight">
-                  {lineDisplayName(deepDiveLine.lineId)} <span style={{ color: WB_THEME.MUTED }} className="text-sm font-bold">({deepDiveLine.floor})</span>
-                </h3>
-                <p style={{ color: WB_THEME.MUTED }} className="text-xs mt-0.5">
-                  {deepDiveLine.styleNumber ? `${deepDiveLine.styleNumber} · ` : ''}SMV {deepDiveLine.smv.toFixed(1)} · Operators {deepDiveLine.operators} · Helpers {deepDiveLine.helpers} · Hourly target {deepDiveLine.hourlyTarget} pcs
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base sm:text-lg font-black leading-tight text-white">
+                    {lineDisplayName(deepDiveLine.lineId)}
+                  </h3>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                    {deepDiveLine.floor}
+                  </span>
+                </div>
+                <p style={{ color: WB_THEME.MUTED }} className="text-[11px] sm:text-xs mt-0.5 truncate">
+                  {deepDiveLine.styleNumber ? `${deepDiveLine.styleNumber} · ` : ''}SMV {deepDiveLine.smv.toFixed(1)} · Ops {deepDiveLine.operators} · Target {deepDiveLine.hourlyTarget}/hr ({deepDiveLine.target} day)
                 </p>
               </div>
               <button
                 onClick={() => setDeepDiveLine(null)}
-                className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-black text-sm"
+                className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-black text-xs sm:text-sm transition shadow-xs"
                 aria-label="Close"
               >
                 ✕ Close
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+            {/* Top 5 KPI Cards: Super compact on mobile */}
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 shrink-0">
               <WbTile
                 label="EFFICIENCY"
                 value={deepDiveLine.efficiencyPct !== null ? `${deepDiveLine.efficiencyPct.toFixed(1)}%` : '—'}
                 color={effColor(deepDiveLine.efficiencyPct, deepDiveLine.targetEfficiencyPct)}
                 sub={`Target ${deepDiveLine.targetEfficiencyPct}%`}
+                compact={true}
               />
               <WbTile
-                label="Output vs Target"
+                label="OUTPUT"
                 value={`${deepDiveLine.output ?? 0}`}
                 unit={`/ ${deepDiveLine.target}`}
                 color={achColor(deepDiveLine.achievementPct)}
-                sub={`Achieve ${deepDiveLine.achievementPct ?? 0}%`}
+                sub={`${deepDiveLine.achievementPct ?? 0}% ach`}
+                compact={true}
               />
               <WbTile
-                label="DAY DHU %"
+                label="DAY DHU"
                 value={deepDiveLine.dhu !== null ? `${deepDiveLine.dhu.toFixed(2)}%` : '—'}
                 color={dhuColor(deepDiveLine.dhu)}
-                sub={`${deepDiveLine.totalDefects} defects / ${deepDiveLine.checkedGarments} chk`}
+                sub={`${deepDiveLine.totalDefects} def / ${deepDiveLine.checkedGarments} chk`}
+                compact={true}
               />
               <WbTile
-                label="DAY OQL %"
+                label="DAY OQL"
                 value={deepDiveLine.todayOqlPct !== null ? `${deepDiveLine.todayOqlPct.toFixed(2)}%` : '—'}
                 color={oqlColor(deepDiveLine.todayOqlPct)}
-                sub={`${deepDiveLine.defectiveGarments} defective pcs`}
+                sub={`${deepDiveLine.defectiveGarments} defective`}
+                compact={true}
               />
               <WbTile
-                label="ALTER & SPOT PENDING"
+                label="ALTER BAL"
                 value={`${deepDiveLine.sewBal + deepDiveLine.spotBal}`}
                 unit="pcs"
                 color={deepDiveLine.sewBal + deepDiveLine.spotBal > 0 ? WB_THEME.AMBER : WB_THEME.GREEN}
-                sub={`Sew Bal ${deepDiveLine.sewBal} · Spot Bal ${deepDiveLine.spotBal}`}
+                sub={`Sew ${deepDiveLine.sewBal} · Spot ${deepDiveLine.spotBal}`}
+                compact={true}
               />
             </div>
 
-            <div className="text-xs font-black uppercase tracking-wider" style={{ color: WB_THEME.MUTED }}>
-              Hourly DHU &amp; OQL Audit Records (scroll up and down)
+            {/* Section Title */}
+            <div className="flex items-center justify-between shrink-0 text-xs font-black uppercase tracking-wider" style={{ color: WB_THEME.MUTED }}>
+              <span>Hourly Production &amp; Defect Breakdown</span>
+              <span className="text-[10px] lowercase font-semibold">({deepDiveRows.length} hours)</span>
             </div>
-            <div className="max-h-[48vh] overflow-auto rounded-lg border" style={{ borderColor: WB_THEME.LINE }}>
-              <table className="w-full min-w-[860px] text-sm border-collapse">
+
+            {/* Table Container: Takes all remaining space! */}
+            <div className="flex-1 min-h-0 overflow-auto rounded-lg border" style={{ borderColor: WB_THEME.LINE, backgroundColor: WB_THEME.BG }}>
+              <table className="w-full text-xs sm:text-sm border-collapse">
                 <thead className="sticky top-0 z-10">
-                  <tr style={{ backgroundColor: WB_THEME.BG, color: WB_THEME.MUTED }} className="text-xs uppercase tracking-wide">
-                    <th className="p-2.5 text-left">Hour</th>
-                    <th className="p-2.5 text-left">Type</th>
-                    <th className="p-2.5 text-right">Output</th>
-                    <th className="p-2.5 text-right">Checked</th>
-                    <th className="p-2.5 text-right">Defective</th>
-                    <th className="p-2.5 text-center">Result</th>
-                    <th className="p-2.5 text-right">Defects</th>
-                    <th className="p-2.5 text-right">Sew S / R</th>
-                    <th className="p-2.5 text-right">Spot S / R</th>
+                  <tr style={{ backgroundColor: WB_THEME.PANEL, color: WB_THEME.MUTED, borderColor: WB_THEME.LINE }} className="text-[10px] sm:text-xs uppercase tracking-wide border-b">
+                    <th className="p-2 text-left font-black">Hour</th>
+                    <th className="p-2 text-right font-black">Output</th>
+                    <th className="p-2 text-right font-black">Checked</th>
+                    <th className="p-2 text-right font-black">Defective</th>
+                    <th className="p-2 text-right font-black">DHU %</th>
+                    <th className="p-2 text-center font-black">Alter (Sew / Spot)</th>
+                    <th className="p-2 text-center font-black">Audit</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {productions
-                    .filter(p => p.lineId === deepDiveLine.lineId)
-                    .slice(0, 40)
-                    .map(p => {
-                      const matchQa = qualities.find(q => q.lineId === p.lineId && q.date === p.date && q.hourSlot === p.hourSlot);
-                      return (
-                        <tr key={p.id} className="border-t" style={{ borderColor: WB_THEME.LINE }}>
-                          <td className="p-2.5 font-black whitespace-nowrap">{hourLabelOfSlot(p.lineId, p.hourSlot)}</td>
-                          <td className="p-2.5 whitespace-nowrap">Production &amp; QC</td>
-                          <td className="p-2.5 text-right font-black" style={{ color: WB_THEME.GREEN }}>{p.outputQty}</td>
-                          <td className="p-2.5 text-right">{matchQa?.checkedGarments ?? '—'}</td>
-                          <td className="p-2.5 text-right">{matchQa?.defectiveGarments ?? '—'}</td>
-                          <td className="p-2.5 text-center">—</td>
-                          <td className="p-2.5 text-right">{matchQa?.totalDefects ?? '—'}</td>
-                          <td className="p-2.5 text-right">{matchQa ? `${matchQa.defectSent || 0} / ${matchQa.defectReceived || 0}` : '—'}</td>
-                          <td className="p-2.5 text-right">{matchQa ? `${matchQa.spotSent || 0} / ${matchQa.spotReceived || 0}` : '—'}</td>
-                        </tr>
-                      );
-                    })}
-                  {qualities
-                    .filter(q => q.lineId === deepDiveLine.lineId && isAuditEntry(q))
-                    .map(q => {
-                      const r = auditResultOf(q.checkedGarments, q.defectiveGarments, q.auditResult);
-                      return (
-                        <tr key={q.id} className="border-t" style={{ borderColor: WB_THEME.LINE }}>
-                          <td className="p-2.5 font-black whitespace-nowrap" style={{ color: WB_THEME.BLUE }}>{hourLabelOfSlot(q.lineId, q.hourSlot)}</td>
-                          <td className="p-2.5 font-bold whitespace-nowrap" style={{ color: WB_THEME.BLUE }}>Hourly OQL Audit</td>
-                          <td className="p-2.5 text-right">—</td>
-                          <td className="p-2.5 text-right font-bold">{q.checkedGarments}</td>
-                          <td className="p-2.5 text-right font-bold">{q.defectiveGarments}</td>
-                          <td className="p-2.5 text-center">
-                            <span className="rounded px-2 py-0.5 text-[11px] font-black" style={{ backgroundColor: r === 'PASS' ? WB_THEME.GREEN : WB_THEME.RED, color: r === 'PASS' ? 'var(--wb-on-green)' : 'var(--wb-on-red)' }}>{r ?? '—'}</span>
-                          </td>
-                          <td className="p-2.5 text-right font-bold">{q.totalDefects}</td>
-                          <td className="p-2.5 text-right">—</td>
-                          <td className="p-2.5 text-right">—</td>
-                        </tr>
-                      );
-                    })}
+                <tbody className="divide-y" style={{ borderColor: WB_THEME.LINE }}>
+                  {deepDiveRows.map(r => (
+                    <tr key={r.slotKey} className="hover:bg-slate-800/40 transition">
+                      <td className="p-2 font-black whitespace-nowrap" style={{ color: WB_THEME.BLUE }}>
+                        {r.label}
+                      </td>
+                      <td className="p-2 text-right font-black whitespace-nowrap" style={{ color: r.output !== null ? (r.output >= deepDiveLine.hourlyTarget ? WB_THEME.GREEN : WB_THEME.AMBER) : WB_THEME.MUTED }}>
+                        {r.output !== null ? `${r.output} pcs` : '—'}
+                      </td>
+                      <td className="p-2 text-right font-semibold whitespace-nowrap">
+                        {r.checked !== null ? r.checked : '—'}
+                      </td>
+                      <td className="p-2 text-right font-bold whitespace-nowrap" style={{ color: r.defective && r.defective > 0 ? WB_THEME.RED : 'inherit' }}>
+                        {r.defective !== null ? r.defective : '—'}
+                      </td>
+                      <td className="p-2 text-right font-bold whitespace-nowrap" style={{ color: r.dhuPct !== null ? dhuColor(r.dhuPct) : WB_THEME.MUTED }}>
+                        {r.dhuPct !== null ? `${r.dhuPct.toFixed(1)}% (${r.defects} def)` : (r.defects !== null ? `${r.defects} def` : '—')}
+                      </td>
+                      <td className="p-2 text-center font-semibold text-[11px] whitespace-nowrap" style={{ color: WB_THEME.MUTED }}>
+                        {r.sewSent > 0 || r.sewRecv > 0 || r.spotSent > 0 || r.spotRecv > 0
+                          ? `Sew ${r.sewSent}/${r.sewRecv} · Spot ${r.spotSent}/${r.spotRecv}`
+                          : '—'}
+                      </td>
+                      <td className="p-2 text-center whitespace-nowrap">
+                        {r.auditRes ? (
+                          <span
+                            className="rounded px-2 py-0.5 text-[10px] font-black"
+                            style={{
+                              backgroundColor: r.auditRes === 'PASS' ? WB_THEME.GREEN : WB_THEME.RED,
+                              color: r.auditRes === 'PASS' ? 'var(--wb-on-green)' : 'var(--wb-on-red)'
+                            }}
+                          >
+                            {r.auditRes}
+                          </span>
+                        ) : (
+                          <span style={{ color: WB_THEME.MUTED }}>—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
 
-            <div className="text-xs font-black uppercase tracking-wider" style={{ color: WB_THEME.MUTED }}>
-              NPT today on this line
-            </div>
-            <div className="space-y-1.5">
-              {allIncidents.filter(i => i.lineId === deepDiveLine.lineId).length === 0 && (
-                <div className="text-xs font-bold" style={{ color: WB_THEME.GREEN }}>No NPT on this line.</div>
+            {/* Incidents (if any, compact) */}
+            <div className="shrink-0 flex flex-col gap-1">
+              <div className="text-[11px] font-black uppercase tracking-wider" style={{ color: WB_THEME.MUTED }}>
+                Line Downtime / NPT
+              </div>
+              {allIncidents.filter(i => matchLine(i.lineId, deepDiveLine.lineId)).length === 0 ? (
+                <div className="text-xs font-bold" style={{ color: WB_THEME.GREEN }}>✓ No downtime incidents recorded today on this line.</div>
+              ) : (
+                <div className="max-h-20 overflow-y-auto space-y-1">
+                  {allIncidents
+                    .filter(i => matchLine(i.lineId, deepDiveLine.lineId))
+                    .sort((a, b) => b.startTimeMillis - a.startTimeMillis)
+                    .map(inc => (
+                      <div key={inc.id} className="flex flex-wrap items-center gap-2 rounded-lg border px-2.5 py-1 text-xs" style={{ borderColor: WB_THEME.LINE, backgroundColor: WB_THEME.BG }}>
+                        <span className="font-black">{inc.category.replace(/_/g, ' ').toLowerCase()}</span>
+                        <span style={{ color: inc.status === 'RESOLVED' ? WB_THEME.GREEN : WB_THEME.RED }} className="font-black">
+                          {inc.status === 'RESOLVED' ? 'Resolved' : 'Open'}
+                        </span>
+                        <span style={{ color: WB_THEME.MUTED }}>{new Date(inc.startTimeMillis + 6 * 3600 * 1000).toISOString().slice(11, 16)} BD</span>
+                        <span className="flex-1 min-w-0 truncate" style={{ color: WB_THEME.MUTED }}>{inc.description}</span>
+                      </div>
+                    ))}
+                </div>
               )}
-              {allIncidents
-                .filter(i => i.lineId === deepDiveLine.lineId)
-                .sort((a, b) => b.startTimeMillis - a.startTimeMillis)
-                .slice(0, 12)
-                .map(inc => (
-                  <div key={inc.id} className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs" style={{ borderColor: WB_THEME.LINE, backgroundColor: WB_THEME.BG }}>
-                    <span className="font-black">{inc.category.replace(/_/g, ' ').toLowerCase()}</span>
-                    <span style={{ color: inc.status === 'RESOLVED' ? WB_THEME.GREEN : WB_THEME.RED }} className="font-black">{inc.status === 'RESOLVED' ? 'Resolved' : 'Open'}</span>
-                    <span style={{ color: WB_THEME.MUTED }}>{new Date(inc.startTimeMillis + 6 * 3600 * 1000).toISOString().slice(11, 16)} BD</span>
-                    <span className="flex-1 min-w-0 truncate" style={{ color: WB_THEME.MUTED }}>{inc.description}</span>
-                  </div>
-                ))}
             </div>
           </div>
         </div>
@@ -1600,28 +1678,28 @@ const WbTile: React.FC<{
 }> = ({ label, value, unit, color, sub, compact }) => (
   <div
     style={{ backgroundColor: WB_THEME.PANEL, borderColor: WB_THEME.LINE }}
-    className={`rounded-xl border ${compact ? 'p-2 md:p-2.5 min-h-[96px]' : 'p-3 min-h-[108px]'} flex flex-col justify-between relative overflow-hidden shadow-xs`}
+    className={`rounded-xl border ${compact ? 'p-1.5 sm:p-2 min-h-[58px] sm:min-h-[82px]' : 'p-2 sm:p-2.5 min-h-[66px] sm:min-h-[96px]'} flex flex-col justify-between relative overflow-hidden shadow-xs`}
   >
-    <div style={{ backgroundColor: color }} className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l" />
+    <div style={{ backgroundColor: color }} className="absolute left-0 top-0 bottom-0 w-1 sm:w-1.5 rounded-l" />
     <div
       style={{ color: 'var(--wb-txt)' }}
-      className={`${compact ? 'text-[11px] sm:text-xs' : 'text-xs sm:text-[13px]'} font-black uppercase tracking-wide pl-2 leading-tight break-words`}
+      className={`${compact ? 'text-[9.5px] sm:text-xs' : 'text-[10px] sm:text-xs'} font-black uppercase tracking-wide pl-1.5 sm:pl-2 leading-tight break-words`}
     >
       {label}
     </div>
-    <div className="flex items-baseline gap-1.5 my-1 pl-2">
-      <span style={{ color }} className={`${compact ? 'text-2xl sm:text-3xl' : 'text-3xl sm:text-4xl'} font-black leading-none`}>
+    <div className="flex items-baseline gap-1 my-0.5 sm:my-1 pl-1.5 sm:pl-2">
+      <span style={{ color }} className={`${compact ? 'text-lg sm:text-2xl md:text-3xl' : 'text-xl sm:text-2xl md:text-3xl'} font-black leading-none`}>
         {value}
       </span>
       {unit && (
-        <span style={{ color: WB_THEME.MUTED }} className={`${compact ? 'text-[11px]' : 'text-xs sm:text-sm'} font-bold`}>
+        <span style={{ color: WB_THEME.MUTED }} className={`${compact ? 'text-[9.5px] sm:text-[11px]' : 'text-[10px] sm:text-xs'} font-bold`}>
           {unit}
         </span>
       )}
     </div>
     <div
       style={{ color: WB_THEME.MUTED }}
-      className={`${compact ? 'text-[10px] sm:text-[11px]' : 'text-xs'} font-bold pl-2 leading-snug break-words`}
+      className={`${compact ? 'text-[8.5px] sm:text-[10.5px]' : 'text-[9px] sm:text-xs'} font-bold pl-1.5 sm:pl-2 leading-tight break-words truncate`}
     >
       {sub}
     </div>
