@@ -1,0 +1,51 @@
+name: Deploy NFL LIVE to Firebase Hosting
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web-dashboard-and-mobile/**'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/deploy-firebase-hosting.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nfl-live-firebase-production
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current production source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web-dashboard-and-mobile/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web-dashboard-and-mobile
+        run: npm ci
+
+      - name: Build production web app
+        working-directory: web-dashboard-and-mobile
+        env:
+          NODE_ENV: production
+        run: npm run build
+
+      - name: Deploy to Firebase Hosting (live)
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_NFL_LIVE_72213 }}
+          projectId: nfl-live-72213
+          channelId: live
+          entryPoint: ./
+          target: ''
